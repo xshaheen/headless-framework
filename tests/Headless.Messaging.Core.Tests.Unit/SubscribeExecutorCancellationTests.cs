@@ -116,7 +116,14 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         //   TaskCanceledException where CancellationToken.IsCancellationRequested = false
         var storage = Substitute.For<IDataStorage>();
         storage
-            .ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), Arg.Any<StatusName>())
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(ValueTask.FromResult(true));
 
         var invoker = Substitute.For<ISubscribeInvoker>();
@@ -136,7 +143,16 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         // then — must be a failure, not swallowed
         result.Succeeded.Should().BeFalse();
-        await storage.Received().ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .Received()
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

@@ -21,8 +21,12 @@ public sealed class OrderCreatedConsumer : IConsume<OrderCreatedEvent>
 
 public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
 {
+    // Transient exception so the default RetryExceptionClassifier does NOT short-circuit to Stop.
+    // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
+    // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
+    // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
     public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
-        throw new InvalidOperationException("Test failure");
+        throw new TimeoutException("Test failure");
 }
 
 public interface INotificationService
@@ -99,7 +103,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         faulted.Exception.Should().NotBeNull();
-        faulted.Exception.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("Test failure");
+        faulted.Exception.Should().BeOfType<TimeoutException>().Which.Message.Should().Be("Test failure");
 
         harness.Faulted.Should().ContainSingle();
         harness.Consumed.Should().BeEmpty();

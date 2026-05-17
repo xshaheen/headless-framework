@@ -119,13 +119,16 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var storage = Substitute.For<IDataStorage>();
         // Use Arg.Any<>() on every parameter — including the optional ones.
         // NSubstitute records optional defaults as exact-value matchers, which makes
-        // setups silently miss when callers pass a non-default nextRetryAt or CT.
+        // setups silently miss when callers pass a non-default nextRetryAt, lockedUntil,
+        // originalRetries, or CT. #7 added originalRetries to every state-write site.
         storage
             .ChangeReceiveStateAsync(
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
         return storage;
@@ -212,7 +215,16 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — DB state must still be persisted
-        await storage.Received(1).ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Failed);
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -231,7 +243,16 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — both DB persistence and circuit breaker reporting happen
-        await storage.Received(1).ChangeReceiveStateAsync(Arg.Any<MediumMessage>(), StatusName.Succeeded);
+        await storage
+            .Received(1)
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Succeeded,
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
         await cbMock.Received(1).ReportSuccessAsync(_GroupName);
     }
 }

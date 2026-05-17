@@ -102,7 +102,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -158,7 +160,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -214,7 +218,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -274,7 +280,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -328,7 +336,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -366,7 +376,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v == null),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -381,7 +393,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(false));
 
@@ -483,7 +497,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -537,7 +553,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<DateTime?>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
 
@@ -584,7 +602,9 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Is<DateTime?>(v => v == null),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
             );
     }
 
