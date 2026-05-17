@@ -16,7 +16,7 @@ public class MessagingRedisOptions
     // BrokerAddress is emitted to telemetry and dashboards, so expose only broker endpoints here.
     internal string DisplayEndpoint =>
         Configuration?.EndPoints.Count > 0
-            ? string.Join(",", Configuration.EndPoints.Select(BrokerAddressDisplay.Format))
+            ? string.Join(',', Configuration.EndPoints.Select(BrokerAddressDisplay.Format))
             : string.Empty;
 
     /// <summary>
@@ -37,7 +37,4 @@ public class MessagingRedisOptions
     public record ConsumeErrorContext(Exception Exception, StreamEntry? Entry);
 }
 
-internal sealed class MessagingRedisOptionsValidator : AbstractValidator<MessagingRedisOptions>
-{
-    public MessagingRedisOptionsValidator() { }
-}
+internal sealed class MessagingRedisOptionsValidator : AbstractValidator<MessagingRedisOptions>;

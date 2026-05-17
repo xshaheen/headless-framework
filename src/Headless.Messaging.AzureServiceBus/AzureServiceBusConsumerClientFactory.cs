@@ -15,6 +15,10 @@ internal sealed class AzureServiceBusConsumerClientFactory(
 {
     public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
+        // Validate at the boundary so an invalid group name surfaces as a clear ArgumentException
+        // at registration time instead of a wrapped Azure SDK failure deep inside ConnectAsync.
+        AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
+
         try
         {
             var client = new AzureServiceBusConsumerClient(

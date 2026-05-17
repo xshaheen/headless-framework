@@ -6,4 +6,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Core" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+  </ItemGroup>
 </Project>

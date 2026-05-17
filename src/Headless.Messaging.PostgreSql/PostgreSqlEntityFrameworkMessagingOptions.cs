@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
+using Headless.Checks;
 
 namespace Headless.Messaging.PostgreSql;
 
@@ -26,7 +27,7 @@ public partial class PostgreSqlEntityFrameworkMessagingOptions
         get;
         set
         {
-            ArgumentException.ThrowIfNullOrWhiteSpace(value);
+            Argument.IsNotNullOrWhiteSpace(value);
 
             if (!_ValidIdentifier().IsMatch(value))
             {

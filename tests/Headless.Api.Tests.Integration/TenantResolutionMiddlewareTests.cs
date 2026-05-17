@@ -372,7 +372,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     {
         var field = typeof(TenantResolutionMiddleware).GetField(
             "_orderingWarningEmitted",
-            BindingFlags.NonPublic | BindingFlags.Static
+            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
         );
         field.Should().NotBeNull();
         field!.SetValue(null, 0);

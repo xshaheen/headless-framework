@@ -72,12 +72,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     )
     {
         _EnsureInitialized();
-        var count = _storage!
-            .ReceivedMessages.Values.Cast<MemoryMessage>()
-            .Count(m =>
-                string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
-                && string.Equals(m.Group, group, StringComparison.Ordinal)
-            );
+
+        var count = _storage!.ReceivedMessages.Values.Count(m =>
+            string.Equals(m.Origin.GetId(), messageId, StringComparison.Ordinal)
+            && string.Equals(m.Group, group, StringComparison.Ordinal)
+        );
 
         return Task.FromResult(count);
     }

@@ -412,9 +412,7 @@ internal sealed class InMemoryDataStorage(
         // a MessageId there's no upsert identity to share, so concurrent calls degrade to plain
         // inserts. This matches the SQL providers' MERGE/ON CONFLICT semantics — the constraint
         // is on MessageId, so a NULL MessageId effectively opts out of dedupe.
-        var hasMessageId =
-            message.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
-            && messageId is not null;
+        var hasMessageId = message.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null;
 
         if (!hasMessageId)
         {
@@ -763,10 +761,7 @@ internal sealed class InMemoryDataStorage(
         // insert time are not in the secondary index — TryRemove on a synthesized key would be a
         // no-op anyway, but skipping the GetId() call avoids a KeyNotFoundException during
         // shutdown cleanup of degenerate test inputs.
-        if (
-            removed.Origin.Headers.TryGetValue(Headless.Messaging.Headers.MessageId, out var messageId)
-            && messageId is not null
-        )
+        if (removed.Origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
         {
             _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group), out _);
         }
