@@ -281,7 +281,7 @@ public sealed class PostgreSqlDataStorage(
     {
         var sql =
             $"INSERT INTO {_publishedTable} (\"Id\",\"Version\",\"Name\",\"Content\",\"Retries\",\"Added\",\"ExpiresAt\",\"NextRetryAt\",\"LockedUntil\",\"StatusName\",\"MessageId\")"
-            + $"VALUES(@Id,'{postgreSqlOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId);";
+            + $"VALUES(@Id,'{messagingOptions.Value.Version}',@Name,@Content,@Retries,@Added,@ExpiresAt,@NextRetryAt,@LockedUntil,@StatusName,@MessageId);";
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var message = new MediumMessage
