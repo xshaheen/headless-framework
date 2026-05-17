@@ -245,7 +245,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
-            new SqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
+            new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@StatusName", state.ToString("G")),
             new SqlParameter("@ExceptionInfo", message.ExceptionInfo ?? (object)DBNull.Value),
         ];
@@ -364,7 +364,7 @@ public sealed class SqlServerDataStorage(
         [
             new SqlParameter("@Id", longIdGenerator.Create()),
             new SqlParameter("@Name", name),
-            new SqlParameter("@Group", group),
+            new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter("@Content", content),
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
@@ -409,7 +409,7 @@ public sealed class SqlServerDataStorage(
         [
             new SqlParameter("@Id", mediumMessage.StorageId),
             new SqlParameter("@Name", name),
-            new SqlParameter("@Group", group),
+            new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter("@Content", mediumMessage.Content),
             new SqlParameter("@Retries", mediumMessage.Retries),
             new SqlParameter("@Added", mediumMessage.Added),
@@ -609,7 +609,7 @@ public sealed class SqlServerDataStorage(
             },
             new SqlParameter("@NextRetryAt", SqlDbType.DateTime2) { Value = nextRetryAt.ToUtcParameterValue() },
             new SqlParameter("@LockedUntil", SqlDbType.DateTime2) { Value = lockedUntil.ToUtcParameterValue() },
-            new SqlParameter("@OriginalRetries", originalRetries ?? (object)DBNull.Value),
+            new SqlParameter("@OriginalRetries", SqlDbType.Int) { Value = originalRetries ?? (object)DBNull.Value },
             new SqlParameter("@StatusName", state.ToString("G")),
         ];
 
