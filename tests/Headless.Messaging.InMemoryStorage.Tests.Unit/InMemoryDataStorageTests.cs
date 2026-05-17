@@ -220,15 +220,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_not_return_received_message_with_future_next_retry_at() =>
         base.should_not_return_received_message_with_future_next_retry_at();
 
-    // DataStorageTestsBase expires the active lease by calling LeasePublishAsync again with a
-    // past timestamp — that worked when _LeaseAsync was an unconditional UPDATE. PR #254 added a
-    // lease-contention predicate (LockedUntil IS NULL OR LockedUntil <= @Now), so the second call
-    // is correctly rejected and the lease never advances to the past. The same change applies to
-    // PostgreSQL and SQL Server, so this needs a harness update (advance the time provider, or
-    // use a dedicated lease-expiry seam) before the test can run cross-provider.
-    [Fact(
-        Skip = "Base test uses pre-#15 lease-expiry trick that the new lease predicate rejects — needs DataStorageTestsBase update"
-    )]
+    [Fact]
     public override Task should_not_return_leased_published_message_until_lease_expires() =>
         base.should_not_return_leased_published_message_until_lease_expires();
 
@@ -252,28 +244,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_handle_concurrent_store_received_message_with_same_identity() =>
         base.should_handle_concurrent_store_received_message_with_same_identity();
 
-    // Base test mutates message.Retries in-memory (e.g., aboveLimit.Retries = 5) then calls
-    // ChangePublishStateAsync expecting that mutation to propagate to storage. For SQL providers
-    // the local reference is decoupled from the stored row, so the storage's Retries stays at
-    // its initial value. For InMemory the storage retains MemoryMessage references, so the
-    // mutation may or may not be visible depending on whether StoreMessageAsync returns the
-    // stored row or a snapshot. This produces an inconsistent contract that the base test
-    // assumes one way; not a bug in InMemory's pickup predicate (which correctly enforces
-    // Retries <= MaxPersistedRetries). Needs DataStorageTestsBase update to set Retries via a
-    // dedicated API rather than direct mutation.
-    [Fact(
-        Skip = "Base test mutates Retries via direct field assignment which has provider-dependent visibility — needs DataStorageTestsBase update"
-    )]
+    [Fact]
     public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above() =>
         base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
 
-    // Same lease-expiry-trick issue as should_not_return_leased_published_message_until_lease_expires
-    // — base test relies on pre-#15 unconditional lease overwrite; the new predicate correctly
-    // rejects setting LockedUntil to a past value while an active lease holds. Needs DataStorageTestsBase
-    // update before it can run cross-provider.
-    [Fact(
-        Skip = "Base test uses pre-#15 lease-expiry trick that the new lease predicate rejects — needs DataStorageTestsBase update"
-    )]
+    [Fact]
     public override Task should_not_return_leased_received_message_until_lease_expires() =>
         base.should_not_return_leased_received_message_until_lease_expires();
 

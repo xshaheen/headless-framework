@@ -631,6 +631,14 @@ public abstract class DataStorageTestsBase : TestBase
 
     public virtual async Task should_not_return_leased_published_message_until_lease_expires()
     {
+        // Verifies the lease/pickup contract:
+        //   1. An active lease (LockedUntil in the future) excludes the row from retry pickup.
+        //   2. After the lease window elapses (LockedUntil <= now), the row is eligible again.
+        //
+        // The lease-contention guard from PR #254 review #15 rejects an attempt to overwrite an
+        // active lease with a past timestamp — so the old "negative-timestamp trick" no longer
+        // works. The test instead writes a short real-clock lease and waits for it to expire,
+        // matching how production code would observe lease expiry.
         var storage = GetStorage();
         var storedMessage = await storage.StoreMessageAsync(
             "leased-published",
@@ -645,14 +653,15 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        var leased = await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddMinutes(5), AbortToken);
+        var leaseWindow = TimeSpan.FromMilliseconds(500);
+        var leased = await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.Add(leaseWindow), AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        await storage.LeasePublishAsync(storedMessage, DateTime.UtcNow.AddSeconds(-1), AbortToken);
+        await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
 
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
@@ -661,9 +670,8 @@ public abstract class DataStorageTestsBase : TestBase
 
     public virtual async Task should_not_return_leased_received_message_until_lease_expires()
     {
-        // Asymmetric coverage parity with the published-lease test above. Mirrors the receive
-        // lease semantics: Failed/NextRetryAt-in-past row with a future LockedUntil is excluded
-        // from the retry pickup until LockedUntil expires.
+        // Asymmetric coverage parity with the published-lease test above. See that method for
+        // the rationale behind the short real-clock lease window.
         var storage = GetStorage();
         var storedMessage = await storage.StoreReceivedMessageAsync(
             "leased-received",
@@ -679,14 +687,15 @@ public abstract class DataStorageTestsBase : TestBase
             cancellationToken: AbortToken
         );
 
-        var leased = await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.AddMinutes(5), AbortToken);
+        var leaseWindow = TimeSpan.FromMilliseconds(500);
+        var leased = await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.Add(leaseWindow), AbortToken);
 
         leased.Should().BeTrue();
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        await storage.LeaseReceiveAsync(storedMessage, DateTime.UtcNow.AddSeconds(-1), AbortToken);
+        await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
 
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
@@ -1068,10 +1077,13 @@ public abstract class DataStorageTestsBase : TestBase
         // budget consumption). Retries == 5 represents the terminal state past the budget
         // and must NOT be picked up. Total dispatches = (MaxPersistedRetries + 1) = 5.
         var storage = GetStorage();
-        var message = CreateMessage();
 
         // Boundary case 1 (published): Retries == MaxPersistedRetries → picked up.
-        var atLimit = await storage.StoreMessageAsync("max-retries-test-pub", message, cancellationToken: AbortToken);
+        var atLimit = await storage.StoreMessageAsync(
+            "max-retries-test-pub",
+            CreateMessage(),
+            cancellationToken: AbortToken
+        );
         atLimit.Retries = 4;
         await storage.ChangePublishStateAsync(
             atLimit,
@@ -1083,7 +1095,7 @@ public abstract class DataStorageTestsBase : TestBase
         // Boundary case 2 (published): Retries == MaxPersistedRetries + 1 → NOT picked up.
         var aboveLimit = await storage.StoreMessageAsync(
             "above-retries-test-pub",
-            message,
+            CreateMessage(),
             cancellationToken: AbortToken
         );
         aboveLimit.Retries = 5;
@@ -1101,11 +1113,13 @@ public abstract class DataStorageTestsBase : TestBase
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
         retriable.Should().NotContain(m => m.StorageId == aboveLimit.StorageId);
 
-        // Same boundary semantics for received messages.
+        // Same boundary semantics for received messages. Each scenario uses a distinct message
+        // (and therefore a distinct MessageId) so the (MessageId, Group) upsert identity on the
+        // received table does not collapse the two cases into a single row.
         var atLimitRecv = await storage.StoreReceivedMessageAsync(
             "max-retries-test-recv",
             "group",
-            message,
+            CreateMessage(),
             AbortToken
         );
         atLimitRecv.Retries = 4;
@@ -1119,7 +1133,7 @@ public abstract class DataStorageTestsBase : TestBase
         var aboveLimitRecv = await storage.StoreReceivedMessageAsync(
             "above-retries-test-recv",
             "group",
-            message,
+            CreateMessage(),
             AbortToken
         );
         aboveLimitRecv.Retries = 5;
