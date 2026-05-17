@@ -199,10 +199,17 @@ public static class MessagingDashboardEndpoints
         return Results.Text("OK");
     }
 
-    private static async Task<IResult> _Metrics(IServiceProvider sp)
+    private static Task<IResult> _Metrics(IServiceProvider sp)
     {
-        var metrics = sp.GetRequiredService<MessagingMetricsEventListener>();
-        return Results.Json(metrics.GetRealTimeMetrics());
+        try
+        {
+            var metrics = sp.GetRequiredService<MessagingMetricsEventListener>();
+            return Task.FromResult(Results.Json(metrics.GetRealTimeMetrics()));
+        }
+        catch (Exception exception)
+        {
+            return Task.FromException<IResult>(exception);
+        }
     }
 
     private static IResult _MetaInfo(IServiceProvider sp)
@@ -478,32 +485,39 @@ public static class MessagingDashboardEndpoints
         return Results.Json(_MapMessagePage(result));
     }
 
-    private static async Task<IResult> _Subscribers(IServiceProvider sp)
+    private static Task<IResult> _Subscribers(IServiceProvider sp)
     {
-        var cache = sp.GetRequiredService<MethodMatcherCache>();
-        var subscribers = cache.GetCandidatesMethodsOfGroupNameGrouped();
-
-        var result = new List<WarpResult>();
-
-        foreach (var subscriber in subscribers)
+        try
         {
-            var inner = new WarpResult { Group = subscriber.Key, Values = [] };
-            foreach (var descriptor in subscriber.Value)
+            var cache = sp.GetRequiredService<MethodMatcherCache>();
+            var subscribers = cache.GetCandidatesMethodsOfGroupNameGrouped();
+
+            var result = new List<WarpResult>();
+
+            foreach (var subscriber in subscribers)
             {
-                inner.Values.Add(
-                    new WarpResult.SubInfo
-                    {
-                        Topic = descriptor.TopicName,
-                        ImplName = descriptor.ImplTypeInfo.Name,
-                        MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodInfo),
-                    }
-                );
+                var inner = new WarpResult { Group = subscriber.Key, Values = [] };
+                foreach (var descriptor in subscriber.Value)
+                {
+                    inner.Values.Add(
+                        new WarpResult.SubInfo
+                        {
+                            Topic = descriptor.TopicName,
+                            ImplName = descriptor.ImplTypeInfo.Name,
+                            MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodInfo),
+                        }
+                    );
+                }
+
+                result.Add(inner);
             }
 
-            result.Add(inner);
+            return Task.FromResult(Results.Json(result));
         }
-
-        return Results.Json(result);
+        catch (Exception exception)
+        {
+            return Task.FromException<IResult>(exception);
+        }
     }
 
     private static object _MapMessageView(MessageView message)
@@ -519,6 +533,8 @@ public static class MessagingDashboardEndpoints
             message.ExpiresAt,
             message.Retries,
             message.StatusName,
+            message.NextRetryAt,
+            message.LockedUntil,
         };
     }
 
