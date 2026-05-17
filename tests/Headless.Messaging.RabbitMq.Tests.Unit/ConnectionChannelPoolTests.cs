@@ -185,12 +185,15 @@ public sealed class ConnectionChannelPoolTests : TestBase
     [Fact]
     public async Task should_not_exhaust_pool_after_multiple_exceptions()
     {
-        // given
+        // given - use a loopback port that nothing listens on so the connect fails with
+        // ECONNREFUSED in microseconds. The previous host "invalid-host" went through DNS,
+        // which under load (search-domain timeouts) easily exceeded the 5s budget because
+        // ConnectionChannelPool serializes the underlying connect via _connectionLock.
         var options = Options.Create(
             new RabbitMqOptions
             {
-                HostName = "invalid-host",
-                Port = 9999,
+                HostName = "127.0.0.1",
+                Port = 1,
                 ExchangeName = "test.exchange",
             }
         );
@@ -208,13 +211,13 @@ public sealed class ConnectionChannelPoolTests : TestBase
                 }
                 catch
                 {
-                    // expected: all calls should fail due to invalid host
+                    // expected: all calls should fail due to refused connection
                 }
             })
             .ToList();
 
         // then - all should complete (with failures) without deadlock within timeout
-        await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // Verify pool is still usable
         await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
