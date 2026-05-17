@@ -156,16 +156,34 @@ public sealed class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task reads_access_token_from_query_parameter()
+    public async Task reads_access_token_from_query_parameter_on_signalr_paths()
     {
+        // The access_token query parameter is intentionally only honored on SignalR
+        // negotiate/hub paths (query strings leak to logs/history/Referer).
         var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "my-key" };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
+        context.Request.Path = "/dashboard/hub";
         context.Request.QueryString = new QueryString("?access_token=my-key");
 
         var result = await service.AuthenticateAsync(context);
 
         result.IsAuthenticated.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ignores_access_token_query_parameter_on_non_signalr_paths()
+    {
+        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "my-key" };
+        var service = new AuthService(config, _logger);
+        var context = new DefaultHttpContext();
+        context.Request.Path = "/api/data";
+        context.Request.QueryString = new QueryString("?access_token=my-key");
+
+        var result = await service.AuthenticateAsync(context);
+
+        result.IsAuthenticated.Should().BeFalse();
+        result.ErrorMessage.Should().Be("No authorization provided");
     }
 
     [Fact]

@@ -14,6 +14,7 @@ PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
 MSBUILD_ARGS ?=
+TEST_MAX_PARALLEL ?= 2
 
 .PHONY: help
 help: ## Show available commands.
@@ -56,9 +57,9 @@ format-check: tools ## Check C# formatting without writing changes.
 	$(DOTNET) csharpier check .
 
 .PHONY: test
-test: build ## Run all tests. Use TEST_FILTER='--filter-class X' (MTP syntax) for filters.
+test: build ## Run all tests. Use TEST_FILTER='--filter-class X' (MTP syntax) for filters. TEST_MAX_PARALLEL caps concurrent modules (default 2).
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)" $(TEST_FILTER)
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_FILTER)
 
 .PHONY: test-project
 test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
@@ -83,10 +84,10 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 	done
 
 .PHONY: coverage
-coverage: tools build ## Collect Cobertura coverage for the full test suite.
+coverage: tools build ## Collect Cobertura coverage for the full test suite. TEST_MAX_PARALLEL caps concurrent modules (default 2).
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
 	$(DOTNET) coverage collect -f cobertura -o "$(COVERAGE_DIR)/coverage.xml" -- \
-		$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)"
+		$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL)
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate an HTML coverage report.
