@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage">
+        <Configuration>
+          <Format>Cobertura</Format>
+          <Exclude>
+            <ModulePaths>
+              <Exclude>
+                <!-- Test runner assemblies: *.Tests.Unit, *.Tests.Integration, *.Tests.Harness, *.Tests.TestHost -->
+                <ModulePath>.*\.Tests\.[^.]+\.dll$</ModulePath>
+                <!-- Testing helper libraries: Headless.Testing, Headless.Messaging.Testing -->
+                <ModulePath>.*\.Testing\.dll$</ModulePath>
+                <!-- Testing helper libraries with sub-namespace: Headless.Testing.AspNetCore, Headless.Testing.Testcontainers -->
+                <ModulePath>.*\.Testing\.[^.]+\.dll$</ModulePath>
+              </Exclude>
+            </ModulePaths>
+            <Sources>
+              <Exclude>
+                <!-- Roslyn source-generated files -->
+                <Source>.*\.g\.cs$</Source>
+                <Source>.*\.generated\.cs$</Source>
+              </Exclude>
+            </Sources>
+            <Functions>
+              <Exclude>
+                <!-- EF Core migration classes -->
+                <Function>^.*\.Migrations\..*$</Function>
+              </Exclude>
+            </Functions>
+          </Exclude>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>
