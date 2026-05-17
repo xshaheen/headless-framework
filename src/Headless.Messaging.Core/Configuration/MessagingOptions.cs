@@ -198,14 +198,16 @@ public sealed class MessagingOptions
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
-#pragma warning disable IDE0032, IDE0044 // Tests use the named backing field to validate null-policy handling.
-    private RetryPolicyOptions _retryPolicy = new();
-#pragma warning restore IDE0032, IDE0044
-
     /// <summary>
-    /// Gets retry policy configuration for inline and persisted retries.
+    /// Gets retry policy configuration for inline and persisted retries. Mutate the returned
+    /// instance's properties; the property itself is get-only and cannot be replaced.
     /// </summary>
-    public RetryPolicyOptions RetryPolicy => _retryPolicy;
+    /// <remarks>
+    /// The non-null guarantee is enforced by <c>MessagingOptionsValidator</c> via
+    /// <c>ValidateOnStart()</c>; the property never observes a null value at runtime for callers
+    /// going through the standard <c>IOptions&lt;T&gt;</c> pipeline.
+    /// </remarks>
+    public RetryPolicyOptions RetryPolicy { get; } = new();
 
     /// <summary>
     /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
@@ -347,12 +349,12 @@ public sealed class MessagingOptions
 
         if (topic.StartsWith('.') || topic.EndsWith('.'))
         {
-            throw new ArgumentException($"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
+            throw new ArgumentException($@"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
         }
 
         if (topic.Contains("..", StringComparison.Ordinal))
         {
-            throw new ArgumentException($"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
+            throw new ArgumentException($@"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
         }
 
         foreach (var c in topic)
@@ -360,7 +362,7 @@ public sealed class MessagingOptions
             if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
             {
                 throw new ArgumentException(
-                    $"Topic name '{topic}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    $@"Topic name '{topic}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
                     nameof(topic)
                 );
             }

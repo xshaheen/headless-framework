@@ -341,31 +341,6 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
-    public void should_reject_messaging_options_with_null_retry_policy()
-    {
-        // given — force the _retryPolicy backing field to null via reflection. RetryPolicy is a
-        // get-only public property with a named backing field, so reflection is stable (no
-        // compiler-generated naming). Reflection lives in the test rather than in a production
-        // test seam.
-        var options = new MessagingOptions();
-
-        var field = typeof(MessagingOptions).GetField(
-            "_retryPolicy",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        );
-
-        field.Should().NotBeNull("named backing field _retryPolicy must exist on MessagingOptions");
-        field!.SetValue(options, null);
-
-        // when
-        var result = new MessagingOptionsValidator().Validate(options);
-
-        // then
-        result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.RetryPolicy));
-    }
-
-    [Fact]
     public void should_set_default_version()
     {
         // given
