@@ -333,5 +333,75 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         await Task.CompletedTask;
     }
 
+    // -------------------------------------------------------------------------
+    // Filtered-index shape verification — pins the SQL Server analog of the
+    // PostgreSqlStorageTests partial-index test (`should_key_retry_pickup_index_on_version_then_next_retry_at`).
+    // Regression to a different key order or missing filter predicate would silently
+    // expand the index footprint and break the planner's ability to seek directly to
+    // pickup-eligible rows.
+    // -------------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("Received", "IX_Received_Version_NextRetryAt")]
+    [InlineData("Published", "IX_Published_Version_NextRetryAt")]
+    public async Task should_key_retry_pickup_filtered_index_on_version_then_next_retry_at(
+        string tableName,
+        string indexName
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        // Key column order — Version must lead so it acts as a seek predicate, NextRetryAt
+        // follows so range scans against the time predicate stay cheap.
+        var columns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT c.name
+                FROM sys.indexes i
+                JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                JOIN sys.objects o ON o.object_id = i.object_id
+                JOIN sys.schemas s ON s.schema_id = o.schema_id
+                WHERE s.name = N'messaging'
+                  AND o.name = @TableName
+                  AND i.name = @IndexName
+                  AND ic.is_included_column = 0
+                ORDER BY ic.key_ordinal;
+                """,
+                new { TableName = tableName, IndexName = indexName }
+            )
+        ).ToList();
+
+        columns
+            .Should()
+            .BeEquivalentTo(
+                new[] { "Version", "NextRetryAt" },
+                opts => opts.WithStrictOrdering(),
+                "filtered-index key order must match the pickup query's seek path"
+            );
+
+        // Filtered predicate — must be NextRetryAt IS NOT NULL so terminal rows are physically
+        // excluded from the index and the planner does not pay for them on every probe.
+        var filterDefinition = await connection.QueryFirstOrDefaultAsync<string>(
+            """
+            SELECT i.filter_definition
+            FROM sys.indexes i
+            JOIN sys.objects o ON o.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = o.schema_id
+            WHERE s.name = N'messaging'
+              AND o.name = @TableName
+              AND i.name = @IndexName;
+            """,
+            new { TableName = tableName, IndexName = indexName }
+        );
+
+        filterDefinition
+            .Should()
+            .NotBeNull("the retry-pickup index must be a filtered index, not a full nonclustered index")
+            .And.Contain("NextRetryAt", "the filter must reference NextRetryAt")
+            .And.Contain("IS NOT NULL", "the filter must exclude rows with NULL NextRetryAt");
+    }
+
     #endregion
 }
