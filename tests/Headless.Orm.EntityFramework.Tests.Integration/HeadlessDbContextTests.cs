@@ -59,8 +59,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.Id.Should().NotBe(Guid.Empty);
-        entity.DateCreated.Should().Be(HeadlessDbContextTestFixture.Now);
-        entity.CreatedById.Should().Be(HeadlessDbContextTestFixture.UserId);
+        entity.DateCreated.Should().Be(_fixture.Now);
+        entity.CreatedById.Should().Be(_fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.DateUpdated.Should().BeNull();
         entity.UpdatedById.Should().BeNull();
@@ -101,8 +101,8 @@ public sealed class HeadlessDbContextTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        entity.DateUpdated.Should().Be(HeadlessDbContextTestFixture.Now);
-        entity.UpdatedById.Should().Be(HeadlessDbContextTestFixture.UserId);
+        entity.DateUpdated.Should().Be(_fixture.Now);
+        entity.UpdatedById.Should().Be(_fixture.UserId);
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
@@ -136,8 +136,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.IsDeleted.Should().BeTrue();
-        entity.DateDeleted.Should().Be(HeadlessDbContextTestFixture.Now);
-        entity.DeletedById.Should().Be(HeadlessDbContextTestFixture.UserId);
+        entity.DateDeleted.Should().Be(_fixture.Now);
+        entity.DeletedById.Should().Be(_fixture.UserId);
 
         var last = db.EmittedLocalMessages[^1];
         last.Messages.Should().HaveCount(2);
@@ -167,8 +167,8 @@ public sealed class HeadlessDbContextTests : TestBase
 
         // then
         entity.IsSuspended.Should().BeTrue();
-        entity.DateSuspended.Should().Be(HeadlessDbContextTestFixture.Now);
-        entity.SuspendedById.Should().Be(HeadlessDbContextTestFixture.UserId);
+        entity.DateSuspended.Should().Be(_fixture.Now);
+        entity.SuspendedById.Should().Be(_fixture.UserId);
     }
 
     // Publish messages
