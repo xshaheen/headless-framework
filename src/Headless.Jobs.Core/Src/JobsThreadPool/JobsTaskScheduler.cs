@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Headless.Checks;
 using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.JobsThreadPool;
@@ -76,7 +77,7 @@ public sealed class JobsTaskScheduler : IAsyncDisposable
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(work);
+        Argument.IsNotNull(work);
 
         ObjectDisposedException.ThrowIf(_disposed, this);
 

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging;
 
 /// <summary>
@@ -16,7 +18,7 @@ public static class MessagePublisherExtensions
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(publisher);
+        Argument.IsNotNull(publisher);
         return publisher.PublishAsync(contentObj, options: null, cancellationToken);
     }
 
@@ -30,7 +32,7 @@ public static class MessagePublisherExtensions
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(publisher);
+        Argument.IsNotNull(publisher);
         return publisher.PublishDelayAsync(delayTime, contentObj, options: null, cancellationToken);
     }
 }

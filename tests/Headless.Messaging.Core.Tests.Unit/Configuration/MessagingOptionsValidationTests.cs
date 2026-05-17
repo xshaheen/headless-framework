@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Retry;
@@ -347,10 +348,12 @@ public sealed class MessagingOptionsValidationTests : TestBase
         // compiler-generated naming). Reflection lives in the test rather than in a production
         // test seam.
         var options = new MessagingOptions();
+
         var field = typeof(MessagingOptions).GetField(
             "_retryPolicy",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
+
         field.Should().NotBeNull("named backing field _retryPolicy must exist on MessagingOptions");
         field!.SetValue(options, null);
 

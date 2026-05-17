@@ -1,3 +1,4 @@
+using System.Reflection;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -507,10 +508,15 @@ public sealed class DispatcherTests : TestBase
         // reflection because the harness intentionally does NOT expose it on the public surface
         // (it is implementation detail of the fault-handling pipeline).
         var fault = new InvalidOperationException("synthetic loop fault — R2 regression");
+
         var signalMethod = typeof(Dispatcher).GetMethod(
             "_SignalLoopTermination",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            [typeof(string), typeof(Exception)],
+            null
         );
+
         signalMethod
             .Should()
             .NotBeNull("Dispatcher must expose a single fault funnel for the three loop continuations");
