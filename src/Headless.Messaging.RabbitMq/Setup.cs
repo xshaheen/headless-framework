@@ -8,7 +8,7 @@ using Headless.Messaging.Transport;
 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
-public static class MessagesRabbitMqSetup
+public static class SetupRabbitMqMessaging
 {
     extension(MessagingSetupBuilder setup)
     {

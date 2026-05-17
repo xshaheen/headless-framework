@@ -10,7 +10,7 @@ using Headless.Messaging.Transport;
 namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class PulsarMessagingSetup
+public static class SetupPulsarMessaging
 {
     extension(MessagingSetupBuilder setup)
     {
