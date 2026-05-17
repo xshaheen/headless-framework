@@ -196,13 +196,18 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExceptionInfo" text NULL
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS "idx_received_MessageId_Group" ON {GetReceivedTableName()} ("MessageId","Group");
             -- NULL-safe upsert key. PostgreSQL treats NULL values as distinct in a multi-column
-            -- unique index, so the plain ("MessageId","Group") index above does NOT prevent
+            -- unique index, so a plain ("MessageId","Group") unique index does NOT prevent
             -- duplicate inserts when "Group" IS NULL (broker redelivery of a no-group message
             -- would accumulate rows). COALESCE("Group", '') collapses NULL into a sentinel so the
             -- INSERT ... ON CONFLICT path in PostgreSqlDataStorage._StoreReceivedMessage can name
             -- this index as its conflict target and converge concurrent inserts to a single row.
+            --
+            -- A second plain ("MessageId","Group") unique index is intentionally NOT created: when
+            -- two unique indexes cover the same column set, PostgreSQL's choice of which one fires
+            -- on a violation is non-deterministic. The plain index would fire first for non-null
+            -- groups and produce a raw 23505 that bypasses the ON CONFLICT target, breaking
+            -- concurrent-insert convergence under load.
             CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_MessageId_GroupCoalesced" ON {GetReceivedTableName()} ("MessageId", (COALESCE("Group", '')));
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
