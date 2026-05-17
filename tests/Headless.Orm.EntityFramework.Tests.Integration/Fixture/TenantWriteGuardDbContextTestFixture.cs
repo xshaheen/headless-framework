@@ -1,5 +1,3 @@
-// Copyright (c) Mahmoud Shaheen. All rights reserved.
-
 using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.Testing.Helpers;
@@ -13,21 +11,19 @@ using Tests.Fixtures;
 
 namespace Tests.Fixture;
 
-public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
+public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgreSqlContainer;
+    private static readonly Faker _Faker = new();
 
-    private TenantWriteGuardDbContextTestFixture(bool guardEnabled)
-    {
-        GuardEnabled = guardEnabled;
-        _postgreSqlContainer = _CreatePostgreSqlContainer();
-    }
+    private PostgreSqlContainer _postgreSqlContainer = null!;
 
     public static string UserId { get; } = Guid.NewGuid().ToString();
 
-    public static DateTimeOffset Now { get; } = DateTimeOffset.UtcNow;
+    public static DateTimeOffset Now { get; } = _Faker.Date.RecentOffset().ToUniversalTime();
 
-    public bool GuardEnabled { get; }
+    protected abstract bool GuardEnabled { get; }
+
+    protected abstract string ContainerLabel { get; }
 
     public string SqlConnectionString => _postgreSqlContainer.GetConnectionString();
 
@@ -39,39 +35,9 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
 
     public TestCurrentUser CurrentUser { get; } = new() { UserId = UserId };
 
-    public static async Task<TenantWriteGuardDbContextTestFixture> CreateAsync(bool guardEnabled)
+    public async ValueTask InitializeAsync()
     {
-        var fixture = new TenantWriteGuardDbContextTestFixture(guardEnabled);
-
-        try
-        {
-            await fixture._InitializeAsync();
-        }
-        catch
-        {
-            await fixture.DisposeAsync();
-            throw;
-        }
-
-        return fixture;
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (ServiceProvider is not null)
-        {
-            await ServiceProvider.DisposeAsync();
-        }
-
-        if (_postgreSqlContainer is not null)
-        {
-            await _postgreSqlContainer.StopAsync();
-            await _postgreSqlContainer.DisposeAsync();
-        }
-    }
-
-    private async Task _InitializeAsync()
-    {
+        _postgreSqlContainer = _CreatePostgreSqlContainer(ContainerLabel);
         await _postgreSqlContainer.StartAsync();
 
         var services = new ServiceCollection();
@@ -102,10 +68,28 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
         await ServiceProvider.EnsureDbRecreatedAsync<TestHeadlessDbContext>();
     }
 
-    private static PostgreSqlContainer _CreatePostgreSqlContainer()
+    public async ValueTask DisposeAsync()
+    {
+        await ServiceProvider.DisposeAsync();
+        await _postgreSqlContainer.DisposeAsync();
+        GC.SuppressFinalize(this);
+    }
+
+    public async Task ResetAsync()
+    {
+        CurrentTenant.Id = null;
+
+        await using var scope = ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        await db.Tests.IgnoreQueryFilters().ExecuteDeleteAsync();
+        await db.Basics.ExecuteDeleteAsync();
+    }
+
+    private static PostgreSqlContainer _CreatePostgreSqlContainer(string label)
     {
         return new PostgreSqlBuilder(TestImages.PostgreSql)
-            .WithLabel("type", "tenant-write-guard")
+            .WithLabel("type", label)
             .WithDatabase("headless_test")
             .WithUsername("postgres")
             .WithPassword("postgres")
@@ -113,3 +97,22 @@ public sealed class TenantWriteGuardDbContextTestFixture : IAsyncDisposable
             .Build();
     }
 }
+
+public sealed class TenantWriteGuardEnabledFixture : TenantWriteGuardDbContextTestFixtureBase
+{
+    protected override bool GuardEnabled => true;
+
+    protected override string ContainerLabel => "tenant-write-guard-enabled";
+}
+
+public sealed class TenantWriteGuardDisabledFixture : TenantWriteGuardDbContextTestFixtureBase
+{
+    protected override bool GuardEnabled => false;
+
+    protected override string ContainerLabel => "tenant-write-guard-disabled";
+}
+
+[CollectionDefinition(DisableParallelization = true)]
+public sealed class TenantWriteGuardCollection
+    : ICollectionFixture<TenantWriteGuardEnabledFixture>,
+        ICollectionFixture<TenantWriteGuardDisabledFixture>;
