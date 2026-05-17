@@ -480,24 +480,29 @@ internal sealed class InMemoryDataStorage(
                 // MATCHED UPDATE branch. Name/Group/Version are init-only on MemoryMessage; the
                 // identity is keyed on (Version, MessageId, Group) so those values are pinned at
                 // insert time and never need refreshing across redeliveries of the same identity.
-                existing.Origin = message;
-                existing.Content = serialized;
-                existing.Retries = 0;
-                existing.Added = added;
-                existing.ExpiresAt = null;
-                existing.NextRetryAt = initialNextRetryAt;
-                // #10 — only clear the lease when it's already absent or expired. A redelivered
-                // message that arrives while the row is being dispatched would otherwise release the
-                // active pickup lease mid-attempt, letting the retry processor re-pick the row while
-                // the inline retry loop is still in flight. Mirrors the SQL providers' guard in
-                // SqlServerDataStorage._StoreReceivedMessage and PostgreSqlDataStorage._StoreReceivedMessage.
+                //
+                // #10 — gate the ENTIRE update under the active-lease check, matching the SQL
+                // providers' `WHERE ... AND (LockedUntil IS NULL OR LockedUntil <= now())` clause
+                // that suppresses the whole `ON CONFLICT DO UPDATE` when the lease is active.
+                // A redelivered message that arrives mid-dispatch must not mutate Retries (which
+                // would silently rewind the counter), StatusName, Content, or any other column —
+                // not just LockedUntil. The post-fix-#7 Retries-CAS catches the Retries case, but
+                // StatusName/Content/ExceptionInfo writes are not CAS-guarded and would corrupt
+                // the row in subtle ways otherwise.
                 var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-                if (existing.LockedUntil is null || existing.LockedUntil <= nowUtc)
+                var leaseActive = existing.LockedUntil is not null && existing.LockedUntil > nowUtc;
+                if (!leaseActive)
                 {
+                    existing.Origin = message;
+                    existing.Content = serialized;
+                    existing.Retries = 0;
+                    existing.Added = added;
+                    existing.ExpiresAt = null;
+                    existing.NextRetryAt = initialNextRetryAt;
                     existing.LockedUntil = null;
+                    existing.StatusName = StatusName.Scheduled;
+                    existing.ExceptionInfo = null;
                 }
-                existing.StatusName = StatusName.Scheduled;
-                existing.ExceptionInfo = null;
 
                 return ValueTask.FromResult(
                     new MediumMessage
