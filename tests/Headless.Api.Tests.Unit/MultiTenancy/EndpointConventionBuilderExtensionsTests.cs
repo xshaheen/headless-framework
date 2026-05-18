@@ -11,22 +11,29 @@ namespace Tests.MultiTenancy;
 public sealed class EndpointConventionBuilderExtensionsTests
 {
     [Fact]
-    public void should_define_attribute_usage_for_classes_and_methods_only()
+    public void should_define_allow_missing_attribute_usage_for_classes_and_methods_only()
     {
         // when
-        var usage = typeof(AllowMissingTenantAttribute)
-            .GetCustomAttributes(typeof(AttributeUsageAttribute), inherit: false)
-            .Should()
-            .ContainSingle()
-            .Subject.Should()
-            .BeOfType<AttributeUsageAttribute>()
-            .Subject;
+        var usage = _GetUsage<AllowMissingTenantAttribute>();
 
         // then
         usage.ValidOn.Should().Be(AttributeTargets.Class | AttributeTargets.Method);
         usage.Inherited.Should().BeFalse();
         usage.AllowMultiple.Should().BeFalse();
         typeof(AllowMissingTenantAttribute).IsSealed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_define_require_tenant_attribute_usage_for_classes_and_methods_only()
+    {
+        // when
+        var usage = _GetUsage<RequireTenantAttribute>();
+
+        // then
+        usage.ValidOn.Should().Be(AttributeTargets.Class | AttributeTargets.Method);
+        usage.Inherited.Should().BeFalse();
+        usage.AllowMultiple.Should().BeFalse();
+        typeof(RequireTenantAttribute).IsSealed.Should().BeTrue();
     }
 
     [Fact]
@@ -43,6 +50,34 @@ public sealed class EndpointConventionBuilderExtensionsTests
         // then
         result.Should().BeSameAs(conventionBuilder);
         endpointBuilder.Metadata.OfType<AllowMissingTenantAttribute>().Should().ContainSingle();
+    }
+
+    [Fact]
+    public void should_attach_require_tenant_metadata_to_endpoint_builder()
+    {
+        // given
+        var conventionBuilder = new CapturingEndpointConventionBuilder();
+        var endpointBuilder = new RouteEndpointBuilder(_ => Task.CompletedTask, RoutePatternFactory.Parse("/"), 0);
+
+        // when
+        var result = conventionBuilder.RequireTenant();
+        conventionBuilder.Apply(endpointBuilder);
+
+        // then
+        result.Should().BeSameAs(conventionBuilder);
+        endpointBuilder.Metadata.OfType<RequireTenantAttribute>().Should().ContainSingle();
+    }
+
+    private static AttributeUsageAttribute _GetUsage<TAttribute>()
+        where TAttribute : Attribute
+    {
+        return typeof(TAttribute)
+            .GetCustomAttributes(typeof(AttributeUsageAttribute), inherit: false)
+            .Should()
+            .ContainSingle()
+            .Subject.Should()
+            .BeOfType<AttributeUsageAttribute>()
+            .Subject;
     }
 
     private sealed class CapturingEndpointConventionBuilder : IEndpointConventionBuilder

@@ -51,9 +51,7 @@ public interface IProblemDetailsCreator
 
     /// <summary>
     /// Builds a normalized 400 <see cref="ProblemDetails"/>. Callers attach a stable
-    /// <see cref="ErrorDescriptor"/> to discriminate specific 400 cases (e.g., the cross-layer
-    /// "missing tenant context" guard uses
-    /// <c>HeadlessProblemDetailsConstants.Errors.TenantContextRequired</c>).
+    /// <see cref="ErrorDescriptor"/> to discriminate specific malformed-request cases.
     /// </summary>
     /// <param name="detail">
     /// Optional detail message. Defaults to the framework's generic malformed-syntax message
@@ -64,12 +62,6 @@ public interface IProblemDetailsCreator
     /// on this to handle specific 400 cases without relying on detail text.
     /// </param>
     ProblemDetails BadRequest(string? detail = null, ErrorDescriptor? error = null);
-
-    /// <summary>
-    /// Builds a normalized 403 <see cref="ProblemDetails"/> for requests that require an ambient
-    /// tenant context but none was resolved.
-    /// </summary>
-    ProblemDetails TenantContextRequired();
 
     /// <summary>
     /// Builds a normalized 429 <see cref="ProblemDetails"/> for rate-limited responses.
@@ -115,7 +107,19 @@ public interface IProblemDetailsCreator
     /// collection is non-empty. Pass <see langword="null"/> or an empty collection to emit a 403
     /// carrying no machine-readable discriminator (the default for opaque permission denials).
     /// </param>
-    ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor>? errors);
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic forbidden message when
+    /// <see langword="null"/>.
+    /// </param>
+    /// <param name="error">
+    /// Optional <see cref="ErrorDescriptor"/> written to <c>Extensions["error"]</c>. Use this for a
+    /// single stable discriminator such as a tenant-context failure.
+    /// </param>
+    ProblemDetails Forbidden(
+        IReadOnlyCollection<ErrorDescriptor>? errors = null,
+        string? detail = null,
+        ErrorDescriptor? error = null
+    );
 
     /// <summary>
     /// Builds a normalized 401 <see cref="ProblemDetails"/> for unauthenticated requests (typically
@@ -211,21 +215,6 @@ public sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails TenantContextRequired()
-    {
-        var problemDetails = new ProblemDetails
-        {
-            Status = StatusCodes.Status403Forbidden,
-            Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-            Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-        };
-
-        _SetError(problemDetails, HeadlessProblemDetailsConstants.Errors.TenantContextRequired);
-        _Normalize(problemDetails);
-
-        return problemDetails;
-    }
-
     public ProblemDetails UnprocessableEntity(Dictionary<string, List<ErrorDescriptor>> errors)
     {
         var problemDetails = new ProblemDetails
@@ -256,13 +245,17 @@ public sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails Forbidden(params IReadOnlyCollection<ErrorDescriptor>? errors)
+    public ProblemDetails Forbidden(
+        IReadOnlyCollection<ErrorDescriptor>? errors = null,
+        string? detail = null,
+        ErrorDescriptor? error = null
+    )
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status403Forbidden,
             Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-            Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.Forbidden,
         };
 
         if (errors is { Count: > 0 })
@@ -270,6 +263,7 @@ public sealed class ProblemDetailsCreator(
             problemDetails.Extensions["errors"] = errors;
         }
 
+        _SetError(problemDetails, error);
         _Normalize(problemDetails);
 
         return problemDetails;

@@ -49,6 +49,53 @@ public sealed class TenantRequirementHandlerTests
         context.HasSucceeded.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_fail_when_endpoint_requires_tenant_after_allowing_missing_tenant()
+    {
+        // given
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        httpContext.SetEndpoint(
+            new Endpoint(
+                _ => Task.CompletedTask,
+                new EndpointMetadataCollection(new AllowMissingTenantAttribute(), new RequireTenantAttribute()),
+                displayName: "required"
+            )
+        );
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasFailed.Should().BeTrue();
+        context.FailureReasons.Should().ContainSingle(reason => reason.Message == TenantRequirement.FailureReason);
+    }
+
+    [Fact]
+    public async Task should_succeed_when_endpoint_allows_missing_tenant_after_requiring_tenant()
+    {
+        // given
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        httpContext.SetEndpoint(
+            new Endpoint(
+                _ => Task.CompletedTask,
+                new EndpointMetadataCollection(new RequireTenantAttribute(), new AllowMissingTenantAttribute()),
+                displayName: "allowed"
+            )
+        );
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasSucceeded.Should().BeTrue();
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

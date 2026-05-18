@@ -586,7 +586,12 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given - IProblemDetailsCreator factory throws while building the ProblemDetails
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var creator = Substitute.For<IProblemDetailsCreator>();
-        creator.TenantContextRequired().Returns(_ => throw new InvalidOperationException("creator failure"));
+        creator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(_ => throw new InvalidOperationException("creator failure"));
         var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
         var handler = _CreateHandler(problemDetailsService, creator, logger);
         var httpContext = new DefaultHttpContext();

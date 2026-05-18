@@ -30,7 +30,7 @@ dotnet add package Headless.Api.Core
 - Request cancellation handling
 - Diagnostic listeners for debugging (`AddHeadlessApiDiagnosticListeners`)
 - Status codes rewriter (`AddStatusCodesRewriterMiddleware()`)
-- HTTP tenant authorization (`TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`)
+- HTTP tenant authorization (`TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`)
 - Kestrel limits and default API conventions via `ConfigureHeadlessDefaultApi()`
 
 ## Building Blocks Quick Reference
@@ -67,10 +67,12 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-app.MapGet("/public-status", () => Results.Ok()).AllowMissingTenant();
+var publicGroup = app.MapGroup("/public").AllowMissingTenant();
+publicGroup.MapGet("/status", () => Results.Ok());
+publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 ```
 
-`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or endpoint metadata carries `[AllowMissingTenant]`. Tenant failures return the same structured 403 `g:tenant-required` ProblemDetails shape as the exception-handler fallback.
+`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant-required` ProblemDetails shape as the exception-handler fallback.
 
 ## Exception Mapping
 

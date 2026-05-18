@@ -14,4 +14,10 @@ public static class EndpointConventionBuilderExtensions
     {
         return builder.WithMetadata(new AllowMissingTenantAttribute());
     }
+
+    public static TBuilder RequireTenant<TBuilder>(this TBuilder builder)
+        where TBuilder : IEndpointConventionBuilder
+    {
+        return builder.WithMetadata(new RequireTenantAttribute());
+    }
 }

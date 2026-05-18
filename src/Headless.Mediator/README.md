@@ -90,7 +90,7 @@ builder.Services.AddMediatorLoggingBehaviors(ServiceLifetime.Transient);
 
 ## Tenancy
 
-Tenant enforcement is an HTTP authorization concern in `Headless.Api.Core`. Use `.Authorization(auth => auth.RequireTenant())`, `TenantRequirement`, and endpoint-level `[AllowMissingTenant]` / `.AllowMissingTenant()` for tenant-aware ASP.NET Core hosts.
+Tenant enforcement is an HTTP authorization concern in `Headless.Api.Core`. Use `.Authorization(auth => auth.RequireTenant())`, `TenantRequirement`, endpoint-level `[AllowMissingTenant]` / `.AllowMissingTenant()`, and `[RequireTenant]` / `.RequireTenant()` for tenant-aware ASP.NET Core hosts.
 
 For worker, console, and message-consumer paths, establish tenant scope explicitly around the work:
 
