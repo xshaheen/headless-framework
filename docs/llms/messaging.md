@@ -71,6 +71,8 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
+        - [Tag Enrichment Pipeline](#tag-enrichment-pipeline)
+        - [Built-in Tag Reference](#built-in-tag-reference)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
 - [Headless.Messaging.AwsSqs](#headlessmessagingawssqs)
@@ -1140,18 +1142,19 @@ dotnet add package Headless.Messaging.OpenTelemetry
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource("Headless.Messaging")
+        .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-    options.UseOpenTelemetry();
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
+
+`AddMessagingInstrumentation` registers the `Headless.Messaging` `ActivitySource` automatically — no separate `.AddSource(...)` call is needed.
 
 ## Configuration
 
@@ -1168,7 +1171,9 @@ builder.Services.AddOpenTelemetry()
         .AddJaegerExporter());
 ```
 
-Custom enrichers implement `IActivityTagEnricher`:
+### Tag Enrichment Pipeline
+
+`IActivityTagEnricher` is the extension point for attaching custom tags to every messaging span (publish, persist, consume, subscriber-invoke). The enricher contract:
 
 ```csharp
 public sealed class MyCustomEnricher : IActivityTagEnricher
@@ -1178,34 +1183,49 @@ public sealed class MyCustomEnricher : IActivityTagEnricher
         in MessagingEnrichmentContext context,
         CancellationToken cancellationToken = default)
     {
-        // Add custom tags here. Return synchronously for the tag to actually attach
-        // — see the Enrich XML doc for the fire-and-forget async-tail caveat.
+        // Read ambient context, add tags synchronously, return.
         activity.SetTag("app.custom_tag", "value");
         return ValueTask.CompletedTask;
     }
 }
 ```
 
-`MessagingEnrichmentContext` exposes `Kind`, `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers`. An enricher that throws is isolated: the exception is swallowed (and logged as a warning when a logger is available) so subsequent enrichers and the span itself are unaffected.
+`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
 
-### Built-in tag names
+**Ordering.** Built-in enrichers run first in this fixed order, each gated by its suppression option:
 
-The `MessagingTags` static class exposes the framework's built-in tag names as public constants
-so consumer code (analyzers, enrichers, suppression filters) doesn't hardcode strings:
+1. `TenantIdTagEnricher` — emits `headless.messaging.tenant_id` (gated by `SuppressTenantIdTag`).
+2. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
 
-- `MessagingTags.TenantId` — `"headless.messaging.tenant_id"` — emitted by the built-in
-  `TenantIdTagEnricher` unless `SuppressTenantIdTag = true`.
-- `MessagingTags.RetryCount` — `"headless.messaging.retry_count"` — emitted by the built-in
-  `RetryCountTagEnricher` on subscriber-invoke spans when retry count > 0, unless
-  `SuppressRetryCountTag = true`.
-- `MessagingTags.PersistenceDurationMs` — `"headless.messaging.persistence.duration_ms"` — emitted
-  on the persist activity's success event.
-- `MessagingTags.SendDurationMs` — `"headless.messaging.send.duration_ms"` — emitted on the
-  publish activity's success event.
-- `MessagingTags.ReceiveDurationMs` — `"headless.messaging.receive.duration_ms"` — emitted on the
-  consume activity's success event.
-- `MessagingTags.InvokeDurationMs` — `"headless.messaging.invoke.duration_ms"` — emitted on the
-  subscriber-invoke activity's success event.
+Custom enrichers registered via `AddEnricher(...)` are appended after the built-ins, in insertion order. The enricher list is snapshotted at `AddMessagingInstrumentation` time; calls to `AddEnricher` afterwards are ignored.
+
+**Async-tail caveat.** The pipeline awaits only the synchronous portion of the returned `ValueTask`. If `Enrich` returns a `ValueTask` that completes asynchronously, the pipeline does **not** await it — the enricher becomes fire-and-forget from that point, and any tags added after the activity stops are dropped by the OpenTelemetry SDK. Enrichers that need async data should pre-resolve it (cache hits, ambient context) and finish synchronously.
+
+**Exception isolation.** An enricher that throws (synchronously or in its async tail) is isolated: the exception is logged as a warning when a logger is wired and the next enricher runs normally. The messaging operation itself is unaffected.
+
+**Reserved namespaces.** Enrichers must not write tags in the following namespaces; the framework or the OpenTelemetry SDK silently overwrites them and produces inconsistent traces:
+
+- `messaging.*` — OpenTelemetry messaging semantic conventions.
+- `server.*` — broker / destination addressing.
+- `headless.messaging.*` — framework ground truth (`tenant_id`, `retry_count`, duration metrics).
+- `exception.*` — OTel exception convention emitted at activity stop.
+
+Use an application- or product-scoped namespace such as `app.<feature>.<field>` for custom tags.
+
+**Header PII.** `MessagingEnrichmentContext.Headers` is the raw wire-header dictionary. On the consume side it is untrusted external data and may include authentication tokens, propagator state, internal IDs, or PII. Read only the specific keys your enricher needs; do not serialize the dictionary wholesale onto activity tags.
+
+### Built-in Tag Reference
+
+The `MessagingTags` static class exposes built-in tag names as public constants so consumer code (analyzers, enrichers, suppression filters) does not hardcode strings.
+
+| Constant                              | Wire tag                                       | Emitted on                                | Suppression                |
+|---------------------------------------|------------------------------------------------|-------------------------------------------|----------------------------|
+| `MessagingTags.TenantId`              | `headless.messaging.tenant_id`                 | every span when the message has a tenant  | `SuppressTenantIdTag`      |
+| `MessagingTags.RetryCount`            | `headless.messaging.retry_count`               | subscriber-invoke spans when `RetryCount > 0` | `SuppressRetryCountTag` |
+| `MessagingTags.PersistenceDurationMs` | `headless.messaging.persistence.duration_ms`   | persist activity success event            | — (always emitted)         |
+| `MessagingTags.SendDurationMs`        | `headless.messaging.send.duration_ms`          | publish activity success event            | — (always emitted)         |
+| `MessagingTags.ReceiveDurationMs`     | `headless.messaging.receive.duration_ms`       | consume activity success event            | — (always emitted)         |
+| `MessagingTags.InvokeDurationMs`      | `headless.messaging.invoke.duration_ms`        | subscriber-invoke activity success event  | — (always emitted)         |
 
 ## Dependencies
 
