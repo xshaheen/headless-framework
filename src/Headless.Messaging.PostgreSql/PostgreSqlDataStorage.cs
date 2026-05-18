@@ -63,97 +63,12 @@ public sealed class PostgreSqlDataStorage(
     /// </summary>
     private static readonly TimeSpan _QueuedMessageLookback = TimeSpan.FromMinutes(1);
 
-    private readonly string _lockTable = initializer.GetLockTableName();
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
     public IMonitoringApi GetMonitoringApi()
     {
         return new PostgreSqlMonitoringApi(postgreSqlOptions, messagingOptions, initializer, serializer, timeProvider);
-    }
-
-    public async ValueTask<bool> AcquireLockAsync(
-        string key,
-        TimeSpan ttl,
-        string instance,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var sql =
-            $"UPDATE {_lockTable} SET \"Instance\"=@Instance,\"LastLockTime\"=@LastLockTime WHERE \"Key\"=@Key AND \"LastLockTime\" < @TTL;";
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-
-        object[] sqlParams =
-        [
-            new NpgsqlParameter("@Instance", instance),
-            new NpgsqlParameter("@LastLockTime", timeProvider.GetUtcNow().UtcDateTime),
-            new NpgsqlParameter("@Key", key),
-            new NpgsqlParameter("@TTL", timeProvider.GetUtcNow().UtcDateTime.Subtract(ttl)),
-        ];
-
-        var opResult = await connection
-            .ExecuteNonQueryAsync(
-                sql,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        return opResult > 0;
-    }
-
-    public async ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
-    {
-        var sql =
-            $"UPDATE {_lockTable} SET \"Instance\"='',\"LastLockTime\"=@LastLockTime WHERE \"Key\"=@Key AND \"Instance\"=@Instance;";
-
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-
-        object[] sqlParams =
-        [
-            new NpgsqlParameter("@Instance", instance),
-            new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
-            new NpgsqlParameter("@Key", key),
-        ];
-
-        await connection
-            .ExecuteNonQueryAsync(
-                sql,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
-    }
-
-    public async ValueTask RenewLockAsync(
-        string key,
-        TimeSpan ttl,
-        string instance,
-        CancellationToken cancellationToken = default
-    )
-    {
-        var sql =
-            $"UPDATE {_lockTable} SET \"LastLockTime\"=\"LastLockTime\"+(interval '1 second' * @TtlSeconds) WHERE \"Key\"=@Key AND \"Instance\"=@Instance;";
-
-        await using var connection = postgreSqlOptions.Value.CreateConnection();
-
-        object[] sqlParams =
-        [
-            new NpgsqlParameter("@Instance", instance),
-            new NpgsqlParameter("@Key", key),
-            new NpgsqlParameter("@TtlSeconds", ttl.TotalSeconds),
-        ];
-
-        await connection
-            .ExecuteNonQueryAsync(
-                sql,
-                commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
     }
 
     public async ValueTask ChangePublishStateToDelayedAsync(

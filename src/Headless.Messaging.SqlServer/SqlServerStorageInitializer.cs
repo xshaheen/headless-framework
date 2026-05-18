@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
@@ -29,11 +28,6 @@ public sealed class SqlServerStorageInitializer(
         return $"{options.Value.Schema}.Received";
     }
 
-    public string GetLockTableName()
-    {
-        return $"{options.Value.Schema}.Lock";
-    }
-
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -44,20 +38,6 @@ public sealed class SqlServerStorageInitializer(
         var sql = _CreateDbTablesScript(options.Value.Schema);
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        // Only include lock parameters if UseStorageLock is enabled
-        var sqlParams = new List<object>();
-        if (messagingOptions.Value.UseStorageLock)
-        {
-            sqlParams.Add(new SqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"));
-            sqlParams.Add(new SqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"));
-            sqlParams.Add(
-                new SqlParameter("@LastLockTime", new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc))
-                {
-                    SqlDbType = SqlDbType.DateTime2,
-                }
-            );
-        }
 
         // No wrapping transaction: each idempotent block in the script is already protected by
         // its own IF NOT EXISTS guard plus a narrow TRY/CATCH that swallows only the
@@ -73,7 +53,6 @@ public sealed class SqlServerStorageInitializer(
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams.AsArray(),
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -86,7 +65,6 @@ public sealed class SqlServerStorageInitializer(
         // Use underscore instead of period in constraint/index names for Azure SQL Edge compatibility
         var receivedPrefix = $"{schema}_Received";
         var publishedPrefix = $"{schema}_Published";
-        var lockPrefix = $"{schema}_Lock";
 
         // Simplified SQL for Azure SQL Edge compatibility (no TEXTIMAGE_ON, simpler index options).
         // Each idempotent block is wrapped in BEGIN TRY ... BEGIN CATCH to absorb the narrow set of
@@ -241,42 +219,6 @@ public sealed class SqlServerStorageInitializer(
             END CATCH;
 
 """;
-
-        if (messagingOptions.Value.UseStorageLock)
-        {
-            batchSql += $"""
-                BEGIN TRY
-                    IF OBJECT_ID(N'{GetLockTableName()}',N'U') IS NULL
-                    BEGIN
-                        CREATE TABLE {GetLockTableName()}(
-                            [Key] [nvarchar](128) NOT NULL,
-                            [Instance] [nvarchar](256) NOT NULL,
-                            [LastLockTime] [datetime2](7) NOT NULL,
-                            CONSTRAINT [PK_{lockPrefix}] PRIMARY KEY CLUSTERED ([Key] ASC)
-                        );
-                    END;
-                END TRY
-                BEGIN CATCH
-                    IF ERROR_NUMBER() <> 2714 THROW;
-                END CATCH;
-
-                BEGIN TRY
-                    IF NOT EXISTS (SELECT 1 FROM {GetLockTableName()} WHERE [Key] = @PubKey)
-                        INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@PubKey,'',@LastLockTime);
-                END TRY
-                BEGIN CATCH
-                    IF ERROR_NUMBER() <> 2627 THROW;
-                END CATCH;
-
-                BEGIN TRY
-                    IF NOT EXISTS (SELECT 1 FROM {GetLockTableName()} WHERE [Key] = @RecKey)
-                        INSERT INTO {GetLockTableName()} ([Key],[Instance],[LastLockTime]) VALUES(@RecKey,'',@LastLockTime);
-                END TRY
-                BEGIN CATCH
-                    IF ERROR_NUMBER() <> 2627 THROW;
-                END CATCH;
-                """;
-        }
 
         return batchSql;
     }

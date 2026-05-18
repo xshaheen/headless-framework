@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -123,6 +124,10 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
+
+        // Fallback lock provider — always-grant no-op. Real lock providers (Redis, SQL, etc.) registered
+        // before AddHeadlessMessaging take precedence because TryAddSingleton is first-registration-wins.
+        services.TryAddSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>();
 
         //Processors
         services.TryAddEnumerable(

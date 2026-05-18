@@ -8,9 +8,6 @@ public sealed class DataStorageCapabilities
 {
     public static DataStorageCapabilities Default { get; } = new();
 
-    /// <summary>Whether the storage supports distributed locking.</summary>
-    public bool SupportsLocking { get; init; } = true;
-
     /// <summary>Whether the storage supports message expiration/TTL.</summary>
     public bool SupportsExpiration { get; init; } = true;
 

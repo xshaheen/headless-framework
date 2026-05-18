@@ -12,17 +12,6 @@ public interface IDataStorage
     // Dashboard api
     IMonitoringApi GetMonitoringApi();
 
-    ValueTask<bool> AcquireLockAsync(
-        string key,
-        TimeSpan ttl,
-        string instance,
-        CancellationToken cancellationToken = default
-    );
-
-    ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default);
-
-    ValueTask RenewLockAsync(string key, TimeSpan ttl, string instance, CancellationToken cancellationToken = default);
-
     ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default);
 
     /// <summary>

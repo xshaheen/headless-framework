@@ -9,6 +9,4 @@ public interface IStorageInitializer
     string GetPublishedTableName();
 
     string GetReceivedTableName();
-
-    string GetLockTableName();
 }

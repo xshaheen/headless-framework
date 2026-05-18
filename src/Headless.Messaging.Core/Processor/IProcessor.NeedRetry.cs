@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -29,13 +30,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly TimeSpan _baseInterval;
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
-    private readonly IDataStorage _dataStorage;
-    private readonly string _instance;
+    private readonly IDistributedLockProvider _lockProvider;
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
     private Task? _failedRetryConsumeTask;
     private Task? _publishedRetryConsumeTask;
+    private IDistributedLock? _receivedRetryHandle;
 
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
@@ -76,7 +77,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         IOptions<RetryProcessorOptions> retryOptions,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
-        IDataStorage dataStorage,
+        IDistributedLockProvider lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null
     )
     {
@@ -85,16 +86,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _dispatcher = dispatcher;
         _baseInterval = retryOptions.Value.BaseInterval;
         _currentIntervalTicks = _baseInterval.Ticks;
-        _dataStorage = dataStorage;
+        _lockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
         _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
-
-        _instance = (
-            (FormattableString)$"{Helper.GetInstanceHostname()}_{SnowflakeIdLongIdGenerator.GenerateWorkerId()}"
-        ).ToString(CultureInfo.InvariantCulture);
     }
 
     /// <inheritdoc />
@@ -173,12 +170,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
         {
-            await _dataStorage.RenewLockAsync(
-                $"received_retry_{_options.Value.Version}",
-                _GetLockTtl(),
-                _instance,
-                context.CancellationToken
-            );
+            var handle = _receivedRetryHandle;
+            if (handle is not null)
+            {
+                await handle.RenewAsync(_GetLockTtl(), context.CancellationToken).ConfigureAwait(false);
+            }
 
             await context
                 .WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks)))
@@ -217,21 +213,21 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         context.ThrowIfStopping();
 
-        var lockName = $"publish_retry_{_options.Value.Version}";
-        var lockAcquired = false;
-        if (
-            _options.Value.UseStorageLock
-            && !(
-                lockAcquired = await connection.AcquireLockAsync(
-                    lockName,
-                    _GetLockTtl(),
-                    _instance,
-                    context.CancellationToken
-                )
-            )
-        )
+        IDistributedLock? acquiredHandle = null;
+        if (_options.Value.UseStorageLock)
         {
-            return;
+            acquiredHandle = await _lockProvider
+                .TryAcquireAsync(
+                    $"messaging.publish-retry-{_options.Value.Version}",
+                    timeUntilExpires: _GetLockTtl(),
+                    acquireTimeout: TimeSpan.Zero,
+                    cancellationToken: context.CancellationToken
+                )
+                .ConfigureAwait(false);
+            if (acquiredHandle is null)
+            {
+                return;
+            }
         }
 
         try
@@ -252,9 +248,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         finally
         {
-            if (lockAcquired)
+            if (acquiredHandle is not null)
             {
-                await connection.ReleaseLockAsync(lockName, _instance, CancellationToken.None).ConfigureAwait(false);
+                await acquiredHandle.DisposeAsync().ConfigureAwait(false);
             }
         }
     }
@@ -263,21 +259,22 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         context.ThrowIfStopping();
 
-        var lockName = $"received_retry_{_options.Value.Version}";
-        var lockAcquired = false;
-        if (
-            _options.Value.UseStorageLock
-            && !(
-                lockAcquired = await connection.AcquireLockAsync(
-                    lockName,
-                    _GetLockTtl(),
-                    _instance,
-                    context.CancellationToken
-                )
-            )
-        )
+        IDistributedLock? acquiredHandle = null;
+        if (_options.Value.UseStorageLock)
         {
-            return;
+            acquiredHandle = await _lockProvider
+                .TryAcquireAsync(
+                    $"messaging.receive-retry-{_options.Value.Version}",
+                    timeUntilExpires: _GetLockTtl(),
+                    acquireTimeout: TimeSpan.Zero,
+                    cancellationToken: context.CancellationToken
+                )
+                .ConfigureAwait(false);
+            if (acquiredHandle is null)
+            {
+                return;
+            }
+            _receivedRetryHandle = acquiredHandle;
         }
 
         try
@@ -317,9 +314,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         finally
         {
-            if (lockAcquired)
+            _receivedRetryHandle = null;
+            if (acquiredHandle is not null)
             {
-                await connection.ReleaseLockAsync(lockName, _instance, CancellationToken.None).ConfigureAwait(false);
+                await acquiredHandle.DisposeAsync().ConfigureAwait(false);
             }
         }
     }

@@ -28,11 +28,6 @@ public sealed class PostgreSqlStorageInitializer(
         return $"\"{postgreSqlOptions.Value.Schema}\".\"received\"";
     }
 
-    public string GetLockTableName()
-    {
-        return $"\"{postgreSqlOptions.Value.Schema}\".\"lock\"";
-    }
-
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -44,18 +39,6 @@ public sealed class PostgreSqlStorageInitializer(
         await using var connection = postgreSqlOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
-        // Only include lock parameters if UseStorageLock is enabled. Npgsql throws at execute time
-        // when parameters are present but the SQL has no matching placeholders — mirrors the existing
-        // guard in SqlServerStorageInitializer.
-        object[] sqlParams = messagingOptions.Value.UseStorageLock
-            ?
-            [
-                new NpgsqlParameter("@PubKey", $"publish_retry_{messagingOptions.Value.Version}"),
-                new NpgsqlParameter("@RecKey", $"received_retry_{messagingOptions.Value.Version}"),
-                new NpgsqlParameter("@LastLockTime", DateTime.SpecifyKind(DateTime.MinValue, DateTimeKind.Utc)),
-            ]
-            : [];
-
         // PostgreSQL supports transactional DDL — wrap the batch so a mid-script failure
         // (network drop, broker-side abort) cannot leave the schema half-initialized.
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -65,7 +48,6 @@ public sealed class PostgreSqlStorageInitializer(
                 sql,
                 transaction: transaction,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: sqlParams,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -239,19 +221,6 @@ public sealed class PostgreSqlStorageInitializer(
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
             """;
-
-        if (messagingOptions.Value.UseStorageLock)
-        {
-            batchSql += $"""
-                CREATE TABLE IF NOT EXISTS {GetLockTableName()}(
-                	"Key" VARCHAR(128) PRIMARY KEY NOT NULL,
-                    "Instance" VARCHAR(256),
-                	"LastLockTime" TIMESTAMPTZ NOT NULL
-                );
-                INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@PubKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
-                INSERT INTO {GetLockTableName()} ("Key","Instance","LastLockTime") VALUES(@RecKey,'',@LastLockTime) ON CONFLICT DO NOTHING;
-                """;
-        }
 
         return batchSql;
     }

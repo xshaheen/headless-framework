@@ -23,9 +23,6 @@ internal sealed class InMemoryDataStorage(
 
     public ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
 
-    internal ConcurrentDictionary<string, (string Instance, DateTime ExpiresAt)> Locks { get; } =
-        new(StringComparer.Ordinal);
-
     // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
     // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
@@ -49,90 +46,6 @@ internal sealed class InMemoryDataStorage(
         PublishedMessages.Clear();
         ReceivedMessages.Clear();
         _receivedIdentityIndex.Clear();
-        Locks.Clear();
-    }
-
-    public ValueTask<bool> AcquireLockAsync(
-        string key,
-        TimeSpan ttl,
-        string instance,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var expiresAt = now.Add(ttl);
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!Locks.TryGetValue(key, out var current))
-            {
-                if (Locks.TryAdd(key, (instance, expiresAt)))
-                {
-                    return ValueTask.FromResult(true);
-                }
-
-                continue;
-            }
-
-            if (current.ExpiresAt > now)
-            {
-                return ValueTask.FromResult(false);
-            }
-
-            if (Locks.TryUpdate(key, (instance, expiresAt), current))
-            {
-                return ValueTask.FromResult(true);
-            }
-        }
-    }
-
-    public ValueTask ReleaseLockAsync(string key, string instance, CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        while (Locks.TryGetValue(key, out var current))
-        {
-            if (!string.Equals(current.Instance, instance, StringComparison.Ordinal))
-            {
-                return ValueTask.CompletedTask;
-            }
-
-            if (Locks.TryUpdate(key, (string.Empty, DateTime.MinValue), current))
-            {
-                return ValueTask.CompletedTask;
-            }
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    public ValueTask RenewLockAsync(
-        string key,
-        TimeSpan ttl,
-        string instance,
-        CancellationToken cancellationToken = default
-    )
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        while (Locks.TryGetValue(key, out var current))
-        {
-            if (!string.Equals(current.Instance, instance, StringComparison.Ordinal))
-            {
-                return ValueTask.CompletedTask;
-            }
-
-            if (Locks.TryUpdate(key, (instance, current.ExpiresAt.Add(ttl)), current))
-            {
-                return ValueTask.CompletedTask;
-            }
-        }
-
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default)

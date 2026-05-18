@@ -114,72 +114,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
-    public async Task should_create_lock_table_when_storage_lock_enabled()
-    {
-        // given
-        const string schema = "lock_test";
-        var initializer = _CreateInitializer(schema, useStorageLock: true);
-
-        // when
-        await initializer.InitializeAsync(AbortToken);
-
-        // then
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-
-        var tableExists = await connection.QueryFirstOrDefaultAsync<int>(
-            """
-            SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-            WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Lock'
-            """,
-            new { Schema = schema }
-        );
-
-        tableExists.Should().Be(1);
-
-        // cleanup
-        await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TABLE IF EXISTS [{schema}].Lock; DROP SCHEMA IF EXISTS [{schema}]"
-        );
-    }
-
-    [Fact]
-    public async Task should_not_create_lock_table_when_storage_lock_disabled()
-    {
-        // given
-        const string schema = "no_lock_test";
-        var initializer = _CreateInitializer(schema, useStorageLock: false);
-
-        // when
-        await initializer.InitializeAsync(AbortToken);
-
-        // then
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-
-        var tableExists = await connection.QueryFirstOrDefaultAsync<int?>(
-            new CommandDefinition(
-                """
-                SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-                WHERE TABLE_SCHEMA = @Schema AND TABLE_NAME = 'Lock'
-                """,
-                new { Schema = schema },
-                cancellationToken: AbortToken
-            )
-        );
-
-        tableExists.Should().BeNull();
-
-        // cleanup
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
-                cancellationToken: AbortToken
-            )
-        );
-    }
-
-    [Fact]
     public async Task should_create_indexes_on_published_table()
     {
         // given
@@ -328,7 +262,6 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // when / then
         initializer.GetPublishedTableName().Should().Be($"{schema}.Published");
         initializer.GetReceivedTableName().Should().Be($"{schema}.Received");
-        initializer.GetLockTableName().Should().Be($"{schema}.Lock");
     }
 
     [Fact]

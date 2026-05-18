@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -52,7 +53,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     )
     {
         var dispatcher = Substitute.For<IDispatcher>();
-        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
         var cb = Substitute.For<ICircuitBreakerMonitor>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
@@ -71,7 +72,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
-            dataStorage,
+            lockProvider,
             cb
         );
 
@@ -147,6 +148,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — no circuit breaker in DI
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions();
@@ -157,7 +159,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             Options.Create(retryProcessorOptions),
             logger,
             dispatcher,
-            dataStorage
+            lockProvider
         );
 
         var msg1 = _CreateMessage("group-a");
@@ -629,12 +631,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Name ?? string.Empty)));
 
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
             Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
             logger,
             dispatcher,
-            dataStorage
+            lockProvider
         );
 
         // Received-pickup throws on the first three cycles, succeeds on the fourth.
