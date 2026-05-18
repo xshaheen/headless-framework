@@ -211,6 +211,8 @@ public sealed class PublicBootstrapController : ControllerBase
 
 When a non-opted-out HTTP request runs without a tenant, `TenantRequirementHandler` fails the authorization context with the `TenantContextRequired` reason. `TenantAuthorizationMiddlewareResultHandler` maps that failure to the normalized 403 response documented in [HTTP Failure Mapping](#http-failure-mapping). Other authorization failures continue through the previously effective ASP.NET Core authorization result handler.
 
+Custom `IAuthorizationMiddlewareResultHandler` ordering: register app-owned result handlers before `.Authorization(auth => auth.RequireTenant())` when Headless should decorate them. Headless captures the previously effective handler and delegates every non-tenant authorization result to it. If the app registers or replaces `IAuthorizationMiddlewareResultHandler` after Headless, DI last-registration-wins behavior replaces the Headless tenant mapper. Apps that need their own decorator can use `Headless.Hosting`'s `services.Decorate<IAuthorizationMiddlewareResultHandler, TDecorator>()` after the inner handler is registered.
+
 ## Tenant Semantics
 
 There are three useful tenant states:

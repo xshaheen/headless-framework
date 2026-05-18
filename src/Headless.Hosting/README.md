@@ -8,7 +8,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 
 ## Key Features
 
-- DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `AddOrReplaceFallbackSingleton`, `Unregister<T>`
+- DI extensions: `AddIf`, `AddIfElse`, `Decorate`, `TryDecorate`, `AddOrReplace*`, `AddOrReplaceFallbackSingleton`, `Unregister<T>`
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
@@ -38,6 +38,9 @@ builder.Services.AddOptionsWithFluentValidation<MyOptions, MyOptionsValidator>("
 
 // Replace existing service
 builder.Services.AddOrReplaceSingleton<IMyService, BetterMyService>();
+
+// Decorate existing services while preserving their original lifetime
+builder.Services.Decorate<IMyService, AuditedMyService>();
 ```
 
 ## Usage
@@ -75,6 +78,18 @@ services.AddOrReplaceScoped<IService, NewImpl>();
 services.AddOrReplaceSingleton<IService>(sp => new Impl(sp.GetRequired<IDep>()));
 services.AddOrReplaceFallbackSingleton<IService, NullService, DefaultService>();
 ```
+
+### Service Decoration
+
+```csharp
+services.AddSingleton<IService, Service>();
+services.Decorate<IService, AuditedService>();
+
+services.Decorate<IService>((inner, serviceProvider) =>
+    new AuditedService(inner, serviceProvider.GetRequiredService<ILogger<AuditedService>>()));
+```
+
+`Decorate` wraps all existing unkeyed registrations for the service type and preserves each original lifetime. Use `TryDecorate` when the service may not be registered.
 
 ## Configuration
 

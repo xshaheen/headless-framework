@@ -119,6 +119,170 @@ public static class DependencyInjectionExtensions
 
     #endregion
 
+    #region Decorate
+
+    /// <summary>
+    /// Decorates all existing unkeyed registrations for <typeparamref name="TService"/> with
+    /// <typeparamref name="TDecorator"/>, preserving each original registration's lifetime.
+    /// </summary>
+    /// <typeparam name="TService">The service type to decorate.</typeparam>
+    /// <typeparam name="TDecorator">The decorator type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
+    /// </exception>
+    public static IServiceCollection Decorate<TService, TDecorator>(this IServiceCollection services)
+        where TService : class
+        where TDecorator : class, TService
+    {
+        if (!services.TryDecorate<TService, TDecorator>())
+        {
+            throw new InvalidOperationException($"Service '{typeof(TService).Name}' is not registered.");
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Decorates all existing unkeyed registrations for <typeparamref name="TService"/> with
+    /// <paramref name="decorator"/>, preserving each original registration's lifetime.
+    /// </summary>
+    /// <typeparam name="TService">The service type to decorate.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
+    /// <returns>The same service collection.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when no unkeyed registration exists for <typeparamref name="TService"/>.
+    /// </exception>
+    public static IServiceCollection Decorate<TService>(
+        this IServiceCollection services,
+        Func<TService, IServiceProvider, TService> decorator
+    )
+        where TService : class
+    {
+        if (!services.TryDecorate(decorator))
+        {
+            throw new InvalidOperationException($"Service '{typeof(TService).Name}' is not registered.");
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Attempts to decorate all existing unkeyed registrations for <typeparamref name="TService"/>
+    /// with <typeparamref name="TDecorator"/>, preserving each original registration's lifetime.
+    /// </summary>
+    /// <typeparam name="TService">The service type to decorate.</typeparam>
+    /// <typeparam name="TDecorator">The decorator type.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
+    public static bool TryDecorate<TService, TDecorator>(this IServiceCollection services)
+        where TService : class
+        where TDecorator : class, TService
+    {
+        Argument.IsNotNull(services);
+
+        return _TryDecorate(
+            services,
+            typeof(TService),
+            descriptor =>
+                _CreateDecoratedDescriptor<TService>(
+                    descriptor,
+                    (inner, serviceProvider) => ActivatorUtilities.CreateInstance<TDecorator>(serviceProvider, inner)
+                )
+        );
+    }
+
+    /// <summary>
+    /// Attempts to decorate all existing unkeyed registrations for <typeparamref name="TService"/>
+    /// with <paramref name="decorator"/>, preserving each original registration's lifetime.
+    /// </summary>
+    /// <typeparam name="TService">The service type to decorate.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="decorator">Factory that receives the original service and returns the decorator.</param>
+    /// <returns><see langword="true"/> if at least one registration was decorated; otherwise <see langword="false"/>.</returns>
+    public static bool TryDecorate<TService>(
+        this IServiceCollection services,
+        Func<TService, IServiceProvider, TService> decorator
+    )
+        where TService : class
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(decorator);
+
+        return _TryDecorate(
+            services,
+            typeof(TService),
+            descriptor => _CreateDecoratedDescriptor<TService>(descriptor, decorator)
+        );
+    }
+
+    private static bool _TryDecorate(
+        IServiceCollection services,
+        Type serviceType,
+        Func<ServiceDescriptor, ServiceDescriptor> createDescriptor
+    )
+    {
+        var decorated = false;
+
+        for (var i = 0; i < services.Count; i++)
+        {
+            var descriptor = services[i];
+
+            if (descriptor.IsKeyedService || descriptor.ServiceType != serviceType)
+            {
+                continue;
+            }
+
+            services[i] = createDescriptor(descriptor);
+            decorated = true;
+        }
+
+        return decorated;
+    }
+
+    private static ServiceDescriptor _CreateDecoratedDescriptor<TService>(
+        ServiceDescriptor descriptor,
+        Func<TService, IServiceProvider, TService> decorator
+    )
+        where TService : class
+    {
+        return ServiceDescriptor.Describe(
+            typeof(TService),
+            serviceProvider =>
+            {
+                var inner = _CreateService<TService>(serviceProvider, descriptor);
+
+                return decorator(inner, serviceProvider);
+            },
+            descriptor.Lifetime
+        );
+    }
+
+    private static TService _CreateService<TService>(IServiceProvider serviceProvider, ServiceDescriptor descriptor)
+        where TService : class
+    {
+        if (descriptor.ImplementationInstance is TService instance)
+        {
+            return instance;
+        }
+
+        if (descriptor.ImplementationFactory is not null)
+        {
+            return (TService)descriptor.ImplementationFactory(serviceProvider);
+        }
+
+        if (descriptor.ImplementationType is not null)
+        {
+            return (TService)ActivatorUtilities.CreateInstance(serviceProvider, descriptor.ImplementationType);
+        }
+
+        throw new InvalidOperationException($"Service '{typeof(TService).Name}' registration cannot be decorated.");
+    }
+
+    #endregion
+
     #region Replace
 
     /// <summary>Adds or replaces a scoped service in the service collection.</summary>

@@ -219,6 +219,99 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
+    public void decorate_should_wrap_registered_service_and_resolve_extra_dependencies()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(new DecoratorOptions("decorated"));
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        services.Decorate<IMyService, DecoratedService>();
+        using var provider = services.BuildServiceProvider();
+        var service = provider.GetRequiredService<IMyService>();
+
+        // then
+        service.Should().BeOfType<DecoratedService>().Which.Inner.Should().BeOfType<MyService>();
+        service.Greet().Should().Be("decorated:original");
+    }
+
+    [Fact]
+    public void decorate_should_wrap_all_unkeyed_registrations_and_preserve_order()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(new DecoratorOptions("decorated"));
+        services.AddSingleton<IMyService, MyService>();
+        services.AddSingleton<IMyService, ReplacementService>();
+
+        // when
+        services.Decorate<IMyService, DecoratedService>();
+        using var provider = services.BuildServiceProvider();
+        var resolved = provider.GetServices<IMyService>().ToList();
+
+        // then
+        resolved.Select(service => service.Greet()).Should().Equal("decorated:original", "decorated:replacement");
+    }
+
+    [Fact]
+    public void decorate_should_preserve_original_lifetime()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(new DecoratorOptions("decorated"));
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        services.Decorate<IMyService, DecoratedService>();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IMyService>().Should().BeSameAs(provider.GetRequiredService<IMyService>());
+    }
+
+    [Fact]
+    public void decorate_should_support_factory_decorators()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IMyService, MyService>();
+
+        // when
+        services.Decorate<IMyService>((inner, _) => new FactoryDecoratedService(inner));
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IMyService>().Greet().Should().Be("factory:original");
+    }
+
+    [Fact]
+    public void decorate_should_throw_when_service_is_missing()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () => services.Decorate<IMyService, DecoratedService>();
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("Service 'IMyService' is not registered.");
+    }
+
+    [Fact]
+    public void try_decorate_should_return_false_when_service_is_missing()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var result = services.TryDecorate<IMyService, DecoratedService>();
+
+        // then
+        result.Should().BeFalse();
+    }
+
+    [Fact]
     public void replace_scoped_should_replace_service_when_it_exists()
     {
         // given
@@ -742,6 +835,20 @@ public sealed class ReplacementService : IMyService
 {
     public string Greet() => "replacement";
 }
+
+public sealed class DecoratedService(IMyService inner, DecoratorOptions options) : IMyService
+{
+    public IMyService Inner { get; } = inner;
+
+    public string Greet() => $"{options.Prefix}:{Inner.Greet()}";
+}
+
+public sealed class FactoryDecoratedService(IMyService inner) : IMyService
+{
+    public string Greet() => $"factory:{inner.Greet()}";
+}
+
+public sealed record DecoratorOptions(string Prefix);
 
 public sealed class FallbackService : IMyService
 {
