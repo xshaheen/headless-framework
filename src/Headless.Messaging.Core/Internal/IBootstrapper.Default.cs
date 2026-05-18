@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,6 +15,7 @@ internal sealed class Bootstrapper(
     IEnumerable<IProcessingServer> processors,
     IStorageInitializer storageInitializer,
     IServiceProvider serviceProvider,
+    IOptions<MessagingOptions> options,
     ILogger<IBootstrapper> logger
 ) : BackgroundService, IBootstrapper
 {
@@ -89,6 +92,7 @@ internal sealed class Bootstrapper(
         try
         {
             _CheckRequirement();
+            _WarnIfNoOpProvider();
 
             try
             {
@@ -232,6 +236,21 @@ internal sealed class Bootstrapper(
         await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
         runtimeCts?.Dispose();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _WarnIfNoOpProvider()
+    {
+        if (!options.Value.UseStorageLock)
+        {
+            return;
+        }
+
+        var lockProvider = serviceProvider.GetRequiredService<IDistributedLockProvider>();
+
+        if (lockProvider.GetType() == typeof(NoOpDistributedLockProvider))
+        {
+            logger.UseStorageLockWithNoOpProvider();
+        }
     }
 
     private void _CheckRequirement()

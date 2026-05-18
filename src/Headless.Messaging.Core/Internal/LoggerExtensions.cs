@@ -587,4 +587,12 @@ internal static partial class LoggerExtensions
         Exception exception,
         string loopName
     );
+
+    [LoggerMessage(
+        EventId = 77,
+        EventName = "UseStorageLockWithNoOpProvider",
+        Level = LogLevel.Warning,
+        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered. Coarse-grained mutual exclusion is disabled. Register a real provider (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
+    )]
+    public static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
 }
