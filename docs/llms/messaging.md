@@ -268,7 +268,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
-- **When `UseStorageLock = true`, register a real `IDistributedLockProvider`** (e.g. `Headless.DistributedLocks.Core` + a cache or database backend). Without it only `NoOpDistributedLockProvider` is active and the bootstrapper logs EventId 77 Warning on startup. `UseStorageLock` defaults to `false`; skip it when running a single replica or when the storage provider natively prevents duplicate retry pickup.
+- **To enable distributed retry locking, call `UseDistributedLock(provider)` on the `MessagingBuilder`** (e.g. `Headless.DistributedLocks.Core` + a cache or database backend). Calling this overload implicitly sets `UseStorageLock = true`. Messaging registers its lock provider under an internal keyed-DI key so it never conflicts with an app-level `IDistributedLockProvider`. Without a real provider, only `NoOpDistributedLockProvider` is active and the bootstrapper logs EventId 77 Warning on startup. `UseStorageLock` defaults to `false`; skip it when running a single replica or when the storage provider natively prevents duplicate retry pickup.
 
 ---
 
@@ -757,17 +757,25 @@ var info = new FailedInfo
 
 `MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, preventing duplicate work across replicas.
 
+Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
+
 ```csharp
-builder.Services.AddHeadlessMessaging(setup =>
-{
-    setup.Options.UseStorageLock = true;
-});
+// Instance overload — when you already have an IDistributedLockProvider
+var lockProvider = new MyDistributedLockProvider(...);
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(lockProvider);
+
+// Factory overload — when the provider depends on other DI services
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
 ```
+
+Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
 
 **Requirements:**
 
-- Register a real `IDistributedLockProvider` (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without it, only `NoOpDistributedLockProvider` is active (registered as a `TryAddSingleton` fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found.
+- Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found under the messaging key.
 
 **Lock names:**
 

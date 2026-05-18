@@ -141,8 +141,7 @@ public sealed class BootstrapperTests : TestBase
         var realProvider = Substitute.For<IDistributedLockProvider>();
         await using var provider = _CreateProvider(
             captureLog: captured,
-            configureOptions: o => o.UseStorageLock = true,
-            extraSetup: services => services.AddSingleton(realProvider)
+            builderAction: builder => builder.UseDistributedLock(realProvider)
         );
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
@@ -159,7 +158,8 @@ public sealed class BootstrapperTests : TestBase
         IProcessingServer? afterMessaging = null,
         List<(LogLevel Level, EventId EventId)>? captureLog = null,
         Action<MessagingOptions>? configureOptions = null,
-        Action<IServiceCollection>? extraSetup = null
+        Action<IServiceCollection>? extraSetup = null,
+        Action<MessagingBuilder>? builderAction = null
     )
     {
         var services = new ServiceCollection();
@@ -179,7 +179,7 @@ public sealed class BootstrapperTests : TestBase
             services.AddSingleton(beforeMessaging);
         }
 
-        services.AddHeadlessMessaging(setup =>
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemoryMessageQueue();
             setup.UseInMemoryStorage();
@@ -189,6 +189,8 @@ public sealed class BootstrapperTests : TestBase
                 c.UseVersion("v1");
             });
         });
+
+        builderAction?.Invoke(messagingBuilder);
 
         if (configureOptions is not null)
         {

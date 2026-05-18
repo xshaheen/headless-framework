@@ -77,7 +77,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         IOptions<RetryProcessorOptions> retryOptions,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
-        IDistributedLockProvider lockProvider,
+        [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLockProvider lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null
     )
     {

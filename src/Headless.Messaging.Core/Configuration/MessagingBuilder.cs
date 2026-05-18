@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -271,5 +272,40 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         }
 
         return contextType;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IDistributedLockProvider"/> instance for messaging's isolated lock scope
+    /// and enables <see cref="MessagingOptions.UseStorageLock"/>.
+    /// </summary>
+    /// <param name="provider">The lock provider instance to use for distributed retry coordination.</param>
+    /// <remarks>
+    /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
+    /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
+    /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// </remarks>
+    public MessagingBuilder UseDistributedLock(IDistributedLockProvider provider)
+    {
+        Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
+        Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a factory-resolved <see cref="IDistributedLockProvider"/> for messaging's isolated lock scope
+    /// and enables <see cref="MessagingOptions.UseStorageLock"/>.
+    /// </summary>
+    /// <param name="factory">A factory delegate that receives the <see cref="IServiceProvider"/> and returns the lock provider.</param>
+    /// <remarks>
+    /// Use this overload when the provider itself depends on other DI-registered services.
+    /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
+    /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
+    /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// </remarks>
+    public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLockProvider> factory)
+    {
+        Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, (sp, _) => factory(sp));
+        Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
+        return this;
     }
 }

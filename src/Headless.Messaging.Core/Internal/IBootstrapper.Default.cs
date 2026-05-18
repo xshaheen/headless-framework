@@ -245,7 +245,7 @@ internal sealed class Bootstrapper(
             return;
         }
 
-        var lockProvider = serviceProvider.GetRequiredService<IDistributedLockProvider>();
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
 
         if (lockProvider.GetType() == typeof(NoOpDistributedLockProvider))
         {

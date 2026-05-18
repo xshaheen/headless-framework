@@ -466,17 +466,22 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 
 `MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
 
-```csharp
-builder.Services.AddHeadlessMessaging(setup =>
-{
-    setup.Options.UseStorageLock = true;
-});
+Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider — calling this implicitly sets `UseStorageLock = true`:
 
-// Also register a real IDistributedLockProvider (e.g. Headless.DistributedLocks.Core)
-builder.Services.AddDistributedLockProvider(...);
+```csharp
+// Instance overload
+var lockProvider = new MyDistributedLockProvider(...);
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(lockProvider);
+
+// Factory overload (provider depends on other DI services)
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
 ```
 
-Without a real `IDistributedLockProvider`, only `NoOpDistributedLockProvider` is active. The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found.
+Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+
+Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key.
 
 When `UseStorageLock = false` (default), `IDistributedLockProvider` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
 

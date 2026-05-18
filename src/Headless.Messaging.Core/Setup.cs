@@ -125,9 +125,10 @@ public static class SetupMessaging
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
-        // Fallback lock provider — always-grant no-op. Real lock providers (Redis, SQL, etc.) registered
-        // before AddHeadlessMessaging take precedence because TryAddSingleton is first-registration-wins.
-        services.TryAddSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>();
+        // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
+        // IDistributedLockProvider so UseStorageLock always targets the provider wired via
+        // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
+        services.TryAddKeyedSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>(MessagingKeys.LockProvider);
 
         //Processors
         services.TryAddEnumerable(
