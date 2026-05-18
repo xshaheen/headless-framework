@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Headless.Messaging;
 using Headless.Messaging.Diagnostics;
@@ -11,7 +12,7 @@ using OpenTelemetry.Context.Propagation;
 namespace Headless.Messaging.OpenTelemetry;
 
 internal sealed class DiagnosticListener(
-    IReadOnlyList<IActivityTagEnricher> enrichers,
+    IActivityTagEnricher[] enrichers,
     ILogger<DiagnosticListener>? logger = null,
     MessagingMetrics? metrics = null
 ) : IObserver<KeyValuePair<string, object?>>
@@ -80,7 +81,9 @@ internal sealed class DiagnosticListener(
                                     ? persistCid
                                     : null,
                                 RetryCount = 0,
-                                Headers = (IReadOnlyDictionary<string, string?>)eventData.Message.Headers,
+                                Headers =
+                                    eventData.Message.Headers as IReadOnlyDictionary<string, string?>
+                                    ?? new ReadOnlyDictionary<string, string?>(eventData.Message.Headers),
                             }
                         );
 
@@ -201,7 +204,9 @@ internal sealed class DiagnosticListener(
                                     : null,
                                 CorrelationId = eventData.TransportMessage.GetCorrelationId(),
                                 RetryCount = 0,
-                                Headers = (IReadOnlyDictionary<string, string?>)eventData.TransportMessage.Headers,
+                                Headers =
+                                    eventData.TransportMessage.Headers as IReadOnlyDictionary<string, string?>
+                                    ?? new ReadOnlyDictionary<string, string?>(eventData.TransportMessage.Headers),
                             }
                         );
 
@@ -328,7 +333,9 @@ internal sealed class DiagnosticListener(
                                     : null,
                                 CorrelationId = eventData.TransportMessage.GetCorrelationId(),
                                 RetryCount = 0,
-                                Headers = (IReadOnlyDictionary<string, string?>)eventData.TransportMessage.Headers,
+                                Headers =
+                                    eventData.TransportMessage.Headers as IReadOnlyDictionary<string, string?>
+                                    ?? new ReadOnlyDictionary<string, string?>(eventData.TransportMessage.Headers),
                             }
                         );
                     }
@@ -420,10 +427,8 @@ internal sealed class DiagnosticListener(
                     {
                         activity.SetTag("code.function.name", eventData.MethodInfo!.Name);
 
-                        if (eventData.RetryCount > 0)
-                        {
-                            activity.SetTag("headless.messaging.retry_count", eventData.RetryCount);
-                        }
+                        // The retry-count tag is now owned by RetryCountTagEnricher (registered
+                        // by default; suppressible via MessagingInstrumentationOptions.SuppressRetryCountTag).
 
                         activity.AddEvent(
                             new ActivityEvent(
@@ -449,7 +454,9 @@ internal sealed class DiagnosticListener(
                                     ? invokeCid
                                     : null,
                                 RetryCount = eventData.RetryCount,
-                                Headers = (IReadOnlyDictionary<string, string?>)eventData.Message.Headers,
+                                Headers =
+                                    eventData.Message.Headers as IReadOnlyDictionary<string, string?>
+                                    ?? new ReadOnlyDictionary<string, string?>(eventData.Message.Headers),
                             }
                         );
                     }
@@ -505,26 +512,70 @@ internal sealed class DiagnosticListener(
 
     private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)
     {
-        foreach (var enricher in enrichers)
+        // Fast path: enrichers that complete synchronously have their tags applied before this
+        // method returns. Async tails are observed but not awaited — see IActivityTagEnricher.Enrich
+        // remarks for the fire-and-forget contract.
+        for (var i = 0; i < enrichers.Length; i++)
         {
+            var enricher = enrichers[i];
+            ValueTask vt;
             try
             {
-                enricher.Enrich(activity, context);
+                vt = enricher.Enrich(activity, context);
             }
             catch (Exception ex)
             {
-                if (logger != null)
-                    DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().Name);
+                _LogEnricherException(enricher, ex);
+                continue;
             }
+
+            if (vt.IsCompletedSuccessfully)
+            {
+                continue;
+            }
+
+            if (vt.IsCompleted)
+            {
+                try
+                {
+                    vt.GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _LogEnricherException(enricher, ex);
+                }
+
+                continue;
+            }
+
+            // Async tail: fire-and-forget. Tags added after the activity stops are dropped.
+            _ = _ObserveAsyncEnricherAsync(enricher, vt);
+        }
+    }
+
+    private async Task _ObserveAsyncEnricherAsync(IActivityTagEnricher enricher, ValueTask vt)
+    {
+        try
+        {
+            await vt.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _LogEnricherException(enricher, ex);
+        }
+    }
+
+    private void _LogEnricherException(IActivityTagEnricher enricher, Exception ex)
+    {
+        if (logger is not null)
+        {
+            DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().FullName ?? enricher.GetType().Name);
         }
     }
 }
 
 internal static partial class DiagnosticListenerLog
 {
-    [LoggerMessage(
-        Level = LogLevel.Warning,
-        Message = "Enricher {EnricherType} threw an exception and was skipped"
-    )]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Enricher {EnricherType} threw an exception and was skipped")]
     internal static partial void EnricherFailed(ILogger logger, Exception ex, string enricherType);
 }

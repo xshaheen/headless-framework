@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using System.Diagnostics;
-using System.Runtime.CompilerServices;
 
 namespace Headless.Messaging.OpenTelemetry;
 
@@ -15,8 +15,17 @@ namespace Headless.Messaging.OpenTelemetry;
 /// enrichers that write header values to sensitive sinks must sanitize at their own call site.
 /// </remarks>
 [PublicAPI]
-public readonly struct MessagingEnrichmentContext : IEquatable<MessagingEnrichmentContext>
+[System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Performance",
+    "CA1815:Override equals and operator equals on value types",
+    Justification = "Transient parameter passed `in` to enrichers; never compared or stored."
+)]
+public readonly struct MessagingEnrichmentContext
 {
+#pragma warning disable IDE0032 // Use auto property — backing field is intentionally nullable so `default(T).Headers` returns a non-null empty dictionary.
+    private readonly IReadOnlyDictionary<string, string?>? _headers;
+#pragma warning restore IDE0032
+
     /// <summary>Which span type is being enriched.</summary>
     public MessagingEventKind Kind { get; init; }
 
@@ -45,30 +54,12 @@ public readonly struct MessagingEnrichmentContext : IEquatable<MessagingEnrichme
 
     /// <summary>
     /// Raw wire headers. On the consume side these are untrusted external data.
-    /// The dictionary is read-only; enrichers must not mutate it.
+    /// The dictionary is read-only; enrichers must not mutate it. Defaults to an empty
+    /// dictionary when the struct is created via <c>default(MessagingEnrichmentContext)</c>.
     /// </summary>
-    public IReadOnlyDictionary<string, string?> Headers { get; init; }
-
-    /// <inheritdoc />
-    public bool Equals(MessagingEnrichmentContext other) =>
-        Kind == other.Kind
-        && MessageId == other.MessageId
-        && MessageName == other.MessageName
-        && TenantId == other.TenantId
-        && CorrelationId == other.CorrelationId
-        && RetryCount == other.RetryCount
-        && ReferenceEquals(Headers, other.Headers);
-
-    /// <inheritdoc />
-    public override bool Equals(object? obj) => obj is MessagingEnrichmentContext other && Equals(other);
-
-    /// <inheritdoc />
-    public override int GetHashCode() =>
-        HashCode.Combine(Kind, MessageId, MessageName, TenantId, CorrelationId, RetryCount, RuntimeHelpers.GetHashCode(Headers));
-
-    public static bool operator ==(MessagingEnrichmentContext left, MessagingEnrichmentContext right) =>
-        left.Equals(right);
-
-    public static bool operator !=(MessagingEnrichmentContext left, MessagingEnrichmentContext right) =>
-        !left.Equals(right);
+    public IReadOnlyDictionary<string, string?> Headers
+    {
+        get => _headers ?? FrozenDictionary<string, string?>.Empty;
+        init => _headers = value;
+    }
 }

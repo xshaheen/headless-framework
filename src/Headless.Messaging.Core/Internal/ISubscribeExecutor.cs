@@ -88,7 +88,8 @@ internal sealed class SubscribeExecutor(
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                     message.Origin,
                     method: null,
-                    exception
+                    exception,
+                    retryCount: 0
                 );
 
                 await _SetFailedState(message, exception, dispatchServices, cancellationToken: cancellationToken)
@@ -508,7 +509,13 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private void _TracingError(long? tracingTimestamp, Message message, MethodInfo? method, Exception ex, int retryCount = 0)
+    private void _TracingError(
+        long? tracingTimestamp,
+        Message message,
+        MethodInfo? method,
+        Exception ex,
+        int retryCount
+    )
     {
         if (!_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke))
         {

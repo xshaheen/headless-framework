@@ -5,6 +5,7 @@ using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Diagnostics;
 
+[PublicAPI]
 public class MessageEventDataPubStore
 {
     public long? OperationTimestamp { get; set; }
@@ -18,6 +19,7 @@ public class MessageEventDataPubStore
     public Exception? Exception { get; set; }
 }
 
+[PublicAPI]
 public class MessageEventDataPubSend
 {
     public long? OperationTimestamp { get; set; }

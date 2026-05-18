@@ -1,11 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging.OpenTelemetry;
 
 /// <summary>Options for <c>AddMessagingInstrumentation</c>.</summary>
 [PublicAPI]
 public sealed class MessagingInstrumentationOptions
 {
+    private readonly List<IActivityTagEnricher> _enrichers = [];
+
     /// <summary>
     /// When <see langword="true"/>, OpenTelemetry metrics (message sizes, latencies, etc.) are
     /// collected in addition to traces. Default: <see langword="false"/>.
@@ -14,14 +18,49 @@ public sealed class MessagingInstrumentationOptions
 
     /// <summary>
     /// When <see langword="true"/>, the built-in <c>headless.messaging.tenant_id</c> tag enricher
-    /// is not registered. Use this in shared-backend scenarios where tagging tenant IDs on spans
-    /// would expose cross-tenant data in the same trace store. Default: <see langword="false"/>.
+    /// is not registered, so tenant identifiers are not written to messaging activity spans.
+    /// Default: <see langword="false"/>.
     /// </summary>
+    /// <remarks>
+    /// In shared multi-tenant trace backends, the <c>headless.messaging.tenant_id</c> tag becomes
+    /// visible across tenants — any operator with access to the trace store sees every tenant's
+    /// IDs. Set this to <see langword="true"/> to opt out of tenant-ID tagging, or pair the
+    /// framework with a tenant-scoped trace exporter so each tenant only sees its own spans.
+    /// </remarks>
     public bool SuppressTenantIdTag { get; set; }
 
     /// <summary>
-    /// Custom enrichers appended after the built-in enrichers. Enrichers are called in insertion
-    /// order for every span type.
+    /// When <see langword="true"/>, the built-in <c>headless.messaging.retry_count</c> tag enricher
+    /// is not registered, so retry counts are not written to subscriber-invoke activity spans.
+    /// Default: <see langword="false"/>.
     /// </summary>
-    public IList<IActivityTagEnricher> Enrichers { get; } = [];
+    public bool SuppressRetryCountTag { get; set; }
+
+    /// <summary>
+    /// Custom enrichers appended after the built-in enrichers. Enrichers are invoked in insertion
+    /// order for every span type. The collection is snapshotted at registration time
+    /// (<c>AddMessagingInstrumentation</c>); changes after registration are ignored.
+    /// </summary>
+    /// <remarks>
+    /// Built-in enrichers run first, in the following order:
+    /// <list type="number">
+    /// <item><description><c>TenantIdTagEnricher</c> (unless <see cref="SuppressTenantIdTag"/> is <see langword="true"/>).</description></item>
+    /// <item><description><c>RetryCountTagEnricher</c> (unless <see cref="SuppressRetryCountTag"/> is <see langword="true"/>).</description></item>
+    /// </list>
+    /// Custom enrichers added via <see cref="AddEnricher"/> are appended after the built-ins, in
+    /// the order they were added.
+    /// </remarks>
+    public IReadOnlyList<IActivityTagEnricher> Enrichers => _enrichers;
+
+    /// <summary>
+    /// Appends a custom enricher to be invoked after the built-in enrichers.
+    /// </summary>
+    /// <param name="enricher">The enricher to add. Must not be <see langword="null"/>.</param>
+    /// <returns>The same options instance for chaining.</returns>
+    public MessagingInstrumentationOptions AddEnricher(IActivityTagEnricher enricher)
+    {
+        Argument.IsNotNull(enricher);
+        _enrichers.Add(enricher);
+        return this;
+    }
 }

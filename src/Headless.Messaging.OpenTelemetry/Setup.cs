@@ -3,6 +3,8 @@
 using Headless.Checks;
 using Headless.Messaging.OpenTelemetry;
 using Headless.Messaging.OpenTelemetry.Internal;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -31,21 +33,26 @@ public static class SetupMessagingOpenTelemetry
 
         builder.AddSource(DiagnosticListener.SourceName);
 
-        return builder.AddInstrumentation(() =>
+        return builder.AddInstrumentation(sp =>
         {
+            var logger = sp.GetService<ILogger<DiagnosticListener>>();
             var metrics = options.EnableMetrics ? new MessagingMetrics() : null;
-            return new MessagingInstrumentation(new DiagnosticListener(enrichers, metrics: metrics), metrics);
+            return new MessagingInstrumentation(new DiagnosticListener(enrichers, logger, metrics), metrics);
         });
     }
 
-    private static IReadOnlyList<IActivityTagEnricher> _BuildEnricherList(MessagingInstrumentationOptions options)
+    internal static IActivityTagEnricher[] _BuildEnricherList(MessagingInstrumentationOptions options)
     {
         var list = new List<IActivityTagEnricher>();
         if (!options.SuppressTenantIdTag)
         {
             list.Add(new TenantIdTagEnricher());
         }
-        list.AddRange(options.Enrichers);
-        return list;
+        if (!options.SuppressRetryCountTag)
+        {
+            list.Add(new RetryCountTagEnricher());
+        }
+        list.AddRange(options.Enrichers.Where(e => e is not null));
+        return [.. list];
     }
 }

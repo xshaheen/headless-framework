@@ -63,6 +63,12 @@ internal sealed class MessagingDiagnosticSourceSubscriber(
 
             lock (_listenerSubscriptions)
             {
+                if (Interlocked.Read(ref _disposed) == 1)
+                {
+                    subscription.Dispose();
+                    return;
+                }
+
                 _listenerSubscriptions.Add(subscription);
             }
         }
@@ -74,6 +80,9 @@ internal sealed class MessagingDiagnosticSourceSubscriber(
 
     public void Subscribe()
     {
-        _allSourcesSubscription ??= System.Diagnostics.DiagnosticListener.AllListeners.Subscribe(this);
+        lock (_listenerSubscriptions)
+        {
+            _allSourcesSubscription ??= System.Diagnostics.DiagnosticListener.AllListeners.Subscribe(this);
+        }
     }
 }

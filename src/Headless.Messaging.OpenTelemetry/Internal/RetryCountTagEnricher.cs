@@ -1,11 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Messaging;
 
 namespace Headless.Messaging.OpenTelemetry.Internal;
 
-internal sealed class TenantIdTagEnricher : IActivityTagEnricher
+internal sealed class RetryCountTagEnricher : IActivityTagEnricher
 {
     public ValueTask Enrich(
         Activity activity,
@@ -13,9 +12,9 @@ internal sealed class TenantIdTagEnricher : IActivityTagEnricher
         CancellationToken cancellationToken = default
     )
     {
-        if (!string.IsNullOrWhiteSpace(context.TenantId))
+        if (context.RetryCount > 0)
         {
-            activity.SetTag(MessagingTags.TenantId, context.TenantId);
+            activity.SetTag(MessagingTags.RetryCount, context.RetryCount);
         }
 
         return ValueTask.CompletedTask;
