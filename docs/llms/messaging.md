@@ -11,6 +11,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 - [Agent Instructions](#agent-instructions)
 - [Provider Capabilities](#provider-capabilities)
     - [Transport Providers](#transport-providers)
+    - [Storage Providers](#storage-providers)
 - [Headless.Messaging.Abstractions](#headlessmessagingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -296,6 +297,21 @@ How to read each column:
 - **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
 - **Broker reject** — what `IConsumerClient.RejectAsync` actually does. "no-op" means the transport cannot signal rejection back to the broker; persisted-retry pickup is the only path to re-delivery.
 - **Auto-provisioning** — whether `IConsumerClient.FetchTopicsAsync` (or the subscribe path) creates broker resources. "passthrough" means the transport relies on the broker's own auto-creation behavior.
+
+### Storage Providers
+
+| Provider          | Outbox + persisted retry storage | Schema initializer            |
+|-------------------|----------------------------------|-------------------------------|
+| `PostgreSql`      | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `SqlServer`       | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `InMemoryStorage` | yes (`IDataStorage`, in-memory)  | yes (`IStorageInitializer`)   |
+
+How to read each column:
+
+- **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
+- **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
+
+Internal-wiring asymmetries (for example, `Headless.Messaging.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
 ---
 
