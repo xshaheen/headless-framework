@@ -25,16 +25,15 @@ dotnet add package Headless.Messaging.OpenTelemetry
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource("Headless.Messaging")
+        .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-    options.UseOpenTelemetry();
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

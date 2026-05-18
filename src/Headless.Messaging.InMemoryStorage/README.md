@@ -23,12 +23,12 @@ dotnet add package Headless.Messaging.InMemoryStorage
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

@@ -18,7 +18,7 @@ dotnet add package Headless.Messaging.Nats
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -27,7 +27,7 @@ builder.Services.AddMessages(options =>
         nats.Servers = "nats://localhost:4222";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

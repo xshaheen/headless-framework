@@ -23,12 +23,12 @@ dotnet add package Headless.Messaging.InMemoryQueue
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseInMemoryQueue();
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

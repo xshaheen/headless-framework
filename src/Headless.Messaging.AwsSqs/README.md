@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.AwsSqs
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -33,7 +33,7 @@ builder.Services.AddMessages(options =>
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

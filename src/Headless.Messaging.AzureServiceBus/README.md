@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer("connection_string");
 
@@ -33,7 +33,7 @@ builder.Services.AddMessages(options =>
         asb.TopicPath = "myapp";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

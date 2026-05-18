@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.RedisStreams
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -32,7 +32,7 @@ builder.Services.AddMessages(options =>
         redis.Configuration = "localhost:6379";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
