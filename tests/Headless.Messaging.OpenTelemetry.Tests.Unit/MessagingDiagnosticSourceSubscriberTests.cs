@@ -91,6 +91,45 @@ public sealed class MessagingDiagnosticSourceSubscriberTests : TestBase
     }
 
     [Fact]
+    public void should_deliver_events_exactly_once_when_subscribe_called_multiple_times()
+    {
+        // given - count how many times the handler factory is invoked for a single matching source.
+        // If Subscribe() were not idempotent, multiple internal AllListeners subscriptions would each
+        // forward the source through OnNext, causing the factory to fire more than once for one source.
+        var factoryInvocations = 0;
+        var handlerFactory = new Func<string, DiagnosticListener>(_ =>
+        {
+            Interlocked.Increment(ref factoryInvocations);
+            return new DiagnosticListener([]);
+        });
+
+        using var subscriber = new MessagingDiagnosticSourceSubscriber(
+            handlerFactory,
+            value =>
+                string.Equals(
+                    MessageDiagnosticListenerNames.DiagnosticListenerName,
+                    value.Name,
+                    StringComparison.Ordinal
+                ),
+            isEnabledFilter: null
+        );
+
+        // when - calling Subscribe() multiple times must be idempotent
+        subscriber.Subscribe();
+        subscriber.Subscribe();
+        subscriber.Subscribe();
+
+        // and a single matching source is published to AllListeners
+        using var source = new System.Diagnostics.DiagnosticListener(
+            MessageDiagnosticListenerNames.DiagnosticListenerName
+        );
+
+        // then - the handler factory must be invoked exactly once for the single source,
+        // regardless of how many times Subscribe() was called.
+        factoryInvocations.Should().Be(1);
+    }
+
+    [Fact]
     public void should_create_with_handler_factory()
     {
         // given

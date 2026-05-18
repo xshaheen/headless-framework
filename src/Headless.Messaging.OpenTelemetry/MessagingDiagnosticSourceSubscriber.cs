@@ -39,18 +39,27 @@ internal sealed class MessagingDiagnosticSourceSubscriber(
             return;
         }
 
+        // Extract the subscriptions under the lock so writes to _allSourcesSubscription and
+        // _listenerSubscriptions happen under the same lock that Subscribe()/OnNext() take.
+        // Dispose() of the captured subscriptions is performed outside the lock to avoid any
+        // re-entrancy risk if the subscription's Dispose() runs OnNext synchronously.
+        IDisposable? allSources;
+        IDisposable[] listeners;
+
         lock (_listenerSubscriptions)
         {
-            foreach (var listenerSubscription in _listenerSubscriptions)
-            {
-                listenerSubscription?.Dispose();
-            }
-
+            allSources = _allSourcesSubscription;
+            _allSourcesSubscription = null;
+            listeners = [.. _listenerSubscriptions];
             _listenerSubscriptions.Clear();
         }
 
-        _allSourcesSubscription?.Dispose();
-        _allSourcesSubscription = null;
+        foreach (var listenerSubscription in listeners)
+        {
+            listenerSubscription?.Dispose();
+        }
+
+        allSources?.Dispose();
     }
 
     public void OnNext(System.Diagnostics.DiagnosticListener value)
@@ -82,6 +91,11 @@ internal sealed class MessagingDiagnosticSourceSubscriber(
     {
         lock (_listenerSubscriptions)
         {
+            if (Interlocked.Read(ref _disposed) == 1)
+            {
+                return;
+            }
+
             _allSourcesSubscription ??= System.Diagnostics.DiagnosticListener.AllListeners.Subscribe(this);
         }
     }

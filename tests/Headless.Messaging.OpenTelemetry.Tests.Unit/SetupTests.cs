@@ -71,7 +71,7 @@ public sealed class SetupTests : TestBase
         options.AddEnricher(customEnricher);
 
         // when - build the enricher composition the same way Setup does at registration time
-        var enrichers = SetupMessagingOpenTelemetry._BuildEnricherList(options);
+        var enrichers = options.BuildEnrichers();
 
         // then - built-in defaults precede the custom enricher, in declared order
         enrichers.Should().HaveCount(3);
@@ -93,7 +93,7 @@ public sealed class SetupTests : TestBase
         var options = new MessagingInstrumentationOptions { SuppressTenantIdTag = true };
 
         // when - build the enricher composition that Setup will register
-        var enrichers = SetupMessagingOpenTelemetry._BuildEnricherList(options);
+        var enrichers = options.BuildEnrichers();
 
         // then - no TenantIdTagEnricher is composed when suppression is requested
         enrichers.Should().NotContain(e => e is TenantIdTagEnricher);
@@ -114,7 +114,7 @@ public sealed class SetupTests : TestBase
         var options = new MessagingInstrumentationOptions { SuppressRetryCountTag = true };
 
         // when
-        var enrichers = SetupMessagingOpenTelemetry._BuildEnricherList(options);
+        var enrichers = options.BuildEnrichers();
 
         // then - no RetryCountTagEnricher is composed when suppression is requested
         enrichers.Should().NotContain(e => e is RetryCountTagEnricher);
@@ -135,7 +135,7 @@ public sealed class SetupTests : TestBase
         var options = new MessagingInstrumentationOptions();
 
         // when
-        var enrichers = SetupMessagingOpenTelemetry._BuildEnricherList(options);
+        var enrichers = options.BuildEnrichers();
 
         // then - both built-ins are included by default, tenant first then retry-count
         enrichers.Should().HaveCount(2);

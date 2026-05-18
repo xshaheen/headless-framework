@@ -377,6 +377,128 @@ public sealed class DiagnosticListenerTests : TestBase
     }
 
     [Fact]
+    public void should_populate_tenant_id_and_correlation_id_in_enrichment_context_when_headers_present()
+    {
+        // given - construct event data with headers that include the tenant-id and correlation-id
+        // wire headers; the listener should map them onto the MessagingEnrichmentContext fields
+        // exposed to enrichers (the TenantId/CorrelationId positive branches in _BuildEnrichmentContext).
+        var enricher = Substitute.For<IActivityTagEnricher>();
+        var listener = new DiagnosticListener([enricher]);
+        using var activityListener = _CreateActivityListener();
+
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString(),
+            [Headers.MessageName] = "order.created",
+            [Headers.TenantId] = "tenant-42",
+            [Headers.CorrelationId] = "corr-7",
+        };
+        var eventData = new MessageEventDataPubStore
+        {
+            Operation = "order.created",
+            Message = new Message(headers, null),
+            OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+        };
+
+        // when
+        listener.OnNext(
+            new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData)
+        );
+
+        // then
+        _ = enricher
+            .Received()
+            .Enrich(
+                Arg.Any<Activity>(),
+                Arg.Is<MessagingEnrichmentContext>(c => c.TenantId == "tenant-42" && c.CorrelationId == "corr-7"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public void should_log_warning_when_enricher_returns_synchronously_faulted_value_task()
+    {
+        // given - an enricher whose ValueTask is already completed AND faulted before _CallEnrichers
+        // inspects it (vt.IsCompleted && !vt.IsCompletedSuccessfully branch). Distinct from an
+        // enricher that throws synchronously (caught at the call site) or yields (async tail path).
+        var logger = new CapturingLogger();
+        var listener = new DiagnosticListener([new SyncFaultedEnricher()], logger);
+        using var activityListener = _CreateActivityListener();
+        var eventData = _CreatePubStoreEventData("order.created");
+
+        // when
+        listener.OnNext(
+            new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData)
+        );
+
+        // then - a Warning was logged for the sync-faulted ValueTask
+        logger.Entries.Should().ContainSingle();
+        logger.Entries[0].Level.Should().Be(LogLevel.Warning);
+        logger.Entries[0].Exception.Should().BeOfType<InvalidOperationException>();
+        logger.Entries[0].Exception!.Message.Should().Be("sync-faulted");
+    }
+
+    private sealed class SyncFaultedEnricher : IActivityTagEnricher
+    {
+        public ValueTask Enrich(
+            Activity activity,
+            in MessagingEnrichmentContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.FromException(new InvalidOperationException("sync-faulted"));
+        }
+    }
+
+    [Fact]
+    public void should_pass_messaging_cancellation_token_to_enricher()
+    {
+        // given - construct event data carrying an explicit CT and a capturing enricher.
+        // The listener must forward eventData.CancellationToken through _CallEnrichers into
+        // IActivityTagEnricher.Enrich(activity, context, cancellationToken).
+        using var cts = new CancellationTokenSource();
+        var enricher = new CapturingEnricher();
+        var listener = new DiagnosticListener([enricher]);
+        using var activityListener = _CreateActivityListener();
+
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = Guid.NewGuid().ToString(),
+            [Headers.MessageName] = "order.created",
+        };
+        var eventData = new MessageEventDataPubStore
+        {
+            Operation = "order.created",
+            Message = new Message(headers, null),
+            OperationTimestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            CancellationToken = cts.Token,
+        };
+
+        // when
+        listener.OnNext(
+            new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData)
+        );
+
+        // then - the enricher saw the exact same token plumbed through the DTO
+        enricher.LastReceivedCancellationToken.Should().Be(cts.Token);
+    }
+
+    private sealed class CapturingEnricher : IActivityTagEnricher
+    {
+        public CancellationToken LastReceivedCancellationToken { get; private set; }
+
+        public ValueTask Enrich(
+            Activity activity,
+            in MessagingEnrichmentContext context,
+            CancellationToken cancellationToken = default
+        )
+        {
+            LastReceivedCancellationToken = cancellationToken;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    [Fact]
     public void should_set_retry_count_tag_when_retry_count_is_positive()
     {
         // given

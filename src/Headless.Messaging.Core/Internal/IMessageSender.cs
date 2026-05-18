@@ -105,7 +105,7 @@ internal sealed class MessageSender : IMessageSender
 
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
 
-        var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress);
+        var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress, cancellationToken);
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
@@ -115,12 +115,12 @@ internal sealed class MessageSender : IMessageSender
         {
             await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress);
+            _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress, cancellationToken);
 
             return (RetryDecision.Stop, OperateResult.Success);
         }
 
-        _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result);
+        _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result, cancellationToken);
 
         var decision = await _SetFailedState(
                 message,
@@ -305,7 +305,7 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
+    private long? _TracingBefore(TransportMessage message, BrokerAddress broker, CancellationToken cancellationToken)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -317,6 +317,7 @@ internal sealed class MessageSender : IMessageSender
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublish, eventData);
@@ -327,7 +328,12 @@ internal sealed class MessageSender : IMessageSender
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
+    private void _TracingAfter(
+        long? tracingTimestamp,
+        TransportMessage message,
+        BrokerAddress broker,
+        CancellationToken cancellationToken
+    )
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
@@ -339,6 +345,7 @@ internal sealed class MessageSender : IMessageSender
                 BrokerAddress = broker,
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublish, eventData);
@@ -349,7 +356,8 @@ internal sealed class MessageSender : IMessageSender
         long? tracingTimestamp,
         TransportMessage message,
         BrokerAddress broker,
-        OperateResult result
+        OperateResult result,
+        CancellationToken cancellationToken
     )
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
@@ -365,6 +373,7 @@ internal sealed class MessageSender : IMessageSender
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);

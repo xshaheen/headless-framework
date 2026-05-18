@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging.OpenTelemetry;
-using Headless.Messaging.OpenTelemetry.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -29,7 +28,7 @@ public static class SetupMessagingOpenTelemetry
         var options = new MessagingInstrumentationOptions();
         configure?.Invoke(options);
 
-        var enrichers = _BuildEnricherList(options);
+        var enrichers = options.BuildEnrichers();
 
         builder.AddSource(DiagnosticListener.SourceName);
 
@@ -39,20 +38,5 @@ public static class SetupMessagingOpenTelemetry
             var metrics = options.EnableMetrics ? new MessagingMetrics() : null;
             return new MessagingInstrumentation(new DiagnosticListener(enrichers, logger, metrics), metrics);
         });
-    }
-
-    internal static IActivityTagEnricher[] _BuildEnricherList(MessagingInstrumentationOptions options)
-    {
-        var list = new List<IActivityTagEnricher>();
-        if (!options.SuppressTenantIdTag)
-        {
-            list.Add(new TenantIdTagEnricher());
-        }
-        if (!options.SuppressRetryCountTag)
-        {
-            list.Add(new RetryCountTagEnricher());
-        }
-        list.AddRange(options.Enrichers.Where(e => e is not null));
-        return [.. list];
     }
 }

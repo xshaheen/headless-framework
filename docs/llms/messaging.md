@@ -1093,7 +1093,8 @@ builder.Services.AddOpenTelemetry()
         {
             o.EnableMetrics = true;
             o.SuppressTenantIdTag = false;   // set true in shared-backend scenarios
-            o.Enrichers.Add(new MyCustomEnricher());
+            o.SuppressRetryCountTag = false; // set true to omit headless.messaging.retry_count
+            o.AddEnricher(new MyCustomEnricher());
         })
         .AddJaegerExporter());
 ```
@@ -1103,15 +1104,39 @@ Custom enrichers implement `IActivityTagEnricher`:
 ```csharp
 public sealed class MyCustomEnricher : IActivityTagEnricher
 {
-    public void Enrich(Activity activity, in MessagingEnrichmentContext context)
+    public ValueTask Enrich(
+        Activity activity,
+        in MessagingEnrichmentContext context,
+        CancellationToken cancellationToken = default)
     {
-        if (context.Kind == MessagingEventKind.Publish)
-            activity.SetTag("app.message.type", context.MessageName);
+        // Add custom tags here. Return synchronously for the tag to actually attach
+        // — see the Enrich XML doc for the fire-and-forget async-tail caveat.
+        activity.SetTag("app.custom_tag", "value");
+        return ValueTask.CompletedTask;
     }
 }
 ```
 
 `MessagingEnrichmentContext` exposes `Kind`, `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers`. An enricher that throws is isolated: the exception is swallowed (and logged as a warning when a logger is available) so subsequent enrichers and the span itself are unaffected.
+
+### Built-in tag names
+
+The `MessagingTags` static class exposes the framework's built-in tag names as public constants
+so consumer code (analyzers, enrichers, suppression filters) doesn't hardcode strings:
+
+- `MessagingTags.TenantId` — `"headless.messaging.tenant_id"` — emitted by the built-in
+  `TenantIdTagEnricher` unless `SuppressTenantIdTag = true`.
+- `MessagingTags.RetryCount` — `"headless.messaging.retry_count"` — emitted by the built-in
+  `RetryCountTagEnricher` on subscriber-invoke spans when retry count > 0, unless
+  `SuppressRetryCountTag = true`.
+- `MessagingTags.PersistenceDurationMs` — `"headless.messaging.persistence.duration_ms"` — emitted
+  on the persist activity's success event.
+- `MessagingTags.SendDurationMs` — `"headless.messaging.send.duration_ms"` — emitted on the
+  publish activity's success event.
+- `MessagingTags.ReceiveDurationMs` — `"headless.messaging.receive.duration_ms"` — emitted on the
+  consume activity's success event.
+- `MessagingTags.InvokeDurationMs` — `"headless.messaging.invoke.duration_ms"` — emitted on the
+  subscriber-invoke activity's success event.
 
 ## Dependencies
 

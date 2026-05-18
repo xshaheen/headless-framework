@@ -75,7 +75,8 @@ internal sealed class DiagnosticListener(
                                     eventData.Operation,
                                     eventData.Message.Headers,
                                     retryCount: 0
-                                )
+                                ),
+                                eventData.CancellationToken
                             );
                         }
 
@@ -103,7 +104,7 @@ internal sealed class DiagnosticListener(
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                             new ActivityTagsCollection
                             {
-                                new("headless.messaging.persistence.duration_ms", eventData.ElapsedTimeMs),
+                                new(MessagingTags.PersistenceDurationMs, eventData.ElapsedTimeMs),
                             }
                         )
                     );
@@ -191,7 +192,8 @@ internal sealed class DiagnosticListener(
                                     eventData.Operation,
                                     eventData.TransportMessage.Headers,
                                     retryCount: 0
-                                )
+                                ),
+                                eventData.CancellationToken
                             );
                         }
 
@@ -217,7 +219,7 @@ internal sealed class DiagnosticListener(
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.send.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.SendDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -313,7 +315,8 @@ internal sealed class DiagnosticListener(
                                     eventData.Operation,
                                     eventData.TransportMessage.Headers,
                                     retryCount: 0
-                                )
+                                ),
+                                eventData.CancellationToken
                             );
                         }
                     }
@@ -330,7 +333,7 @@ internal sealed class DiagnosticListener(
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.receive.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.ReceiveDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -425,7 +428,8 @@ internal sealed class DiagnosticListener(
                                     eventData.Operation,
                                     eventData.Message.Headers,
                                     retryCount: eventData.RetryCount
-                                )
+                                ),
+                                eventData.CancellationToken
                             );
                         }
                     }
@@ -442,7 +446,7 @@ internal sealed class DiagnosticListener(
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.invoke.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.InvokeDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -500,7 +504,11 @@ internal sealed class DiagnosticListener(
         };
     }
 
-    private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)
+    private void _CallEnrichers(
+        Activity activity,
+        in MessagingEnrichmentContext context,
+        CancellationToken cancellationToken
+    )
     {
         // Fast path: enrichers that complete synchronously have their tags applied before this
         // method returns. Async tails are observed but not awaited — see IActivityTagEnricher.Enrich
@@ -511,7 +519,7 @@ internal sealed class DiagnosticListener(
             ValueTask vt;
             try
             {
-                vt = enricher.Enrich(activity, context);
+                vt = enricher.Enrich(activity, context, cancellationToken);
             }
             catch (Exception ex)
             {

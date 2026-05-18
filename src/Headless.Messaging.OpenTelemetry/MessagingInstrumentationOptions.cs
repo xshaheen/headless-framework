@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.OpenTelemetry.Internal;
 
 namespace Headless.Messaging.OpenTelemetry;
 
@@ -57,10 +58,42 @@ public sealed class MessagingInstrumentationOptions
     /// </summary>
     /// <param name="enricher">The enricher to add. Must not be <see langword="null"/>.</param>
     /// <returns>The same options instance for chaining.</returns>
+    [MustUseReturnValue]
     public MessagingInstrumentationOptions AddEnricher(IActivityTagEnricher enricher)
     {
         Argument.IsNotNull(enricher);
         _enrichers.Add(enricher);
         return this;
+    }
+
+    /// <summary>
+    /// Builds the snapshot of enrichers that <c>AddMessagingInstrumentation</c> would register
+    /// for the current options state. Returns the built-in enrichers (gated by
+    /// <see cref="SuppressTenantIdTag"/> and <see cref="SuppressRetryCountTag"/>) followed by
+    /// any custom enrichers added via <see cref="AddEnricher"/>, in registration order.
+    /// </summary>
+    /// <remarks>
+    /// Use this to assert composition in tests or to introspect the active enricher set in
+    /// diagnostic tooling. The result is a fresh snapshot — mutating <see cref="AddEnricher"/>
+    /// after calling this does not affect previously returned arrays.
+    /// </remarks>
+    [Pure]
+    public IActivityTagEnricher[] BuildEnrichers()
+    {
+        var list = new List<IActivityTagEnricher>();
+
+        if (!SuppressTenantIdTag)
+        {
+            list.Add(new TenantIdTagEnricher());
+        }
+
+        if (!SuppressRetryCountTag)
+        {
+            list.Add(new RetryCountTagEnricher());
+        }
+
+        list.AddRange(_enrichers);
+
+        return [.. list];
     }
 }

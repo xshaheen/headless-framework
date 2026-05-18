@@ -13,4 +13,16 @@ public static class MessagingTags
 
     /// <summary>Tenant identifier extracted from the wire header.</summary>
     public const string TenantId = "headless.messaging.tenant_id";
+
+    /// <summary>Elapsed time (ms) for persisting an outbound message to the store.</summary>
+    public const string PersistenceDurationMs = "headless.messaging.persistence.duration_ms";
+
+    /// <summary>Elapsed time (ms) for sending a message through the transport.</summary>
+    public const string SendDurationMs = "headless.messaging.send.duration_ms";
+
+    /// <summary>Elapsed time (ms) for receiving a message from the transport.</summary>
+    public const string ReceiveDurationMs = "headless.messaging.receive.duration_ms";
+
+    /// <summary>Elapsed time (ms) for invoking a subscriber handler.</summary>
+    public const string InvokeDurationMs = "headless.messaging.invoke.duration_ms";
 }

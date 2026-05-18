@@ -89,7 +89,8 @@ internal sealed class SubscribeExecutor(
                     message.Origin,
                     method: null,
                     exception,
-                    retryCount: 0
+                    retryCount: 0,
+                    cancellationToken
                 );
 
                 await _SetFailedState(message, exception, dispatchServices, cancellationToken: cancellationToken)
@@ -410,12 +411,17 @@ internal sealed class SubscribeExecutor(
     )
     {
         var consumerContext = new ConsumerContext(descriptor, message);
-        var tracingTimestamp = _TracingBefore(message.Origin, descriptor.MethodInfo, message.Retries);
+        var tracingTimestamp = _TracingBefore(
+            message.Origin,
+            descriptor.MethodInfo,
+            message.Retries,
+            cancellationToken
+        );
         try
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo, message.Retries);
+            _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo, message.Retries, cancellationToken);
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
@@ -447,7 +453,14 @@ internal sealed class SubscribeExecutor(
             if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
             {
                 var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
-                _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e, message.Retries);
+                _TracingError(
+                    tracingTimestamp,
+                    message.Origin,
+                    descriptor.MethodInfo,
+                    e,
+                    message.Retries,
+                    cancellationToken
+                );
                 e.ReThrow();
             }
 
@@ -457,7 +470,14 @@ internal sealed class SubscribeExecutor(
         {
             var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message), ex);
 
-            _TracingError(tracingTimestamp, message.Origin, descriptor.MethodInfo, e, message.Retries);
+            _TracingError(
+                tracingTimestamp,
+                message.Origin,
+                descriptor.MethodInfo,
+                e,
+                message.Retries,
+                cancellationToken
+            );
 
             e.ReThrow();
         }
@@ -465,7 +485,12 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private long? _TracingBefore(Message message, MethodInfo method, int retryCount)
+    private long? _TracingBefore(
+        Message message,
+        MethodInfo method,
+        int retryCount,
+        CancellationToken cancellationToken
+    )
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeSubscriberInvoke))
         {
@@ -476,6 +501,7 @@ internal sealed class SubscribeExecutor(
                 Message = message,
                 MethodInfo = method,
                 RetryCount = retryCount,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData);
@@ -486,7 +512,13 @@ internal sealed class SubscribeExecutor(
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, Message message, MethodInfo method, int retryCount)
+    private void _TracingAfter(
+        long? tracingTimestamp,
+        Message message,
+        MethodInfo method,
+        int retryCount,
+        CancellationToken cancellationToken
+    )
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
         if (
@@ -503,6 +535,7 @@ internal sealed class SubscribeExecutor(
                 MethodInfo = method,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 RetryCount = retryCount,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterSubscriberInvoke, eventData);
@@ -514,7 +547,8 @@ internal sealed class SubscribeExecutor(
         Message message,
         MethodInfo? method,
         Exception ex,
-        int retryCount
+        int retryCount,
+        CancellationToken cancellationToken
     )
     {
         if (!_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorSubscriberInvoke))
@@ -533,6 +567,7 @@ internal sealed class SubscribeExecutor(
             ElapsedTimeMs = now - tracingTimestamp,
             Exception = ex,
             RetryCount = retryCount,
+            CancellationToken = cancellationToken,
         };
 
         _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorSubscriberInvoke, eventData);

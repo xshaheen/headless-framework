@@ -20,6 +20,13 @@ public class MessageEventDataSubStore
     public long? ElapsedTimeMs { get; set; }
 
     public Exception? Exception { get; set; }
+
+    /// <summary>
+    /// Cancellation token flowing from the originating messaging operation. Forwarded to
+    /// any <c>IActivityTagEnricher</c> implementations so they can cooperate with shutdown
+    /// or request cancellation. Defaults to <see cref="CancellationToken.None"/>.
+    /// </summary>
+    public CancellationToken CancellationToken { get; init; }
 }
 
 [PublicAPI]
@@ -41,4 +48,11 @@ public class MessageEventDataSubExecute
     /// Number of persisted retry pickups for this message. Zero on first delivery and inline retries.
     /// </summary>
     public int RetryCount { get; set; }
+
+    /// <summary>
+    /// Cancellation token flowing from the originating messaging operation. Forwarded to
+    /// any <c>IActivityTagEnricher</c> implementations so they can cooperate with shutdown
+    /// or request cancellation. Defaults to <see cref="CancellationToken.None"/>.
+    /// </summary>
+    public CancellationToken CancellationToken { get; init; }
 }
