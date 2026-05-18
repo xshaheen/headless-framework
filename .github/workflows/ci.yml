@@ -197,6 +197,11 @@ jobs:
           symbols=(./*.snupkg)
 
           for symbol in "${symbols[@]}"; do
+            if ! unzip -Z1 "$symbol" | grep -Eiq '\.pdb$'; then
+              echo "Skipping $symbol because it does not contain any .pdb files."
+              continue
+            fi
+
             dotnet nuget push "$symbol" \
               --source "https://api.nuget.org/v3/index.json" \
               --api-key "$NUGET_API_KEY" \
