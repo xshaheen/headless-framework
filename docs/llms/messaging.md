@@ -14,6 +14,10 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
+    - [Envelope](#envelope)
+        - [Reserved Wire Headers](#reserved-wire-headers)
+        - [PublishOptions](#publishoptions)
+        - [Tenant Header Integrity](#tenant-header-integrity)
     - [Transport Pause/Resume](#transport-pauseresume)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
@@ -274,10 +278,10 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
+- **Scheduled Publishing**: `IScheduledPublisher` for delayed message delivery (bound to the same instance as `IOutboxPublisher`)
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
 - **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
 - **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
-- **Delayed Publishing**: Schedule messages for future delivery
 - **Multi-Type Consumers**: Single consumer can handle multiple message types
 - **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods (DIM) for backpressure — idempotent, backward compatible
 
@@ -342,6 +346,61 @@ public sealed class MetricsService(IDirectPublisher publisher)
     }
 }
 ```
+
+## Envelope
+
+The current Phase 1 publish surface exposes three publisher interfaces in `Headless.Messaging.Abstractions`:
+
+- `IDirectPublisher` — fire-and-forget, transport-direct delivery. No outbox involvement.
+- `IOutboxPublisher` — durable, transactional delivery. The publish writes to storage; a background drainer hands the row to the transport once the ambient transaction commits.
+- `IScheduledPublisher` — delayed delivery via `PublishDelayAsync<T>(TimeSpan, ...)`. Bound to the same singleton as `IOutboxPublisher`, so scheduled publishing inherits the outbox's durability and tenant integrity. Broker-native scheduling is a separate concept — see [Provider Capabilities](#provider-capabilities) for which transports natively delay delivery.
+
+### Reserved Wire Headers
+
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Reserved header keys are rejected from the user-supplied `PublishOptions.Headers` dictionary; the framework owns these wire keys.
+
+| Header constant     | Wire key                       | Source       | Purpose                                                                                                  |
+|---------------------|--------------------------------|--------------|----------------------------------------------------------------------------------------------------------|
+| `MessageId`         | `headless-msg-id`              | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
+| `MessageName`       | `headless-msg-name`            | framework    | Topic / message name used for subscriber routing.                                                        |
+| `Group`             | `headless-msg-group`           | framework    | Active consumer group; set on consume, never on publish.                                                 |
+| `Type`              | `headless-msg-type`            | framework    | .NET type name of the payload, used for deserialization.                                                 |
+| `CorrelationId`     | `headless-corr-id`             | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
+| `CorrelationSequence` | `headless-corr-seq`          | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
+| `CallbackName`      | `headless-callback-name`       | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
+| `TenantId`          | `headless-tenant-id`           | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — raw writes are rejected; see Strict Publish Tenancy below. |
+| `ExecutionInstanceId` | `headless-exec-instance-id`  | framework    | Identifier of the application instance that produced / consumed the message.                             |
+| `SentTime`          | `headless-senttime`            | framework    | UTC ISO 8601 timestamp of publish.                                                                       |
+| `DelayTime`         | `headless-delaytime`           | framework    | UTC ISO 8601 target for delayed delivery (present only for scheduled messages).                          |
+| `Exception`         | `headless-exception`           | framework    | Failure record formatted as `ExceptionTypeName-->ExceptionMessage`. Present on failed-message records.   |
+| `TraceParent`       | `traceparent`                  | framework    | W3C Trace Context for OpenTelemetry propagation.                                                         |
+
+"Source = mixed" means the value MAY originate from the caller's `PublishOptions` but the framework supplies a default when the caller does not. "publisher" means the caller's `PublishOptions` is the only origin. "framework" means the framework writes the wire header without taking input from the caller.
+
+### `PublishOptions`
+
+`PublishOptions` is the publish-side configuration record. All properties are optional; the record's value equality and `with`-expression-friendly shape are deliberate so filters can mutate a single property without manually copying every other.
+
+| Property              | Type                                | Behavior                                                                                                              |
+|-----------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `Topic`               | `string?`                           | Explicit topic override. When `null`, the topic resolves from `WithTopicMapping<T>` or convention.                    |
+| `Headers`             | `IDictionary<string, string?>?`     | Custom application headers. Reserved keys (see table above) are rejected at publish time.                             |
+| `MessageId`           | `string?`                           | Logical message identifier override. Bounded by `PublishOptions.MessageIdMaxLength` (200 chars) for durable outbox columns. |
+| `CorrelationId`       | `string?`                           | Saga / flow correlation identifier.                                                                                   |
+| `CorrelationSequence` | `int?`                              | Position within a correlated sequence.                                                                                |
+| `CallbackName`        | `string?`                           | Callback handler topic for response routing.                                                                          |
+| `TenantId`            | `string?`                           | Multi-tenancy identifier. Source of truth for tenant-side wire header (see Strict Publish Tenancy). Bounded by `PublishOptions.TenantIdMaxLength` (200 chars); whitespace-only values are rejected at publish time. |
+
+### Tenant Header Integrity
+
+The `Headers.TenantId` (`headless-tenant-id`) wire header enforces a strict 4-case integrity policy at publish time. The contract is documented end-to-end in the [Strict Publish Tenancy](#strict-publish-tenancy) section below; the summary:
+
+1. **Typed property set, no raw header** — accepted; the framework stamps the wire header from `PublishOptions.TenantId`.
+2. **Raw header written, no typed property** — rejected with `InvalidOperationException`. Use `PublishOptions.TenantId`.
+3. **Typed property and raw header agree** — accepted as a no-op reconciliation.
+4. **Typed property and raw header disagree** — rejected with `InvalidOperationException`.
+
+Consume-side `TenantId` values are untrusted wire data. The framework does not charset-sanitize them; applications must validate before using the value in URLs, SQL columns, log lines, or OpenTelemetry tags.
 
 ## Transport Pause/Resume
 
