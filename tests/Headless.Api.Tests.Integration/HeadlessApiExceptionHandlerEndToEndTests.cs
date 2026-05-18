@@ -22,7 +22,7 @@ namespace Tests;
 public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 {
     [Fact]
-    public async Task should_map_missing_tenant_context_exception_to_normalized_400()
+    public async Task should_map_missing_tenant_context_exception_to_normalized_403()
     {
         // given - AddHeadlessProblemDetails auto-registers the tenancy handler
         await using var app = await _CreateAppAsync(
@@ -35,15 +35,15 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         using var response = await client.GetAsync("/throw", AbortToken);
 
         // then
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        root.GetProperty("status").GetInt32().Should().Be(400);
-        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
+        root.GetProperty("status").GetInt32().Should().Be(403);
+        root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
         root.GetProperty("detail")
             .GetString()
             .Should()
@@ -185,8 +185,8 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         // then - the tenancy handler returned false; the default 500 page (or empty body) is sent
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
-        // Negative assertion: response is not the tenancy 400 shape — the unique tenancy code
-        // is the identifier; title is shared `bad-request` so it can't be used to distinguish.
+        // Negative assertion: response is not the tenancy 403 shape — the unique tenancy code
+        // is the identifier; title is shared `forbidden` so it can't be used to distinguish.
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().NotContain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
@@ -224,7 +224,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
     }
 
     [Fact]
-    public async Task should_map_missing_tenant_context_exception_thrown_from_mvc_controller_to_normalized_400()
+    public async Task should_map_missing_tenant_context_exception_thrown_from_mvc_controller_to_normalized_403()
     {
         // given - same global handler reaches MVC controllers as well as Minimal-API endpoints
         var builder = WebApplication.CreateBuilder(
@@ -250,13 +250,13 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         using var response = await client.GetAsync("/mvc/throw-tenancy", AbortToken);
 
         // then
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
 
         var json = await response.Content.ReadAsStringAsync(AbortToken);
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
-        root.GetProperty("status").GetInt32().Should().Be(400);
+        root.GetProperty("status").GetInt32().Should().Be(403);
         root.GetProperty("error")
             .GetProperty("code")
             .GetString()

@@ -1,6 +1,6 @@
 ---
 domain: Multi-Tenancy
-packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Mediator, Messaging.Core, Orm.EntityFramework, Permissions.Core
+packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Messaging.Core, Orm.EntityFramework, Permissions.Core
 ---
 
 # Multi-Tenancy
@@ -11,7 +11,7 @@ packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Mediator, Messaging
 - [Agent Instructions](#agent-instructions)
 - [HTTP Setup](#http-setup)
 - [HTTP Failure Mapping](#http-failure-mapping)
-- [Mediator-Boundary Enforcement](#mediator-boundary-enforcement)
+- [HTTP Authorization Requirement](#http-authorization-requirement)
 - [Tenant Semantics](#tenant-semantics)
 - [EF Core Integration](#ef-core-integration)
 - [Permissions and Caching](#permissions-and-caching)
@@ -29,8 +29,7 @@ Headless multi-tenancy is built from these pieces:
 
 - `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface and a shared, non-PII tenant posture manifest.
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
-- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
-- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddMediatorTenantRequiredBehavior()`.
+- `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` and can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
@@ -43,7 +42,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadless();
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
-    .Mediator(mediator => mediator.RequireTenant())
+    .Authorization(auth => auth.RequireTenant())
     .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
     .EntityFramework(ef => ef.GuardTenantWrites()));
 
@@ -62,9 +61,9 @@ app.UseAuthorization();
 ## Agent Instructions
 
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
-- In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Mediator, Messaging, and EF posture is visible in one block.
+- In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Authorization, Messaging, and EF posture is visible in one block.
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
-- For Mediator request boundaries, use `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `services.AddMediatorTenantRequiredBehavior()`, and mark only intentional host-level requests with `[AllowMissingTenant]`.
+- For HTTP request boundaries, use `.Authorization(auth => auth.RequireTenant())`, add `TenantRequirement` to the app's `FallbackPolicy` or `DefaultPolicy`, and mark only intentional host-level endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`.
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
@@ -86,7 +85,16 @@ builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims(options =>
     {
         options.ClaimType = UserClaimTypes.TenantId; // default
-    })));
+    }))
+    .Authorization(auth => auth.RequireTenant()));
+
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
 
 app.UseAuthentication();
 app.UseHeadlessTenancy();
@@ -99,6 +107,13 @@ app.UseAuthorization();
 - Registers `ICurrentTenantAccessor` if needed
 - Configures `MultiTenancyOptions` for the HTTP middleware
 
+`.Authorization(auth => auth.RequireTenant())` delegates to the API package and:
+
+- Registers `TenantRequirementHandler`
+- Replaces ASP.NET Core's authorization result handler with a wrapper that only intercepts tenant failures
+- Records an `Authorization` seam with the `require-tenant` capability
+- Adds startup validation that fails fast when neither `DefaultPolicy` nor `FallbackPolicy` includes `TenantRequirement`
+
 `UseHeadlessTenancy()` reads the shared tenant posture manifest and applies HTTP tenant resolution only when HTTP tenancy was configured. It marks the middleware slot as applied so startup validation can fail fast when HTTP tenancy was configured but the middleware was omitted.
 
 `UseTenantResolution()` remains as a lower-level compatibility API. It reads the authenticated principal and:
@@ -110,7 +125,7 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the Mediator behavior (#236), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 400 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 403 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
 
 ```csharp
 builder.AddHeadless();
@@ -125,9 +140,9 @@ Resulting response shape (same for both surfaces):
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "bad-request",
-  "status": 400,
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+  "title": "forbidden",
+  "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
     "code": "g:tenant-required",
@@ -148,54 +163,46 @@ Prerequisites:
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
 - Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
+The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantContextRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
-## Mediator-Boundary Enforcement
+## HTTP Authorization Requirement
 
-`Headless.Mediator` provides tenant enforcement at the Mediator request boundary:
+`Headless.Api.Core` provides tenant enforcement at the ASP.NET Core authorization boundary:
 
-- Register through `.Mediator(mediator => mediator.RequireTenant())` on the root tenancy surface.
-- Register a real `ICurrentTenant` separately; the package does not own tenant resolution.
+- Register through `.Authorization(auth => auth.RequireTenant())` on the root tenancy surface.
+- Add `new TenantRequirement()` to the app's `FallbackPolicy`, `DefaultPolicy`, or named policies.
 - Requests require `ICurrentTenant.Id` to be non-blank by default.
-- Mark intentional host-level, public, system, or console-bootstrap requests with `[AllowMissingTenant]`.
-- Do not add runtime opt-out flags or handler-level policy checks; the marker attribute is the enrollment surface.
+- Mark intentional host-level, public, system, or console-bootstrap endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`.
+- Keep `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` ordering so the requirement sees the resolved tenant.
 
-Apply `[AllowMissingTenant]` to every Mediator request whose dispatch path can legitimately run without a tenant. Typical categories:
+Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose HTTP path can legitimately run without a tenant. Typical categories:
 
 - **Anonymous / public endpoints** (login, password reset, sign-up, public lookups).
-- **Admin, system, or console-bootstrap commands** dispatched under a host-level identity rather than a tenant-scoped one.
+- **Admin, system, or console-bootstrap endpoints** dispatched under a host-level identity rather than a tenant-scoped one.
 - **Authenticated endpoints reachable by non-tenant-scoped principal types** (admin, partner, service-account, cross-tenant principals — any identity that does not mint the tenant claim).
-- **Background / hosted-service / message-consumer commands** that intentionally run outside any tenant.
 
-Forgetting the attribute on one of these surfaces produces a 400 `g:tenant-required` for legitimate callers — `TenantRequiredBehavior` is intentionally fail-loud, so the missing attribute is the only signal. Tenant-scoped requests that genuinely require tenant context must omit it.
+Forgetting the opt-out on one of these surfaces produces a 403 `g:tenant-required` for legitimate callers. Tenant-scoped endpoints that genuinely require tenant context must omit it.
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
-    .Mediator(mediator => mediator.RequireTenant()));
+    .Http(http => http.ResolveFromClaims())
+    .Authorization(auth => auth.RequireTenant()));
 
-public sealed record CreateInvoice(Guid CustomerId) : IRequest<CreateInvoiceResponse>;
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
+app.MapGet("/public-status", () => Results.Ok()).AllowMissingTenant();
 
 [AllowMissingTenant]
-public sealed record RebuildSearchIndex : IRequest<RebuildSearchIndexResponse>;
-
-public sealed record RebuildSearchIndexResponse(int DocumentCount);
+public sealed class PublicBootstrapController : ControllerBase;
 ```
 
-When a non-opted-out request runs without a tenant, `TenantRequiredBehavior<TRequest, TResponse>` throws `MissingTenantContextException`. HTTP hosts that use `UseExceptionHandler()` get the same normalized 400 response documented in [HTTP Failure Mapping](#http-failure-mapping). Non-HTTP hosts should let the exception fail the dispatch or handle it at their process boundary.
-
-Recommended Mediator pipeline order:
-
-```text
-Auth -> TenantRequired -> Idempotency
-```
-
-Ordering is consumer-owned and not framework-enforced. Register the tenant guard after the identity/auth behavior that establishes tenant context and before idempotency, caching, or side-effect behaviors that could persist host-scoped state.
-
-For package-level wiring without the root tenancy surface, the lower-level registration remains available:
-
-```csharp
-builder.Services.AddMediatorTenantRequiredBehavior();
-```
+When a non-opted-out HTTP request runs without a tenant, `TenantRequirementHandler` fails the authorization context with the `TenantContextRequired` reason. `TenantAuthorizationMiddlewareResultHandler` maps that failure to the normalized 403 response documented in [HTTP Failure Mapping](#http-failure-mapping). Other authorization failures continue through ASP.NET Core's default result handler.
 
 ## Tenant Semantics
 
@@ -262,7 +269,7 @@ When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTena
 - Modified, soft-deleted, and physically deleted tenant-owned entities must belong to the current tenant or fail with `CrossTenantWriteException`.
 - Non-tenant entities are not blocked by the guard.
 
-Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 400 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
+Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 403 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
 
 `HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
@@ -361,7 +368,7 @@ using (currentTenant.Change(tenantId))
 
 #### Strict Publish Tenancy (`TenantContextRequired`)
 
-Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236).
+Use `.RequireTenantOnPublish()` to require every publish to resolve a tenant identifier. When enabled, the publish wrapper checks `PublishOptions.TenantId` first, then falls back to the ambient `ICurrentTenant.Id`. If neither resolves a value, the publish fails with `Headless.Abstractions.MissingTenantContextException`. This is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement.
 
 The lower-level equivalent is `MessagingOptions.TenantContextRequired = true`. Defaults to `false` to preserve today's behavior. The U2 raw-header integrity rules above (`ReservedTenantHeader`, `TenantIdMismatch`) always apply and run before the strict-tenancy fallback, so injection attempts cannot bypass the guard by enabling the flag.
 
@@ -391,11 +398,12 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 
 Integration tests that build the host (for example `WebApplicationFactory`) will execute the tenancy startup validator at host start. Tests that exercise HTTP tenancy must include `UseHeadlessTenancy()` in their pipeline so `HeadlessHttpTenancyValidator` sees the runtime marker — otherwise startup fails with `HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING`. Tests that need to skip validation entirely should not call `AddHeadlessTenancy(...)` at all, or should compose only the seams they exercise. The startup validator runs as an `IHostedLifecycleService.StartingAsync` step so it executes before any other hosted service's `StartAsync`.
 
-Tests that assert the normalized 400 `g:tenant-required` ProblemDetails (or any other `HeadlessApiExceptionHandler` failure shape) must build the host with a production-style environment. The common ASP.NET pattern only calls `app.UseExceptionHandler()` outside Development, so a default-Development test client lets the exception escape as the developer error page instead of the handler's ProblemDetails response. Use a `WebApplicationFactory` variant that sets `Environment = Production` (or your repo's equivalent helper) when the assertion target is the handler's output.
+Tests that assert the normalized 403 `g:tenant-required` ProblemDetails (or any other `HeadlessApiExceptionHandler` failure shape) must build the host with a production-style environment. The common ASP.NET pattern only calls `app.UseExceptionHandler()` outside Development, so a default-Development test client lets the exception escape as the developer error page instead of the handler's ProblemDetails response. Use a `WebApplicationFactory` variant that sets `Environment = Production` (or your repo's equivalent helper) when the assertion target is the handler's output.
 
 ## Failure Modes to Watch
 
 - Missing `UseHeadlessTenancy()` means HTTP requests stay at host scope even when the JWT contains a tenant claim; startup validation fails when HTTP tenancy was configured through `AddHeadlessTenancy(...)`.
+- Calling `.Authorization(auth => auth.RequireTenant())` without putting `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy` records an enforcing posture that would not execute. Startup validation fails with `HEADLESS_TENANCY_AUTHORIZATION_POLICY_MISSING`.
 - Registering `UseHeadlessTenancy()` before `UseAuthentication()` means no authenticated principal is available yet.
 - Forgetting `using` around `currentTenant.Change()` in non-HTTP code can leak tenant context within the current async flow.
 - Assuming host-level cache scope `t:` is tenant-isolated is incorrect; it is intentionally shared.

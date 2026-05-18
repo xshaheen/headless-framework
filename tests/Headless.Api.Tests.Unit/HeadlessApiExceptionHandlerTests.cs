@@ -44,7 +44,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_map_missing_tenant_context_exception_to_400()
+    public async Task should_map_missing_tenant_context_exception_to_403()
     {
         // given
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
@@ -61,15 +61,15 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeTrue();
-        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status400BadRequest);
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
         var expectedError = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
 
         await problemDetailsService
             .Received(1)
             .TryWriteAsync(
                 Arg.Is<ProblemDetailsContext>(c =>
-                    c.ProblemDetails.Status == 400
-                    && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.BadRequest
+                    c.ProblemDetails.Status == 403
+                    && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.Forbidden
                     && expectedError.Equals(c.ProblemDetails.Extensions["error"])
                 )
             );
@@ -408,7 +408,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             responseBody,
             cancellationToken: TestContext.Current.CancellationToken
         );
-        doc.RootElement.GetProperty("status").GetInt32().Should().Be(400);
+        doc.RootElement.GetProperty("status").GetInt32().Should().Be(403);
         doc.RootElement.GetProperty("error")
             .GetProperty("code")
             .GetString()
@@ -586,9 +586,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // given - IProblemDetailsCreator factory throws while building the ProblemDetails
         var problemDetailsService = Substitute.For<IProblemDetailsService>();
         var creator = Substitute.For<IProblemDetailsCreator>();
-        creator
-            .BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
-            .Returns(_ => throw new InvalidOperationException("creator failure"));
+        creator.TenantContextRequired().Returns(_ => throw new InvalidOperationException("creator failure"));
         var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
         var handler = _CreateHandler(problemDetailsService, creator, logger);
         var httpContext = new DefaultHttpContext();

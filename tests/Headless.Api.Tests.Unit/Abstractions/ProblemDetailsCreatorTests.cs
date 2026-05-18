@@ -162,6 +162,27 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     }
 
     [Fact]
+    public void should_create_tenant_context_required_with_403_and_singular_error()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.TenantContextRequired();
+
+        // then
+        result.Status.Should().Be(StatusCodes.Status403Forbidden);
+        result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
+        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
+        result
+            .Extensions.Should()
+            .ContainKey("error")
+            .WhoseValue.Should()
+            .BeEquivalentTo(HeadlessProblemDetailsConstants.Errors.TenantContextRequired);
+        result.Extensions.Should().NotContainKey("errors");
+    }
+
+    [Fact]
     public void should_create_too_many_requests_with_429()
     {
         // given

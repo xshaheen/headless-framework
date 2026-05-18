@@ -2,9 +2,12 @@
 
 using FluentValidation;
 using Headless.Abstractions;
+using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.MultiTenancy;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -64,6 +67,23 @@ public static class SetupApiTenancy
         Argument.IsNotNull(configure);
 
         configure(new HeadlessHttpTenancyBuilder(builder));
+
+        return builder;
+    }
+
+    /// <summary>Configures HTTP authorization tenancy through the root Headless tenancy builder.</summary>
+    /// <param name="builder">The root tenancy builder.</param>
+    /// <param name="configure">The authorization tenancy configuration callback.</param>
+    /// <returns>The same root tenancy builder.</returns>
+    public static HeadlessTenancyBuilder Authorization(
+        this HeadlessTenancyBuilder builder,
+        Action<HeadlessAuthorizationTenancyBuilder> configure
+    )
+    {
+        Argument.IsNotNull(builder);
+        Argument.IsNotNull(configure);
+
+        configure(new HeadlessAuthorizationTenancyBuilder(builder));
 
         return builder;
     }
@@ -152,6 +172,84 @@ public sealed class HeadlessHttpTenancyBuilder
         _builder.RecordSeam(Seam, TenantPostureStatus.Configured, ResolveFromClaimsCapability);
 
         return this;
+    }
+}
+
+/// <summary>Records that Headless authorization should require a resolved tenant.</summary>
+[PublicAPI]
+public sealed class HeadlessAuthorizationTenancyBuilder
+{
+    /// <summary>The seam name reported in the tenant posture manifest.</summary>
+    public const string Seam = "Authorization";
+
+    /// <summary>Capability label reported by <see cref="RequireTenant"/>.</summary>
+    public const string RequireTenantCapability = "require-tenant";
+
+    /// <summary>Diagnostic code emitted when authorization tenancy is configured without a tenant policy.</summary>
+    public const string AuthorizationPolicyMissingDiagnosticCode = "HEADLESS_TENANCY_AUTHORIZATION_POLICY_MISSING";
+
+    private readonly HeadlessTenancyBuilder _builder;
+
+    internal HeadlessAuthorizationTenancyBuilder(HeadlessTenancyBuilder builder)
+    {
+        _builder = Argument.IsNotNull(builder);
+    }
+
+    /// <summary>Requires an ambient tenant through ASP.NET Core authorization.</summary>
+    /// <returns>The same authorization tenancy builder.</returns>
+    public HeadlessAuthorizationTenancyBuilder RequireTenant()
+    {
+        _builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IAuthorizationHandler, TenantRequirementHandler>()
+        );
+        _builder.Services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IHeadlessTenancyValidator, HeadlessAuthorizationTenancyValidator>()
+        );
+        _builder.Services.Replace(
+            ServiceDescriptor.Singleton<
+                IAuthorizationMiddlewareResultHandler,
+                TenantAuthorizationMiddlewareResultHandler
+            >()
+        );
+
+        _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RequireTenantCapability);
+
+        return this;
+    }
+}
+
+internal sealed class HeadlessAuthorizationTenancyValidator : IHeadlessTenancyValidator
+{
+    public IEnumerable<HeadlessTenancyDiagnostic> Validate(HeadlessTenancyValidationContext context)
+    {
+        Argument.IsNotNull(context);
+
+        if (!context.Manifest.IsConfigured(HeadlessAuthorizationTenancyBuilder.Seam))
+        {
+            yield break;
+        }
+
+        var options = context.Services.GetService<IOptions<AuthorizationOptions>>()?.Value;
+
+        if (
+            options is null
+            || (
+                !_ContainsTenantRequirement(options.DefaultPolicy)
+                && !_ContainsTenantRequirement(options.FallbackPolicy)
+            )
+        )
+        {
+            yield return HeadlessTenancyDiagnostic.Error(
+                HeadlessAuthorizationTenancyBuilder.Seam,
+                HeadlessAuthorizationTenancyBuilder.AuthorizationPolicyMissingDiagnosticCode,
+                "Authorization tenant enforcement is configured, but neither DefaultPolicy nor FallbackPolicy includes TenantRequirement."
+            );
+        }
+    }
+
+    private static bool _ContainsTenantRequirement(AuthorizationPolicy? policy)
+    {
+        return policy?.Requirements.OfType<TenantRequirement>().Any() == true;
     }
 }
 

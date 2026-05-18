@@ -3,62 +3,13 @@
 using Headless.Abstractions;
 using Headless.Mediator;
 using Headless.Mediator.Behaviors;
-using Headless.MultiTenancy;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
 public sealed class MediatorSetupTests
 {
-    [Fact]
-    public void should_register_tenant_required_behavior_once()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddMediatorTenantRequiredBehavior();
-
-        // then
-        var descriptor = services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle().Subject;
-        descriptor.Lifetime.Should().Be(ServiceLifetime.Transient);
-    }
-
-    [Fact]
-    public void should_register_tenant_required_behavior_idempotently()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddMediatorTenantRequiredBehavior();
-        services.AddMediatorTenantRequiredBehavior();
-
-        // then
-        services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle();
-    }
-
-    [Fact]
-    public void should_register_tenant_required_behavior_from_headless_tenancy_root()
-    {
-        // given
-        var builder = Host.CreateApplicationBuilder();
-
-        // when
-        builder.AddHeadlessTenancy(tenancy => tenancy.Mediator(mediator => mediator.RequireTenant()));
-
-        // then
-        builder.Services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle();
-
-        var manifest = builder.Services.GetOrAddTenantPostureManifest();
-        var seam = manifest.GetSeam("Mediator");
-        seam.Should().NotBeNull();
-        seam!.Status.Should().Be(TenantPostureStatus.Enforcing);
-        seam.Capabilities.Should().BeEquivalentTo("require-tenant");
-    }
-
     [Fact]
     public void should_register_validation_request_pre_processor_once()
     {
@@ -70,7 +21,7 @@ public sealed class MediatorSetupTests
 
         // then
         var descriptor = services.Where(_IsValidationRequestPreProcessorDescriptor).Should().ContainSingle().Subject;
-        descriptor.Lifetime.Should().Be(ServiceLifetime.Transient);
+        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
     }
 
     [Fact]
@@ -102,19 +53,19 @@ public sealed class MediatorSetupTests
             .Should()
             .ContainSingle()
             .Subject.Lifetime.Should()
-            .Be(ServiceLifetime.Transient);
+            .Be(ServiceLifetime.Scoped);
         services
             .Where(_IsResponseLoggingBehaviorDescriptor)
             .Should()
             .ContainSingle()
             .Subject.Lifetime.Should()
-            .Be(ServiceLifetime.Transient);
+            .Be(ServiceLifetime.Scoped);
         services
             .Where(_IsCriticalRequestLoggingBehaviorDescriptor)
             .Should()
             .ContainSingle()
             .Subject.Lifetime.Should()
-            .Be(ServiceLifetime.Transient);
+            .Be(ServiceLifetime.Scoped);
     }
 
     [Fact]
@@ -140,10 +91,7 @@ public sealed class MediatorSetupTests
         var services = new ServiceCollection();
 
         // when
-        var result = services
-            .AddMediatorTenantRequiredBehavior()
-            .AddMediatorValidationRequestBehavior()
-            .AddMediatorLoggingBehaviors();
+        var result = services.AddMediatorValidationRequestBehavior().AddMediatorLoggingBehaviors();
 
         // then
         result.Should().BeSameAs(services);
@@ -156,35 +104,12 @@ public sealed class MediatorSetupTests
         IServiceCollection? services = null;
 
         // when
-        var tenantRequiredAction = () => services!.AddMediatorTenantRequiredBehavior();
         var validationAction = () => services!.AddMediatorValidationRequestBehavior();
         var loggingAction = () => services!.AddMediatorLoggingBehaviors();
 
         // then
-        tenantRequiredAction.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(services));
         validationAction.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(services));
         loggingAction.Should().ThrowExactly<ArgumentNullException>().WithParameterName(nameof(services));
-    }
-
-    [Fact]
-    public void should_resolve_tenant_required_behavior_from_service_provider()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
-
-        // when
-        services.AddMediatorTenantRequiredBehavior();
-
-        using var serviceProvider = services.BuildServiceProvider();
-        var behaviors = serviceProvider.GetServices<IPipelineBehavior<TestRequest, TestResponse>>();
-
-        // then
-        behaviors
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .BeOfType<TenantRequiredBehavior<TestRequest, TestResponse>>();
     }
 
     [Fact]
@@ -228,81 +153,6 @@ public sealed class MediatorSetupTests
         behaviors
             .Should()
             .ContainSingle(behavior => behavior is CriticalRequestLoggingBehavior<TestRequest, TestResponse>);
-    }
-
-    [Fact]
-    public async Task should_throw_missing_tenant_context_when_dispatched_without_tenant()
-    {
-        // given
-        var behavior = new TenantRequiredBehavior<TestRequest, TestResponse>(new NullCurrentTenant());
-
-        // when
-        var act = async () =>
-            await behavior.Handle(
-                new TestRequest(),
-                (_, _) => ValueTask.FromResult(new TestResponse()),
-                CancellationToken.None
-            );
-
-        // then
-        await act.Should().ThrowAsync<MissingTenantContextException>();
-    }
-
-    [Fact]
-    public async Task should_invoke_handler_when_dispatched_with_tenant()
-    {
-        // given
-        var currentTenant = new TestStaticCurrentTenant("tenant-a");
-        var behavior = new TenantRequiredBehavior<TestRequest, TestResponse>(currentTenant);
-        var handlerCalled = false;
-
-        // when
-        var response = await behavior.Handle(
-            new TestRequest(),
-            (_, _) =>
-            {
-                handlerCalled = true;
-                return ValueTask.FromResult(new TestResponse());
-            },
-            CancellationToken.None
-        );
-
-        // then
-        response.Should().NotBeNull();
-        handlerCalled.Should().BeTrue();
-    }
-
-    private sealed class TestStaticCurrentTenant(string? id) : ICurrentTenant
-    {
-        public string? Id { get; set; } = id;
-
-        public string? Name { get; set; }
-
-        public bool IsAvailable => Id is not null;
-
-        public IDisposable Change(string? id, string? name = null)
-        {
-            var previousId = Id;
-            var previousName = Name;
-            Id = id;
-            Name = name;
-            return new DisposableAction(() =>
-            {
-                Id = previousId;
-                Name = previousName;
-            });
-        }
-
-        private sealed class DisposableAction(Action action) : IDisposable
-        {
-            public void Dispose() => action();
-        }
-    }
-
-    private static bool _IsTenantRequiredBehaviorDescriptor(ServiceDescriptor descriptor)
-    {
-        return descriptor.ServiceType == typeof(IPipelineBehavior<,>)
-            && descriptor.ImplementationType == typeof(TenantRequiredBehavior<,>);
     }
 
     private static bool _IsValidationRequestPreProcessorDescriptor(ServiceDescriptor descriptor)

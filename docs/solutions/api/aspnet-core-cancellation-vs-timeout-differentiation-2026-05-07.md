@@ -264,11 +264,11 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 # Related Documentation
 
 - `docs/llms/api.md` (Exception mapping table) — canonical reference for the framework's status-code contract and the `HeadlessApiExceptionHandler` chain ordering rule.
-- `docs/llms/multi-tenancy.md` — describes the `MissingTenantContextException` → 400 path that motivated the unified handler.
+- `docs/llms/multi-tenancy.md` — describes the `MissingTenantContextException` → 403 path used by the unified handler.
 
 # Related GitHub Issues
 
-- [#237](https://github.com/xshaheen/headless-framework/issues/237) — "TenantContextExceptionHandler: map MissingTenantContextException to 400 ProblemDetails with stable code" (the work that became the unified handler).
+- [#237](https://github.com/xshaheen/headless-framework/issues/237) — tenant-context exception mapping work that became the unified handler.
 - [#201](https://github.com/xshaheen/headless-framework/issues/201) — "ProblemDetails 404 response missing 'detail' property in .NET 10" (prior instance of the same `ClientErrorMapping` defaults gap).
 
 # Files Referenced

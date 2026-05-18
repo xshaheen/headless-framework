@@ -30,6 +30,7 @@ dotnet add package Headless.Api.Core
 - Request cancellation handling
 - Diagnostic listeners for debugging (`AddHeadlessApiDiagnosticListeners`)
 - Status codes rewriter (`AddStatusCodesRewriterMiddleware()`)
+- HTTP tenant authorization (`TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`)
 - Kestrel limits and default API conventions via `ConfigureHeadlessDefaultApi()`
 
 ## Building Blocks Quick Reference
@@ -51,13 +52,33 @@ builder.AddHeadlessMultiTenancy(options => options.ClaimType = UserClaimTypes.Te
 app.UseTenantResolution();
 ```
 
+Tenant authorization primitives:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Http(http => http.ResolveFromClaims())
+    .Authorization(auth => auth.RequireTenant()));
+
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build();
+});
+
+app.MapGet("/public-status", () => Results.Ok()).AllowMissingTenant();
+```
+
+`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or endpoint metadata carries `[AllowMissingTenant]`. Tenant failures return the same structured 403 `g:tenant-required` ProblemDetails shape as the exception-handler fallback.
+
 ## Exception Mapping
 
 `AddHeadlessProblemDetails()` registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 | Exception | Response |
 |-----------|----------|
-| `MissingTenantContextException` | 400 (identified by `error.code: g:tenant-required`) |
+| `MissingTenantContextException` | 403 (identified by `error.code: g:tenant-required`) |
 | `CrossTenantWriteException` | 409 (identified by `error.code: g:cross-tenant-write`) |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
@@ -75,9 +96,9 @@ Tenancy response shape (other exceptions follow the same normalization):
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "bad-request",
-  "status": 400,
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+  "title": "forbidden",
+  "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
     "code": "g:tenant-required",
