@@ -268,6 +268,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+- **When `UseStorageLock = true`, register a real `IDistributedLockProvider`** (e.g. `Headless.DistributedLocks.Core` + a cache or database backend). Without it only `NoOpDistributedLockProvider` is active and the bootstrapper logs EventId 77 Warning on startup. `UseStorageLock` defaults to `false`; skip it when running a single replica or when the storage provider natively prevents duplicate retry pickup.
 
 ---
 
@@ -751,6 +752,33 @@ var info = new FailedInfo
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
 | `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)` method returning `RetryDecision`. |
 | `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
+
+## Distributed Lock Integration
+
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, preventing duplicate work across replicas.
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.UseStorageLock = true;
+});
+```
+
+**Requirements:**
+
+- Register a real `IDistributedLockProvider` (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
+- Without it, only `NoOpDistributedLockProvider` is active (registered as a `TryAddSingleton` fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found.
+
+**Lock names:**
+
+- `messaging.publish-retry-{version}` — held while processing published-message retries.
+- `messaging.receive-retry-{version}` — held while processing received-message retries.
+
+`{version}` comes from `MessagingOptions.Version`. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
+
+**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
+
+---
 
 ## Strict Publish Tenancy
 
@@ -2033,7 +2061,6 @@ options.UsePostgreSql(config =>
 - Creates database tables in configured schema:
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
-    - `{prefix}_lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages
 
@@ -2099,7 +2126,6 @@ options.UseSqlServer(config =>
 - Creates database tables in configured schema:
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
-    - `{prefix}_lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages
 

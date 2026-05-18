@@ -19,6 +19,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
+- **Distributed Lock Integration**: Optional `IDistributedLockProvider`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
 
 ## Installation
 
@@ -460,6 +461,24 @@ await retryMonitor.ResetBackpressureAsync(cancellationToken);
 ### Cluster Scope Limitation
 
 The circuit breaker operates **per-process only**. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
+
+## Distributed Lock Integration
+
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.Options.UseStorageLock = true;
+});
+
+// Also register a real IDistributedLockProvider (e.g. Headless.DistributedLocks.Core)
+builder.Services.AddDistributedLockProvider(...);
+```
+
+Without a real `IDistributedLockProvider`, only `NoOpDistributedLockProvider` is active. The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found.
+
+When `UseStorageLock = false` (default), `IDistributedLockProvider` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
 
 ## Dependencies
 
