@@ -2,7 +2,6 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using Headless.Messaging;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.Logging;
@@ -20,6 +19,8 @@ internal sealed class DiagnosticListener(
     public const string SourceName = MessagingDiagnostics.SourceName;
 
     private static readonly TextMapPropagator _Propagator = Propagators.DefaultTextMapPropagator;
+
+    private readonly bool _hasEnrichers = enrichers.Length > 0;
 
     public void OnCompleted() { }
 
@@ -64,28 +65,19 @@ internal sealed class DiagnosticListener(
                             )
                         );
 
-                        _CallEnrichers(
-                            activity,
-                            new MessagingEnrichmentContext
-                            {
-                                Kind = MessagingEventKind.Persist,
-                                MessageId = eventData.Message.GetId(),
-                                MessageName = eventData.Operation,
-                                TenantId = eventData.Message.Headers.TryGetValue(Headers.TenantId, out var persistTid)
-                                    ? persistTid
-                                    : null,
-                                CorrelationId = eventData.Message.Headers.TryGetValue(
-                                    Headers.CorrelationId,
-                                    out var persistCid
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Persist,
+                                    eventData.Message.GetId(),
+                                    eventData.Operation,
+                                    eventData.Message.Headers,
+                                    retryCount: 0
                                 )
-                                    ? persistCid
-                                    : null,
-                                RetryCount = 0,
-                                Headers =
-                                    eventData.Message.Headers as IReadOnlyDictionary<string, string?>
-                                    ?? new ReadOnlyDictionary<string, string?>(eventData.Message.Headers),
-                            }
-                        );
+                            );
+                        }
 
                         if (parentContext != default && Activity.Current != null)
                         {
@@ -189,26 +181,19 @@ internal sealed class DiagnosticListener(
                             )
                         );
 
-                        _CallEnrichers(
-                            activity,
-                            new MessagingEnrichmentContext
-                            {
-                                Kind = MessagingEventKind.Publish,
-                                MessageId = eventData.TransportMessage.GetId(),
-                                MessageName = eventData.Operation,
-                                TenantId = eventData.TransportMessage.Headers.TryGetValue(
-                                    Headers.TenantId,
-                                    out var publishTid
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Publish,
+                                    eventData.TransportMessage.GetId(),
+                                    eventData.Operation,
+                                    eventData.TransportMessage.Headers,
+                                    retryCount: 0
                                 )
-                                    ? publishTid
-                                    : null,
-                                CorrelationId = eventData.TransportMessage.GetCorrelationId(),
-                                RetryCount = 0,
-                                Headers =
-                                    eventData.TransportMessage.Headers as IReadOnlyDictionary<string, string?>
-                                    ?? new ReadOnlyDictionary<string, string?>(eventData.TransportMessage.Headers),
-                            }
-                        );
+                            );
+                        }
 
                         _Propagator.Inject(
                             new PropagationContext(activity.Context, Baggage.Current),
@@ -318,26 +303,19 @@ internal sealed class DiagnosticListener(
                             )
                         );
 
-                        _CallEnrichers(
-                            activity,
-                            new MessagingEnrichmentContext
-                            {
-                                Kind = MessagingEventKind.Consume,
-                                MessageId = eventData.TransportMessage.GetId(),
-                                MessageName = eventData.Operation,
-                                TenantId = eventData.TransportMessage.Headers.TryGetValue(
-                                    Headers.TenantId,
-                                    out var consumeTid
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Consume,
+                                    eventData.TransportMessage.GetId(),
+                                    eventData.Operation,
+                                    eventData.TransportMessage.Headers,
+                                    retryCount: 0
                                 )
-                                    ? consumeTid
-                                    : null,
-                                CorrelationId = eventData.TransportMessage.GetCorrelationId(),
-                                RetryCount = 0,
-                                Headers =
-                                    eventData.TransportMessage.Headers as IReadOnlyDictionary<string, string?>
-                                    ?? new ReadOnlyDictionary<string, string?>(eventData.TransportMessage.Headers),
-                            }
-                        );
+                            );
+                        }
                     }
                 }
                 break;
@@ -437,28 +415,19 @@ internal sealed class DiagnosticListener(
                             )
                         );
 
-                        _CallEnrichers(
-                            activity,
-                            new MessagingEnrichmentContext
-                            {
-                                Kind = MessagingEventKind.SubscriberInvoke,
-                                MessageId = eventData.Message.GetId(),
-                                MessageName = eventData.Operation,
-                                TenantId = eventData.Message.Headers.TryGetValue(Headers.TenantId, out var invokeTid)
-                                    ? invokeTid
-                                    : null,
-                                CorrelationId = eventData.Message.Headers.TryGetValue(
-                                    Headers.CorrelationId,
-                                    out var invokeCid
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.SubscriberInvoke,
+                                    eventData.Message.GetId(),
+                                    eventData.Operation,
+                                    eventData.Message.Headers,
+                                    retryCount: eventData.RetryCount
                                 )
-                                    ? invokeCid
-                                    : null,
-                                RetryCount = eventData.RetryCount,
-                                Headers =
-                                    eventData.Message.Headers as IReadOnlyDictionary<string, string?>
-                                    ?? new ReadOnlyDictionary<string, string?>(eventData.Message.Headers),
-                            }
-                        );
+                            );
+                        }
                     }
                 }
                 break;
@@ -508,6 +477,27 @@ internal sealed class DiagnosticListener(
                 }
                 break;
         }
+    }
+
+    private static MessagingEnrichmentContext _BuildEnrichmentContext(
+        MessagingEventKind kind,
+        string messageId,
+        string operation,
+        IDictionary<string, string?> headers,
+        int retryCount
+    )
+    {
+        return new MessagingEnrichmentContext
+        {
+            Kind = kind,
+            MessageId = messageId,
+            MessageName = operation,
+            TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
+            CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
+            RetryCount = retryCount,
+            Headers =
+                headers as IReadOnlyDictionary<string, string?> ?? new ReadOnlyDictionary<string, string?>(headers),
+        };
     }
 
     private void _CallEnrichers(Activity activity, in MessagingEnrichmentContext context)

@@ -63,6 +63,10 @@ public static class EndpointsExtensions
         IProblemDetailsCreator problemDetailsCreator
     )
     {
+        // Defense-in-depth: this branch is unreachable in production because BuildRedirectUri
+        // constructs the absolute URI from mainHostBaseUri.Scheme/Host/Port directly. Keep the
+        // check so consumers who modify BuildRedirectUri to allow alternate hosts still get the
+        // open-redirect guard. Do not remove without auditing all BuildRedirectUri call sites.
         if (!_IsHostMatch(redirectUri, mainHostBaseUri))
         {
             return Results.Problem(problemDetailsCreator.BadRequest());
