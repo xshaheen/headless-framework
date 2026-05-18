@@ -410,25 +410,25 @@ The current Phase 1 publish surface exposes three publisher interfaces in `Headl
 
 ### Reserved Wire Headers
 
-Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Reserved header keys are rejected from the user-supplied `PublishOptions.Headers` dictionary; the framework owns these wire keys.
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through `PublishOptions.Headers` is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use the typed `PublishOptions` properties or the `TimeSpan delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
 
-| Header constant     | Wire key                       | Source       | Purpose                                                                                                  |
-|---------------------|--------------------------------|--------------|----------------------------------------------------------------------------------------------------------|
-| `MessageId`         | `headless-msg-id`              | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
-| `MessageName`       | `headless-msg-name`            | framework    | Topic / message name used for subscriber routing.                                                        |
-| `Group`             | `headless-msg-group`           | framework    | Active consumer group; set on consume, never on publish.                                                 |
-| `Type`              | `headless-msg-type`            | framework    | .NET type name of the payload, used for deserialization.                                                 |
-| `CorrelationId`     | `headless-corr-id`             | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
-| `CorrelationSequence` | `headless-corr-seq`          | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
-| `CallbackName`      | `headless-callback-name`       | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
-| `TenantId`          | `headless-tenant-id`           | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — raw writes are rejected; see Strict Publish Tenancy below. |
-| `ExecutionInstanceId` | `headless-exec-instance-id`  | framework    | Identifier of the application instance that produced / consumed the message.                             |
-| `SentTime`          | `headless-senttime`            | framework    | UTC ISO 8601 timestamp of publish.                                                                       |
-| `DelayTime`         | `headless-delaytime`           | framework    | UTC ISO 8601 target for delayed delivery (present only for scheduled messages).                          |
-| `Exception`         | `headless-exception`           | framework    | Failure record formatted as `ExceptionTypeName-->ExceptionMessage`. Present on failed-message records.   |
-| `TraceParent`       | `traceparent`                  | framework    | W3C Trace Context for OpenTelemetry propagation.                                                         |
+| Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
+|---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
+| `MessageId`         | `headless-msg-id`              | yes      | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
+| `MessageName`       | `headless-msg-name`            | yes      | framework    | Topic / message name used for subscriber routing.                                                        |
+| `Type`              | `headless-msg-type`            | yes      | framework    | .NET type name of the payload, used for deserialization.                                                 |
+| `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
+| `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
+| `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
+| `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
+| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from the `delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
+| `TenantId`          | `headless-tenant-id`           | rule     | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — enforced by its own four-case rule, NOT the reserved-set rejection. See Strict Publish Tenancy below. |
+| `Group`             | `headless-msg-group`           | no       | framework    | Active consumer group; injected on consume, never on publish.                                            |
+| `ExecutionInstanceId` | `headless-exec-instance-id`  | no       | framework    | Identifier of the application instance that produced / consumed the message.                             |
+| `Exception`         | `headless-exception`           | no       | framework    | Failure record formatted as `ExceptionTypeName-->ExceptionMessage`. Present on failed-message records.   |
+| `TraceParent`       | `traceparent`                  | no       | framework    | W3C Trace Context for OpenTelemetry propagation.                                                         |
 
-"Source = mixed" means the value MAY originate from the caller's `PublishOptions` but the framework supplies a default when the caller does not. "publisher" means the caller's `PublishOptions` is the only origin. "framework" means the framework writes the wire header without taking input from the caller.
+"Source = mixed" means the value MAY originate from the caller's `PublishOptions` but the framework supplies a default when the caller does not. "publisher" means the caller's `PublishOptions` is the only origin. "framework" means the framework writes the wire header without taking input from the caller. The `Reserved` column reports the live behavior in `MessagePublishRequestFactory._ReservedHeaders` — `yes` keys throw on a raw write through `PublishOptions.Headers`; `no` keys are framework-written but not blocked from caller overrides.
 
 ### `PublishOptions`
 
