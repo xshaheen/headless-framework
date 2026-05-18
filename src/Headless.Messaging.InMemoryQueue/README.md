@@ -26,7 +26,8 @@ dotnet add package Headless.Messaging.InMemoryQueue
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
-    options.UseInMemoryQueue();
+    options.UseInMemoryMessageQueue();
+    // Use overload UseInMemoryMessageQueue() — there is no UseInMemoryQueue() extension.
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
@@ -34,7 +35,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-No configuration required. Just call `UseInMemoryQueue()`.
+No configuration required. Just call `UseInMemoryMessageQueue()`.
 
 ## Messaging Semantics
 

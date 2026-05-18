@@ -27,10 +27,7 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseRedisStreams(redis =>
-    {
-        redis.Configuration = "localhost:6379";
-    });
+    options.UseRedis("localhost:6379");
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
@@ -38,10 +35,12 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
+`UseRedis(string)` accepts a StackExchange.Redis connection string directly. For richer options use the `UseRedis(Action<MessagingRedisOptions>)` overload — `MessagingRedisOptions.Configuration` is a `ConfigurationOptions` instance, NOT a string:
+
 ```csharp
-options.UseRedisStreams(redis =>
+options.UseRedis(redis =>
 {
-    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
     redis.StreamEntriesCount = 10;
     redis.ConnectionPoolSize = 10;
 });

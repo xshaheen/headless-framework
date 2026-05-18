@@ -44,8 +44,8 @@ options.UseAmazonSqs(sqs =>
 {
     sqs.Region = "us-east-1";
     sqs.Credentials = awsCredentials;
-    sqs.SNSServiceUrl = "https://sns.us-east-1.amazonaws.com";
-    sqs.SQSServiceUrl = "https://sqs.us-east-1.amazonaws.com";
+    sqs.SnsServiceUrl = "https://sns.us-east-1.amazonaws.com";
+    sqs.SqsServiceUrl = "https://sqs.us-east-1.amazonaws.com";
 });
 ```
 

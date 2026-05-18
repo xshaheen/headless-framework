@@ -42,9 +42,10 @@ builder.Services.AddHeadlessMessaging(options =>
 options.UsePulsar(pulsar =>
 {
     pulsar.ServiceUrl = "pulsar://localhost:6650";
-    pulsar.TenantName = "public";
-    pulsar.NamespaceName = "default";
-    pulsar.ConnectionPoolSize = 10;
+    pulsar.EnableClientLog = false;
+    // pulsar.TlsOptions = new PulsarTlsOptions { ... }; // optional TLS settings
+    // Tenant and namespace are encoded into the broker topic name (e.g.,
+    // "persistent://public/default/orders.events"), not surfaced as options here.
 });
 ```
 

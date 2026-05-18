@@ -45,7 +45,7 @@ options.UseAzureServiceBus(asb =>
     asb.ConnectionString = "connection_string";
     asb.TopicPath = "myapp-topic";
     asb.EnableSessions = true; // Required for ordered delivery
-    asb.ManagementTokenProvider = tokenProvider;
+    asb.TokenCredential = credential; // Azure.Core.TokenCredential when not using ConnectionString
 });
 ```
 
