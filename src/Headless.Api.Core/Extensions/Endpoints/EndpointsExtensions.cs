@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Extensions;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -22,22 +23,40 @@ public static class EndpointsExtensions
                 pattern: "{*path}",
                 handler: (HttpContext context) =>
                 {
-                    // Build the redirect target from a trusted base URI so the host
-                    // cannot be hijacked via crafted paths (e.g. "//evil.com/foo").
-                    var builder = new UriBuilder
-                    {
-                        Scheme = mainHostBaseUri.Scheme,
-                        Host = mainHostBaseUri.Host,
-                        Port = mainHostBaseUri.IsDefaultPort ? -1 : mainHostBaseUri.Port,
-                        Path = context.Request.Path.Value ?? string.Empty,
-                        Query = context.Request.QueryString.Value?.TrimStart('?') ?? string.Empty,
-                    };
+                    var redirectUri = BuildRedirectUri(
+                        mainHostBaseUri,
+                        context.Request.Path,
+                        context.Request.QueryString
+                    );
 
-                    context.Response.Redirect(builder.Uri.ToString(), permanent: true);
+                    if (
+                        redirectUri.Host == mainHostBaseUri.Host
+                        && redirectUri.Scheme == mainHostBaseUri.Scheme
+                        && redirectUri.Port == mainHostBaseUri.Port
+                    )
+                    {
+                        context.Response.Redirect(redirectUri.AbsoluteUri, permanent: true);
+                    }
+                    else
+                    {
+                        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                    }
 
                     return ValueTask.CompletedTask;
                 }
             )
             .RequireHost(redirectHosts);
+    }
+
+    internal static Uri BuildRedirectUri(Uri mainHostBaseUri, PathString requestPath, QueryString requestQuery)
+    {
+        var host = mainHostBaseUri.IsDefaultPort
+            ? new HostString(mainHostBaseUri.Host)
+            : new HostString(mainHostBaseUri.Host, mainHostBaseUri.Port);
+
+        return new Uri(
+            UriHelper.BuildAbsolute(mainHostBaseUri.Scheme, host, path: requestPath, query: requestQuery),
+            UriKind.Absolute
+        );
     }
 }
