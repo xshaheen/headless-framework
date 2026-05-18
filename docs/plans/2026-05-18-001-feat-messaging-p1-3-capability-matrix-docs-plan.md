@@ -1,7 +1,7 @@
 ---
 title: Messaging P1.3 — Capability Matrix and Phase 1 Docs Refresh
 type: feat
-status: active
+status: completed
 date: 2026-05-18
 origin: docs/brainstorms/2026-05-18-messaging-p1-3-capability-matrix-docs-requirements.md
 ---
