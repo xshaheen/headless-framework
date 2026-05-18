@@ -162,13 +162,16 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     }
 
     [Fact]
-    public void should_create_tenant_context_required_with_403_and_singular_error()
+    public void should_create_forbidden_with_custom_detail_and_singular_error()
     {
         // given
         var creator = _CreateCreator();
 
         // when
-        var result = creator.TenantContextRequired();
+        var result = creator.Forbidden(
+            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+        );
 
         // then
         result.Status.Should().Be(StatusCodes.Status403Forbidden);
@@ -351,6 +354,25 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // when
         var result = creator.BadRequest(
+            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+        );
+
+        // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
+        result.Extensions.Should().ContainKey("traceId");
+        result.Extensions.Should().ContainKey("buildNumber");
+        result.Extensions.Should().ContainKey("commitNumber");
+        result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Fact]
+    public void should_normalize_forbidden_response_when_error_supplied()
+    {
+        // given
+        var creator = _CreateCreator();
+
+        // when
+        var result = creator.Forbidden(
             detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
             error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
         );

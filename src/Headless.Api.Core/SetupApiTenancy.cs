@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Abstractions;
+using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
@@ -205,16 +206,86 @@ public sealed class HeadlessAuthorizationTenancyBuilder
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, HeadlessAuthorizationTenancyValidator>()
         );
-        _builder.Services.Replace(
-            ServiceDescriptor.Singleton<
-                IAuthorizationMiddlewareResultHandler,
-                TenantAuthorizationMiddlewareResultHandler
-            >()
-        );
+        _RegisterAuthorizationResultHandler(_builder.Services);
 
         _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RequireTenantCapability);
 
         return this;
+    }
+
+    private static void _RegisterAuthorizationResultHandler(IServiceCollection services)
+    {
+        if (
+            services.Any(descriptor =>
+                descriptor.ServiceType == typeof(HeadlessAuthorizationMiddlewareResultHandlerFallback)
+            )
+        )
+        {
+            return;
+        }
+
+        var previousHandler = services.LastOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler) && !descriptor.IsKeyedService
+        );
+
+        if (previousHandler is not null)
+        {
+            services.Remove(previousHandler);
+        }
+
+        services.Add(_CreateFallbackDescriptor(previousHandler));
+        services.Add(
+            ServiceDescriptor.Transient<IAuthorizationMiddlewareResultHandler>(
+                serviceProvider => new TenantAuthorizationMiddlewareResultHandler(
+                    serviceProvider.GetRequiredService<IProblemDetailsCreator>(),
+                    serviceProvider.GetRequiredService<HeadlessAuthorizationMiddlewareResultHandlerFallback>()
+                )
+            )
+        );
+    }
+
+    private static ServiceDescriptor _CreateFallbackDescriptor(ServiceDescriptor? descriptor)
+    {
+        if (descriptor is null)
+        {
+            return ServiceDescriptor.Transient<HeadlessAuthorizationMiddlewareResultHandlerFallback>(
+                _ => new HeadlessAuthorizationMiddlewareResultHandlerFallback(
+                    new AuthorizationMiddlewareResultHandler()
+                )
+            );
+        }
+
+        return ServiceDescriptor.Describe(
+            typeof(HeadlessAuthorizationMiddlewareResultHandlerFallback),
+            serviceProvider => new HeadlessAuthorizationMiddlewareResultHandlerFallback(
+                _CreateAuthorizationMiddlewareResultHandler(serviceProvider, descriptor)
+            ),
+            descriptor.Lifetime
+        );
+    }
+
+    private static IAuthorizationMiddlewareResultHandler _CreateAuthorizationMiddlewareResultHandler(
+        IServiceProvider serviceProvider,
+        ServiceDescriptor descriptor
+    )
+    {
+        if (descriptor.ImplementationInstance is IAuthorizationMiddlewareResultHandler instance)
+        {
+            return instance;
+        }
+
+        if (descriptor.ImplementationFactory is not null)
+        {
+            return (IAuthorizationMiddlewareResultHandler)descriptor.ImplementationFactory(serviceProvider);
+        }
+
+        if (descriptor.ImplementationType is not null)
+        {
+            return (IAuthorizationMiddlewareResultHandler)
+                ActivatorUtilities.CreateInstance(serviceProvider, descriptor.ImplementationType);
+        }
+
+        throw new InvalidOperationException("Unsupported authorization middleware result handler descriptor.");
     }
 }
 

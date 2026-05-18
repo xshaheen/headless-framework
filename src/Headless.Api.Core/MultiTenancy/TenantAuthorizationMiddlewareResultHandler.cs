@@ -2,6 +2,7 @@
 
 using Headless.Api.Abstractions;
 using Headless.Checks;
+using Headless.Constants;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Http;
@@ -12,9 +13,20 @@ namespace Headless.Api.MultiTenancy;
 public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCreator problemDetailsCreator)
     : IAuthorizationMiddlewareResultHandler
 {
-    private static readonly AuthorizationMiddlewareResultHandler _DefaultHandler = new();
-
     private readonly IProblemDetailsCreator _problemDetailsCreator = Argument.IsNotNull(problemDetailsCreator);
+
+    private readonly HeadlessAuthorizationMiddlewareResultHandlerFallback _fallback = new(
+        new AuthorizationMiddlewareResultHandler()
+    );
+
+    internal TenantAuthorizationMiddlewareResultHandler(
+        IProblemDetailsCreator problemDetailsCreator,
+        HeadlessAuthorizationMiddlewareResultHandlerFallback fallback
+    )
+        : this(problemDetailsCreator)
+    {
+        _fallback = Argument.IsNotNull(fallback);
+    }
 
     public async Task HandleAsync(
         RequestDelegate next,
@@ -30,12 +42,15 @@ public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCr
 
         if (!_IsTenantRequirementFailure(authorizeResult))
         {
-            await _DefaultHandler.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+            await _fallback.Inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
 
             return;
         }
 
-        var problemDetails = _problemDetailsCreator.TenantContextRequired();
+        var problemDetails = _problemDetailsCreator.Forbidden(
+            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+        );
         context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
@@ -54,4 +69,9 @@ public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCr
                 string.Equals(reason.Message, TenantRequirement.FailureReason, StringComparison.Ordinal)
             );
     }
+}
+
+internal sealed class HeadlessAuthorizationMiddlewareResultHandlerFallback(IAuthorizationMiddlewareResultHandler inner)
+{
+    public IAuthorizationMiddlewareResultHandler Inner { get; } = Argument.IsNotNull(inner);
 }

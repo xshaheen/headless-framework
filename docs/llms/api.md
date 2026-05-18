@@ -256,7 +256,7 @@ Tenancy response shape:
 
 **Handler-chain ordering:** `IExceptionHandler` instances run in registration order. The framework handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-**Related factory:** `IProblemDetailsCreator.TenantContextRequired()` (parameterless) produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
+**Related factory:** `IProblemDetailsCreator.Forbidden(detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired, error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired)` produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
 
 ## Configuration
 

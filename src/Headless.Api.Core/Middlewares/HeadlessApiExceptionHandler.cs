@@ -115,7 +115,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     {
                         _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
                     }
-                    problemDetails = problemDetailsCreator.TenantContextRequired();
+                    problemDetails = problemDetailsCreator.Forbidden(
+                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                    );
                     statusCode = StatusCodes.Status403Forbidden;
                     break;
 

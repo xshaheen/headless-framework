@@ -61,7 +61,12 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddProblemDetails();
-        problemDetailsCreator.TenantContextRequired().Returns(problemDetails);
+        problemDetailsCreator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(problemDetails);
         var handler = _CreateHandler(problemDetailsCreator);
         var tenantRequirement = new TenantRequirement();
         var failure = AuthorizationFailure.Failed([tenantRequirement]);
@@ -116,7 +121,12 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
         services.AddLogging();
         services.AddProblemDetails();
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
-        problemDetailsCreator.TenantContextRequired().Returns(problemDetails);
+        problemDetailsCreator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(problemDetails);
         var handler = _CreateHandler(problemDetailsCreator);
         var failure = AuthorizationFailure.Failed([
             new AuthorizationFailureReason(

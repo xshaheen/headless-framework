@@ -1,10 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -28,12 +31,13 @@ public sealed class SetupApiTenancyTests
             .ContainSingle()
             .Subject.Lifetime.Should()
             .Be(ServiceLifetime.Singleton);
-        builder
+        var resultHandlerDescriptor = builder
             .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
             .Should()
             .ContainSingle()
-            .Subject.ImplementationType.Should()
-            .Be(typeof(TenantAuthorizationMiddlewareResultHandler));
+            .Subject;
+        resultHandlerDescriptor.Lifetime.Should().Be(ServiceLifetime.Transient);
+        resultHandlerDescriptor.ImplementationFactory.Should().NotBeNull();
 
         var manifest = _GetManifest(builder.Services);
         var seam = manifest.GetSeam(HeadlessAuthorizationTenancyBuilder.Seam);
@@ -70,6 +74,34 @@ public sealed class SetupApiTenancyTests
             .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
             .Should()
             .ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_delegate_non_tenant_authorization_results_to_existing_customer_handler()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+        var customerHandler = new RecordingAuthorizationMiddlewareResultHandler();
+        builder.Services.AddSingleton(Substitute.For<IProblemDetailsCreator>());
+        builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler>(customerHandler);
+
+        // when
+        builder.AddHeadlessTenancy(tenancy => tenancy.Authorization(auth => auth.RequireTenant()));
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+        var handler = serviceProvider.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
+        var context = new DefaultHttpContext { RequestServices = serviceProvider };
+        var failure = AuthorizationFailure.Failed([new DenyAnonymousAuthorizationRequirement()]);
+        await handler.HandleAsync(
+            _ => Task.CompletedTask,
+            context,
+            new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build(),
+            PolicyAuthorizationResult.Forbid(failure)
+        );
+
+        // then
+        handler.Should().BeOfType<TenantAuthorizationMiddlewareResultHandler>();
+        customerHandler.Calls.Should().Be(1);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status418ImATeapot);
     }
 
     [Fact]
@@ -174,5 +206,23 @@ public sealed class SetupApiTenancyTests
             .Subject.ImplementationInstance.Should()
             .BeOfType<TenantPostureManifest>()
             .Subject;
+    }
+
+    private sealed class RecordingAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        public int Calls { get; private set; }
+
+        public Task HandleAsync(
+            RequestDelegate next,
+            HttpContext context,
+            AuthorizationPolicy policy,
+            PolicyAuthorizationResult authorizeResult
+        )
+        {
+            Calls++;
+            context.Response.StatusCode = StatusCodes.Status418ImATeapot;
+
+            return Task.CompletedTask;
+        }
     }
 }

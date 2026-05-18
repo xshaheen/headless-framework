@@ -67,6 +67,18 @@ public sealed class TenantRequirementTests : TestBase
     }
 
     [Fact]
+    public async Task should_require_tenant_when_minimal_api_endpoint_overrides_group_allow_missing()
+    {
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, "/tenant-requirement-group/require-tenant", user: "alice");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await _AssertTenantRequiredProblemDetailsAsync(response);
+    }
+
+    [Fact]
     public async Task should_allow_mvc_action_that_allows_missing_tenant()
     {
         await using var app = await _CreateAppAsync();
@@ -86,6 +98,18 @@ public sealed class TenantRequirementTests : TestBase
         using var response = await _SendAsync(client, "/tenant-requirement-public/class-allow-missing", user: "alice");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task should_require_tenant_when_mvc_action_overrides_controller_allow_missing()
+    {
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, "/tenant-requirement-public/action-require", user: "alice");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await _AssertTenantRequiredProblemDetailsAsync(response);
     }
 
     [Fact]
@@ -191,6 +215,8 @@ public sealed class TenantRequirementTests : TestBase
             (ICurrentTenant currentTenant) => Results.Json(new TenantResponse(currentTenant.Id))
         );
         app.MapGet("/minimal-allow-missing", () => Results.Ok()).AllowMissingTenant();
+        var allowMissingGroup = app.MapGroup("/tenant-requirement-group").AllowMissingTenant();
+        allowMissingGroup.MapGet("/require-tenant", () => Results.Ok()).RequireTenant();
         app.MapGet("/throw-missing-tenant", (Action)(() => throw new MissingTenantContextException()));
         app.MapGet("/tenant-and-denied", () => Results.Ok()).RequireAuthorization("TenantAndDenied");
         app.MapControllers();
@@ -328,6 +354,13 @@ public sealed class PublicTenantRequirementController : ControllerBase
 {
     [HttpGet("class-allow-missing")]
     public IActionResult ClassAllowMissing()
+    {
+        return Ok();
+    }
+
+    [HttpGet("action-require")]
+    [RequireTenant]
+    public IActionResult ActionRequire()
     {
         return Ok();
     }

@@ -48,9 +48,9 @@ Every requirement from the origin doc maps to one or more implementation units b
 
 - **New types group under `src/Headless.Api.Core/MultiTenancy/`.** Mirrors the layout convention used elsewhere (e.g., `Headless.Permissions.Core/Requirements/`). Keeps `Headless.Api.Core` root uncluttered and makes the multi-tenancy seam discoverable as a unit.
 - **`IEndpointConventionBuilder` extension lives in namespace `Microsoft.AspNetCore.Builder`.** Matches the existing precedent in `src/Headless.Api.MinimalApi/Filters/RouteBuilderExtensions.cs` (with the `IDE0130` pragma). Consumers get the extension automatically with a `using Microsoft.AspNetCore.Builder` they already have.
-- **Custom `IAuthorizationMiddlewareResultHandler` is registered as the single global handler** via `services.AddSingleton<IAuthorizationMiddlewareResultHandler, TenantAuthorizationMiddlewareResultHandler>()`. ASP.NET supports only one slot; the custom handler composes the default (`AuthorizationMiddlewareResultHandler.Instance`) internally and delegates when the failure does not include a `TenantRequirement`. This is the call-out the user confirmed in Phase 5.1.5.
-- **New `IProblemDetailsCreator.TenantContextRequired()` factory** is added rather than reusing the existing `Forbidden(IReadOnlyCollection<ErrorDescriptor>)` overload. The existing `Forbidden` writes the plural `errors` extension key; the existing 400 path writes singular `error`. Tests in `HeadlessApiExceptionHandlerEndToEndTests` already assert `error.code`. A dedicated factory preserves the wire shape across both paths and also makes the doc claim at `docs/llms/multi-tenancy.md:151` honest (it currently references a `TenantRequired()` factory that does not exist).
-- **`TenantContextRequired()` factory over `IProblemDetailsCreator.Normalize()` case-arm.** `docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md` documents `Normalize()` as the canonical single-source-of-truth for backfilling Title/Type/Detail on bare status codes that downstream middleware sets. That pattern fits the cancellation/timeout case where `StatusCodesRewriterMiddleware` rewrites bare 4xx/5xx after the fact. This work writes the full response body directly from the auth-result handler and the exception handler — both already build a structured ProblemDetails from a typed factory rather than relying on rewrite. A dedicated factory keeps both write-sites identical (one entry point, one wire shape), and a future migration to `Normalize()` integration remains possible if other middleware later sets a bare 403 for the same case. Flagged here so the divergence from the cited learning is explicit, not an oversight.
+- **Custom `IAuthorizationMiddlewareResultHandler` decorates the effective existing handler.** ASP.NET supports only one result-handler slot, so the tenant handler intercepts tenant failures and delegates all other authorization results to the previously effective customer/default handler.
+- **`IProblemDetailsCreator.Forbidden(...)` is extended for the tenant response.** The factory now accepts optional `detail` and singular `error` parameters while preserving the existing plural `errors` path. Both tenant write-sites use the same `Forbidden(detail: TenantContextRequired, error: TenantContextRequired)` call so the wire shape stays singular `error.code: g:tenant-required`.
+- **`Forbidden(...)` over `IProblemDetailsCreator.Normalize()` case-arm.** `docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md` documents `Normalize()` as the canonical single-source-of-truth for backfilling Title/Type/Detail on bare status codes that downstream middleware sets. That pattern fits the cancellation/timeout case where `StatusCodesRewriterMiddleware` rewrites bare 4xx/5xx after the fact. This work writes the full response body directly from the auth-result handler and the exception handler — both already build a structured ProblemDetails from a typed factory rather than relying on rewrite.
 - **`TenantRequirementHandler` calls `context.Fail(new AuthorizationFailureReason(...))` with a discriminator string** so the custom result handler can match the failure to a `TenantRequirement` without reflection. No precedent in the codebase for failure-reason attachment (`PermissionRequirementHandler` only calls `Succeed`); this introduces it.
 - **Posture-manifest seam name is `"Authorization"`, capability `"require-tenant"`, status `Enforcing`.** Mirrors the deleted Mediator seam's enforcement vocabulary and matches the four-seam pattern documented in `src/Headless.MultiTenancy/TenantPostureManifest.cs`.
 - **Pipeline ordering is unchanged.** `UseAuthentication() → UseHeadlessTenancy() → UseAuthorization()` continues to apply; the new `TenantRequirement` runs after `TenantResolutionMiddleware` has populated `ICurrentTenant`. The existing `HeadlessTenancyResolutionApplied` feature marker stays meaningful for "middleware missing" diagnostics.
@@ -95,7 +95,7 @@ sequenceDiagram
         DH->>EP: Invoke
         EP-->>Client: 200 (or domain response)
     else Failure contains TenantRequirement
-        RH->>RH: Write 403 +<br/>IProblemDetailsCreator.TenantContextRequired()
+        RH->>RH: Write 403 +<br/>IProblemDetailsCreator.Forbidden(...)
         RH-->>Client: 403 { error: { code: "g:tenant-required" } }
     else Other authorization failure
         RH->>DH: Delegate (unchanged behavior)
@@ -104,11 +104,11 @@ sequenceDiagram
 
     Note over EP,Ex: Defense-in-depth path: handler reached the endpoint<br/>but later code (EF write guard, messaging publish guard)<br/>throws MissingTenantContextException
     EP--xEx: throw MissingTenantContextException
-    Ex->>Ex: Map to 403 via TenantContextRequired()
+    Ex->>Ex: Map to 403 via Forbidden(...)
     Ex-->>Client: 403 { error: { code: "g:tenant-required" } }
 ```
 
-Two write-sites converge on the same `IProblemDetailsCreator.TenantContextRequired()` factory: the auth-result handler (pre-model-bind, the new canonical gate) and the exception handler (post-dispatch, for server-side guards that fire when the auth gate was bypassed by `[AllowMissingTenant]` or when the call path is non-HTTP). One factory, one wire shape.
+Two write-sites converge on the same `IProblemDetailsCreator.Forbidden(detail: ..., error: ...)` call: the auth-result handler (pre-model-bind, the new canonical gate) and the exception handler (post-dispatch, for server-side guards that fire when the auth gate was bypassed by `[AllowMissingTenant]` or when the call path is non-HTTP). One factory, one wire shape.
 
 ---
 
@@ -192,33 +192,32 @@ Two write-sites converge on the same `IProblemDetailsCreator.TenantContextRequir
 
 ---
 
-### U3. `TenantContextRequired()` factory + remap exception handler 400 → 403
+### U3. `Forbidden(...)` tenant response + remap exception handler 400 → 403
 
-**Goal:** Add a dedicated `IProblemDetailsCreator.TenantContextRequired()` factory that emits 403 with the singular `error` wire shape carrying the existing `g:tenant-required` code, then update `HeadlessApiExceptionHandler` to call it (replacing the current `BadRequest(detail, error)` call) and set `Status403Forbidden`.
+**Goal:** Extend `IProblemDetailsCreator.Forbidden(...)` so it can emit 403 with a custom detail and singular `error` wire shape carrying the existing `g:tenant-required` code, then update `HeadlessApiExceptionHandler` to call it (replacing the current `BadRequest(detail, error)` call) and set `Status403Forbidden`.
 
 **Requirements:** R11; foundation for R4 (U4 also calls this factory).
 
 **Dependencies:** None — purely additive on the creator side, single case-arm change on the handler side.
 
 **Files:**
-- `src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs` (modify — add `TenantContextRequired` method on the interface and on the concrete `public sealed class ProblemDetailsCreator` which co-lives in the same file at line 153)
+- `src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs` (modify — extend `Forbidden(...)` on the interface and on the concrete `public sealed class ProblemDetailsCreator` which co-lives in the same file at line 153)
 - `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs:107-123` (modify — switch factory + status)
 - `tests/Headless.Api.Tests.Unit/HeadlessApiExceptionHandlerTests.cs` (modify — update ~10 cases asserting status 400 to assert 403 with the same code)
 
 **Approach:**
-- Add `ProblemDetails TenantContextRequired()` to `IProblemDetailsCreator`. No parameters — the detail and error descriptor are constants already in `HeadlessProblemDetailsConstants`.
-- Implementation: produce a `ProblemDetails` with `Status = 403`, `Title = HeadlessProblemDetailsConstants.Titles.Forbidden`, `Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired`, and `Extensions["error"] = HeadlessProblemDetailsConstants.Errors.TenantContextRequired` (singular `error`, matching the existing 400 wire shape).
+- Extend `ProblemDetails Forbidden(...)` to accept optional `detail` and singular `error` parameters alongside the existing plural `errors` collection.
+- Implementation: produce a `ProblemDetails` with `Status = 403`, `Title = HeadlessProblemDetailsConstants.Titles.Forbidden`, `Detail = detail ?? HeadlessProblemDetailsConstants.Details.Forbidden`, optional `Extensions["errors"]`, and optional singular `Extensions["error"]`.
 - In `HeadlessApiExceptionHandler`, the `case MissingTenantContextException missingTenant:` arm:
   - Keep the existing log calls and `HeadlessTenancyResolutionApplied` feature check.
-  - Replace `problemDetailsCreator.BadRequest(detail: ..., error: ...)` with `problemDetailsCreator.TenantContextRequired()`.
+  - Replace `problemDetailsCreator.BadRequest(detail: ..., error: ...)` with `problemDetailsCreator.Forbidden(detail: ..., error: ...)`.
   - Change `statusCode = StatusCodes.Status400BadRequest` to `StatusCodes.Status403Forbidden`.
 
 **Patterns to follow:**
-- Existing `IProblemDetailsCreator.EntityNotFound()` (parameterless factory) for the no-args factory shape.
 - Existing `BadRequest(string detail, ErrorDescriptor error)` for the singular-`error` Extensions pattern.
 
 **Test scenarios:**
-- `TenantContextRequired()` returns a `ProblemDetails` with `Status == 403`, `Title == "forbidden"`, `Detail == "An operation required an ambient tenant context but none was set."`, and `Extensions["error"]` deserializes to an `ErrorDescriptor` whose `Code == "g:tenant-required"`.
+- `Forbidden(detail: ..., error: ...)` returns a `ProblemDetails` with `Status == 403`, `Title == "forbidden"`, `Detail == "An operation required an ambient tenant context but none was set."`, and `Extensions["error"]` deserializes to an `ErrorDescriptor` whose `Code == "g:tenant-required"`.
 - `Covers AE4.` `HeadlessApiExceptionHandler` translates a raised `MissingTenantContextException` into a 403 response with the same `g:tenant-required` code (unit test against the handler; integration coverage in U7).
 - Existing `HeadlessTenancyResolutionApplied`-absence log path still fires when the middleware was not invoked (preserves the diagnostic).
 - Existing tests in `HeadlessApiExceptionHandlerTests.cs` that asserted 400 + `g:tenant-required` now assert 403 + `g:tenant-required`.
@@ -234,17 +233,17 @@ Two write-sites converge on the same `IProblemDetailsCreator.TenantContextRequir
 
 **Requirements:** R4.
 
-**Dependencies:** U1 (failure-reason discriminator constant), U3 (`TenantContextRequired()` factory).
+**Dependencies:** U1 (failure-reason discriminator constant), U3 (`Forbidden(...)` tenant response).
 
 **Files:**
 - `src/Headless.Api.Core/MultiTenancy/TenantAuthorizationMiddlewareResultHandler.cs` (create)
 - `tests/Headless.Api.Tests.Unit/MultiTenancy/TenantAuthorizationMiddlewareResultHandlerTests.cs` (create)
 
 **Approach:**
-- Sealed class implementing `IAuthorizationMiddlewareResultHandler`. Constructor takes `IProblemDetailsCreator` (injected) and holds a private static `AuthorizationMiddlewareResultHandler` default-handler instance to delegate to.
+- Sealed class implementing `IAuthorizationMiddlewareResultHandler`. Constructor takes `IProblemDetailsCreator` and a captured fallback result handler; the tenancy builder decorates the previously effective `IAuthorizationMiddlewareResultHandler` so customer handlers still see non-tenant authorization results.
 - `HandleAsync(RequestDelegate next, HttpContext context, AuthorizationPolicy policy, PolicyAuthorizationResult authorizeResult)`:
-  - If `authorizeResult.AuthorizationFailure?.FailedRequirements` contains a `TenantRequirement` (or `FailureReasons` contains one whose `Message == TenantRequirement.FailureReason`), write the response: set `Response.StatusCode = 403`, serialize `IProblemDetailsCreator.TenantContextRequired()` via `IProblemDetailsService` (or the existing serialization helper in `Headless.Api.Core`), return.
-  - Otherwise `await _default.HandleAsync(next, context, policy, authorizeResult)`.
+  - If `authorizeResult.AuthorizationFailure?.FailedRequirements` contains a `TenantRequirement` (or `FailureReasons` contains one whose `Message == TenantRequirement.FailureReason`), write the response: set `Response.StatusCode = 403`, serialize `IProblemDetailsCreator.Forbidden(detail: ..., error: ...)`, return.
+  - Otherwise delegate to the captured fallback handler.
 - The exact ProblemDetails serialization helper is settled during implementation — `Headless.Api.Core` already has a path for writing structured 4xx/5xx responses (`HeadlessApiExceptionHandler` uses it). Reuse that path; do not invent a new serialization shape.
 
 **Patterns to follow:**

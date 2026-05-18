@@ -63,7 +63,7 @@ app.UseAuthorization();
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
 - In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Authorization, Messaging, and EF posture is visible in one block.
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
-- For HTTP request boundaries, use `.Authorization(auth => auth.RequireTenant())`, add `TenantRequirement` to the app's `FallbackPolicy` or `DefaultPolicy`, and mark only intentional host-level endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`.
+- For HTTP request boundaries, use `.Authorization(auth => auth.RequireTenant())`, add `TenantRequirement` to the app's `FallbackPolicy` or `DefaultPolicy`, mark intentional host-level endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`, and use `[RequireTenant]` / `.RequireTenant()` to opt back in under broader allow-missing metadata.
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
@@ -110,7 +110,7 @@ app.UseAuthorization();
 `.Authorization(auth => auth.RequireTenant())` delegates to the API package and:
 
 - Registers `TenantRequirementHandler`
-- Replaces ASP.NET Core's authorization result handler with a wrapper that only intercepts tenant failures
+- Decorates ASP.NET Core's effective authorization result handler with a wrapper that only intercepts tenant failures
 - Records an `Authorization` seam with the `require-tenant` capability
 - Adds startup validation that fails fast when neither `DefaultPolicy` nor `FallbackPolicy` includes `TenantRequirement`
 
@@ -125,7 +125,7 @@ app.UseAuthorization();
 
 ## HTTP Failure Mapping
 
-`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 403 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers MVC actions, Minimal-API endpoints, middleware, hosted services, and SignalR hubs.
+`MissingTenantContextException` is the cross-layer guard exception raised when an operation requires a tenant but none is available — by the EF write guard (#234), the messaging publish guard (U10/#238), or any consumer code that calls into a tenant-required path. The framework maps it to a normalized 403 ProblemDetails through `HeadlessApiExceptionHandler` — a single `IExceptionHandler` auto-registered by `AddHeadlessProblemDetails()` (called by `AddHeadless()`). The same handler covers unhandled exceptions that bubble to ASP.NET Core's exception-handler middleware: typically MVC actions, Minimal-API endpoints, and middleware running after `UseExceptionHandler`; hosted/background services, SignalR hubs, and middleware before `UseExceptionHandler` need their own catch sites.
 
 ```csharp
 builder.AddHeadless();
@@ -163,7 +163,7 @@ Prerequisites:
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
 - Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-The same shape is reachable without going through the handler via `IProblemDetailsCreator.TenantContextRequired()` (parameterless) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
+The same shape is reachable without going through the handler via `IProblemDetailsCreator.Forbidden(detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired, error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired)` for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
 ## HTTP Authorization Requirement
 
@@ -173,6 +173,7 @@ The same shape is reachable without going through the handler via `IProblemDetai
 - Add `new TenantRequirement()` to the app's `FallbackPolicy`, `DefaultPolicy`, or named policies.
 - Requests require `ICurrentTenant.Id` to be non-blank by default.
 - Mark intentional host-level, public, system, or console-bootstrap endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`.
+- Use `[RequireTenant]` or `.RequireTenant()` when an endpoint/action must opt back into tenant enforcement under broader allow-missing metadata, such as a route group or controller marked public.
 - Keep `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` ordering so the requirement sees the resolved tenant.
 
 Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose HTTP path can legitimately run without a tenant. Typical categories:
@@ -196,13 +197,19 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-app.MapGet("/public-status", () => Results.Ok()).AllowMissingTenant();
+var publicGroup = app.MapGroup("/public").AllowMissingTenant();
+publicGroup.MapGet("/status", () => Results.Ok());
+publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 
 [AllowMissingTenant]
-public sealed class PublicBootstrapController : ControllerBase;
+public sealed class PublicBootstrapController : ControllerBase
+{
+    [RequireTenant]
+    public IActionResult TenantScopedAction() => Ok();
+}
 ```
 
-When a non-opted-out HTTP request runs without a tenant, `TenantRequirementHandler` fails the authorization context with the `TenantContextRequired` reason. `TenantAuthorizationMiddlewareResultHandler` maps that failure to the normalized 403 response documented in [HTTP Failure Mapping](#http-failure-mapping). Other authorization failures continue through ASP.NET Core's default result handler.
+When a non-opted-out HTTP request runs without a tenant, `TenantRequirementHandler` fails the authorization context with the `TenantContextRequired` reason. `TenantAuthorizationMiddlewareResultHandler` maps that failure to the normalized 403 response documented in [HTTP Failure Mapping](#http-failure-mapping). Other authorization failures continue through the previously effective ASP.NET Core authorization result handler.
 
 ## Tenant Semantics
 

@@ -21,10 +21,7 @@ public sealed class TenantRequirementHandler(ICurrentTenant currentTenant) : Aut
             return Task.CompletedTask;
         }
 
-        if (
-            context.Resource is HttpContext httpContext
-            && httpContext.GetEndpoint()?.Metadata.GetMetadata<AllowMissingTenantAttribute>() is not null
-        )
+        if (context.Resource is HttpContext httpContext && _AllowsMissingTenant(httpContext.GetEndpoint()))
         {
             context.Succeed(requirement);
 
@@ -34,5 +31,27 @@ public sealed class TenantRequirementHandler(ICurrentTenant currentTenant) : Aut
         context.Fail(new AuthorizationFailureReason(this, TenantRequirement.FailureReason));
 
         return Task.CompletedTask;
+    }
+
+    private static bool _AllowsMissingTenant(Endpoint? endpoint)
+    {
+        if (endpoint is null)
+        {
+            return false;
+        }
+
+        foreach (var metadata in endpoint.Metadata.Reverse())
+        {
+            switch (metadata)
+            {
+                case RequireTenantAttribute:
+                    return false;
+
+                case AllowMissingTenantAttribute:
+                    return true;
+            }
+        }
+
+        return false;
     }
 }
