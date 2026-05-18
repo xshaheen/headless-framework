@@ -614,6 +614,16 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 Persisted retry storage uses `NextRetryAt` for due time and `LockedUntil` for the active delivery lease. Pickup requires `NextRetryAt <= now` and `LockedUntil IS NULL OR LockedUntil <= now`. Retry writes clear `LockedUntil`. Retry counter writes include an optimistic `Retries == originalRetries` predicate; a rejected update means another replica already advanced or terminalized the row, so callers stop the attempt path.
 
+#### Retry decisions
+
+`IRetryBackoffStrategy.Compute(persistedRetryCount, inlineRetryCount, exception)` returns a `RetryDecision` with one of three outcomes:
+
+- `RetryDecision.Continue(delay)` — transient failure; retry after `delay`. The routine path between attempts.
+- `RetryDecision.Stop` — permanent failure (classified by the strategy) or cancellation (`OperationCanceledException`). The pipeline halts immediately; `OnExhausted` does **not** fire.
+- `RetryDecision.Exhausted` — transient failure but no further attempt is allowed (max attempts reached, or the strategy returned no delay). `OnExhausted` fires. Most strategies return only `Stop` or `Continue` and let the framework emit `Exhausted` when configured budgets are consumed; strategies with their own attempt accounting MAY return `Exhausted` directly — both sources are handled identically.
+
+Total attempts before `Exhausted` are bounded by the policy: `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. The `+1` includes the original execution; `MaxInlineRetries`/`MaxPersistedRetries` count retries *after* the first attempt at each level.
+
 #### Exhausted vs Stop
 
 `OnExhausted` fires **only on `RetryDecision.Exhausted`** — when the retry budget is fully consumed and the failure was transient.
