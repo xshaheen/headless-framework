@@ -9,6 +9,8 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
+- [Provider Capabilities](#provider-capabilities)
+    - [Transport Providers](#transport-providers)
 - [Headless.Messaging.Abstractions](#headlessmessagingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -264,6 +266,36 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
+
+---
+
+## Provider Capabilities
+
+These matrices summarize the current Phase 1 surface for each transport and storage package. Every cell is derived from the package's `Setup.cs`, transport, or consumer-client source — when this doc and a sibling README disagree, the package source is authoritative and the sibling README is the one with drift. The carry-forward rule for future PRs: any change to a transport or storage's public surface (interfaces wired, broker-API calls, capability seams) MUST update the corresponding row in the same change.
+
+The matrices intentionally do not include columns for Phase 2 concepts (`DeliveryKind`, send vs broadcast intent). See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for what is scheduled later.
+
+### Transport Providers
+
+| Provider          | Direct publish | Consume | Native scheduled              | Ordering shape                    | Tenant header round-trip | Broker reject                       | Auto-provisioning                          |
+|-------------------|----------------|---------|-------------------------------|-----------------------------------|--------------------------|-------------------------------------|--------------------------------------------|
+| `RabbitMq`        | yes            | yes     | no (broker plugin not wired)  | FIFO per queue                    | yes                      | `BasicReject` (nack)                | exchange + queue declare on subscribe      |
+| `Nats`            | yes            | yes     | no                            | per-subject (sequential consumer) | yes                      | broker nack                         | stream + subject create (when opt-in)      |
+| `AzureServiceBus` | yes            | yes     | **yes** (`ScheduledEnqueueTime`) | FIFO per session               | yes                      | broker `Abandon`                    | topic + subscription create                |
+| `AwsSqs`          | yes            | yes     | no                            | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)   | SNS topic create + SQS policy generation   |
+| `Kafka`           | yes            | yes     | no                            | per-partition with partition key  | yes                      | seek to offset (re-read partition)  | auto-create concrete topics                |
+| `Pulsar`          | yes            | yes     | no (`DeliverAfter` not wired) | per-key when partition key set    | yes                      | `NegativeAcknowledge`               | passthrough (broker auto-creates)          |
+| `RedisStreams`    | yes            | yes     | no                            | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)    | passthrough (`XADD` creates on publish)    |
+| `InMemoryQueue`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
+
+How to read each column:
+
+- **Direct publish / Consume** — the transport implements `ITransport.SendAsync` and `IConsumerClient.ListeningAsync`. Uniformly yes across the Phase 1 surface; the columns anchor each row.
+- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through the framework's outbox-backed `IScheduledPublisher` regardless of transport.
+- **Ordering shape** — the strongest guarantee the broker offers within the named scope. The framework's outbox preserves publish order within a transaction; everything beyond that is broker semantics.
+- **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
+- **Broker reject** — what `IConsumerClient.RejectAsync` actually does. "no-op" means the transport cannot signal rejection back to the broker; persisted-retry pickup is the only path to re-delivery.
+- **Auto-provisioning** — whether `IConsumerClient.FetchTopicsAsync` (or the subscribe path) creates broker resources. "passthrough" means the transport relies on the broker's own auto-creation behavior.
 
 ---
 
