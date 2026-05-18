@@ -13,7 +13,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_create_instrumentation_with_diagnostic_listener()
     {
         // given
-        var diagnosticListener = new DiagnosticListener();
+        var diagnosticListener = new DiagnosticListener([]);
 
         // when
         using var instrumentation = new MessagingInstrumentation(diagnosticListener);
@@ -25,7 +25,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_create_instrumentation_with_metrics()
     {
         // given
-        var diagnosticListener = new DiagnosticListener();
+        var diagnosticListener = new DiagnosticListener([]);
         using var metrics = new MessagingMetrics();
 
         // when
@@ -38,7 +38,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_dispose_subscriber_and_metrics()
     {
         // given
-        var diagnosticListener = new DiagnosticListener();
+        var diagnosticListener = new DiagnosticListener([]);
         using var metrics = new MessagingMetrics();
         using var instrumentation = new MessagingInstrumentation(diagnosticListener, metrics);
 
@@ -53,7 +53,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_handle_multiple_dispose_calls()
     {
         // given
-        var diagnosticListener = new DiagnosticListener();
+        var diagnosticListener = new DiagnosticListener([]);
         using var metrics = new MessagingMetrics();
         using var instrumentation = new MessagingInstrumentation(diagnosticListener, metrics);
 
@@ -69,7 +69,7 @@ public sealed class MessagingInstrumentationTests : TestBase
     public void should_dispose_without_metrics()
     {
         // given
-        var diagnosticListener = new DiagnosticListener();
+        var diagnosticListener = new DiagnosticListener([]);
         using var instrumentation = new MessagingInstrumentation(diagnosticListener);
 
         // when

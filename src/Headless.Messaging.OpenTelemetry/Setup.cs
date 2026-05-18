@@ -2,32 +2,41 @@
 
 using Headless.Checks;
 using Headless.Messaging.OpenTelemetry;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Trace;
 
+[PublicAPI]
 public static class SetupMessagingOpenTelemetry
 {
     /// <summary>
-    /// Enables the message eventing data collection for messaging.
+    /// Enables messaging OpenTelemetry tracing instrumentation.
     /// </summary>
     /// <param name="builder"><see cref="TracerProviderBuilder" /> being configured.</param>
-    /// <param name="enableMetrics">Whether to enable OpenTelemetry metrics collection (default: false).</param>
+    /// <param name="configure">Optional delegate to configure <see cref="MessagingInstrumentationOptions"/>.</param>
     /// <returns>The instance of <see cref="TracerProviderBuilder" /> to chain the calls.</returns>
     public static TracerProviderBuilder AddMessagingInstrumentation(
         this TracerProviderBuilder builder,
-        bool enableMetrics = false
+        Action<MessagingInstrumentationOptions>? configure = null
     )
     {
         Argument.IsNotNull(builder);
 
+        var options = new MessagingInstrumentationOptions();
+        configure?.Invoke(options);
+
+        var enrichers = options.BuildEnrichers();
+
         builder.AddSource(DiagnosticListener.SourceName);
 
-        return builder.AddInstrumentation(() =>
+        return builder.AddInstrumentation(sp =>
         {
-            var metrics = enableMetrics ? new MessagingMetrics() : null;
-            return new MessagingInstrumentation(new DiagnosticListener(metrics), metrics);
+            var logger = sp.GetService<ILogger<DiagnosticListener>>();
+            var metrics = options.EnableMetrics ? new MessagingMetrics() : null;
+            return new MessagingInstrumentation(new DiagnosticListener(enrichers, logger, metrics), metrics);
         });
     }
 }

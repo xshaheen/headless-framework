@@ -41,7 +41,7 @@ public sealed class HeadlessMediatorTenancyBuilder
     /// <returns>The same Mediator tenancy builder.</returns>
     public HeadlessMediatorTenancyBuilder RequireTenant()
     {
-        _builder.Services.AddTenantRequiredBehavior();
+        _builder.Services.AddMediatorTenantRequiredBehavior();
         _builder.RecordSeam("Mediator", TenantPostureStatus.Enforcing, "require-tenant");
 
         return this;

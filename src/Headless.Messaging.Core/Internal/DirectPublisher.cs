@@ -57,24 +57,24 @@ internal sealed class DirectPublisher(
         }
         catch (Exception e)
         {
-            _TracingErrorSerialization(message, e);
+            _TracingErrorSerialization(message, e, cancellationToken);
             throw;
         }
 
         long? tracingTimestamp = null;
         try
         {
-            tracingTimestamp = _TracingBeforeSend(transportMsg);
+            tracingTimestamp = _TracingBeforeSend(transportMsg, cancellationToken);
 
             var result = await _transport.SendAsync(transportMsg, cancellationToken).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {
-                _TracingErrorSend(tracingTimestamp, transportMsg, result);
+                _TracingErrorSend(tracingTimestamp, transportMsg, result, cancellationToken);
                 throw new PublisherSentFailedException(result.ToString(), result.Exception);
             }
 
-            _TracingAfterSend(tracingTimestamp, transportMsg);
+            _TracingAfterSend(tracingTimestamp, transportMsg, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -85,7 +85,7 @@ internal sealed class DirectPublisher(
         {
             try
             {
-                _TracingErrorSend(tracingTimestamp, transportMsg, e);
+                _TracingErrorSend(tracingTimestamp, transportMsg, e, cancellationToken);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -100,7 +100,7 @@ internal sealed class DirectPublisher(
 
     #region Tracing
 
-    private long? _TracingBeforeSend(TransportMessage message)
+    private long? _TracingBeforeSend(TransportMessage message, CancellationToken cancellationToken)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -112,6 +112,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublish, eventData);
@@ -122,7 +123,11 @@ internal sealed class DirectPublisher(
         return null;
     }
 
-    private void _TracingAfterSend(long? tracingTimestamp, TransportMessage message)
+    private void _TracingAfterSend(
+        long? tracingTimestamp,
+        TransportMessage message,
+        CancellationToken cancellationToken
+    )
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterPublish))
         {
@@ -134,13 +139,19 @@ internal sealed class DirectPublisher(
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublish, eventData);
         }
     }
 
-    private void _TracingErrorSend(long? tracingTimestamp, TransportMessage message, OperateResult result)
+    private void _TracingErrorSend(
+        long? tracingTimestamp,
+        TransportMessage message,
+        OperateResult result,
+        CancellationToken cancellationToken
+    )
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
@@ -155,13 +166,19 @@ internal sealed class DirectPublisher(
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
         }
     }
 
-    private void _TracingErrorSend(long? tracingTimestamp, TransportMessage message, Exception exception)
+    private void _TracingErrorSend(
+        long? tracingTimestamp,
+        TransportMessage message,
+        Exception exception,
+        CancellationToken cancellationToken
+    )
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublish))
         {
@@ -175,13 +192,14 @@ internal sealed class DirectPublisher(
                 TransportMessage = message,
                 ElapsedTimeMs = tracingTimestamp.HasValue ? now - tracingTimestamp.Value : null,
                 Exception = exception,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublish, eventData);
         }
     }
 
-    private void _TracingErrorSerialization(Message message, Exception exception)
+    private void _TracingErrorSerialization(Message message, Exception exception, CancellationToken cancellationToken)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore))
         {
@@ -191,6 +209,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 Message = message,
                 Exception = exception,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);

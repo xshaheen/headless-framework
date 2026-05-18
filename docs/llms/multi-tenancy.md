@@ -30,7 +30,7 @@ Headless multi-tenancy is built from these pieces:
 - `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface and a shared, non-PII tenant posture manifest.
 - `ICurrentTenant` and `ICurrentTenantAccessor` live in the `Headless.Abstractions` namespace (implemented in `src/Headless.Core/Abstractions`) and hold the current tenant in an `AsyncLocal` scope.
 - `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` when HTTP tenancy is configured.
-- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddTenantRequiredBehavior()`.
+- `Headless.Mediator` enforces tenant presence at request dispatch boundaries via `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `AddMediatorTenantRequiredBehavior()`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
 - `Headless.Orm.EntityFramework` reads `ICurrentTenant.Id` in global query filters for `IMultiTenant` entities and can opt in to a save-time tenant write guard.
 - `Headless.Permissions.Core` scopes permission grant cache keys by tenant via `ScopedCache<PermissionGrantCacheItem>`.
@@ -64,7 +64,7 @@ app.UseAuthorization();
 - Use `ICurrentTenant` for tenant-aware application logic; do not pass tenant ID around manually once the execution context is established.
 - In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Mediator, Messaging, and EF posture is visible in one block.
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
-- For Mediator request boundaries, use `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `services.AddTenantRequiredBehavior()`, and mark only intentional host-level requests with `[AllowMissingTenant]`.
+- For Mediator request boundaries, use `.Mediator(mediator => mediator.RequireTenant())` or the lower-level `services.AddMediatorTenantRequiredBehavior()`, and mark only intentional host-level requests with `[AllowMissingTenant]`.
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
@@ -194,7 +194,7 @@ Ordering is consumer-owned and not framework-enforced. Register the tenant guard
 For package-level wiring without the root tenancy surface, the lower-level registration remains available:
 
 ```csharp
-builder.Services.AddTenantRequiredBehavior();
+builder.Services.AddMediatorTenantRequiredBehavior();
 ```
 
 ## Tenant Semantics

@@ -27,7 +27,7 @@ public sealed class ValidationRequestPreProcessor<TMessage, TResponse>(
 
     protected override async ValueTask Handle(TMessage message, CancellationToken cancellationToken)
     {
-        var validatorList = _validators as IList<IValidator<TMessage>> ?? _validators.ToList();
+        var validatorList = _validators as IList<IValidator<TMessage>> ?? [.. _validators];
 
         if (validatorList.Count == 0)
         {

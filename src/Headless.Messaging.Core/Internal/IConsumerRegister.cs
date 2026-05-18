@@ -571,7 +571,7 @@ internal sealed class ConsumerRegister(
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
-                tracingTimestamp = _TracingBefore(transportMessage, _serverAddress);
+                tracingTimestamp = _TracingBefore(transportMessage, _serverAddress, hostShutdownToken);
 
                 var name = transportMessage.GetName();
                 var group = groupName!;
@@ -591,7 +591,7 @@ internal sealed class ConsumerRegister(
                             $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
-                        _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, ex);
+                        _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, ex, hostShutdownToken);
 
                         throw ex;
                     }
@@ -713,14 +713,14 @@ internal sealed class ConsumerRegister(
                         _options.RetryPolicy.MaxPersistedRetries
                     );
 
-                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
+                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress, hostShutdownToken);
                 }
                 else
                 {
                     var mediumMessage = await _storage.StoreReceivedMessageAsync(name, group, message);
                     mediumMessage.Origin = message;
 
-                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress);
+                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress, hostShutdownToken);
 
                     await _dispatcher.EnqueueToExecute(mediumMessage, executor!);
                     probeOutcomeTransferred = true;
@@ -738,7 +738,7 @@ internal sealed class ConsumerRegister(
 
                 await client.RejectAsync(sender);
 
-                _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, e);
+                _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, e, hostShutdownToken);
             }
             finally
             {
@@ -921,7 +921,7 @@ internal sealed class ConsumerRegister(
 
     #region Tracing
 
-    private long? _TracingBefore(TransportMessage message, BrokerAddress broker)
+    private long? _TracingBefore(TransportMessage message, BrokerAddress broker, CancellationToken cancellationToken)
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeConsume))
         {
@@ -931,6 +931,7 @@ internal sealed class ConsumerRegister(
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforeConsume, eventData);
@@ -941,7 +942,12 @@ internal sealed class ConsumerRegister(
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, TransportMessage message, BrokerAddress broker)
+    private void _TracingAfter(
+        long? tracingTimestamp,
+        TransportMessage message,
+        BrokerAddress broker,
+        CancellationToken cancellationToken
+    )
     {
         MessageEventCounterSource.Log.WriteConsumeMetrics();
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.AfterConsume))
@@ -954,13 +960,20 @@ internal sealed class ConsumerRegister(
                 BrokerAddress = broker,
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterConsume, eventData);
         }
     }
 
-    private void _TracingError(long? tracingTimestamp, TransportMessage message, BrokerAddress broker, Exception ex)
+    private void _TracingError(
+        long? tracingTimestamp,
+        TransportMessage message,
+        BrokerAddress broker,
+        Exception ex,
+        CancellationToken cancellationToken
+    )
     {
         if (tracingTimestamp != null && _DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorConsume))
         {
@@ -974,6 +987,7 @@ internal sealed class ConsumerRegister(
                 TransportMessage = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
+                CancellationToken = cancellationToken,
             };
 
             _DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorConsume, eventData);

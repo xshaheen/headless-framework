@@ -1,7 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Messaging.OpenTelemetry;
+using Headless.Messaging.OpenTelemetry.Internal;
 using Headless.Testing.Tests;
+using NSubstitute;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -35,7 +38,7 @@ public sealed class SetupTests : TestBase
 
         // when
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-            .AddMessagingInstrumentation(enableMetrics: true)
+            .AddMessagingInstrumentation(o => o.EnableMetrics = true)
             .AddInMemoryExporter(activities)
             .Build();
 
@@ -51,12 +54,93 @@ public sealed class SetupTests : TestBase
 
         // when
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-            .AddMessagingInstrumentation(enableMetrics: false)
+            .AddMessagingInstrumentation(o => o.EnableMetrics = false)
             .AddInMemoryExporter(activities)
             .Build();
 
         // then
         tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_accept_custom_enricher()
+    {
+        // given - register a custom enricher alongside the built-in defaults
+        var customEnricher = NSubstitute.Substitute.For<IActivityTagEnricher>();
+        var options = new MessagingInstrumentationOptions();
+        options.AddEnricher(customEnricher);
+
+        // when - build the enricher composition the same way Setup does at registration time
+        var enrichers = options.BuildEnrichers();
+
+        // then - built-in defaults precede the custom enricher, in declared order
+        enrichers.Should().HaveCount(3);
+        enrichers[0].Should().BeOfType<TenantIdTagEnricher>();
+        enrichers[1].Should().BeOfType<RetryCountTagEnricher>();
+        enrichers[2].Should().BeSameAs(customEnricher);
+
+        // and TracerProvider build still succeeds end-to-end
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.AddEnricher(customEnricher))
+            .Build();
+        tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_suppress_tenant_id_tag_when_configured()
+    {
+        // given
+        var options = new MessagingInstrumentationOptions { SuppressTenantIdTag = true };
+
+        // when - build the enricher composition that Setup will register
+        var enrichers = options.BuildEnrichers();
+
+        // then - no TenantIdTagEnricher is composed when suppression is requested
+        enrichers.Should().NotContain(e => e is TenantIdTagEnricher);
+        // and the retry-count built-in remains
+        enrichers.Should().ContainSingle(e => e is RetryCountTagEnricher);
+
+        // and TracerProvider build still succeeds end-to-end
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.SuppressTenantIdTag = true)
+            .Build();
+        tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_suppress_retry_count_tag_when_configured()
+    {
+        // given
+        var options = new MessagingInstrumentationOptions { SuppressRetryCountTag = true };
+
+        // when
+        var enrichers = options.BuildEnrichers();
+
+        // then - no RetryCountTagEnricher is composed when suppression is requested
+        enrichers.Should().NotContain(e => e is RetryCountTagEnricher);
+        // and the tenant-id built-in remains
+        enrichers.Should().ContainSingle(e => e is TenantIdTagEnricher);
+
+        // and TracerProvider build still succeeds end-to-end
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.SuppressRetryCountTag = true)
+            .Build();
+        tracerProvider.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_include_built_in_enrichers_by_default()
+    {
+        // given
+        var options = new MessagingInstrumentationOptions();
+
+        // when
+        var enrichers = options.BuildEnrichers();
+
+        // then - both built-ins are included by default, tenant first then retry-count
+        enrichers.Should().HaveCount(2);
+        enrichers[0].Should().BeOfType<TenantIdTagEnricher>();
+        enrichers[1].Should().BeOfType<RetryCountTagEnricher>();
     }
 
     [Fact]

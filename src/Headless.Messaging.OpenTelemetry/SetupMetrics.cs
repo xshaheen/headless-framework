@@ -7,7 +7,8 @@ using Headless.Messaging.OpenTelemetry;
 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Metrics;
 
-public static class MessagingOpenTelemetryMetricsSetup
+[PublicAPI]
+public static class SetupMetrics
 {
     /// <summary>
     /// Enables OpenTelemetry metrics collection for messaging operations.

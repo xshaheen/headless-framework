@@ -16,65 +16,108 @@ public static class MediatorSetup
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Adds the tenant-required Mediator pipeline behavior.
-        /// </summary>
+        /// <summary>Adds the tenant-required Mediator pipeline behavior.</summary>
         /// <remarks>
         /// Consumers must register <see cref="Headless.Abstractions.ICurrentTenant" /> and
         /// Mediator request handlers separately. Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
-        public IServiceCollection AddTenantRequiredBehavior()
+        public IServiceCollection AddMediatorTenantRequiredBehavior(ServiceLifetime lifetime = ServiceLifetime.Scoped)
         {
             Argument.IsNotNull(services);
 
-            services.TryAddEnumerable(
-                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(TenantRequiredBehavior<,>))
+            var serviceDescriptor = ServiceDescriptor.Describe(
+                typeof(IPipelineBehavior<,>),
+                typeof(TenantRequiredBehavior<,>),
+                lifetime
             );
+
+            services.TryAddEnumerable(serviceDescriptor);
 
             return services;
         }
 
-        /// <summary>
-        /// Adds the FluentValidation Mediator request pre-processor.
-        /// </summary>
+        /// <summary>Adds the FluentValidation Mediator request pre-processor.</summary>
         /// <remarks>
         /// Consumers must register any <see cref="FluentValidation.IValidator{T}" />
         /// implementations separately. Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
-        public IServiceCollection AddValidationRequestPreProcessor()
+        public IServiceCollection AddMediatorValidationRequestBehavior(
+            ServiceLifetime lifetime = ServiceLifetime.Scoped
+        )
         {
             Argument.IsNotNull(services);
 
-            services.TryAddEnumerable(
-                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(ValidationRequestPreProcessor<,>))
+            var serviceDescriptor = ServiceDescriptor.Describe(
+                typeof(IPipelineBehavior<,>),
+                typeof(ValidationRequestPreProcessor<,>),
+                lifetime
             );
+
+            services.TryAddEnumerable(serviceDescriptor);
 
             return services;
         }
 
-        /// <summary>
-        /// Adds the standard Mediator request, response, and slow-request logging behaviors.
-        /// </summary>
+        /// <summary>Adds the standard Mediator request, response, and slow-request logging behaviors.</summary>
         /// <remarks>
         /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
-        public IServiceCollection AddMediatorLoggingBehaviors()
+        public IServiceCollection AddMediatorLoggingBehaviors(ServiceLifetime lifetime = ServiceLifetime.Scoped)
+        {
+            Argument.IsNotNull(services);
+
+            services.AddMediatorRequestResponseLoggingBehaviors(lifetime);
+            services.AddMediatorSlowRequestsLoggingBehaviors(lifetime);
+
+            return services;
+        }
+
+        /// <summary>Adds the standard Mediator request, and response logging behaviors.</summary>
+        /// <remarks>
+        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Registration is idempotent.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
+        public IServiceCollection AddMediatorRequestResponseLoggingBehaviors(
+            ServiceLifetime lifetime = ServiceLifetime.Scoped
+        )
         {
             Argument.IsNotNull(services);
 
             services.TryAddEnumerable(
-                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(RequestLoggingBehavior<,>))
+                ServiceDescriptor.Describe(typeof(IPipelineBehavior<,>), typeof(RequestLoggingBehavior<,>), lifetime)
             );
+
             services.TryAddEnumerable(
-                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(ResponseLoggingBehavior<,>))
+                ServiceDescriptor.Describe(typeof(IPipelineBehavior<,>), typeof(ResponseLoggingBehavior<,>), lifetime)
             );
-            services.TryAddEnumerable(
-                ServiceDescriptor.Transient(typeof(IPipelineBehavior<,>), typeof(CriticalRequestLoggingBehavior<,>))
+
+            return services;
+        }
+
+        /// <summary>Adds the slow-request logging behaviors.</summary>
+        /// <remarks>
+        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Registration is idempotent.
+        /// </remarks>
+        /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
+        public IServiceCollection AddMediatorSlowRequestsLoggingBehaviors(
+            ServiceLifetime lifetime = ServiceLifetime.Scoped
+        )
+        {
+            Argument.IsNotNull(services);
+
+            var serviceDescriptor = ServiceDescriptor.Describe(
+                typeof(IPipelineBehavior<,>),
+                typeof(CriticalRequestLoggingBehavior<,>),
+                lifetime
             );
+
+            services.TryAddEnumerable(serviceDescriptor);
 
             return services;
         }

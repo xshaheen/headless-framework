@@ -1,17 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using Headless.Messaging.Diagnostics;
+using Headless.Messaging.Messages;
+using Microsoft.Extensions.Logging;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
 
 namespace Headless.Messaging.OpenTelemetry;
 
-internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<KeyValuePair<string, object?>>
+internal sealed class DiagnosticListener(
+    IActivityTagEnricher[] enrichers,
+    ILogger<DiagnosticListener>? logger = null,
+    MessagingMetrics? metrics = null
+) : IObserver<KeyValuePair<string, object?>>
 {
     public const string SourceName = MessagingDiagnostics.SourceName;
 
     private static readonly TextMapPropagator _Propagator = Propagators.DefaultTextMapPropagator;
+
+    private readonly bool _hasEnrichers = enrichers.Length > 0;
 
     public void OnCompleted() { }
 
@@ -56,6 +65,21 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                             )
                         );
 
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Persist,
+                                    eventData.Message.GetId(),
+                                    eventData.Operation,
+                                    eventData.Message.Headers,
+                                    retryCount: 0
+                                ),
+                                eventData.CancellationToken
+                            );
+                        }
+
                         if (parentContext != default && Activity.Current != null)
                         {
                             _Propagator.Inject(
@@ -80,7 +104,7 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                             new ActivityTagsCollection
                             {
-                                new("headless.messaging.persistence.duration_ms", eventData.ElapsedTimeMs),
+                                new(MessagingTags.PersistenceDurationMs, eventData.ElapsedTimeMs),
                             }
                         )
                     );
@@ -158,6 +182,21 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                             )
                         );
 
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Publish,
+                                    eventData.TransportMessage.GetId(),
+                                    eventData.Operation,
+                                    eventData.TransportMessage.Headers,
+                                    retryCount: 0
+                                ),
+                                eventData.CancellationToken
+                            );
+                        }
+
                         _Propagator.Inject(
                             new PropagationContext(activity.Context, Baggage.Current),
                             eventData.TransportMessage,
@@ -180,7 +219,7 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.send.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.SendDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -265,6 +304,21 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
+
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.Consume,
+                                    eventData.TransportMessage.GetId(),
+                                    eventData.Operation,
+                                    eventData.TransportMessage.Headers,
+                                    retryCount: 0
+                                ),
+                                eventData.CancellationToken
+                            );
+                        }
                     }
                 }
                 break;
@@ -279,7 +333,7 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.receive.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.ReceiveDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -354,12 +408,30 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                     {
                         activity.SetTag("code.function.name", eventData.MethodInfo!.Name);
 
+                        // The retry-count tag is now owned by RetryCountTagEnricher (registered
+                        // by default; suppressible via MessagingInstrumentationOptions.SuppressRetryCountTag).
+
                         activity.AddEvent(
                             new ActivityEvent(
                                 "subscriber.invoke.start",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value)
                             )
                         );
+
+                        if (_hasEnrichers)
+                        {
+                            _CallEnrichers(
+                                activity,
+                                _BuildEnrichmentContext(
+                                    MessagingEventKind.SubscriberInvoke,
+                                    eventData.Message.GetId(),
+                                    eventData.Operation,
+                                    eventData.Message.Headers,
+                                    retryCount: eventData.RetryCount
+                                ),
+                                eventData.CancellationToken
+                            );
+                        }
                     }
                 }
                 break;
@@ -374,7 +446,7 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
                                 new ActivityTagsCollection
                                 {
-                                    new("headless.messaging.invoke.duration_ms", eventData.ElapsedTimeMs),
+                                    new(MessagingTags.InvokeDurationMs, eventData.ElapsedTimeMs),
                                 }
                             )
                         );
@@ -410,4 +482,98 @@ internal class DiagnosticListener(MessagingMetrics? metrics = null) : IObserver<
                 break;
         }
     }
+
+    private static MessagingEnrichmentContext _BuildEnrichmentContext(
+        MessagingEventKind kind,
+        string messageId,
+        string operation,
+        IDictionary<string, string?> headers,
+        int retryCount
+    )
+    {
+        return new MessagingEnrichmentContext
+        {
+            Kind = kind,
+            MessageId = messageId,
+            MessageName = operation,
+            TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
+            CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
+            RetryCount = retryCount,
+            Headers =
+                headers as IReadOnlyDictionary<string, string?> ?? new ReadOnlyDictionary<string, string?>(headers),
+        };
+    }
+
+    private void _CallEnrichers(
+        Activity activity,
+        in MessagingEnrichmentContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        // Fast path: enrichers that complete synchronously have their tags applied before this
+        // method returns. Async tails are observed but not awaited — see IActivityTagEnricher.Enrich
+        // remarks for the fire-and-forget contract.
+        for (var i = 0; i < enrichers.Length; i++)
+        {
+            var enricher = enrichers[i];
+            ValueTask vt;
+            try
+            {
+                vt = enricher.Enrich(activity, context, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _LogEnricherException(enricher, ex);
+                continue;
+            }
+
+            if (vt.IsCompletedSuccessfully)
+            {
+                continue;
+            }
+
+            if (vt.IsCompleted)
+            {
+                try
+                {
+                    vt.GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _LogEnricherException(enricher, ex);
+                }
+
+                continue;
+            }
+
+            // Async tail: fire-and-forget. Tags added after the activity stops are dropped.
+            _ = _ObserveAsyncEnricherAsync(enricher, vt);
+        }
+    }
+
+    private async Task _ObserveAsyncEnricherAsync(IActivityTagEnricher enricher, ValueTask vt)
+    {
+        try
+        {
+            await vt.ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _LogEnricherException(enricher, ex);
+        }
+    }
+
+    private void _LogEnricherException(IActivityTagEnricher enricher, Exception ex)
+    {
+        if (logger is not null)
+        {
+            DiagnosticListenerLog.EnricherFailed(logger, ex, enricher.GetType().FullName ?? enricher.GetType().Name);
+        }
+    }
+}
+
+internal static partial class DiagnosticListenerLog
+{
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Enricher {EnricherType} threw an exception and was skipped")]
+    internal static partial void EnricherFailed(ILogger logger, Exception ex, string enricherType);
 }

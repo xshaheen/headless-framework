@@ -82,7 +82,7 @@ internal sealed class OutboxPublisher(
         long? tracingTimestamp = null;
         try
         {
-            tracingTimestamp = _TracingBefore(publishRequest.Message);
+            tracingTimestamp = _TracingBefore(publishRequest.Message, cancellationToken);
 
             var currentTransaction = transactionAccessor.Current;
             if (currentTransaction?.DbTransaction == null)
@@ -91,7 +91,7 @@ internal sealed class OutboxPublisher(
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message)
                     .ConfigureAwait(false);
 
-                _TracingAfter(tracingTimestamp, publishRequest.Message);
+                _TracingAfter(tracingTimestamp, publishRequest.Message, cancellationToken);
 
                 if (publishRequest.Message.Headers.ContainsKey(Headers.DelayTime))
                 {
@@ -118,7 +118,7 @@ internal sealed class OutboxPublisher(
                     .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, currentTransaction.DbTransaction)
                     .ConfigureAwait(false);
 
-                _TracingAfter(tracingTimestamp, publishRequest.Message);
+                _TracingAfter(tracingTimestamp, publishRequest.Message, cancellationToken);
 
                 transaction.AddToSent(mediumMessage);
 
@@ -130,7 +130,7 @@ internal sealed class OutboxPublisher(
         }
         catch (Exception e)
         {
-            _TracingError(tracingTimestamp, publishRequest.Message, e);
+            _TracingError(tracingTimestamp, publishRequest.Message, e, cancellationToken);
 
             throw;
         }
@@ -138,7 +138,7 @@ internal sealed class OutboxPublisher(
 
     #region tracing
 
-    private long? _TracingBefore(Message message)
+    private long? _TracingBefore(Message message, CancellationToken cancellationToken)
     {
         if (DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforePublishMessageStore))
         {
@@ -147,6 +147,7 @@ internal sealed class OutboxPublisher(
                 OperationTimestamp = _NowUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
+                CancellationToken = cancellationToken,
             };
 
             DiagnosticListener.Write(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData);
@@ -157,7 +158,7 @@ internal sealed class OutboxPublisher(
         return null;
     }
 
-    private void _TracingAfter(long? tracingTimestamp, Message message)
+    private void _TracingAfter(long? tracingTimestamp, Message message, CancellationToken cancellationToken)
     {
         if (
             tracingTimestamp != null
@@ -171,13 +172,19 @@ internal sealed class OutboxPublisher(
                 Operation = message.GetName(),
                 Message = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
+                CancellationToken = cancellationToken,
             };
 
             DiagnosticListener.Write(MessageDiagnosticListenerNames.AfterPublishMessageStore, eventData);
         }
     }
 
-    private void _TracingError(long? tracingTimestamp, Message message, Exception ex)
+    private void _TracingError(
+        long? tracingTimestamp,
+        Message message,
+        Exception ex,
+        CancellationToken cancellationToken
+    )
     {
         if (
             tracingTimestamp != null
@@ -192,6 +199,7 @@ internal sealed class OutboxPublisher(
                 Message = message,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
+                CancellationToken = cancellationToken,
             };
 
             DiagnosticListener.Write(MessageDiagnosticListenerNames.ErrorPublishMessageStore, eventData);
