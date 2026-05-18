@@ -19,7 +19,7 @@ public sealed class MediatorSetupTests
         var services = new ServiceCollection();
 
         // when
-        services.AddTenantRequiredBehavior();
+        services.AddMediatorTenantRequiredBehavior();
 
         // then
         var descriptor = services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle().Subject;
@@ -33,8 +33,8 @@ public sealed class MediatorSetupTests
         var services = new ServiceCollection();
 
         // when
-        services.AddTenantRequiredBehavior();
-        services.AddTenantRequiredBehavior();
+        services.AddMediatorTenantRequiredBehavior();
+        services.AddMediatorTenantRequiredBehavior();
 
         // then
         services.Where(_IsTenantRequiredBehaviorDescriptor).Should().ContainSingle();
@@ -66,7 +66,7 @@ public sealed class MediatorSetupTests
         var services = new ServiceCollection();
 
         // when
-        services.AddValidationRequestPreProcessor();
+        services.AddMediatorValidationRequestBehavior();
 
         // then
         var descriptor = services.Where(_IsValidationRequestPreProcessorDescriptor).Should().ContainSingle().Subject;
@@ -80,8 +80,8 @@ public sealed class MediatorSetupTests
         var services = new ServiceCollection();
 
         // when
-        services.AddValidationRequestPreProcessor();
-        services.AddValidationRequestPreProcessor();
+        services.AddMediatorValidationRequestBehavior();
+        services.AddMediatorValidationRequestBehavior();
 
         // then
         services.Where(_IsValidationRequestPreProcessorDescriptor).Should().ContainSingle();
@@ -141,8 +141,8 @@ public sealed class MediatorSetupTests
 
         // when
         var result = services
-            .AddTenantRequiredBehavior()
-            .AddValidationRequestPreProcessor()
+            .AddMediatorTenantRequiredBehavior()
+            .AddMediatorValidationRequestBehavior()
             .AddMediatorLoggingBehaviors();
 
         // then
@@ -156,8 +156,8 @@ public sealed class MediatorSetupTests
         IServiceCollection? services = null;
 
         // when
-        var tenantRequiredAction = () => services!.AddTenantRequiredBehavior();
-        var validationAction = () => services!.AddValidationRequestPreProcessor();
+        var tenantRequiredAction = () => services!.AddMediatorTenantRequiredBehavior();
+        var validationAction = () => services!.AddMediatorValidationRequestBehavior();
         var loggingAction = () => services!.AddMediatorLoggingBehaviors();
 
         // then
@@ -174,7 +174,7 @@ public sealed class MediatorSetupTests
         services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
 
         // when
-        services.AddTenantRequiredBehavior();
+        services.AddMediatorTenantRequiredBehavior();
 
         using var serviceProvider = services.BuildServiceProvider();
         var behaviors = serviceProvider.GetServices<IPipelineBehavior<TestRequest, TestResponse>>();
@@ -195,7 +195,7 @@ public sealed class MediatorSetupTests
         services.AddLogging();
 
         // when
-        services.AddValidationRequestPreProcessor();
+        services.AddMediatorValidationRequestBehavior();
 
         using var serviceProvider = services.BuildServiceProvider();
         var behaviors = serviceProvider.GetServices<IPipelineBehavior<TestRequest, TestResponse>>();
