@@ -115,11 +115,8 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     {
                         _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
                     }
-                    problemDetails = problemDetailsCreator.BadRequest(
-                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
-                    );
-                    statusCode = StatusCodes.Status400BadRequest;
+                    problemDetails = problemDetailsCreator.TenantContextRequired();
+                    statusCode = StatusCodes.Status403Forbidden;
                     break;
 
                 case ConflictException conflict:

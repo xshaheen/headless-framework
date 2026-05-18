@@ -754,7 +754,7 @@ var info = new FailedInfo
 
 ## Strict Publish Tenancy
 
-`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the Mediator behavior (#236). Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
 
 1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
 2. Otherwise, the ambient `ICurrentTenant.Id`.

@@ -160,7 +160,7 @@ public sealed class MessagingOptions
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
     /// <see cref="PublishOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
     /// tenant, throwing <see cref="MissingTenantContextException"/>. Sibling of the EF write guard
-    /// (#234) and the Mediator behavior (#236) for cross-layer tenant safety.
+    /// (#234) and the HTTP authorization requirement for cross-layer tenant safety.
     /// </summary>
     /// <remarks>
     /// Defaults to <see langword="false"/> to preserve today's behavior. Background workers and

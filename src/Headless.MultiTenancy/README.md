@@ -13,7 +13,7 @@ Provides one composition surface for tenant posture across Headless packages whi
 - `IHeadlessTenancyValidator` startup validation hook
 - Seam-owned fluent extensions from installed packages:
   - `Headless.Api`: `.Http(http => http.ResolveFromClaims())`
-  - `Headless.Mediator`: `.Mediator(mediator => mediator.RequireTenant())`
+  - `Headless.Api`: `.Authorization(auth => auth.RequireTenant())`
   - `Headless.Messaging.Core`: `.Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())`
   - `Headless.Orm.EntityFramework`: `.EntityFramework(ef => ef.GuardTenantWrites())`
 
@@ -34,7 +34,7 @@ builder.AddHeadless();
 
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Http(http => http.ResolveFromClaims())
-    .Mediator(mediator => mediator.RequireTenant())
+    .Authorization(auth => auth.RequireTenant())
     .Messaging(messaging => messaging.PropagateTenant().RequireTenantOnPublish())
     .EntityFramework(ef => ef.GuardTenantWrites()));
 
@@ -50,7 +50,7 @@ app.UseAuthorization();
 
 ## Configuration
 
-`Headless.MultiTenancy` does not resolve tenants, enforce Mediator boundaries, propagate messages, or guard EF writes by itself. It owns the root builder, shared manifest, and validator contracts only. The installed seam packages add the actual fluent methods and behavior.
+`Headless.MultiTenancy` does not resolve tenants, enforce HTTP authorization, propagate messages, or guard EF writes by itself. It owns the root builder, shared manifest, and validator contracts only. The installed seam packages add the actual fluent methods and behavior.
 
 `TenantPostureManifest` records seam names, posture status, capability labels, and runtime markers. Values are intentionally non-PII so diagnostics can be emitted safely.
 

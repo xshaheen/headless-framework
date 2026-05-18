@@ -9,7 +9,7 @@ namespace Headless.Abstractions;
 /// enforces a "tenant must be resolved" invariant.
 /// </summary>
 /// <remarks>
-/// Inherits from <see cref="Exception"/> directly so cross-cutting middleware (HTTP 400 mappers,
+/// Inherits from <see cref="Exception"/> directly so cross-cutting middleware (HTTP problem mappers,
 /// retry suppression) can catch this single type without sweeping unrelated
 /// <see cref="InvalidOperationException"/>s.
 /// </remarks>

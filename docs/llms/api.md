@@ -207,7 +207,7 @@ Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register 
 
 | Exception | Response |
 |-----------|----------|
-| `Headless.Abstractions.MissingTenantContextException` | 400 (standard `bad-request` title; identified by `error.code: g:tenant-required`) |
+| `Headless.Abstractions.MissingTenantContextException` | 403 (standard `forbidden` title; identified by `error.code: g:tenant-required`) |
 | `Headless.Abstractions.CrossTenantWriteException` | 409 with `errors` array containing the `g:cross-tenant-write` descriptor; non-transient, MUST NOT be retried |
 | `Headless.Exceptions.ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
@@ -232,9 +232,9 @@ Tenancy response shape:
 
 ```json
 {
-  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.1",
-  "title": "bad-request",
-  "status": 400,
+  "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+  "title": "forbidden",
+  "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
     "code": "g:tenant-required",
@@ -256,7 +256,7 @@ Tenancy response shape:
 
 **Handler-chain ordering:** `IExceptionHandler` instances run in registration order. The framework handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-**Related factory:** `IProblemDetailsCreator.TenantRequired()` (parameterless) produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
+**Related factory:** `IProblemDetailsCreator.TenantContextRequired()` (parameterless) produces the same tenancy response shape for direct callers (e.g., a request-pipeline pre-check that wants to short-circuit without throwing).
 
 ## Configuration
 

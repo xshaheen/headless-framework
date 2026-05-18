@@ -16,27 +16,6 @@ public static class MediatorSetup
 {
     extension(IServiceCollection services)
     {
-        /// <summary>Adds the tenant-required Mediator pipeline behavior.</summary>
-        /// <remarks>
-        /// Consumers must register <see cref="Headless.Abstractions.ICurrentTenant" /> and
-        /// Mediator request handlers separately. Registration is idempotent.
-        /// </remarks>
-        /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
-        public IServiceCollection AddMediatorTenantRequiredBehavior(ServiceLifetime lifetime = ServiceLifetime.Scoped)
-        {
-            Argument.IsNotNull(services);
-
-            var serviceDescriptor = ServiceDescriptor.Describe(
-                typeof(IPipelineBehavior<,>),
-                typeof(TenantRequiredBehavior<,>),
-                lifetime
-            );
-
-            services.TryAddEnumerable(serviceDescriptor);
-
-            return services;
-        }
-
         /// <summary>Adds the FluentValidation Mediator request pre-processor.</summary>
         /// <remarks>
         /// Consumers must register any <see cref="FluentValidation.IValidator{T}" />

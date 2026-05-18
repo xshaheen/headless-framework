@@ -66,6 +66,12 @@ public interface IProblemDetailsCreator
     ProblemDetails BadRequest(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
+    /// Builds a normalized 403 <see cref="ProblemDetails"/> for requests that require an ambient
+    /// tenant context but none was resolved.
+    /// </summary>
+    ProblemDetails TenantContextRequired();
+
+    /// <summary>
     /// Builds a normalized 429 <see cref="ProblemDetails"/> for rate-limited responses.
     /// </summary>
     /// <param name="retryAfterSeconds">
@@ -200,6 +206,21 @@ public sealed class ProblemDetailsCreator(
         };
 
         _SetError(problemDetails, error);
+        _Normalize(problemDetails);
+
+        return problemDetails;
+    }
+
+    public ProblemDetails TenantContextRequired()
+    {
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status403Forbidden,
+            Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+            Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+        };
+
+        _SetError(problemDetails, HeadlessProblemDetailsConstants.Errors.TenantContextRequired);
         _Normalize(problemDetails);
 
         return problemDetails;
