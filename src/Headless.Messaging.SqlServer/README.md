@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer(config =>
     {
@@ -33,7 +33,7 @@ builder.Services.AddMessages(options =>
 
     options.UseRabbitMQ(rmq => { /* ... */ });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -44,7 +44,6 @@ options.UseSqlServer(config =>
 {
     config.ConnectionString = "connection_string";
     config.Schema = "messaging";
-    config.TableNamePrefix = "msg";
 });
 ```
 
@@ -56,8 +55,8 @@ options.UseSqlServer(config =>
 ## Side Effects
 
 - Creates database tables in configured schema:
-  - `{prefix}_published` - Published messages
-  - `{prefix}_received` - Received messages
-  - `{prefix}_lock` - Distributed lock table
+  - `{schema}.Published` - Published messages
+  - `{schema}.Received` - Received messages
+  - `{schema}.Lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages

@@ -25,35 +25,37 @@ dotnet add package Headless.Messaging.OpenTelemetry
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource("Headless.Messaging")
+        .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-    options.UseOpenTelemetry();
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
 ## Configuration
 
-```csharp
-options.UseOpenTelemetry(otel =>
-{
-    otel.EnrichPublisher = (activity, message) =>
-    {
-        activity?.SetTag("message.type", message.GetType().Name);
-    };
+The messaging instrumentation is configured on the `TracerProviderBuilder`, not on `MessagingOptions`:
 
-    otel.EnrichConsumer = (activity, context) =>
-    {
-        activity?.SetTag("consumer.topic", context.Topic);
-    };
-});
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing
+        .AddMessagingInstrumentation(opt =>
+        {
+            opt.EnableMetrics = true;          // collect message metrics in addition to traces
+            opt.SuppressTenantIdTag = false;   // set true for shared multi-tenant trace backends
+            opt.SuppressRetryCountTag = false; // set true to omit headless.messaging.retry_count
+
+            opt.AddEnricher(new MyCustomEnricher()); // implements IActivityTagEnricher
+        })
+        .AddJaegerExporter());
 ```
+
+Custom enrichers implement `IActivityTagEnricher` from `Headless.Messaging.OpenTelemetry`. The pipeline runs built-in enrichers first (`TenantIdTagEnricher`, then `RetryCountTagEnricher`, each gated by its suppression option) and then custom enrichers in registration order. Enricher exceptions are isolated and logged; the messaging operation continues regardless.
 
 ## Dependencies
 

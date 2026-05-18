@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.RabbitMQ
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -36,7 +36,7 @@ builder.Services.AddMessages(options =>
         rmq.VirtualHost = "/";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

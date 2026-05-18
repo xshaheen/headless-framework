@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.PostgreSql
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql(config =>
     {
@@ -33,7 +33,7 @@ builder.Services.AddMessages(options =>
 
     options.UseRabbitMQ(rmq => { /* ... */ });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

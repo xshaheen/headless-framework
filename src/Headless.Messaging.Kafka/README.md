@@ -23,7 +23,7 @@ dotnet add package Headless.Messaging.Kafka
 ## Quick Start
 
 ```csharp
-builder.Services.AddMessages(options =>
+builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
@@ -32,7 +32,7 @@ builder.Services.AddMessages(options =>
         kafka.Servers = "localhost:9092";
     });
 
-    options.ScanConsumers(typeof(Program).Assembly);
+    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -43,9 +43,13 @@ options.UseKafka(kafka =>
 {
     kafka.Servers = "localhost:9092,localhost:9093";
     kafka.ConnectionPoolSize = 10;
-    kafka.CustomHeaders = headers => headers.Add("app", "myapp");
 
-    // Kafka-specific producer settings for ordering
+    // Per-consume header augmentation. Receives the raw ConsumeResult and the live DI scope,
+    // returns extra headers to attach before the framework dispatches to handlers.
+    kafka.CustomHeadersBuilder = (consumeResult, services) =>
+        [new KeyValuePair<string, string>("app", "myapp")];
+
+    // Kafka-specific producer/consumer settings via the raw librdkafka config dictionary.
     kafka.MainConfig["enable.idempotence"] = "true";
     kafka.MainConfig["max.in.flight.requests.per.connection"] = "1"; // Strict ordering
 });
@@ -60,13 +64,18 @@ Kafka provides **strict FIFO ordering within partitions**:
 Messages sent to the same partition are delivered in order. Use message keys to route related messages to the same partition:
 
 ```csharp
-// Publish with partition key for ordered delivery
+// Publish with partition key for ordered delivery.
+// The Kafka transport reads the partition key from KafkaHeaders.KafkaKey
+// ("headless-kafka-key") at SendAsync time.
 await publisher.PublishAsync(
     order,
     new PublishOptions
     {
         Topic = "orders.events",
-        Headers = new Dictionary<string, string?> { ["PartitionKey"] = order.CustomerId.ToString() }
+        Headers = new Dictionary<string, string?>
+        {
+            [KafkaHeaders.KafkaKey] = order.CustomerId.ToString()
+        }
     });
 ```
 

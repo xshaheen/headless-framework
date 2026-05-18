@@ -9,11 +9,18 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
+- [Provider Capabilities](#provider-capabilities)
+    - [Transport Providers](#transport-providers)
+    - [Storage Providers](#storage-providers)
 - [Headless.Messaging.Abstractions](#headlessmessagingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
+    - [Envelope](#envelope)
+        - [Reserved Wire Headers](#reserved-wire-headers)
+        - [PublishOptions](#publishoptions)
+        - [Tenant Header Integrity](#tenant-header-integrity)
     - [Transport Pause/Resume](#transport-pauseresume)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
@@ -67,6 +74,8 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
     - [Configuration](#configuration-4)
+        - [Tag Enrichment Pipeline](#tag-enrichment-pipeline)
+        - [Built-in Tag Reference](#built-in-tag-reference)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
 - [Headless.Messaging.AwsSqs](#headlessmessagingawssqs)
@@ -184,6 +193,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-16)
     - [Dependencies](#dependencies-16)
     - [Side Effects](#side-effects-16)
+- [Appendix: Deferred to Phase 2](#appendix-deferred-to-phase-2)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
 
@@ -261,6 +271,51 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 ---
 
+## Provider Capabilities
+
+These matrices summarize the current Phase 1 surface for each transport and storage package. Every cell is derived from the package's `Setup.cs`, transport, or consumer-client source — when this doc and a sibling README disagree, the package source is authoritative and the sibling README is the one with drift. The carry-forward rule for future PRs: any change to a transport or storage's public surface (interfaces wired, broker-API calls, capability seams) MUST update the corresponding row in the same change.
+
+The matrices intentionally do not include columns for Phase 2 concepts (`DeliveryKind`, send vs broadcast intent). See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for what is scheduled later.
+
+### Transport Providers
+
+| Provider          | Direct publish | Consume | Native scheduled              | Ordering shape                    | Tenant header round-trip | Broker reject                       | Auto-provisioning                          |
+|-------------------|----------------|---------|-------------------------------|-----------------------------------|--------------------------|-------------------------------------|--------------------------------------------|
+| `RabbitMq`        | yes            | yes     | no (broker plugin not wired)  | FIFO per queue                    | yes                      | `BasicReject` (nack)                | exchange + queue declare on subscribe      |
+| `Nats`            | yes            | yes     | no                            | per-subject (sequential consumer) | yes                      | broker nack                         | stream + subject create (when opt-in)      |
+| `AzureServiceBus` | yes            | yes     | **yes** (`ScheduledEnqueueTime`) | FIFO per session               | yes                      | broker `Abandon`                    | topic + subscription create                |
+| `AwsSqs`          | yes            | yes     | no                            | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)   | SNS topic create + SQS policy generation   |
+| `Kafka`           | yes            | yes     | no                            | per-partition with partition key  | yes                      | seek to offset (re-read partition)  | auto-create concrete topics                |
+| `Pulsar`          | yes            | yes     | no (`DeliverAfter` not wired) | per-key when partition key set    | yes                      | `NegativeAcknowledge`               | passthrough (broker auto-creates)          |
+| `RedisStreams`    | yes            | yes     | no                            | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)    | passthrough (`XADD` creates on publish)    |
+| `InMemoryQueue`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
+
+How to read each column:
+
+- **Direct publish / Consume** — the transport implements `ITransport.SendAsync` and `IConsumerClient.ListeningAsync`. Uniformly yes across the Phase 1 surface; the columns anchor each row.
+- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through the framework's outbox-backed `IScheduledPublisher` regardless of transport.
+- **Ordering shape** — the strongest guarantee the broker offers within the named scope. The framework's outbox preserves publish order within a transaction; everything beyond that is broker semantics.
+- **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
+- **Broker reject** — what `IConsumerClient.RejectAsync` actually does. "no-op" means the transport cannot signal rejection back to the broker; persisted-retry pickup is the only path to re-delivery.
+- **Auto-provisioning** — whether `IConsumerClient.FetchTopicsAsync` (or the subscribe path) creates broker resources. "passthrough" means the transport relies on the broker's own auto-creation behavior.
+
+### Storage Providers
+
+| Provider          | Outbox + persisted retry storage | Schema initializer            |
+|-------------------|----------------------------------|-------------------------------|
+| `PostgreSql`      | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `SqlServer`       | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `InMemoryStorage` | yes (`IDataStorage`, in-memory)  | yes (`IStorageInitializer`)   |
+
+How to read each column:
+
+- **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
+- **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
+
+Internal-wiring asymmetries (for example, `Headless.Messaging.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
+
+---
+
 # Headless.Messaging.Abstractions
 
 Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
@@ -274,10 +329,10 @@ Provides standardized interfaces for building reliable distributed messaging sys
 - **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
 - **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
 - **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
+- **Scheduled Publishing**: `IScheduledPublisher` for delayed message delivery (bound to the same instance as `IOutboxPublisher`)
 - **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
 - **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
 - **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
-- **Delayed Publishing**: Schedule messages for future delivery
 - **Multi-Type Consumers**: Single consumer can handle multiple message types
 - **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods (DIM) for backpressure — idempotent, backward compatible
 
@@ -342,6 +397,63 @@ public sealed class MetricsService(IDirectPublisher publisher)
     }
 }
 ```
+
+## Envelope
+
+The current Phase 1 publish surface exposes three publisher interfaces in `Headless.Messaging.Abstractions`:
+
+- `IDirectPublisher` — fire-and-forget, transport-direct delivery. No outbox involvement.
+- `IOutboxPublisher` — durable, transactional delivery. The publish writes to storage; a background drainer hands the row to the transport once the ambient transaction commits.
+- `IScheduledPublisher` — delayed delivery via `PublishDelayAsync<T>(TimeSpan, ...)`. Bound to the same singleton as `IOutboxPublisher`, so scheduled publishing inherits the outbox's durability and tenant integrity. Broker-native scheduling is a separate concept — see [Provider Capabilities](#provider-capabilities) for which transports natively delay delivery.
+
+> **Deferred to Phase 2 (#232).** The send-versus-broadcast intent split (`ISendPublisher`, `IBroadcastPublisher`) and the `DeliveryKind` envelope metadata are scheduled for the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for the full deferred list.
+
+### Reserved Wire Headers
+
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through `PublishOptions.Headers` is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use the typed `PublishOptions` properties or the `TimeSpan delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
+
+| Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
+|---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
+| `MessageId`         | `headless-msg-id`              | yes      | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
+| `MessageName`       | `headless-msg-name`            | yes      | framework    | Topic / message name used for subscriber routing.                                                        |
+| `Type`              | `headless-msg-type`            | yes      | framework    | .NET type name of the payload, used for deserialization.                                                 |
+| `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
+| `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
+| `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
+| `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
+| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from the `delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
+| `TenantId`          | `headless-tenant-id`           | rule     | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — enforced by its own four-case rule, NOT the reserved-set rejection. See Strict Publish Tenancy below. |
+| `Group`             | `headless-msg-group`           | no       | framework    | Active consumer group; injected on consume, never on publish.                                            |
+| `ExecutionInstanceId` | `headless-exec-instance-id`  | no       | framework    | Identifier of the application instance that produced / consumed the message.                             |
+| `Exception`         | `headless-exception`           | no       | framework    | Failure record formatted as `ExceptionTypeName-->ExceptionMessage`. Present on failed-message records.   |
+| `TraceParent`       | `traceparent`                  | no       | framework    | W3C Trace Context for OpenTelemetry propagation.                                                         |
+
+"Source = mixed" means the value MAY originate from the caller's `PublishOptions` but the framework supplies a default when the caller does not. "publisher" means the caller's `PublishOptions` is the only origin. "framework" means the framework writes the wire header without taking input from the caller. The `Reserved` column reports the live behavior in `MessagePublishRequestFactory._ReservedHeaders` — `yes` keys throw on a raw write through `PublishOptions.Headers`; `no` keys are framework-written but not blocked from caller overrides.
+
+### `PublishOptions`
+
+`PublishOptions` is the publish-side configuration record. All properties are optional; the record's value equality and `with`-expression-friendly shape are deliberate so filters can mutate a single property without manually copying every other.
+
+| Property              | Type                                | Behavior                                                                                                              |
+|-----------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
+| `Topic`               | `string?`                           | Explicit topic override. When `null`, the topic resolves from `WithTopicMapping<T>` or convention.                    |
+| `Headers`             | `IDictionary<string, string?>?`     | Custom application headers. Reserved keys (see table above) are rejected at publish time.                             |
+| `MessageId`           | `string?`                           | Logical message identifier override. Bounded by `PublishOptions.MessageIdMaxLength` (200 chars) for durable outbox columns. |
+| `CorrelationId`       | `string?`                           | Saga / flow correlation identifier.                                                                                   |
+| `CorrelationSequence` | `int?`                              | Position within a correlated sequence.                                                                                |
+| `CallbackName`        | `string?`                           | Callback handler topic for response routing.                                                                          |
+| `TenantId`            | `string?`                           | Multi-tenancy identifier. Source of truth for tenant-side wire header (see Strict Publish Tenancy). Bounded by `PublishOptions.TenantIdMaxLength` (200 chars); whitespace-only values are rejected at publish time. |
+
+### Tenant Header Integrity
+
+The `Headers.TenantId` (`headless-tenant-id`) wire header enforces a strict 4-case integrity policy at publish time. The contract is documented end-to-end in the [Strict Publish Tenancy](#strict-publish-tenancy) section below; the summary:
+
+1. **Typed property set, no raw header** — accepted; the framework stamps the wire header from `PublishOptions.TenantId`.
+2. **Raw header written, no typed property** — rejected with `InvalidOperationException`. Use `PublishOptions.TenantId`.
+3. **Typed property and raw header agree** — accepted as a no-op reconciliation.
+4. **Typed property and raw header disagree** — rejected with `InvalidOperationException`.
+
+Consume-side `TenantId` values are untrusted wire data. The framework does not charset-sanitize them; applications must validate before using the value in URLs, SQL columns, log lines, or OpenTelemetry tags.
 
 ## Transport Pause/Resume
 
@@ -445,6 +557,8 @@ public sealed class MetricsService(IDirectPublisher publisher)
 ```
 
 ## Publisher Options
+
+> **Deferred to Phase 2 (#232).** The Phase 1 surface listed below — `IOutboxPublisher`, `IDirectPublisher`, and `IScheduledPublisher` (covered in the [Envelope](#envelope) section) — does not split publish intent into send-one and broadcast-many variants. `ISendPublisher` / `IBroadcastPublisher` and the `DeliveryKind` envelope metadata land in the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2).
 
 ### IOutboxPublisher (Reliable Delivery)
 
@@ -554,6 +668,16 @@ builder.Services.AddHeadlessMessaging(setup =>
 `MessagingOptions.TransportPublishTimeout` defaults to 10s and bounds transport publish calls with a linked shutdown token. `MessagingOptions.CommandTimeout` defaults to 30s and is applied to SQL-backed storage commands, including terminal writes that intentionally use `CancellationToken.None`.
 
 Persisted retry storage uses `NextRetryAt` for due time and `LockedUntil` for the active delivery lease. Pickup requires `NextRetryAt <= now` and `LockedUntil IS NULL OR LockedUntil <= now`. Retry writes clear `LockedUntil`. Retry counter writes include an optimistic `Retries == originalRetries` predicate; a rejected update means another replica already advanced or terminalized the row, so callers stop the attempt path.
+
+#### Retry decisions
+
+`IRetryBackoffStrategy.Compute(persistedRetryCount, inlineRetryCount, exception)` returns a `RetryDecision` with one of three outcomes:
+
+- `RetryDecision.Continue(delay)` — transient failure; retry after `delay`. The routine path between attempts.
+- `RetryDecision.Stop` — permanent failure (classified by the strategy) or cancellation (`OperationCanceledException`). The pipeline halts immediately; `OnExhausted` does **not** fire.
+- `RetryDecision.Exhausted` — transient failure but no further attempt is allowed (max attempts reached, or the strategy returned no delay). `OnExhausted` fires. Most strategies return only `Stop` or `Continue` and let the framework emit `Exhausted` when configured budgets are consumed; strategies with their own attempt accounting MAY return `Exhausted` directly — both sources are handled identically.
+
+Total attempts before `Exhausted` are bounded by the policy: `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. The `+1` includes the original execution; `MaxInlineRetries`/`MaxPersistedRetries` count retries *after* the first attempt at each level.
 
 #### Exhausted vs Stop
 
@@ -1071,18 +1195,19 @@ dotnet add package Headless.Messaging.OpenTelemetry
 ```csharp
 builder.Services.AddOpenTelemetry()
     .WithTracing(tracing => tracing
-        .AddSource("Headless.Messaging")
+        .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-    options.UseOpenTelemetry();
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
+
+`AddMessagingInstrumentation` registers the `Headless.Messaging` `ActivitySource` automatically — no separate `.AddSource(...)` call is needed.
 
 ## Configuration
 
@@ -1099,7 +1224,9 @@ builder.Services.AddOpenTelemetry()
         .AddJaegerExporter());
 ```
 
-Custom enrichers implement `IActivityTagEnricher`:
+### Tag Enrichment Pipeline
+
+`IActivityTagEnricher` is the extension point for attaching custom tags to every messaging span (publish, persist, consume, subscriber-invoke). The enricher contract:
 
 ```csharp
 public sealed class MyCustomEnricher : IActivityTagEnricher
@@ -1109,34 +1236,49 @@ public sealed class MyCustomEnricher : IActivityTagEnricher
         in MessagingEnrichmentContext context,
         CancellationToken cancellationToken = default)
     {
-        // Add custom tags here. Return synchronously for the tag to actually attach
-        // — see the Enrich XML doc for the fire-and-forget async-tail caveat.
+        // Read ambient context, add tags synchronously, return.
         activity.SetTag("app.custom_tag", "value");
         return ValueTask.CompletedTask;
     }
 }
 ```
 
-`MessagingEnrichmentContext` exposes `Kind`, `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers`. An enricher that throws is isolated: the exception is swallowed (and logged as a warning when a logger is available) so subsequent enrichers and the span itself are unaffected.
+`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
 
-### Built-in tag names
+**Ordering.** Built-in enrichers run first in this fixed order, each gated by its suppression option:
 
-The `MessagingTags` static class exposes the framework's built-in tag names as public constants
-so consumer code (analyzers, enrichers, suppression filters) doesn't hardcode strings:
+1. `TenantIdTagEnricher` — emits `headless.messaging.tenant_id` (gated by `SuppressTenantIdTag`).
+2. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
 
-- `MessagingTags.TenantId` — `"headless.messaging.tenant_id"` — emitted by the built-in
-  `TenantIdTagEnricher` unless `SuppressTenantIdTag = true`.
-- `MessagingTags.RetryCount` — `"headless.messaging.retry_count"` — emitted by the built-in
-  `RetryCountTagEnricher` on subscriber-invoke spans when retry count > 0, unless
-  `SuppressRetryCountTag = true`.
-- `MessagingTags.PersistenceDurationMs` — `"headless.messaging.persistence.duration_ms"` — emitted
-  on the persist activity's success event.
-- `MessagingTags.SendDurationMs` — `"headless.messaging.send.duration_ms"` — emitted on the
-  publish activity's success event.
-- `MessagingTags.ReceiveDurationMs` — `"headless.messaging.receive.duration_ms"` — emitted on the
-  consume activity's success event.
-- `MessagingTags.InvokeDurationMs` — `"headless.messaging.invoke.duration_ms"` — emitted on the
-  subscriber-invoke activity's success event.
+Custom enrichers registered via `AddEnricher(...)` are appended after the built-ins, in insertion order. The enricher list is snapshotted at `AddMessagingInstrumentation` time; calls to `AddEnricher` afterwards are ignored.
+
+**Async-tail caveat.** The pipeline awaits only the synchronous portion of the returned `ValueTask`. If `Enrich` returns a `ValueTask` that completes asynchronously, the pipeline does **not** await it — the enricher becomes fire-and-forget from that point, and any tags added after the activity stops are dropped by the OpenTelemetry SDK. Enrichers that need async data should pre-resolve it (cache hits, ambient context) and finish synchronously.
+
+**Exception isolation.** An enricher that throws (synchronously or in its async tail) is isolated: the exception is logged as a warning when a logger is wired and the next enricher runs normally. The messaging operation itself is unaffected.
+
+**Reserved namespaces.** Enrichers must not write tags in the following namespaces; the framework or the OpenTelemetry SDK silently overwrites them and produces inconsistent traces:
+
+- `messaging.*` — OpenTelemetry messaging semantic conventions.
+- `server.*` — broker / destination addressing.
+- `headless.messaging.*` — framework ground truth (`tenant_id`, `retry_count`, duration metrics).
+- `exception.*` — OTel exception convention emitted at activity stop.
+
+Use an application- or product-scoped namespace such as `app.<feature>.<field>` for custom tags.
+
+**Header PII.** `MessagingEnrichmentContext.Headers` is the raw wire-header dictionary. On the consume side it is untrusted external data and may include authentication tokens, propagator state, internal IDs, or PII. Read only the specific keys your enricher needs; do not serialize the dictionary wholesale onto activity tags.
+
+### Built-in Tag Reference
+
+The `MessagingTags` static class exposes built-in tag names as public constants so consumer code (analyzers, enrichers, suppression filters) does not hardcode strings.
+
+| Constant                              | Wire tag                                       | Emitted on                                | Suppression                |
+|---------------------------------------|------------------------------------------------|-------------------------------------------|----------------------------|
+| `MessagingTags.TenantId`              | `headless.messaging.tenant_id`                 | every span when the message has a tenant  | `SuppressTenantIdTag`      |
+| `MessagingTags.RetryCount`            | `headless.messaging.retry_count`               | subscriber-invoke spans when `RetryCount > 0` | `SuppressRetryCountTag` |
+| `MessagingTags.PersistenceDurationMs` | `headless.messaging.persistence.duration_ms`   | persist activity success event            | — (always emitted)         |
+| `MessagingTags.SendDurationMs`        | `headless.messaging.send.duration_ms`          | publish activity success event            | — (always emitted)         |
+| `MessagingTags.ReceiveDurationMs`     | `headless.messaging.receive.duration_ms`       | consume activity success event            | — (always emitted)         |
+| `MessagingTags.InvokeDurationMs`      | `headless.messaging.invoke.duration_ms`        | subscriber-invoke activity success event  | — (always emitted)         |
 
 ## Dependencies
 
@@ -2125,3 +2267,19 @@ consumer.Clear(); // thread-safe reset between tests
 ## Side Effects
 
 None. Recording decorators wrap the existing transport and pipeline at DI registration time. No external resources are created.
+
+---
+
+# Appendix: Deferred to Phase 2
+
+The following items are intentionally NOT part of the current Phase 1 surface. Inline `> **Deferred to Phase 2 …**` callouts throughout the doc point readers here. None of these names are valid current behavior — code that targets them today will not compile.
+
+| Item                                          | Tracked in                                                              | Scope                                                                                                              |
+|-----------------------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| Send / broadcast publisher intent split       | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New `ISendPublisher` and `IBroadcastPublisher` interfaces replacing the single `PublishAsync` shape per intent.    |
+| `DeliveryKind` envelope metadata              | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New envelope field marking send vs broadcast intent on the wire; consumed by publish/consume telemetry.            |
+| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring the Phase 2 outbox decorator model.                                            |
+| Rename / migration guide                      | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Concrete migration steps from `IDirectPublisher` / `IOutboxPublisher` to the Phase 2 send/broadcast surface.       |
+| Typed-behavior pipeline decision              | [#218](https://github.com/xshaheen/headless-framework/issues/218)       | RFC on whether `IPublishBehavior<T>` / `IConsumeBehavior<T>` exist alongside the current filter pipeline.          |
+
+This appendix is the consolidated index, not a written guide. The carry-forward rule for Phase 2 is that #232 / #218 own the implementation and the migration prose; this doc is updated in the same change that lands the rename.
