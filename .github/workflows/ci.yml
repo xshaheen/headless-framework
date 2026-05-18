@@ -205,6 +205,7 @@ jobs:
             dotnet nuget push "$symbol" \
               --source "https://api.nuget.org/v3/index.json" \
               --api-key "$NUGET_API_KEY" \
-              --skip-duplicate
+              --skip-duplicate \
+              || echo "::warning::Skipping failed symbol package push for $symbol."
           done
         shell: bash
