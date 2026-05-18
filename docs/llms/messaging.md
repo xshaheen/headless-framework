@@ -193,6 +193,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-16)
     - [Dependencies](#dependencies-16)
     - [Side Effects](#side-effects-16)
+- [Appendix: Deferred to Phase 2](#appendix-deferred-to-phase-2)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
 
@@ -405,6 +406,8 @@ The current Phase 1 publish surface exposes three publisher interfaces in `Headl
 - `IOutboxPublisher` — durable, transactional delivery. The publish writes to storage; a background drainer hands the row to the transport once the ambient transaction commits.
 - `IScheduledPublisher` — delayed delivery via `PublishDelayAsync<T>(TimeSpan, ...)`. Bound to the same singleton as `IOutboxPublisher`, so scheduled publishing inherits the outbox's durability and tenant integrity. Broker-native scheduling is a separate concept — see [Provider Capabilities](#provider-capabilities) for which transports natively delay delivery.
 
+> **Deferred to Phase 2 (#232).** The send-versus-broadcast intent split (`ISendPublisher`, `IBroadcastPublisher`) and the `DeliveryKind` envelope metadata are scheduled for the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for the full deferred list.
+
 ### Reserved Wire Headers
 
 Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Reserved header keys are rejected from the user-supplied `PublishOptions.Headers` dictionary; the framework owns these wire keys.
@@ -554,6 +557,8 @@ public sealed class MetricsService(IDirectPublisher publisher)
 ```
 
 ## Publisher Options
+
+> **Deferred to Phase 2 (#232).** The Phase 1 surface listed below — `IOutboxPublisher`, `IDirectPublisher`, and `IScheduledPublisher` (covered in the [Envelope](#envelope) section) — does not split publish intent into send-one and broadcast-many variants. `ISendPublisher` / `IBroadcastPublisher` and the `DeliveryKind` envelope metadata land in the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2).
 
 ### IOutboxPublisher (Reliable Delivery)
 
@@ -2262,3 +2267,19 @@ consumer.Clear(); // thread-safe reset between tests
 ## Side Effects
 
 None. Recording decorators wrap the existing transport and pipeline at DI registration time. No external resources are created.
+
+---
+
+# Appendix: Deferred to Phase 2
+
+The following items are intentionally NOT part of the current Phase 1 surface. Inline `> **Deferred to Phase 2 …**` callouts throughout the doc point readers here. None of these names are valid current behavior — code that targets them today will not compile.
+
+| Item                                          | Tracked in                                                              | Scope                                                                                                              |
+|-----------------------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| Send / broadcast publisher intent split       | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New `ISendPublisher` and `IBroadcastPublisher` interfaces replacing the single `PublishAsync` shape per intent.    |
+| `DeliveryKind` envelope metadata              | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New envelope field marking send vs broadcast intent on the wire; consumed by publish/consume telemetry.            |
+| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring the Phase 2 outbox decorator model.                                            |
+| Rename / migration guide                      | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Concrete migration steps from `IDirectPublisher` / `IOutboxPublisher` to the Phase 2 send/broadcast surface.       |
+| Typed-behavior pipeline decision              | [#218](https://github.com/xshaheen/headless-framework/issues/218)       | RFC on whether `IPublishBehavior<T>` / `IConsumeBehavior<T>` exist alongside the current filter pipeline.          |
+
+This appendix is the consolidated index, not a written guide. The carry-forward rule for Phase 2 is that #232 / #218 own the implementation and the migration prose; this doc is updated in the same change that lands the rename.
