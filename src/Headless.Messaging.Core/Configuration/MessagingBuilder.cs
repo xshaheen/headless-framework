@@ -283,9 +283,12 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
     /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
     /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// Last-wins: calling this method (or its factory overload) more than once replaces any prior
+    /// messaging lock provider registration.
     /// </remarks>
     public MessagingBuilder UseDistributedLock(IDistributedLockProvider provider)
     {
+        _RemoveExistingMessagingLockProvider();
         Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
         Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
         return this;
@@ -301,11 +304,30 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
     /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
     /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// Last-wins: calling this method (or its instance overload) more than once replaces any prior
+    /// messaging lock provider registration.
     /// </remarks>
     public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLockProvider> factory)
     {
+        _RemoveExistingMessagingLockProvider();
         Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, (sp, _) => factory(sp));
         Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
         return this;
+    }
+
+    private void _RemoveExistingMessagingLockProvider()
+    {
+        for (var i = Services.Count - 1; i >= 0; i--)
+        {
+            var descriptor = Services[i];
+            if (
+                descriptor.ServiceType == typeof(IDistributedLockProvider)
+                && descriptor.IsKeyedService
+                && Equals(descriptor.ServiceKey, MessagingKeys.LockProvider)
+            )
+            {
+                Services.RemoveAt(i);
+            }
+        }
     }
 }

@@ -7,6 +7,7 @@ using Headless.DistributedLocks.Cache;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
@@ -48,7 +49,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     {
         // Arrange — pre-acquire published lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
-            "messaging.publish-retry-v1",
+            MessagingKeys.PublishRetryResource("v1"),
             timeUntilExpires: TimeSpan.FromMinutes(1),
             cancellationToken: AbortToken);
         externalLock.Should().NotBeNull("pre-condition: lock must be acquirable on empty store");
@@ -74,7 +75,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     {
         // Arrange — pre-acquire received lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
-            "messaging.receive-retry-v1",
+            MessagingKeys.ReceiveRetryResource("v1"),
             timeUntilExpires: TimeSpan.FromMinutes(1),
             cancellationToken: AbortToken);
         externalLock.Should().NotBeNull("pre-condition: lock must be acquirable on empty store");
@@ -101,20 +102,31 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Arrange — use a always-granting provider so we can inspect RenewalCount on the returned handle.
         // The real provider can't be used here because the processor passes acquireTimeout=Zero, which
         // creates an immediately-cancelled CTS that causes the real provider to return null every time.
+        //
+        // The TCS is signalled from the storage call (which runs AFTER _receivedRetryHandle is
+        // assigned by the processor), guaranteeing the renewal branch on tick 2 sees the handle.
+        // Earlier, signaling from inside TryAcquireAsync fired before the processor's assignment,
+        // which required a Task.Delay timing patch to mask the race.
         var lockAcquiredTcs = new TaskCompletionSource<TrackingLock>(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var trackingProvider = new TrackingLockProvider("receive-retry", lockAcquiredTcs);
+        var trackingProvider = new TrackingLockProvider("receive-retry");
 
-        // Block the received storage query so the background consume task never completes
+        // Block the received storage query so the background consume task never completes.
+        // The storage call also fires lockAcquiredTcs — this happens strictly after the processor
+        // has stashed the lock into _receivedRetryHandle, so no timing patch is needed.
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage.GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
         storage.GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
-            .Returns(_ => new ValueTask<IEnumerable<MediumMessage>>(
-                storageBlocker.Task.ContinueWith(
-                    _ => (IEnumerable<MediumMessage>)[],
-                    TaskScheduler.Default)));
+            .Returns(_ =>
+            {
+                lockAcquiredTcs.TrySetResult(trackingProvider.LastIssuedReceiveRetryLock!);
+                return new ValueTask<IEnumerable<MediumMessage>>(
+                    storageBlocker.Task.ContinueWith(
+                        _ => (IEnumerable<MediumMessage>)[],
+                        TaskScheduler.Default));
+            });
 
         var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: trackingProvider);
         using var context = _CreateContext(storage);
@@ -122,11 +134,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Act — tick 1: starts background consume task that acquires the lock and then blocks
         await processor.ProcessAsync(context);
 
-        // Wait until the lock is captured and _receivedRetryHandle is set
+        // Wait until the storage call fires — at that point the processor has already executed
+        // `_receivedRetryHandle = acquiredHandle;` between TryAcquireAsync and the storage call.
         var capturedLock = await lockAcquiredTcs.Task.WaitAsync(AbortToken);
-        await Task.Delay(50, AbortToken);
 
-        // Act — tick 2: renewal branch fires because _failedRetryConsumeTask is still running
+        // Act — tick 2: renewal branch fires because _receivedRetryConsumeTask is still running
         await processor.ProcessAsync(context);
 
         // Assert
@@ -256,13 +268,13 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new ProcessingContext(provider, TimeProvider.System, AbortToken);
     }
 
-    private sealed class TrackingLockProvider(
-        string resourceFilter,
-        TaskCompletionSource<TrackingLock> capture
-    ) : IDistributedLockProvider
+    private sealed class TrackingLockProvider(string resourceFilter) : IDistributedLockProvider
     {
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+
+        /// <summary>The most recently issued lock that matched <c>resourceFilter</c>, if any.</summary>
+        public TrackingLock? LastIssuedReceiveRetryLock { get; private set; }
 
         public Task<IDistributedLock?> TryAcquireAsync(
             string resource,
@@ -273,7 +285,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             var trackingLock = new TrackingLock();
             if (resource.Contains(resourceFilter, StringComparison.Ordinal))
             {
-                capture.TrySetResult(trackingLock);
+                LastIssuedReceiveRetryLock = trackingLock;
             }
             return Task.FromResult<IDistributedLock?>(trackingLock);
         }

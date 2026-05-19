@@ -247,10 +247,23 @@ internal sealed class Bootstrapper(
 
         var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
 
-        if (lockProvider.GetType() == typeof(NoOpDistributedLockProvider))
+        if (lockProvider is not NoOpDistributedLockProvider)
         {
-            logger.UseStorageLockWithNoOpProvider();
+            return;
         }
+
+        // Probe the un-keyed slot so the warning can distinguish the "no provider at all" case
+        // from the "real provider registered but only un-keyed" case — the second case is a
+        // common misconfiguration where the operator wired up Headless.DistributedLocks.Redis
+        // (or similar) but did not flow it through MessagingBuilder.UseDistributedLock(...).
+        var unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
+        if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
+        {
+            logger.UseStorageLockWithNoOpProviderButRealUnkeyed();
+            return;
+        }
+
+        logger.UseStorageLockWithNoOpProvider();
     }
 
     private void _CheckRequirement()

@@ -481,7 +481,9 @@ builder.Services.AddHeadlessMessaging(setup => { ... })
 
 Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
 
-Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key.
+Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
+
+> **NoOp introspection contract:** when `NoOpDistributedLockProvider` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
 
 When `UseStorageLock = false` (default), `IDistributedLockProvider` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
 

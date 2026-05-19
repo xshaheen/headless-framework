@@ -24,6 +24,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.RedisStreams.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />

@@ -2,6 +2,7 @@ using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -151,6 +152,48 @@ public sealed class BootstrapperTests : TestBase
             e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
             "warning must be silent when a real IDistributedLockProvider is registered"
         );
+    }
+
+    [Fact]
+    public async Task should_isolate_messaging_lock_provider_from_unkeyed_app_level_provider()
+    {
+        // given — an app-level un-keyed provider AND a messaging-keyed provider
+        var appLevelProvider = Substitute.For<IDistributedLockProvider>();
+        var messagingProvider = Substitute.For<IDistributedLockProvider>();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IDistributedLockProvider>(appLevelProvider);
+
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
+        });
+        messagingBuilder.UseDistributedLock(messagingProvider);
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when — resolve the retry processor which injects the messaging-keyed provider via attribute
+        var processor = provider.GetRequiredService<MessageNeedToRetryProcessor>();
+
+        // then — un-keyed remains visible to app code, keyed remains messaging's
+        provider.GetRequiredService<IDistributedLockProvider>().Should().BeSameAs(appLevelProvider);
+        provider
+            .GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider)
+            .Should()
+            .BeSameAs(messagingProvider);
+
+        // The processor type itself is what we care about — it must hold the messaging-keyed one.
+        // Use reflection to verify the field since it's private; cheaper than rewiring DI.
+        var lockProviderField = typeof(MessageNeedToRetryProcessor).GetField(
+            "_lockProvider",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        lockProviderField.Should().NotBeNull("MessageNeedToRetryProcessor must carry a _lockProvider field");
+        var injected = lockProviderField!.GetValue(processor);
+        injected.Should().BeSameAs(messagingProvider, "the processor must receive the messaging-keyed provider, not the un-keyed app-level one");
+        injected.Should().NotBeSameAs(appLevelProvider);
     }
 
     private ServiceProvider _CreateProvider(

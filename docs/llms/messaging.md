@@ -775,14 +775,19 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 **Requirements:**
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found under the messaging key.
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real `IDistributedLockProvider` is registered un-keyed at the application level (e.g. via `Headless.DistributedLocks.Redis`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper emits **EventId 78** (`UseStorageLockWithNoOpProviderButRealUnkeyed`) instead so the misconfiguration is obvious.
+- `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
+
+**NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
 
 **Lock names:**
 
 - `messaging.publish-retry-{version}` — held while processing published-message retries.
 - `messaging.receive-retry-{version}` — held while processing received-message retries.
 
-`{version}` comes from `MessagingOptions.Version`. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
+Both names are built via `Headless.Messaging.Internal.MessagingKeys.PublishRetryResource(version)` and `ReceiveRetryResource(version)`.
+
+`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
 **When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
 

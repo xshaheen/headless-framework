@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -604,6 +606,35 @@ public sealed class MessagingBuilderTests
         // then
         cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(5);
+    }
+
+    [Fact]
+    public void should_replace_messaging_lock_provider_when_use_distributed_lock_called_twice()
+    {
+        // given — last-wins semantics: second registration must supersede the first
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+        var firstProvider = Substitute.For<IDistributedLockProvider>();
+        var secondProvider = Substitute.For<IDistributedLockProvider>();
+
+        // when
+        builder.UseDistributedLock(firstProvider);
+        builder.UseDistributedLock(secondProvider);
+
+        // then — only one descriptor present for the messaging-keyed slot
+        var descriptors = services
+            .Where(d =>
+                d.ServiceType == typeof(IDistributedLockProvider)
+                && d.IsKeyedService
+                && Equals(d.ServiceKey, MessagingKeys.LockProvider)
+            )
+            .ToArray();
+
+        descriptors.Should().HaveCount(1);
+
+        using var provider = services.BuildServiceProvider();
+        var resolved = provider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
+        resolved.Should().BeSameAs(secondProvider, "the second registration must win under last-wins semantics");
     }
 
     [Fact]

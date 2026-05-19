@@ -689,4 +689,266 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Should()
             .Be(3);
     }
+
+    // -------------------------------------------------------------------------
+    // #17 — UseStorageLock=false fast-path
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_skip_TryAcquireAsync_when_UseStorageLock_is_false()
+    {
+        // Arrange — explicit construction so we can configure UseStorageLock=false and inspect the lock provider
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = false });
+        var retryProcessorOptions = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+
+        var sut = new MessageNeedToRetryProcessor(options, retryProcessorOptions, logger, dispatcher, lockProvider);
+
+        _SetupReceivedMessages(dataStorage);
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — drive ProcessAsync once
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Assert — TryAcquireAsync must never be called when UseStorageLock=false
+        await lockProvider
+            .DidNotReceive()
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    // -------------------------------------------------------------------------
+    // #7 — _receivedRetryHandle race-window interleavings
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_skip_renewal_when_received_retry_handle_is_null()
+    {
+        // Race window 2: ProcessAsync sees the consume task running but _receivedRetryHandle has
+        // not yet been assigned (or was cleared by a prior renewal-loss). Renewal branch must no-op.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        // Block the consume task indefinitely so the renewal branch can fire next tick.
+        var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<IEnumerable<MediumMessage>>(blocker.Task));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        // Always-grant lock so the consume task captures one (in real flow). Track renewals.
+        var captured = Substitute.For<IDistributedLock>();
+        captured.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(captured));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — drive a tick. The consume task fires the lock acquire and blocks. We can't easily
+        // pin window 2 (assignment race) but we can simulate the cleared handle by NOT letting the
+        // consume task ever advance to the assignment. Use a never-completing acquire to keep the
+        // background task pending and the handle null:
+        var neverCompletes = new TaskCompletionSource<IDistributedLock?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => neverCompletes.Task);
+
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Second tick — _receivedRetryConsumeTask is still pending but _receivedRetryHandle is null.
+        await sut.ProcessAsync(context);
+
+        // Assert — no renewal was attempted because the handle field is null
+        await captured
+            .DidNotReceive()
+            .RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // Cleanup
+        neverCompletes.TrySetResult(null);
+        blocker.TrySetResult([]);
+    }
+
+    [Fact]
+    public async Task should_skip_renewal_when_consume_task_completed_before_tick()
+    {
+        // Race window 3: the consume task completes between the tick check and renewal — guarded
+        // by the IsCompleted check. Verify renewal does not fire when the previous task is done.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        var renewableLock = Substitute.For<IDistributedLock>();
+        renewableLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(renewableLock));
+
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Cycle 1 — consume task runs and completes synchronously (storage returns [])
+        await sut.ProcessAsync(context);
+        // Allow background continuations (ExecuteSynchronously _receivedRetryConsumeTask=null cleanup) to run.
+        await Task.Delay(100, AbortToken);
+
+        // Cycle 2 — previous task completed, so renewal branch should NOT fire and a fresh task is spawned.
+        renewableLock.ClearReceivedCalls();
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Assert — no renewal because the prior consume task completed before this tick.
+        // (Cycle 2 acquires its own lock and finishes; no renewal between ticks.)
+        await renewableLock.DidNotReceive().RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_clear_received_retry_handle_when_renewal_returns_false()
+    {
+        // Window 4: renewal returns false (ownership lost). Processor must clear _receivedRetryHandle
+        // so the next renewal attempt no-ops instead of pinging a stale handle.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        // Consume task blocks so renewal branch fires on tick 2.
+        var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<IEnumerable<MediumMessage>>(blocker.Task));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        // Lock acquire returns a handle whose Renew returns false.
+        var lostLock = Substitute.For<IDistributedLock>();
+        lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(lostLock));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Tick 1 — background consume task acquires lock and blocks on storage
+        await sut.ProcessAsync(context);
+        // Give the background task time to capture the lock into _receivedRetryHandle
+        await Task.Delay(100, AbortToken);
+
+        // Tick 2 — renewal branch fires, Renew returns false, handle must be cleared
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Tick 3 — handle should be cleared; renewal must no-op (count stays at 1 from tick 2)
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Assert — Renew was called exactly once (tick 2). On tick 3 the handle was null so no renew.
+        await lostLock.Received(1).RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // Cleanup
+        blocker.TrySetResult([]);
+        await Task.Delay(50, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_clear_received_retry_handle_in_finally_even_if_work_throws()
+    {
+        // The finally-clear in _ProcessReceivedAsync must run even when the work body throws,
+        // so the next renewal cycle does not see a stale handle.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        // Storage throws — work body unwinds via the catch in _GetSafelyAsync, returning [].
+        // The finally clear still runs after the foreach.
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<IEnumerable<MediumMessage>>(new InvalidOperationException("boom")));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var acquiredLock = Substitute.For<IDistributedLock>();
+        acquiredLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(acquiredLock));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Drive one cycle — storage throws, finally must clear the handle and dispose the lock
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Drive a second cycle — if the handle was not cleared, RenewAsync would be invoked here;
+        // but the prior consume task has completed (finally ran), so the renewal branch is skipped
+        // entirely and no renewal must fire.
+        acquiredLock.ClearReceivedCalls();
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Assert — finally cleared the handle: no stale renewal between cycles.
+        await acquiredLock.DidNotReceive().RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        // And the handle was disposed at least once per cycle (so finally ran).
+        await acquiredLock.Received().DisposeAsync();
+    }
 }

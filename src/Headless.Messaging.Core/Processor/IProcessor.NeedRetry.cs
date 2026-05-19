@@ -34,9 +34,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
-    private Task? _failedRetryConsumeTask;
+    private Task? _receivedRetryConsumeTask;
     private Task? _publishedRetryConsumeTask;
-    private IDistributedLock? _receivedRetryHandle;
+    private volatile IDistributedLock? _receivedRetryHandle;
 
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
@@ -48,6 +48,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     //   (sequential) and ResetBackpressureAsync (callable from any thread). All increments use
     //   Interlocked.Increment and all resets use Interlocked.Exchange to avoid non-atomic
     //   read-modify-write races. Direct reads (comparisons) are safe for aligned int fields.
+    // - _receivedRetryHandle is declared volatile: single-writer (_ProcessReceivedAsync, which
+    //   runs as a background Task) and single-reader (the renewal branch in ProcessAsync, which
+    //   runs on the poll-tick thread). Volatile guarantees the reader observes the latest
+    //   assignment without needing a full Interlocked operation. The finally-clear in
+    //   _ProcessReceivedAsync is also visible promptly to the renewal reader.
     private long _currentIntervalTicks;
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
@@ -168,12 +173,30 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             );
         }
 
-        if (_options.Value.UseStorageLock && _failedRetryConsumeTask is { IsCompleted: false })
+        if (_options.Value.UseStorageLock && _receivedRetryConsumeTask is { IsCompleted: false })
         {
             var handle = _receivedRetryHandle;
             if (handle is not null)
             {
-                await handle.RenewAsync(_GetLockTtl(), context.CancellationToken).ConfigureAwait(false);
+                try
+                {
+                    var renewed = await handle
+                        .RenewAsync(_GetLockTtl(), context.CancellationToken)
+                        .ConfigureAwait(false);
+                    if (!renewed)
+                    {
+                        _logger.ReceivedRetryLockOwnershipLost();
+                        _receivedRetryHandle = null;
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.ReceivedRetryLockRenewalFailed(ex);
+                }
             }
 
             await context
@@ -183,7 +206,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        _failedRetryConsumeTask = Task
+        _receivedRetryConsumeTask = Task
             .Factory.StartNew(
                 () => _ProcessReceivedAsync(storage, context),
                 CancellationToken.None,
@@ -192,15 +215,15 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             )
             .Unwrap();
 
-        _ = _failedRetryConsumeTask.ContinueWith(
+        _ = _receivedRetryConsumeTask.ContinueWith(
             t => _logger.ReceivedRetryProcessingUnhandled(t.Exception),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
 
-        _ = _failedRetryConsumeTask.ContinueWith(
-            _ => _failedRetryConsumeTask = null,
+        _ = _receivedRetryConsumeTask.ContinueWith(
+            _ => _receivedRetryConsumeTask = null,
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default
@@ -213,112 +236,156 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         context.ThrowIfStopping();
 
-        IDistributedLock? acquiredHandle = null;
-        if (_options.Value.UseStorageLock)
+        if (!_options.Value.UseStorageLock)
         {
-            acquiredHandle = await _lockProvider
-                .TryAcquireAsync(
-                    $"messaging.publish-retry-{_options.Value.Version}",
-                    timeUntilExpires: _GetLockTtl(),
-                    acquireTimeout: TimeSpan.Zero,
-                    cancellationToken: context.CancellationToken
-                )
-                .ConfigureAwait(false);
-            if (acquiredHandle is null)
-            {
-                return;
-            }
+            await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
+            return;
         }
 
-        try
+        await using var acquiredHandle = await _TryAcquirePublishedLockAsync(context).ConfigureAwait(false);
+        if (acquiredHandle is null)
         {
-            var messages = await _GetSafelyAsync(
-                    connection.GetPublishedMessagesOfNeedRetryAsync,
-                    StoragePickupKind.Published,
-                    context.CancellationToken
-                )
-                .ConfigureAwait(false);
-
-            foreach (var message in messages)
-            {
-                context.ThrowIfStopping();
-
-                await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
-            }
+            return;
         }
-        finally
-        {
-            if (acquiredHandle is not null)
-            {
-                await acquiredHandle.DisposeAsync().ConfigureAwait(false);
-            }
-        }
+
+        await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
     }
 
     private async Task _ProcessReceivedAsync(IDataStorage connection, ProcessingContext context)
     {
         context.ThrowIfStopping();
 
-        IDistributedLock? acquiredHandle = null;
-        if (_options.Value.UseStorageLock)
+        if (!_options.Value.UseStorageLock)
         {
-            acquiredHandle = await _lockProvider
+            await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
+            return;
+        }
+
+        await using var acquiredHandle = await _TryAcquireReceivedLockAsync(context).ConfigureAwait(false);
+        if (acquiredHandle is null)
+        {
+            return;
+        }
+
+        _receivedRetryHandle = acquiredHandle;
+        try
+        {
+            await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
+        }
+        finally
+        {
+            _receivedRetryHandle = null;
+        }
+    }
+
+    /// <summary>
+    /// Attempts to acquire the published-retry distributed lock, wrapping <see cref="IDistributedLockProvider.TryAcquireAsync"/>
+    /// in the per-kind escalation-counter pattern shared with storage-pickup failures so adaptive polling backs off
+    /// on lock-store outages rather than tight-looping.
+    /// </summary>
+    private async Task<IDistributedLock?> _TryAcquirePublishedLockAsync(ProcessingContext context)
+    {
+        try
+        {
+            return await _lockProvider
                 .TryAcquireAsync(
-                    $"messaging.receive-retry-{_options.Value.Version}",
+                    MessagingKeys.PublishRetryResource(_options.Value.Version),
                     timeUntilExpires: _GetLockTtl(),
                     acquireTimeout: TimeSpan.Zero,
                     cancellationToken: context.CancellationToken
                 )
                 .ConfigureAwait(false);
-            if (acquiredHandle is null)
-            {
-                return;
-            }
-            _receivedRetryHandle = acquiredHandle;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _RecordLockAcquireFailure(StoragePickupKind.Published, ex);
+            return null;
+        }
+    }
 
+    /// <summary>
+    /// Attempts to acquire the received-retry distributed lock, wrapping <see cref="IDistributedLockProvider.TryAcquireAsync"/>
+    /// in the per-kind escalation-counter pattern shared with storage-pickup failures so adaptive polling backs off
+    /// on lock-store outages rather than tight-looping.
+    /// </summary>
+    private async Task<IDistributedLock?> _TryAcquireReceivedLockAsync(ProcessingContext context)
+    {
         try
         {
-            var messages = await _GetSafelyAsync(
-                    connection.GetReceivedMessagesOfNeedRetryAsync,
-                    StoragePickupKind.Received,
-                    context.CancellationToken
+            return await _lockProvider
+                .TryAcquireAsync(
+                    MessagingKeys.ReceiveRetryResource(_options.Value.Version),
+                    timeUntilExpires: _GetLockTtl(),
+                    acquireTimeout: TimeSpan.Zero,
+                    cancellationToken: context.CancellationToken
                 )
                 .ConfigureAwait(false);
-
-            var enqueued = 0;
-            var skippedCircuitOpen = 0;
-            var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
-
-            foreach (var message in messages)
-            {
-                context.ThrowIfStopping();
-
-                var group = message.Origin.GetGroup();
-                if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
-                {
-                    skippedCircuitOpen++;
-                    var safeGroup = LogSanitizer.Sanitize(group);
-                    _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
-                    continue;
-                }
-
-                await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
-                enqueued++;
-            }
-
-            if (_adaptivePolling)
-            {
-                _AdjustPollingInterval(enqueued, skippedCircuitOpen);
-            }
         }
-        finally
+        catch (OperationCanceledException)
         {
-            _receivedRetryHandle = null;
-            if (acquiredHandle is not null)
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _RecordLockAcquireFailure(StoragePickupKind.Received, ex);
+            return null;
+        }
+    }
+
+    private async Task _ExecutePublishedWorkAsync(IDataStorage connection, ProcessingContext context)
+    {
+        var messages = await _GetSafelyAsync(
+                connection.GetPublishedMessagesOfNeedRetryAsync,
+                StoragePickupKind.Published,
+                context.CancellationToken
+            )
+            .ConfigureAwait(false);
+
+        foreach (var message in messages)
+        {
+            context.ThrowIfStopping();
+
+            await _dispatcher.EnqueueToPublish(message, context.CancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _ExecuteReceivedWorkAsync(IDataStorage connection, ProcessingContext context)
+    {
+        var messages = await _GetSafelyAsync(
+                connection.GetReceivedMessagesOfNeedRetryAsync,
+                StoragePickupKind.Received,
+                context.CancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var enqueued = 0;
+        var skippedCircuitOpen = 0;
+        var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
+
+        foreach (var message in messages)
+        {
+            context.ThrowIfStopping();
+
+            var group = message.Origin.GetGroup();
+            if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
             {
-                await acquiredHandle.DisposeAsync().ConfigureAwait(false);
+                skippedCircuitOpen++;
+                var safeGroup = LogSanitizer.Sanitize(group);
+                _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, safeGroup);
+                continue;
             }
+
+            await _dispatcher.EnqueueToExecute(message, null, context.CancellationToken).ConfigureAwait(false);
+            enqueued++;
+        }
+
+        if (_adaptivePolling)
+        {
+            _AdjustPollingInterval(enqueued, skippedCircuitOpen);
         }
     }
 
@@ -367,6 +434,45 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 return ref _consecutivePublishedPickupFailures;
             case StoragePickupKind.Received:
                 return ref _consecutiveReceivedPickupFailures;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
+        }
+    }
+
+    /// <summary>
+    /// Records a lock-acquire failure on the same per-kind counter used by storage-pickup failures so
+    /// adaptive polling backs off rather than tight-looping a sick lock store. Escalates the log to
+    /// Error after the same _StoragePickupErrorEscalationThreshold streak so monitoring
+    /// (<see cref="IRetryProcessorMonitor"/>) picks up persistent lock-store outages. Distinct
+    /// EventIds from the pickup-failure events keep the two cases filterable in log aggregators.
+    /// </summary>
+    private void _RecordLockAcquireFailure(StoragePickupKind kind, Exception ex)
+    {
+        var failureCount = Interlocked.Increment(ref _CounterRef(kind));
+        _CompareExchangeDouble();
+
+        switch (kind)
+        {
+            case StoragePickupKind.Published:
+                if (failureCount >= _StoragePickupErrorEscalationThreshold)
+                {
+                    _logger.PublishedRetryLockAcquireFailureEscalated(ex, failureCount);
+                }
+                else
+                {
+                    _logger.PublishedRetryLockAcquireFailed(ex);
+                }
+                break;
+            case StoragePickupKind.Received:
+                if (failureCount >= _StoragePickupErrorEscalationThreshold)
+                {
+                    _logger.ReceivedRetryLockAcquireFailureEscalated(ex, failureCount);
+                }
+                else
+                {
+                    _logger.ReceivedRetryLockAcquireFailed(ex);
+                }
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
         }
