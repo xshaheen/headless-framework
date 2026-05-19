@@ -291,12 +291,14 @@ internal static class IdempotencyTestApp
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// Test hook fired before <c>semaphore.WaitAsync</c>. Tests use this to widen specific
-        /// race windows (e.g., the WaitAndReplay TryInsert→TryAcquire race) by gating winner
-        /// acquisitions. The semaphore is NOT held during the hook — the hook must not assume
-        /// mutual exclusion against the lock state.
+        /// Test hook fired before <c>semaphore.WaitAsync</c>. Receives the resource name, the
+        /// lease (<c>timeUntilExpires</c>), the acquire timeout, and the cancellation token.
+        /// Tests use this to widen specific race windows (e.g., the WaitAndReplay
+        /// TryInsert→TryAcquire race), capture argument values for assertions, or throw to
+        /// simulate provider outages. The semaphore is NOT held during the hook — the hook
+        /// must not assume mutual exclusion against the lock state.
         /// </summary>
-        public Func<string, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
+        public Func<string, TimeSpan?, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
 
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
@@ -311,7 +313,7 @@ internal static class IdempotencyTestApp
         {
             if (BeforeAcquireAsync is not null)
             {
-                await BeforeAcquireAsync(resource, acquireTimeout, cancellationToken).ConfigureAwait(false);
+                await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken).ConfigureAwait(false);
             }
 
             var semaphore = _locks.GetOrAdd(resource, static _ => new SemaphoreSlim(1, 1));

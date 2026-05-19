@@ -66,6 +66,7 @@ app.Run();
 | `Methods` | POST, PUT, PATCH, DELETE | HTTP methods that participate in idempotency. |
 | `InFlightStrategy` | `Reject` | `Reject` returns 409 on concurrent same-key requests. `WaitAndReplay` blocks on a distributed lock and replays the winner. |
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. |
+| `WinnerLockLease` | 5 minutes | Lease duration for the winner's distributed lock under `WaitAndReplay`. Must outlive worst-case handler runtime. A long lease means a crashed winner blocks the key longer; a short lease risks losing mutual exclusion mid-handler. Capped at 1 hour. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
 | `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request (Stripe/AWS default — trades the guarantee against an outage-wide 5xx storm). `Throw` propagates the exception as 5xx. |

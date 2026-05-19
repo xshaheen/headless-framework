@@ -35,6 +35,22 @@ public sealed class IdempotencyOptions
     /// <summary>How long to wait when <see cref="InFlightStrategy"/> is <see cref="InFlightStrategy.WaitAndReplay"/>. Defaults to 30 seconds.</summary>
     public TimeSpan InFlightLockTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
+    /// <summary>
+    /// Lease duration for the winner's distributed lock under
+    /// <see cref="InFlightStrategy.WaitAndReplay"/>. Sized to outlive the handler's worst-case
+    /// runtime; on lease expiry, the lock is released by the lock provider and another request
+    /// for the same key may acquire it, breaking mutual exclusion mid-handler. Defaults to
+    /// 5 minutes. Must be greater than or equal to <see cref="InFlightLockTimeout"/> and at most
+    /// 1 hour.
+    /// </summary>
+    /// <remarks>
+    /// A long lease means a crashed winner blocks the key for up to this duration; a short lease
+    /// risks losing mutual exclusion on long-running handlers. 5 minutes is a conservative default
+    /// for typical mutation endpoints. Operators with handlers expected to exceed this should
+    /// raise the value or implement <c>RenewAsync</c> heartbeats in their lock provider.
+    /// </remarks>
+    public TimeSpan WinnerLockLease { get; set; } = TimeSpan.FromMinutes(5);
+
     /// <summary>Maximum body size in bytes eligible for fingerprinting. Defaults to 1 MiB. Capped at 64 MiB.</summary>
     public int MaxBodySizeForHashing { get; set; } = 1 * 1024 * 1024;
 
@@ -112,6 +128,7 @@ public sealed class IdempotencyOptions
         Methods = new HashSet<string>(Methods, StringComparer.OrdinalIgnoreCase),
         InFlightStrategy = InFlightStrategy,
         InFlightLockTimeout = InFlightLockTimeout,
+        WinnerLockLease = WinnerLockLease,
         MaxBodySizeForHashing = MaxBodySizeForHashing,
         OversizeBehavior = OversizeBehavior,
         OnCacheError = OnCacheError,
@@ -156,6 +173,13 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
         When(x => x.InFlightStrategy == InFlightStrategy.WaitAndReplay, () =>
         {
             RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(5));
+            RuleFor(x => x.WinnerLockLease)
+                .GreaterThan(TimeSpan.Zero)
+                .LessThanOrEqualTo(TimeSpan.FromHours(1))
+                .WithMessage("WinnerLockLease must be <= 1 hour.");
+            RuleFor(x => x.WinnerLockLease)
+                .GreaterThanOrEqualTo(x => x.InFlightLockTimeout)
+                .WithMessage("WinnerLockLease must be >= InFlightLockTimeout (otherwise the lock can expire before the loser's acquire deadline).");
         });
     }
 }

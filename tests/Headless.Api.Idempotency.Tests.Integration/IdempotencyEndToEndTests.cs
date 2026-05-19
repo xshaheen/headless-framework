@@ -357,7 +357,7 @@ public sealed class IdempotencyEndToEndTests
 
         var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
         {
-            BeforeAcquireAsync = async (resource, acquireTimeout, ct) =>
+            BeforeAcquireAsync = async (resource, _, acquireTimeout, ct) =>
             {
                 if (acquireTimeout != TimeSpan.Zero)
                 {
@@ -523,6 +523,51 @@ public sealed class IdempotencyEndToEndTests
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
     }
 
+    // ── Winner lock lease decoupled from InFlightLockTimeout ─────────────────
+
+    [Fact]
+    public async Task winner_lock_lease_should_use_WinnerLockLease_option_not_InFlightLockTimeout_plus_5s()
+    {
+        // Regression: prior to this commit, the winner's lock lease was `InFlightLockTimeout + 5s`
+        // (35s with defaults). Handlers running longer than that lost mutual exclusion when the
+        // lease expired mid-handler. The lease is now an explicit option (WinnerLockLease,
+        // default 5 min) decoupled from the loser's acquire timeout. This test asserts the
+        // option value flows into TryAcquireAsync's timeUntilExpires argument.
+        TimeSpan? winnerLeaseSeen = null;
+        var configuredLease = TimeSpan.FromMinutes(10);
+        var configuredAcquireTimeout = TimeSpan.FromSeconds(1);
+
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        {
+            BeforeAcquireAsync = (_, timeUntilExpires, acquireTimeout, _) =>
+            {
+                // Winner's signature: acquireTimeout == TimeSpan.Zero. Capture the first.
+                if (acquireTimeout == TimeSpan.Zero && winnerLeaseSeen is null)
+                {
+                    winnerLeaseSeen = timeUntilExpires;
+                }
+                return Task.CompletedTask;
+            }
+        };
+
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o =>
+            {
+                o.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                o.InFlightLockTimeout = configuredAcquireTimeout;
+                o.WinnerLockLease = configuredLease;
+            },
+            lockProvider: lockProvider);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var response = await _Post(client, "/echo", key: "lease-1", body: "hello");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        winnerLeaseSeen.Should().Be(configuredLease, "the winner's lock lease must come from WinnerLockLease, not InFlightLockTimeout + 5s");
+        // Sanity: old formula would have produced 6 seconds, which is observably different.
+        winnerLeaseSeen.Should().NotBe(configuredAcquireTimeout + TimeSpan.FromSeconds(5));
+    }
+
     // ── Lock-provider outage: same OnCacheError semantics as cache exceptions ──
 
     [Fact]
@@ -533,7 +578,7 @@ public sealed class IdempotencyEndToEndTests
         // idempotency for this request.
         var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
         {
-            BeforeAcquireAsync = (_, acquireTimeout, _) =>
+            BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
             {
                 // Winner's signature: acquireTimeout == TimeSpan.Zero.
                 if (acquireTimeout == TimeSpan.Zero)
@@ -562,7 +607,7 @@ public sealed class IdempotencyEndToEndTests
         var gate = new IdempotencyTestApp.TestHandlerGate();
         var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
         {
-            BeforeAcquireAsync = (_, acquireTimeout, _) =>
+            BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
             {
                 // Throw only on the loser's call (acquireTimeout > 0).
                 if (acquireTimeout is not null && acquireTimeout != TimeSpan.Zero)
