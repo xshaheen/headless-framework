@@ -216,6 +216,7 @@ internal sealed partial class IdempotencyMiddleware(
             {
                 // Another request already holds the winner-lock for this key. Defer to the
                 // in-flight response path (Reject → 409, WaitAndReplay → block on existing winner).
+                LogWinnerLockContended(cacheKey);
                 await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
                 return;
             }
@@ -330,22 +331,24 @@ internal sealed partial class IdempotencyMiddleware(
         CancellationToken ct
     )
     {
+        if (context.Response.HasStarted)
+        {
+            throw new InvalidOperationException(
+                "Cannot replay idempotent response: HttpResponse has already started. "
+                + "Ensure UseIdempotency() is registered before any middleware that writes to the response body."
+            );
+        }
+
         context.Response.StatusCode = record.StatusCode;
 
         // Strip pre-existing allowlisted headers set by upstream middleware so byte-equivalent
         // replay isn't poisoned by per-request mutations (CORS, security policies). Headers
-        // outside the allowlist (e.g., traceparent from logging) remain untouched.
-        var headersToClear = new List<string>();
-        foreach (var header in context.Response.Headers)
+        // outside the allowlist (e.g., traceparent from logging) remain untouched. IDictionary
+        // Remove on a missing key is a no-op, so iterating the allowlist avoids the double pass
+        // (and List allocation) of the previous shape.
+        foreach (var allowedHeader in options.ReplayHeaderAllowlist)
         {
-            if (options.ReplayHeaderAllowlist.Contains(header.Key))
-            {
-                headersToClear.Add(header.Key);
-            }
-        }
-        foreach (var name in headersToClear)
-        {
-            context.Response.Headers.Remove(name);
+            context.Response.Headers.Remove(allowedHeader);
         }
 
         foreach (var (name, values) in record.Headers)
@@ -526,7 +529,7 @@ internal sealed partial class IdempotencyMiddleware(
             {
                 if (options.ReplayHeaderAllowlist.Contains(header.Key))
                 {
-                    capturedHeaders[header.Key] = [.. header.Value.Select(v => v!)];
+                    capturedHeaders[header.Key] = header.Value.ToArray()!;
                 }
             }
 
@@ -778,4 +781,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency lock-provider call failed at {Site} for key {CacheKey}; behavior={Behavior}")]
     private partial void LogLockProviderFailure(string site, string cacheKey, string behavior, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Idempotency winner-lock contended for key {CacheKey}; deferring to in-flight response path")]
+    private partial void LogWinnerLockContended(string cacheKey);
 }

@@ -279,6 +279,7 @@ public sealed class IdempotencyEndToEndTests
         loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
         var loserBody = await loser.Content.ReadAsStringAsync();
         loserBody.Should().Contain("g:idempotency_in_flight");
+        loserBody.Should().NotContain("g:idempotency_in_flight_timeout", "Reject must surface g:idempotency_in_flight, not the WaitAndReplay timeout code");
 
         // Now release the winner and verify it completed normally.
         gate.Release();
