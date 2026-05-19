@@ -64,7 +64,7 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
     public async Task should_set_IsTransactional_true_when_outbox_publisher_is_non_autocommit()
     {
         // given — non-AutoCommit ambient transaction: the publish is buffered into the outbox
-        // and waits for the caller to commit. Filters running OnPublishExecutedAsync should see
+        // and waits for the caller to commit. Post-success middleware should see
         // IsTransactional = true so they can defer durable side-effects until after commit.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
@@ -85,7 +85,7 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
     public async Task should_set_IsTransactional_false_when_outbox_publisher_is_autocommit()
     {
         // given — AutoCommit branch: the publisher commits inside the call, so for downstream
-        // filters there is no caller-driven rollback to worry about; flag stays false.
+        // middleware there is no caller-driven rollback to worry about; flag stays false.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);

@@ -124,7 +124,7 @@ internal sealed class MessagePublishRequestFactory(
     // U2 4-case header check (shipped in #228): PublishOptions.TenantId is the source of truth;
     // writing the wire header directly is reserved for transport-internal use. Whitespace raw
     // headers are treated as unset to mirror the lenient consume-side mapping in
-    // ConsumeExecutionPipeline._ResolveTenantId.
+    // TenantContextScope.ResolveTenantId.
     //
     // U10 ambient fallback (#238): when MessagingOptions.TenantContextRequired = true and the
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw

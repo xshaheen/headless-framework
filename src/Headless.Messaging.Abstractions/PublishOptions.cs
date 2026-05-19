@@ -7,7 +7,7 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// This type is a record so publish-side filters can mutate a single property via a <c>with</c>
+/// This type is a record so publish-side middleware can mutate a single property via a <c>with</c>
 /// expression (for example, <c>options with { TenantId = "acme" }</c>) without manually copying
 /// every other property. Equality is value-based across all scalar properties; <see cref="Headers"/>
 /// uses structural comparison (key/value sequence with <see cref="StringComparer.Ordinal"/> on keys).

@@ -36,13 +36,13 @@ internal sealed class DirectPublisher(
             options,
             // DelayTime is undefined for the immediate publish path; ignored.
             delayTime: null,
-            innerPublish: (filteredOptions, _, ct) =>
+            innerPublish: (middlewareOptions, _, ct) =>
             {
-                var publishRequest = _publishRequestFactory.Create(contentObj, filteredOptions);
+                var publishRequest = _publishRequestFactory.Create(contentObj, middlewareOptions);
                 return _SendAsync(publishRequest.Message, ct);
             },
-            // DirectPublisher always commits to the wire inside the pipeline; PublishedContext.IsTransactional
-            // remains false because rollback semantics don't apply.
+            // DirectPublisher always commits to the wire inside the pipeline; PublishingContext.IsTransactional
+            // remains false because rollback semantics do not apply.
             isTransactional: false,
             cancellationToken
         );
