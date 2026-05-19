@@ -30,7 +30,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly TimeSpan _baseInterval;
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
-    internal IDistributedLockProvider LockProvider { get; }
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
@@ -114,6 +113,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     /// <inheritdoc />
     public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
+
+    /// <summary>The keyed-DI lock provider that was injected. Internal accessor — production code uses this; tests verify injection via InternalsVisibleTo.</summary>
+    internal IDistributedLockProvider LockProvider { get; }
 
     /// <summary>Sets the current polling interval. Exposed for testing via InternalsVisibleTo.</summary>
     internal void SetCurrentIntervalForTest(TimeSpan value) =>

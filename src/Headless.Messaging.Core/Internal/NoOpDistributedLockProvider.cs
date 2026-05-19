@@ -70,11 +70,13 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
 
     private sealed class NoOpDistributedLock(string resource, TimeProvider timeProvider) : IDistributedLock
     {
+        private int _renewalCount;
+
         public string LockId { get; } = Guid.NewGuid().ToString("N");
 
         public string Resource { get; } = resource;
 
-        public int RenewalCount => 0;
+        public int RenewalCount => _renewalCount;
 
         public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
@@ -88,6 +90,7 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _renewalCount);
 
             return Task.FromResult(true);
         }

@@ -616,7 +616,7 @@ internal static partial class LoggerExtensions
         EventId = 80,
         EventName = "ReceivedRetryLockRenewalFailed",
         Level = LogLevel.Warning,
-        Message = "Received-retry lock renewal threw an exception. Treating as transient; the in-flight consume task continues and the next renewal will retry."
+        Message = "Received-retry lock renewal threw an exception. Treating as transient; the in-flight consume task continues under per-row LockedUntil, the handle has been cleared, and the next cycle will re-acquire fresh."
     )]
     public static partial void ReceivedRetryLockRenewalFailed(this ILogger logger, Exception ex);
 

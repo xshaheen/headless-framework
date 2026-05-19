@@ -37,6 +37,24 @@ public sealed class NoOpDistributedLockProviderTests
     }
 
     [Fact]
+    public async Task should_increment_renewal_count_after_each_renew_async_call()
+    {
+        // given
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var handle = await sut.TryAcquireAsync("test.resource");
+        handle.Should().NotBeNull();
+        handle!.RenewalCount.Should().Be(0);
+
+        // when
+        await handle.RenewAsync(TimeSpan.FromMinutes(1));
+        await handle.RenewAsync(TimeSpan.FromMinutes(1));
+        await handle.RenewAsync(TimeSpan.FromMinutes(1));
+
+        // then
+        handle.RenewalCount.Should().Be(3);
+    }
+
+    [Fact]
     public async Task should_be_safe_to_DisposeAsync_multiple_times()
     {
         // given

@@ -818,9 +818,9 @@ Both names are built via `Headless.Messaging.Internal.MessagingKeys.PublishRetry
 | 79 | `ReceivedRetryLockOwnershipLost` | Warning | `RenewAsync` returned `false`; the coarse lock was lost. Per-row `LockedUntil` takes over for the in-flight consume task. | Investigate lock-store TTLs and clock skew if frequent; not a correctness issue. |
 | 80 | `ReceivedRetryLockRenewalFailed` | Warning | `RenewAsync` threw a non-cancellation exception. | Investigate lock-store health if frequent; the in-flight task continues. |
 | 81 | `PublishedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the published-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
-| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
-| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 
 ### Pros and cons
 

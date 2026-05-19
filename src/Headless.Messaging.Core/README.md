@@ -513,8 +513,8 @@ Retry-processor EventIds emitted when `UseStorageLock = true`:
 | 79 | `ReceivedRetryLockOwnershipLost` | Warning | Renewal returned `false`; coarse lock lost. Per-row `LockedUntil` takes over. | Investigate lock-store TTLs / clock skew if frequent. |
 | 80 | `ReceivedRetryLockRenewalFailed` | Warning | Renewal threw a non-cancellation exception. | Investigate lock-store health if frequent. |
 | 81 | `PublishedRetryLockAcquireFailed` | Warning | Acquire threw on the published-retry path. | Investigate lock-store health if persistent. |
-| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | Acquire threw on the received-retry path. | Investigate lock-store health if persistent. |
-| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 
 See [Distributed Lock Integration](../../docs/llms/messaging.md#distributed-lock-integration) for the two-layer correctness model and when to enable / skip.
