@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Runtime.ExceptionServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
@@ -170,7 +171,11 @@ internal sealed class ConsumeMiddlewarePipeline(
     {
         var descriptors = descriptorRegistry?.GetConsumeDescriptors(context.MessageType, groupName) ?? [];
 
-        if (descriptors.Count > 0)
+        if (
+            descriptorRegistry?.Descriptors.Any(static descriptor =>
+                descriptor.Direction == MiddlewareDirection.Consume
+            ) == true
+        )
         {
             return descriptors
                 .Select(descriptor => _ResolveDescriptor(provider, descriptor))
@@ -372,8 +377,18 @@ internal sealed class ConsumeMiddlewarePipeline(
             )
             .MakeGenericMethod(messageType);
 
-        var task = (Task)
-            dispatchMethod.Invoke(dispatcher, [serviceProvider, descriptor, consumeContext, cancellationToken])!;
+        Task task;
+        try
+        {
+            task = (Task)
+                dispatchMethod.Invoke(dispatcher, [serviceProvider, descriptor, consumeContext, cancellationToken])!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
+
         await task.ConfigureAwait(false);
     }
 
