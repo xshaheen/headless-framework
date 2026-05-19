@@ -266,10 +266,12 @@ internal sealed class Bootstrapper(
         {
             unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
         }
+#pragma warning disable RCS1075, ERP022 // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
         catch (Exception)
         {
             // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
         }
+#pragma warning restore RCS1075, ERP022
 
         if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
         {
