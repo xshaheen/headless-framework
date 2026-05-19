@@ -228,70 +228,63 @@ public sealed class DistributedLockProvider(
         // processor passes a cancellable token, so the cheap path applies to
         // other consumers like Headless.Tus.DistributedLocks).
         using var safetyCts = timeProvider.CreateCancellationTokenSource(_NonBlockingAcquireDeadline);
-        var linkedCts = callerToken.CanBeCanceled
+        using var linkedCts = callerToken.CanBeCanceled
             ? CancellationTokenSource.CreateLinkedTokenSource(safetyCts.Token, callerToken)
             : null;
 
+        var attemptToken = linkedCts?.Token ?? safetyCts.Token;
+        bool gotLock;
+
         try
         {
-            var attemptToken = linkedCts?.Token ?? safetyCts.Token;
-            bool gotLock;
-
-            try
-            {
-                gotLock = await _storage
-                    .InsertAsync(resource, lockId, timeUntilExpires, attemptToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Best-effort orphan cleanup in case the storage accepted the
-                // write but the response was preempted by the safety deadline
-                // or caller cancellation.
-                await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
-
-                if (callerToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-
-                // Safety deadline fired (caller has not cancelled). Treat as
-                // "lock not acquired" — surface the same null shape as a normal
-                // contended try-once result. Richer observability for the
-                // distinct safety-deadline-fired case is tracked separately.
-                gotLock = false;
-            }
-            catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
-            {
-                logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
-                gotLock = false;
-            }
-
-            var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
-            DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
-
-            if (!gotLock)
-            {
-                DistributedLockMetrics.LockFailed.Add(1);
-                logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
-                return null;
-            }
-
-            if (timeWaitedForLock > _LongLockWarningThreshold)
-            {
-                logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
-            }
-            else
-            {
-                logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
-            }
-
-            return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+            gotLock = await _storage
+                .InsertAsync(resource, lockId, timeUntilExpires, attemptToken)
+                .ConfigureAwait(false);
         }
-        finally
+        catch (OperationCanceledException)
         {
-            linkedCts?.Dispose();
+            // Best-effort orphan cleanup in case the storage accepted the
+            // write but the response was preempted by the safety deadline
+            // or caller cancellation.
+            await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+
+            if (callerToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            // Safety deadline fired (caller has not cancelled). Treat as
+            // "lock not acquired" — surface the same null shape as a normal
+            // contended try-once result. Distinguishing this from a normal
+            // contended result via a dedicated EventId is tracked by #320.
+            gotLock = false;
         }
+        catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
+        {
+            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+            gotLock = false;
+        }
+
+        var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
+        DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
+
+        if (!gotLock)
+        {
+            DistributedLockMetrics.LockFailed.Add(1);
+            logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
+            return null;
+        }
+
+        if (timeWaitedForLock > _LongLockWarningThreshold)
+        {
+            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+        }
+        else
+        {
+            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+        }
+
+        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
     }
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)

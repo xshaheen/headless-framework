@@ -577,7 +577,11 @@ public sealed class DistributedLockProviderTests : TestBase
         callCount.Should().Be(1);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(5));
-        await _DrainContinuationsAsync(Task.CompletedTask, maxYields: 50);
+        for (var i = 0; i < 50; i++)
+        {
+            await Task.Yield();
+        }
+
         callCount.Should().Be(1, "Zero-path must not enter the retry/backoff loop");
     }
 
