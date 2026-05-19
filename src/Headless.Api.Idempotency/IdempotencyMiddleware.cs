@@ -59,9 +59,38 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        // Buffer body so it can be read multiple times, then compute fingerprint
-        context.Request.EnableBuffering();
-        var fingerprint = await _ComputeFingerprintAsync(context, options, ct).ConfigureAwait(false);
+        // Buffer body so it can be read multiple times, then scan for size/fingerprint
+        context.Request.EnableBuffering(
+            bufferThreshold: options.MaxBodySizeForHashing + 1,
+            bufferLimit: options.MaxBodySizeForHashing + 1
+        );
+
+        var (fingerprintOrNull, oversize) = await _ComputeFingerprintAsync(context, options, ct).ConfigureAwait(false);
+
+        if (oversize)
+        {
+            if (options.OversizeBehavior == OversizeBehavior.Reject)
+            {
+                LogBodyTooLarge(options.MaxBodySizeForHashing);
+                var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
+                var pd = new ProblemDetails
+                {
+                    Status = StatusCodes.Status413PayloadTooLarge,
+                    Detail = descriptor.Description,
+                    Extensions = { ["error"] = descriptor },
+                };
+                _problemDetailsCreator.Normalize(pd);
+                await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+                return;
+            }
+
+            // PassThrough: log and let the request through without idempotency guarantees
+            LogBodyCapPassThrough(options.MaxBodySizeForHashing);
+            await next(context).ConfigureAwait(false);
+            return;
+        }
+
+        var fingerprint = fingerprintOrNull!;
 
         // Derive cache key: idem:{tenant}:{METHOD}:{path}:{key}
         var cacheKey = _BuildCacheKey(context, options, keyHeader);
@@ -256,7 +285,8 @@ internal sealed partial class IdempotencyMiddleware(
 
         context.Response.Body = originalBody;
 
-        var shouldCache = options.ShouldCacheResponse?.Invoke(context) ?? true;
+        var effectivePredicate = options.ShouldCacheResponse ?? DefaultCachePredicate.Instance;
+        var shouldCache = effectivePredicate(context);
 
         if (shouldCache && !captureStream.TruncatedCapture)
         {
@@ -313,24 +343,24 @@ internal sealed partial class IdempotencyMiddleware(
         return $"idem:{tenant}:{method}:{path}:{keyHeader}";
     }
 
-    private static async ValueTask<byte[]> _ComputeFingerprintAsync(HttpContext context, IdempotencyOptions options, CancellationToken ct)
+    private static async ValueTask<(byte[]? Fingerprint, bool Oversize)> _ComputeFingerprintAsync(
+        HttpContext context,
+        IdempotencyOptions options,
+        CancellationToken ct
+    )
     {
-        if (options.RequestFingerprint != null)
-        {
-            return await options.RequestFingerprint(context).ConfigureAwait(false);
-        }
-
         var body = context.Request.Body;
-        var remaining = options.MaxBodySizeForHashing;
+        var cap = options.MaxBodySizeForHashing;
         var buffer = ArrayPool<byte>.Shared.Rent(4096);
 
         try
         {
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var totalRead = 0;
 
-            while (remaining > 0)
+            while (totalRead <= cap)
             {
-                var toRead = Math.Min(buffer.Length, remaining);
+                var toRead = Math.Min(buffer.Length, cap + 1 - totalRead);
                 var read = await body.ReadAsync(buffer.AsMemory(0, toRead), ct).ConfigureAwait(false);
 
                 if (read == 0)
@@ -338,12 +368,25 @@ internal sealed partial class IdempotencyMiddleware(
                     break;
                 }
 
+                totalRead += read;
+
+                if (totalRead > cap)
+                {
+                    body.Position = 0;
+                    return (null, true);
+                }
+
                 hash.AppendData(buffer, 0, read);
-                remaining -= read;
             }
 
             body.Position = 0;
-            return hash.GetCurrentHash();
+
+            if (options.RequestFingerprint != null)
+            {
+                return (await options.RequestFingerprint(context).ConfigureAwait(false), false);
+            }
+
+            return (hash.GetCurrentHash(), false);
         }
         finally
         {
@@ -379,4 +422,10 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency in-flight timeout for key {CacheKey}")]
     private partial void LogInFlightTimeout(string cacheKey);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency request body exceeded cap {Cap}; rejecting with 413")]
+    private partial void LogBodyTooLarge(int cap);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency request body exceeded cap {Cap}; passing through without idempotency guarantees")]
+    private partial void LogBodyCapPassThrough(int cap);
 }

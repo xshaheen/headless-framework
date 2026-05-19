@@ -694,4 +694,189 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight-timeout"))
         );
     }
+
+    // ── U8: oversize body (AE6) ───────────────────────────────────────────────
+
+    private static IOptionsSnapshot<IdempotencyOptions> _OptionsWithCap(int cap, OversizeBehavior behavior = OversizeBehavior.Reject)
+    {
+        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
+        opts.Value.Returns(new IdempotencyOptions
+        {
+            MaxBodySizeForHashing = cap,
+            OversizeBehavior = behavior,
+        });
+        return opts;
+    }
+
+    [Fact]
+    public async Task should_reject_with_413_when_body_exceeds_cap_and_behavior_is_reject()
+    {
+        // given — cap of 5 bytes, body of 8 bytes
+        var options = _OptionsWithCap(cap: 5, behavior: OversizeBehavior.Reject);
+        var cache = Substitute.For<ICache>();
+
+        var pdNormalized = false;
+        var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
+        problemDetailsCreator.When(p => p.Normalize(Arg.Any<ProblemDetails>()))
+                             .Do(_ => pdNormalized = true);
+
+        var middleware = _CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
+        var nextCalled = false;
+
+        // when
+        await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
+
+        // then
+        nextCalled.Should().BeFalse();
+        context.Response.StatusCode.Should().Be(413);
+        pdNormalized.Should().BeTrue();
+        await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await cache.DidNotReceive().TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_pass_through_when_body_exceeds_cap_and_behavior_is_pass_through()
+    {
+        // given — cap of 5 bytes, body of 8 bytes
+        var options = _OptionsWithCap(cap: 5, behavior: OversizeBehavior.PassThrough);
+        var cache = Substitute.For<ICache>();
+
+        var middleware = _CreateMiddleware(options: options, cache: cache);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
+        var nextCalled = false;
+
+        // when
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            nextCalled = true;
+            ctx.Response.StatusCode = 200;
+            return Task.CompletedTask;
+        });
+
+        // then
+        nextCalled.Should().BeTrue();
+        context.Response.Headers.ContainsKey(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+        await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await cache.DidNotReceive().TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_accept_body_exactly_at_cap()
+    {
+        // given — cap == body length, accepted normally
+        var options = _OptionsWithCap(cap: 5, behavior: OversizeBehavior.Reject);
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = _CreateMiddleware(options: options, cache: cache);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5]);
+        var nextCalled = false;
+
+        // when
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            nextCalled = true;
+            ctx.Response.StatusCode = 200;
+            return Task.CompletedTask;
+        });
+
+        // then
+        nextCalled.Should().BeTrue();
+        context.Response.StatusCode.Should().Be(200);
+        await cache.Received(1).TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── U8: default cache predicate integration ───────────────────────────────
+
+    [Fact]
+    public async Task should_not_cache_5xx_response_using_default_predicate()
+    {
+        // given — no custom predicate, response is 503
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = _CreateMiddleware(cache: cache);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+
+        // when — handler returns 503
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            ctx.Response.StatusCode = 503;
+            return Task.CompletedTask;
+        });
+
+        // then — should NOT cache (5xx is not in default predicate)
+        await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        // marker should be removed
+        await cache.Received(1).RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_cache_422_response_using_default_predicate()
+    {
+        // given — no custom predicate, response is 422 (cacheable per AE5)
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = _CreateMiddleware(cache: cache);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+
+        // when — handler returns 422
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            ctx.Response.StatusCode = 422;
+            return Task.CompletedTask;
+        });
+
+        // then — should cache 422
+        await cache.Received(1).UpsertAsync(
+            Arg.Any<string>(),
+            Arg.Is<IdempotencyRecord>(r => r.Kind == RecordKind.Complete && r.StatusCode == 422),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>()
+        );
+    }
+
+    [Fact]
+    public async Task should_honor_consumer_overridden_cache_predicate()
+    {
+        // given — consumer says _ => true (cache everything), response is 503
+        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
+        opts.Value.Returns(new IdempotencyOptions { ShouldCacheResponse = _ => true });
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = _CreateMiddleware(options: opts, cache: cache);
+        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+
+        // when — handler returns 503
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            ctx.Response.StatusCode = 503;
+            return Task.CompletedTask;
+        });
+
+        // then — consumer override wins: 503 IS cached
+        await cache.Received(1).UpsertAsync(
+            Arg.Any<string>(),
+            Arg.Is<IdempotencyRecord>(r => r.Kind == RecordKind.Complete && r.StatusCode == 503),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>()
+        );
+    }
 }
