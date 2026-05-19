@@ -59,11 +59,10 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        // Buffer body so it can be read multiple times, then scan for size/fingerprint
-        context.Request.EnableBuffering(
-            bufferThreshold: options.MaxBodySizeForHashing + 1,
-            bufferLimit: options.MaxBodySizeForHashing + 1
-        );
+        // Buffer body so it can be read multiple times. We use the cap as a memory-vs-disk
+        // threshold hint, but do NOT impose a hard buffer limit — PassThrough mode requires
+        // downstream handlers to read bodies that legitimately exceed the cap.
+        context.Request.EnableBuffering(bufferThreshold: options.MaxBodySizeForHashing + 1);
 
         var (fingerprintOrNull, oversize) = await _ComputeFingerprintAsync(context, options, ct).ConfigureAwait(false);
 
