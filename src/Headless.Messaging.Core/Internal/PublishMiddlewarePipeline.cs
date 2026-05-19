@@ -116,12 +116,9 @@ internal sealed class PublishMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
     {
-        var descriptors = descriptorRegistry?.GetPublishDescriptors(context.MessageType) ?? [];
-
         if (
-            descriptorRegistry?.Descriptors.Any(static descriptor =>
-                descriptor.Direction == MiddlewareDirection.Publish
-            ) == true
+            descriptorRegistry is not null
+            && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, out var descriptors)
         )
         {
             return descriptors
