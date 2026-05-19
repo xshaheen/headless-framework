@@ -9,7 +9,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
 {
     private readonly InMemoryCache _cache = new(TimeProvider.System, new InMemoryCacheOptions());
 
-    private IDistributedLockStorage CreateStorage() => new CacheDistributedLockStorage(_cache);
+    private CacheDistributedLockStorage _CreateStorage() => new(_cache);
 
     protected override ValueTask DisposeAsyncCore()
     {
@@ -21,7 +21,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_insert_lock()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMinutes(5);
@@ -39,7 +39,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_not_insert_when_exists()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId1 = Faker.Random.Guid().ToString("N");
         var lockId2 = Faker.Random.Guid().ToString("N");
@@ -60,7 +60,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_remove_lock()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMinutes(5);
@@ -80,7 +80,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_not_remove_when_different_id()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var differentId = Faker.Random.Guid().ToString("N");
@@ -101,7 +101,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_expire_after_ttl()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMilliseconds(100);
@@ -120,7 +120,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_get_lock_id()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMinutes(5);
@@ -138,7 +138,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_return_null_when_not_exists()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
 
         // when
@@ -152,7 +152,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_check_exists()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMinutes(5);
@@ -174,7 +174,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_get_expiration()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var ttl = TimeSpan.FromMinutes(5);
@@ -193,7 +193,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_return_null_expiration_when_not_exists()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
 
         // when
@@ -207,7 +207,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_replace_if_equal()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var newLockId = Faker.Random.Guid().ToString("N");
@@ -228,7 +228,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_not_replace_if_not_equal()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var key = Faker.Random.String2(5, 10);
         var lockId = Faker.Random.Guid().ToString("N");
         var differentId = Faker.Random.Guid().ToString("N");
@@ -250,7 +250,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_get_all_by_prefix()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var prefix = $"test:{Faker.Random.String2(5, 10)}:";
         var key1 = $"{prefix}key1";
         var key2 = $"{prefix}key2";
@@ -274,7 +274,7 @@ public sealed class InMemoryDistributedLockStorageTests : TestBase
     public async Task should_get_count()
     {
         // given
-        var storage = CreateStorage();
+        var storage = _CreateStorage();
         var prefix = $"count-test:{Faker.Random.String2(5, 10)}:";
         var key1 = $"{prefix}key1";
         var key2 = $"{prefix}key2";
