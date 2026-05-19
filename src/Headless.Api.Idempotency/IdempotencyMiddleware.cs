@@ -163,65 +163,102 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        // Cache miss — bounded retry loop handles the race where the winner crashes between TryInsert and finalize
-        for (var attempt = 0; attempt < 2; attempt++)
+        // Under WaitAndReplay, acquire the distributed lock BEFORE inserting the sentinel marker.
+        // Inserting the marker first creates a window in which an arriving loser sees the marker,
+        // calls _WaitAndReplayAsync, and grabs the lock before the winner does — leaving the
+        // winner unlocked and the loser stuck observing the InFlight marker until it times out
+        // with 409 g:idempotency_in_flight_timeout. Lock-before-insert closes that window:
+        // the winner holds the lock for the entire handler lifetime; concurrent losers either
+        // block on the lock (WaitAndReplay) or short-circuit via _WriteInFlightResponseAsync (Reject).
+        IDistributedLock? winnerLock = null;
+        if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
         {
-            var marker = new IdempotencyRecord
-            {
-                Kind = RecordKind.InFlight,
-                Fingerprint = fingerprint,
-                CreatedAt = clock.UtcNow,
-            };
+            var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
+            winnerLock = await lockProvider.TryAcquireAsync(
+                $"lock:{cacheKey}",
+                timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
+                acquireTimeout: TimeSpan.Zero,
+                cancellationToken: ct
+            ).ConfigureAwait(false);
 
-            // Sentinel TTL matches the completed-record TTL: a shorter marker TTL plus the
-            // hard-coded +5s safety margin meant a slow handler could see its marker evicted
-            // before finalize, opening the door to false in-flight rejects on retries.
-            var inserted = await cache.TryInsertAsync(cacheKey, marker, options.IdempotencyKeyExpiration, ct).ConfigureAwait(false);
-
-            if (inserted)
+            if (winnerLock is null)
             {
-                await _ExecuteAndFinalizeAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
+                // Another request already holds the winner-lock for this key. Defer to the
+                // in-flight response path (Reject → 409, WaitAndReplay → block on existing winner).
+                await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
                 return;
             }
-
-            var racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-
-            if (!racePeek.HasValue)
-            {
-                // Winner crashed; TTL elapsed between their TryInsert and finalize — retry insertion
-                continue;
-            }
-
-            var raceRec = racePeek.Value!;
-
-            if (raceRec.Kind == RecordKind.Complete)
-            {
-                if (raceRec.Fingerprint != null && _FingerprintEquals(raceRec.Fingerprint, fingerprint))
-                {
-                    await _ReplayAsync(context, raceRec, options, cacheKey, ct).ConfigureAwait(false);
-                }
-                else
-                {
-                    await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                }
-
-                return;
-            }
-
-            // InFlight race winner — fingerprint mismatch still goes to 422, not 409.
-            if (raceRec.Fingerprint != null && !_FingerprintEquals(raceRec.Fingerprint, fingerprint))
-            {
-                await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                return;
-            }
-
-            await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
-            return;
         }
 
-        // Both attempts exhausted with NoValue — treat as in-flight (winner consistently crashing)
-        var loopPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
-        await Results.Problem(loopPd).ExecuteAsync(context).ConfigureAwait(false);
+        try
+        {
+            // Cache miss — bounded retry loop handles the race where the winner crashes between TryInsert and finalize
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var marker = new IdempotencyRecord
+                {
+                    Kind = RecordKind.InFlight,
+                    Fingerprint = fingerprint,
+                    CreatedAt = clock.UtcNow,
+                };
+
+                // Sentinel TTL matches the completed-record TTL: a shorter marker TTL plus the
+                // hard-coded +5s safety margin meant a slow handler could see its marker evicted
+                // before finalize, opening the door to false in-flight rejects on retries.
+                var inserted = await cache.TryInsertAsync(cacheKey, marker, options.IdempotencyKeyExpiration, ct).ConfigureAwait(false);
+
+                if (inserted)
+                {
+                    await _ExecuteAndFinalizeCoreAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                var racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+
+                if (!racePeek.HasValue)
+                {
+                    // Winner crashed; TTL elapsed between their TryInsert and finalize — retry insertion
+                    continue;
+                }
+
+                var raceRec = racePeek.Value!;
+
+                if (raceRec.Kind == RecordKind.Complete)
+                {
+                    if (raceRec.Fingerprint != null && _FingerprintEquals(raceRec.Fingerprint, fingerprint))
+                    {
+                        await _ReplayAsync(context, raceRec, options, cacheKey, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
+                    }
+
+                    return;
+                }
+
+                // InFlight race winner — fingerprint mismatch still goes to 422, not 409.
+                if (raceRec.Fingerprint != null && !_FingerprintEquals(raceRec.Fingerprint, fingerprint))
+                {
+                    await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
+                    return;
+                }
+
+                await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+                return;
+            }
+
+            // Both attempts exhausted with NoValue — treat as in-flight (winner consistently crashing)
+            var loopPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+            await Results.Problem(loopPd).ExecuteAsync(context).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (winnerLock is not null)
+            {
+                await winnerLock.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task _ReplayAsync(
@@ -340,45 +377,6 @@ internal sealed partial class IdempotencyMiddleware(
         LogInFlightTimeout(cacheKey);
         var timeoutPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
         await Results.Problem(timeoutPd).ExecuteAsync(context).ConfigureAwait(false);
-    }
-
-    private async Task _ExecuteAndFinalizeAsync(
-        HttpContext context,
-        RequestDelegate next,
-        string cacheKey,
-        byte[] fingerprint,
-        IdempotencyOptions options,
-        CancellationToken ct
-    )
-    {
-        // Winner path under WaitAndReplay: acquire the lock BEFORE invoking the handler so
-        // losers genuinely block until we finalize. Without this acquisition, the lock provides
-        // zero synchronization (TryAcquire would return immediately to the loser, which then
-        // sees only the InFlight marker and returns a timeout). Use a zero acquireTimeout since
-        // we just inserted the InFlight marker — no one else should be holding the lock yet.
-        IDistributedLock? winnerLock = null;
-        if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
-        {
-            var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
-            winnerLock = await lockProvider.TryAcquireAsync(
-                $"lock:{cacheKey}",
-                timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
-                acquireTimeout: TimeSpan.Zero,
-                cancellationToken: ct
-            ).ConfigureAwait(false);
-        }
-
-        try
-        {
-            await _ExecuteAndFinalizeCoreAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
-        }
-        finally
-        {
-            if (winnerLock is not null)
-            {
-                await winnerLock.DisposeAsync().ConfigureAwait(false);
-            }
-        }
     }
 
     private async Task _ExecuteAndFinalizeCoreAsync(

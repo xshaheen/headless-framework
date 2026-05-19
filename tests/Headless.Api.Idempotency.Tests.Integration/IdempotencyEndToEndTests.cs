@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Api.Idempotency;
+using Headless.Caching;
 using Headless.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -324,6 +325,102 @@ public sealed class IdempotencyEndToEndTests
         var winnerBody = await winner.Content.ReadAsStringAsync();
         var loserBody = await loser.Content.ReadAsStringAsync();
         loserBody.Should().Be(winnerBody, "replay must be byte-equivalent to the original");
+
+        gate.InvocationCount.Should().Be(1, "WaitAndReplay never invokes the handler twice for the same key");
+    }
+
+    [Fact]
+    public async Task wait_and_replay_must_not_let_loser_steal_lock_during_winner_marker_insertion_window()
+    {
+        // Pin the WaitAndReplay TryInsert→TryAcquire race surfaced by the re-review (P1).
+        //
+        // The bug: the winner's path is
+        //   1. cache.TryInsertAsync(InFlight marker) → true   (marker is now visible)
+        //   2. lockProvider.TryAcquireAsync(acquireTimeout: Zero)
+        // A loser arriving in the window between (1) and (2) sees the marker via the
+        // existing-record fast path, falls through to _WaitAndReplayAsync, and acquires the
+        // lock first (semaphore is free because the winner has not reached step 2). The winner
+        // then gets null from step 2, proceeds unlocked, and the loser — holding the lock —
+        // observes the InFlight marker in postLock and returns 409 g:idempotency_in_flight_timeout
+        // despite the winner being healthy.
+        //
+        // The lock-provider hook below widens that window deterministically: when the winner's
+        // first TryAcquireAsync(Zero) fires AND the cache already contains a marker for the
+        // resource, hold the winner until the test signals release. Under the fix
+        // (lock-before-insert), the cache is empty at hook time, the hook returns immediately,
+        // and the existing post-fix flow (loser blocks on the winner's lock, then replays)
+        // executes via TestHandlerGate.
+        var winnerInRaceWindow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRaceWindow = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstZeroFired = 0;
+        ICache? cacheRef = null;
+
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        {
+            BeforeAcquireAsync = async (resource, acquireTimeout, ct) =>
+            {
+                if (acquireTimeout != TimeSpan.Zero)
+                {
+                    return;
+                }
+
+                if (Interlocked.CompareExchange(ref firstZeroFired, 1, 0) != 0)
+                {
+                    return;
+                }
+
+                var cache = cacheRef;
+                if (cache is null)
+                {
+                    return;
+                }
+
+                // Resource shape from the middleware: "lock:{cacheKey}".
+                var cacheKey = resource.StartsWith("lock:", StringComparison.Ordinal) ? resource[5..] : resource;
+
+                if (await cache.ExistsAsync(cacheKey, ct).ConfigureAwait(false))
+                {
+                    winnerInRaceWindow.TrySetResult();
+                    await releaseRaceWindow.Task.WaitAsync(ct).ConfigureAwait(false);
+                }
+            }
+        };
+
+        var gate = new IdempotencyTestApp.TestHandlerGate();
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromSeconds(5); },
+            handlerGate: gate,
+            lockProvider: lockProvider);
+        cacheRef = app.Services.GetRequiredService<ICache>();
+
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var winnerTask = _Post(client, "/echo", key: "race-k", body: "hello");
+
+        // Winner advances to one of two states: gated inside the race window (pre-fix) or
+        // gated inside the handler (post-fix). Whichever fires first is enough to send the loser.
+        await Task.WhenAny(
+            winnerInRaceWindow.Task,
+            gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5))
+        );
+
+        var loserTask = _Post(client, "/echo", key: "race-k", body: "hello");
+
+        // Release both gates so the winner can finalize regardless of which path we hit.
+        // releaseRaceWindow is harmless under post-fix (no waiter); gate.Release() is required
+        // to unblock the handler so the winner finishes and the loser observes the Complete record.
+        await Task.Delay(200);
+        releaseRaceWindow.TrySetResult();
+        gate.Release();
+
+        var winner = await winnerTask;
+        var loser = await loserTask;
+
+        winner.StatusCode.Should().Be(HttpStatusCode.Created);
+        loser.StatusCode.Should().Be(
+            HttpStatusCode.Created,
+            "loser must replay the winner's response — not return 409 InFlightTimeout — when the winner is healthy"
+        );
 
         gate.InvocationCount.Should().Be(1, "WaitAndReplay never invokes the handler twice for the same key");
     }

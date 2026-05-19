@@ -29,7 +29,8 @@ internal static class IdempotencyTestApp
         Action<WebApplication>? mapAdditionalEndpoints = null,
         string? tenantHeaderName = null,
         bool withLockProvider = false,
-        TestHandlerGate? handlerGate = null
+        TestHandlerGate? handlerGate = null,
+        InMemoryDistributedLockProvider? lockProvider = null
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -71,7 +72,11 @@ internal static class IdempotencyTestApp
         // tests to spin up the messaging infrastructure. The middleware only exercises
         // TryAcquireAsync + IDistributedLock.DisposeAsync, so the test double covers exactly
         // the surface under test.
-        if (withLockProvider)
+        if (lockProvider is not null)
+        {
+            builder.Services.AddSingleton<IDistributedLockProvider>(lockProvider);
+        }
+        else if (withLockProvider)
         {
             builder.Services.AddSingleton<IDistributedLockProvider, InMemoryDistributedLockProvider>();
         }
@@ -276,9 +281,17 @@ internal static class IdempotencyTestApp
     /// integration tests can exercise the WaitAndReplay path without spinning up the messaging
     /// infrastructure the framework's DistributedLockProvider depends on.
     /// </summary>
-    private sealed class InMemoryDistributedLockProvider : IDistributedLockProvider
+    internal sealed class InMemoryDistributedLockProvider : IDistributedLockProvider
     {
         private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Test hook fired before <c>semaphore.WaitAsync</c>. Tests use this to widen specific
+        /// race windows (e.g., the WaitAndReplay TryInsert→TryAcquire race) by gating winner
+        /// acquisitions. The semaphore is NOT held during the hook — the hook must not assume
+        /// mutual exclusion against the lock state.
+        /// </summary>
+        public Func<string, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
 
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
@@ -291,6 +304,11 @@ internal static class IdempotencyTestApp
             CancellationToken cancellationToken = default
         )
         {
+            if (BeforeAcquireAsync is not null)
+            {
+                await BeforeAcquireAsync(resource, acquireTimeout, cancellationToken).ConfigureAwait(false);
+            }
+
             var semaphore = _locks.GetOrAdd(resource, static _ => new SemaphoreSlim(1, 1));
             var timeout = acquireTimeout ?? DefaultAcquireTimeout;
             bool acquired;
@@ -320,7 +338,7 @@ internal static class IdempotencyTestApp
         public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
-    private sealed class InMemoryDistributedLock(string resource, SemaphoreSlim semaphore) : IDistributedLock
+    internal sealed class InMemoryDistributedLock(string resource, SemaphoreSlim semaphore) : IDistributedLock
     {
         private int _released;
 
