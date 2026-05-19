@@ -383,7 +383,10 @@ internal sealed partial class IdempotencyMiddleware(
 
             if (options.RequestFingerprint != null)
             {
-                return (await options.RequestFingerprint(context).ConfigureAwait(false), false);
+                var customFingerprint = await options.RequestFingerprint(context).ConfigureAwait(false);
+                // Rewind unconditionally — the delegate may have consumed the body
+                body.Position = 0;
+                return (customFingerprint, false);
             }
 
             return (hash.GetCurrentHash(), false);
@@ -398,13 +401,13 @@ internal sealed partial class IdempotencyMiddleware(
     {
         IdempotencyKeyExpiration = source.IdempotencyKeyExpiration,
         HeaderName = source.HeaderName,
-        Methods = source.Methods,
+        Methods = new HashSet<string>(source.Methods, StringComparer.OrdinalIgnoreCase),
         InFlightStrategy = source.InFlightStrategy,
         InFlightLockTimeout = source.InFlightLockTimeout,
         MaxBodySizeForHashing = source.MaxBodySizeForHashing,
         OversizeBehavior = source.OversizeBehavior,
         MismatchStatusCode = source.MismatchStatusCode,
-        ReplayHeaderAllowlist = source.ReplayHeaderAllowlist,
+        ReplayHeaderAllowlist = new HashSet<string>(source.ReplayHeaderAllowlist, StringComparer.OrdinalIgnoreCase),
         ShouldCacheResponse = source.ShouldCacheResponse,
         ShouldApply = source.ShouldApply,
         KeyDeriver = source.KeyDeriver,
