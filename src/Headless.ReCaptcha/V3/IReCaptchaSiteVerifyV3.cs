@@ -24,24 +24,16 @@ public interface IReCaptchaSiteVerifyV3
     );
 }
 
-public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
+public sealed class ReCaptchaSiteVerifyV3(
+    IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
+    IHttpClientFactory clientFactory,
+    ILogger<ReCaptchaSiteVerifyV3> logger
+) : IReCaptchaSiteVerifyV3
 {
     private readonly Uri _siteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
 
-    private readonly ReCaptchaOptions _options;
-    private readonly HttpClient _client;
-    private readonly ILogger<ReCaptchaSiteVerifyV3> _logger;
-
-    public ReCaptchaSiteVerifyV3(
-        IOptionsSnapshot<ReCaptchaOptions> optionsAccessor,
-        IHttpClientFactory clientFactory,
-        ILogger<ReCaptchaSiteVerifyV3> logger
-    )
-    {
-        _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
-        _client = clientFactory.CreateClient(ReCaptchaSetup.V3Name);
-        _logger = logger;
-    }
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
+    private readonly HttpClient _client = clientFactory.CreateClient(ReCaptchaSetup.V3Name);
 
     public async Task<ReCaptchaSiteVerifyV3Response> VerifyAsync(
         ReCaptchaSiteVerifyRequest request,
@@ -66,12 +58,12 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
 
         if (!httpResponseMessage.IsSuccessStatusCode)
         {
-            if (_logger.IsEnabled(LogLevel.Information))
+            if (logger.IsEnabled(LogLevel.Information))
             {
                 var responseBody = await httpResponseMessage
                     .Content.ReadAsStringAsync(cancellationToken)
                     .ConfigureAwait(false);
-                _logger.LogRecaptchaVerificationFailed(httpResponseMessage.StatusCode, responseBody);
+                logger.LogRecaptchaVerificationFailed(httpResponseMessage.StatusCode, responseBody);
             }
 
             httpResponseMessage.EnsureSuccessStatusCode();
@@ -91,7 +83,7 @@ public sealed class ReCaptchaSiteVerifyV3 : IReCaptchaSiteVerifyV3
 
         if (response?.Success is not true)
         {
-            _logger.LogReCaptchaFailure(response);
+            logger.LogReCaptchaFailure(response);
         }
 
         return response
