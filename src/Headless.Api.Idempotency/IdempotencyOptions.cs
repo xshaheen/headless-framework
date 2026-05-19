@@ -97,8 +97,9 @@ public sealed class IdempotencyOptions
 
     /// <summary>
     /// Derives the cache key from the <see cref="HttpContext"/> and the raw idempotency key header value.
-    /// When <see langword="null"/>, the default <c>idem:{tenant}:{userId}:{method}:{path}:{key}</c>
-    /// derivation is used.
+    /// When <see langword="null"/>, the default <c>idem:{tenant}:{userId}:{method}:{path}{?query}:{key}</c>
+    /// derivation is used (query string is included so endpoints that branch on query parameters
+    /// don't cross-replay when the same key is reused across sub-modes).
     /// </summary>
     /// <remarks>
     /// The default derivation is unsafe for fully anonymous routes (no tenant, no authenticated

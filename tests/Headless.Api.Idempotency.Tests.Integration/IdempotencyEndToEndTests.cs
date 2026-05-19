@@ -524,6 +524,31 @@ public sealed class IdempotencyEndToEndTests
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
     }
 
+    // ── Default cache key includes query string ──────────────────────────────
+
+    [Fact]
+    public async Task different_query_strings_with_same_key_and_body_should_not_cross_replay()
+    {
+        // Real-world endpoints branch on query parameters (?action=void vs ?action=capture,
+        // ?dry_run=true vs ?dry_run=false). The default cache key omitted the query string, so
+        // a client that reused an idempotency key across these would cross-replay the wrong
+        // response. Query string is now part of the cache-key composition.
+        await using var app = await IdempotencyTestApp.CreateAsync();
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var first = await _Post(client, "/echo?action=void", key: "k-q", body: "hello");
+        var second = await _Post(client, "/echo?action=capture", key: "k-q", body: "hello");
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        var firstBody = await first.Content.ReadAsStringAsync();
+        var secondBody = await second.Content.ReadAsStringAsync();
+
+        secondBody.Should().NotBe(firstBody, "different query strings yield distinct cache slots; each invocation produces its own response");
+        second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("the second request must execute the handler, not replay the first");
+    }
+
     // ── Winner lock lease decoupled from InFlightLockTimeout ─────────────────
 
     [Fact]

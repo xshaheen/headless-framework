@@ -636,7 +636,12 @@ internal sealed partial class IdempotencyMiddleware(
 
         var method = context.Request.Method.ToUpperInvariant();
         var path = context.Request.Path.Value ?? "";
-        return $"idem:{tenant ?? string.Empty}:{user ?? "anon"}:{method}:{path}:{keyHeader}";
+        // QueryString participates so endpoints that branch on query parameters (e.g.,
+        // ?action=void vs ?action=capture, ?dry_run=true vs ?dry_run=false) don't cross-replay
+        // when the client reuses the same idempotency key. QueryString.Value includes the
+        // leading "?" or is empty when no query exists.
+        var query = context.Request.QueryString.Value ?? string.Empty;
+        return $"idem:{tenant ?? string.Empty}:{user ?? "anon"}:{method}:{path}{query}:{keyHeader}";
     }
 
     /// <summary>
