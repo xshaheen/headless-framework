@@ -111,12 +111,12 @@ internal static class IdempotencyTestApp
         return app;
     }
 
-  public static HttpClient CreateClient(WebApplication app)
-  {
-    return new() { BaseAddress = new Uri(app.Urls.Single()) };
-  }
+    public static HttpClient CreateClient(WebApplication app)
+    {
+        return new() { BaseAddress = new Uri(app.Urls.Single()) };
+    }
 
-  public sealed class TestTenantState(string? tenantHeaderName)
+    public sealed class TestTenantState(string? tenantHeaderName)
     {
         private readonly AsyncLocal<string?> _current = new();
 
