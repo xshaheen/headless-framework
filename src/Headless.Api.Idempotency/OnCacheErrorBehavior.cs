@@ -3,8 +3,12 @@
 namespace Headless.Api.Idempotency;
 
 /// <summary>
-/// Behavior when the underlying <see cref="Headless.Caching.ICache"/> throws during an idempotency
-/// middleware operation (read, sentinel insert, finalize).
+/// Behavior when the idempotency backing store throws — either the underlying
+/// <see cref="Headless.Caching.ICache"/> (read, sentinel insert, finalize) or the
+/// <see cref="Headless.DistributedLocks.IDistributedLockProvider"/> used by
+/// <see cref="InFlightStrategy.WaitAndReplay"/>. Both are considered one fault domain because
+/// they typically share infrastructure (Redis cluster, ElastiCache, etc.) and operators rarely
+/// want different policies for the two.
 /// </summary>
 [PublicAPI]
 public enum OnCacheErrorBehavior

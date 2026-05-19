@@ -42,10 +42,13 @@ public sealed class IdempotencyOptions
     public OversizeBehavior OversizeBehavior { get; set; } = OversizeBehavior.Reject;
 
     /// <summary>
-    /// How the middleware reacts when the underlying <see cref="Headless.Caching.ICache"/> throws.
-    /// Defaults to <see cref="OnCacheErrorBehavior.FailOpen"/>: log a warning and bypass
-    /// idempotency for the failing request. Switch to <see cref="OnCacheErrorBehavior.Throw"/>
-    /// for environments that prefer 5xx over silently dropping the guarantee.
+    /// How the middleware reacts when the idempotency backing store throws — either the
+    /// underlying <see cref="Headless.Caching.ICache"/> or the
+    /// <see cref="Headless.DistributedLocks.IDistributedLockProvider"/> used by
+    /// <see cref="InFlightStrategy.WaitAndReplay"/>. Defaults to
+    /// <see cref="OnCacheErrorBehavior.FailOpen"/>: log a warning and bypass idempotency for the
+    /// failing request. Switch to <see cref="OnCacheErrorBehavior.Throw"/> for environments
+    /// that prefer 5xx over silently dropping the guarantee.
     /// </summary>
     public OnCacheErrorBehavior OnCacheError { get; set; } = OnCacheErrorBehavior.FailOpen;
 

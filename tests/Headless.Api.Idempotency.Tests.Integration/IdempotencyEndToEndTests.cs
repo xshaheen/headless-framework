@@ -523,6 +523,82 @@ public sealed class IdempotencyEndToEndTests
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
     }
 
+    // ── Lock-provider outage: same OnCacheError semantics as cache exceptions ──
+
+    [Fact]
+    public async Task should_pass_through_to_handler_when_lock_provider_throws_on_winner_path_and_OnCacheError_is_FailOpen()
+    {
+        // Winner-path TryAcquireAsync throws. Because the fix acquires the lock BEFORE inserting
+        // the sentinel marker, no orphan record is left behind — FailOpen just bypasses
+        // idempotency for this request.
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        {
+            BeforeAcquireAsync = (_, acquireTimeout, _) =>
+            {
+                // Winner's signature: acquireTimeout == TimeSpan.Zero.
+                if (acquireTimeout == TimeSpan.Zero)
+                {
+                    throw new InvalidOperationException("simulated lock-provider outage");
+                }
+                return Task.CompletedTask;
+            }
+        };
+
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => o.InFlightStrategy = InFlightStrategy.WaitAndReplay,
+            lockProvider: lockProvider);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var response = await _Post(client, "/echo", key: "lock-fail-open", body: "hello");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "FailOpen bypasses idempotency and runs the handler when the lock provider is down");
+    }
+
+    [Fact]
+    public async Task should_return_409_in_flight_timeout_when_lock_provider_throws_on_loser_path_and_OnCacheError_is_FailOpen()
+    {
+        // Loser-path TryAcquireAsync throws. We cannot wait for the winner and cannot call
+        // next() (would re-invoke the handler). Return a recoverable 409 so the client retries.
+        var gate = new IdempotencyTestApp.TestHandlerGate();
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        {
+            BeforeAcquireAsync = (_, acquireTimeout, _) =>
+            {
+                // Throw only on the loser's call (acquireTimeout > 0).
+                if (acquireTimeout is not null && acquireTimeout != TimeSpan.Zero)
+                {
+                    throw new InvalidOperationException("simulated lock-provider outage");
+                }
+                return Task.CompletedTask;
+            }
+        };
+
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o =>
+            {
+                o.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                o.InFlightLockTimeout = TimeSpan.FromSeconds(5);
+            },
+            handlerGate: gate,
+            lockProvider: lockProvider);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        // Winner enters the handler (gated) holding the lock.
+        var winnerTask = _Post(client, "/echo", key: "lock-loser-fail", body: "hello");
+        await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(2));
+
+        // Loser tries to acquire the lock — the hook throws.
+        var loser = await _Post(client, "/echo", key: "lock-loser-fail", body: "hello");
+
+        loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var loserBody = await loser.Content.ReadAsStringAsync();
+        loserBody.Should().Contain("g:idempotency_in_flight_timeout");
+
+        gate.Release();
+        var winner = await winnerTask;
+        winner.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
     private static async Task<HttpResponseMessage> _Post(
         HttpClient client,
         string path,

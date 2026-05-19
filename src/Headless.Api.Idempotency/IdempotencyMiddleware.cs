@@ -189,12 +189,28 @@ internal sealed partial class IdempotencyMiddleware(
         if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
         {
             var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
-            winnerLock = await lockProvider.TryAcquireAsync(
-                $"lock:{cacheKey}",
-                timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
-                acquireTimeout: TimeSpan.Zero,
-                cancellationToken: ct
-            ).ConfigureAwait(false);
+            try
+            {
+                winnerLock = await lockProvider.TryAcquireAsync(
+                    $"lock:{cacheKey}",
+                    timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
+                    acquireTimeout: TimeSpan.Zero,
+                    cancellationToken: ct
+                ).ConfigureAwait(false);
+            }
+            catch (Exception lockEx)
+            {
+                LogLockProviderFailure("winner-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
+                if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+                {
+                    throw;
+                }
+
+                // FailOpen: lock provider unavailable. Bypass idempotency for this request — no
+                // marker has been inserted yet (lock-before-insert ordering), so no orphan is left.
+                await next(context).ConfigureAwait(false);
+                return;
+            }
 
             if (winnerLock is null)
             {
@@ -387,12 +403,31 @@ internal sealed partial class IdempotencyMiddleware(
         var lockKey = $"lock:{cacheKey}";
 
         // Loser path: block until the winner releases the lock (or acquireTimeout elapses).
-        await using var dlock = await lockProvider.TryAcquireAsync(
-            lockKey,
-            timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
-            acquireTimeout: options.InFlightLockTimeout,
-            cancellationToken: ct
-        ).ConfigureAwait(false);
+        IDistributedLock? dlock;
+        try
+        {
+            dlock = await lockProvider.TryAcquireAsync(
+                lockKey,
+                timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
+                acquireTimeout: options.InFlightLockTimeout,
+                cancellationToken: ct
+            ).ConfigureAwait(false);
+        }
+        catch (Exception lockEx)
+        {
+            LogLockProviderFailure("loser-tryacquire", cacheKey, options.OnCacheError.ToString(), lockEx);
+            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+            {
+                throw;
+            }
+
+            // FailOpen on the loser path: we cannot wait on the winner. Return a recoverable
+            // 409 so the client retries — bypassing to next() would re-execute the handler.
+            LogInFlightTimeout(cacheKey);
+            var failOpenPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
+            await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
 
         if (dlock is null)
         {
@@ -401,6 +436,8 @@ internal sealed partial class IdempotencyMiddleware(
             await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
             return;
         }
+
+        await using var _ = dlock.ConfigureAwait(false);
 
         CacheValue<IdempotencyRecord> postLock;
         try
@@ -738,4 +775,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency cache call failed at {Site} for key {CacheKey}; behavior={Behavior}")]
     private partial void LogCacheFailure(string site, string cacheKey, string behavior, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency lock-provider call failed at {Site} for key {CacheKey}; behavior={Behavior}")]
+    private partial void LogLockProviderFailure(string site, string cacheKey, string behavior, Exception exception);
 }
