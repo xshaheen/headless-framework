@@ -9,6 +9,12 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
+- [Safety Categories and Fencing Tokens](#safety-categories-and-fencing-tokens)
+    - [Efficiency locks](#efficiency-locks)
+    - [Correctness locks](#correctness-locks)
+    - [Why Redis-backed locks do not meet the correctness bar](#why-redis-backed-locks-do-not-meet-the-correctness-bar)
+    - [Using LockId as a weak fencing token](#using-lockid-as-a-weak-fencing-token)
+    - [Caveats](#caveats)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
@@ -58,13 +64,91 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 ## Agent Instructions
 
 - Always code against `IDistributedLockProvider` from Abstractions. Never reference storage-specific types in application code.
-- Use `DistributedLocks.Redis` for production multi-instance deployments. It uses atomic Lua scripts for lock acquire/release — this is the only truly safe option for distributed scenarios.
-- Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks.
+- Before choosing a backend, classify the use case as **efficiency** or **correctness** — see [Safety Categories and Fencing Tokens](#safety-categories-and-fencing-tokens). Picking the wrong backend silently corrupts data in the correctness case.
+- Use `DistributedLocks.Redis` for production multi-instance deployments of **efficiency** locks. It uses atomic Lua scripts for acquire/release. For correctness locks, use a transaction-coupled backend instead.
+- Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks. Same safety category as `DistributedLocks.Redis` (efficiency-only).
 - Always check for `null` after `TryAcquireAsync` — a null return means the lock could not be acquired within the timeout.
 - Always `await using` the returned `IDistributedLock` to ensure proper release. Do not manually dispose without `await`.
 - Default timeouts: `DefaultTimeUntilExpires = 20 min`, `DefaultAcquireTimeout = 30s`. Override per-call or globally via options.
 - Lock resources are string keys (e.g., `"order:{orderId}"`). Use consistent naming conventions across your codebase.
 - Both `IDistributedLockProvider` and `IThrottlingDistributedLockProvider` are registered as **singletons**.
+
+## Safety Categories and Fencing Tokens
+
+Distributed locks split into two safety categories per Martin Kleppmann's article ["How to do distributed locking"](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html). The category determines which backend is appropriate. Picking the wrong category corrupts data silently.
+
+### Efficiency locks
+
+- **Purpose:** avoid duplicate work — one node generates the daily report instead of three; one worker processes a queue item instead of two.
+- **Cost of violation:** wasted CPU, redundant HTTP calls, duplicate side effects. No data corruption.
+- **Required guarantee:** best-effort serialization. Occasional violations are tolerable.
+- **Appropriate backends:** any. `Headless.DistributedLocks.Redis`, `Headless.DistributedLocks.Cache`, and (when shipped) `Headless.DistributedLocks.Postgres` / `.SqlServer` / `.AzureBlob` all meet the bar.
+
+### Correctness locks
+
+- **Purpose:** preserve invariants on shared state — no two writers may modify the same row simultaneously; no two leaders may issue conflicting decisions.
+- **Cost of violation:** broken invariants, lost writes, corrupted state. Often irreversible.
+- **Required guarantee:** serialization that survives GC pauses, process suspensions, network partitions, and clock skew during failover. Standard TTL-based locks cannot give this without help from the protected resource.
+- **Appropriate backends:** only transaction-coupled locks, where the lock and the protected mutation succeed or fail atomically as one database operation. `PostgresDistributedLock.AcquireWithTransactionAsync` (planned, see GitHub issue #293) and the equivalent SQL Server static API (#294) provide this. Redis-backed locks DO NOT — see the next subsection.
+
+### Why Redis-backed locks do not meet the correctness bar
+
+The canonical failure mode (single-Redis, RedLock multi-instance, or any TTL-based scheme):
+
+1. Client A acquires the lock with TTL = 30s.
+2. Client A's process pauses — GC, kernel preemption, VM live-migration, or a network partition that keeps A's writes from reaching Redis.
+3. The 30s TTL expires. Redis releases the lock.
+4. Client B acquires the lock. B writes to the protected resource.
+5. Client A's pause ends. A still believes it holds the lock. A writes to the protected resource.
+
+**Two writers, one resource, no detection.** No amount of lock-side cleverness fixes this — by the time A's write reaches the resource, the lock service no longer matters. The only fix is the protected resource itself rejecting A's write because it carries a stale fencing token.
+
+This is why `Headless.DistributedLocks.Redis` is correct for efficiency use cases but unsafe for correctness use cases. The RedLock multi-instance algorithm does not help — see [docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md](../solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md) for the full rationale.
+
+### Using LockId as a weak fencing token
+
+`IDistributedLock.LockId` is a Snowflake-style `long` from `ILongIdGenerator`. It is monotonic per generator instance and *approximately* monotonic across instances (bounded by NTP clock skew). Consumers willing to plumb a fence parameter through their write path can use `LockId` today as a clock-skew-bounded fencing token:
+
+```csharp
+// Caller — protect a SQL row mutation with a fence.
+await using var lockHandle = await _lockProvider.AcquireAsync("inventory:sku-123", ct)
+    ?? throw new ConcurrencyException("Could not acquire lock");
+
+var fence = lockHandle.LockId;
+
+var affected = await _db.ExecuteAsync(
+    """
+    UPDATE inventory_state
+    SET    quantity   = @quantity,
+           last_fence = @fence
+    WHERE  sku        = @sku
+      AND  (last_fence IS NULL OR last_fence < @fence)
+    """,
+    new { sku = "sku-123", quantity = 42, fence });
+
+if (affected == 0)
+{
+    // Either our fence is stale (we lost the lock during a pause) or someone
+    // else already wrote with a newer fence. Abort — do not retry blindly.
+    throw new StaleFenceException("Lock was likely lost during the operation");
+}
+```
+
+The pattern depends on three consumer-side disciplines:
+
+1. **Plumbing.** The fence parameter must reach the protected resource on every write. Forget it once, and that write is unfenced.
+2. **Storing the last accepted fence.** The protected resource (database row, file metadata, etc.) must track the last accepted fence value.
+3. **Rejecting stale fences.** Writes carrying a fence lower than the last accepted value must be rejected and the caller notified.
+
+The framework cannot enforce any of these — that is what makes this a "weak" fencing pattern rather than a first-class API.
+
+### Caveats
+
+- **NTP-bounded monotonicity.** `LockId` ordering across machines depends on clock-skew bounds. Two acquires within ~clock-skew-bound milliseconds can produce out-of-order tokens. Tighter clock sync (PTP, dedicated NTP servers) tightens this bound; commodity NTP gives roughly tens of milliseconds.
+- **No protection for external side effects.** Fencing protects state mutations on systems where you control the write path. For external side effects — sending an email, calling a payment API, kicking off a webhook — there is no resource to validate the fence against. Use idempotency keys instead.
+- **Validation is the consumer's responsibility.** A fence handed to a write path that doesn't validate it is dead weight; worse, it can create false confidence. Audit the write path before relying on the pattern.
+- **For unconditional correctness, use a transaction-coupled backend.** When the planned `PostgresDistributedLock.AcquireWithTransactionAsync` (issue #293) ships, prefer it over `LockId`-as-fence for correctness use cases. Atomicity by construction has no caveats.
+- **No first-class `FenceToken` API yet.** A strictly monotonic per-resource fence counter (Redisson-style `INCR`-based) is tracked in issue #287 but explicitly deferred until a consumer surfaces a use case fencing actually fits. The framework's current position: most use cases are efficiency, and the few real correctness consumers should reach for Postgres transactional locks rather than Redis-with-fencing.
 
 ---
 
