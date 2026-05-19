@@ -19,4 +19,16 @@
       PublicKeyToken=b77a5c561934e089
     </value>
   </resheader>
+  <data name="g:idempotency-key-reused" xml:space="preserve">
+    <value>تم إعادة استخدام مفتاح الطلب الفريد مع محتوى مختلف للطلب.</value>
+  </data>
+  <data name="g:idempotency-in-flight" xml:space="preserve">
+    <value>طلب مطابق بهذا المفتاح الفريد لا يزال قيد المعالجة. أعد المحاولة بعد انتظار قصير.</value>
+  </data>
+  <data name="g:idempotency-in-flight-timeout" xml:space="preserve">
+    <value>انتهت مهلة انتظار اكتمال طلب جارٍ بهذا المفتاح الفريد.</value>
+  </data>
+  <data name="g:idempotency-body-too-large" xml:space="preserve">
+    <value>حجم محتوى الطلب يتجاوز الحد المسموح به لمعالجة الطلبات الفريدة.</value>
+  </data>
 </root>
