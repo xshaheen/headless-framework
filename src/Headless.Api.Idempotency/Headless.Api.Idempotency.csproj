@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
