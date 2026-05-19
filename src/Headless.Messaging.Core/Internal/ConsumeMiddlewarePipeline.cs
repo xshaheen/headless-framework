@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
@@ -33,10 +32,10 @@ internal sealed class ConsumeMiddlewarePipeline(
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
         new();
 
-    private readonly ConditionalWeakTable<Type, Delegate> _compiledConsumeContextFactories = new();
-
-    private static readonly ConditionalWeakTable<Type, Delegate>.CreateValueCallback _CompileFactoryCallback =
-        _CompileFactory;
+    private readonly ConcurrentDictionary<
+        Type,
+        Func<object, MediumMessage, MessageHeader, string?, object>
+    > _compiledConsumeContextFactories = new();
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
@@ -63,7 +62,6 @@ internal sealed class ConsumeMiddlewarePipeline(
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
         var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
-        object? resultObj = null;
         var innerRingCompleted = false;
 
         Func<ValueTask> next = async () =>
@@ -111,13 +109,8 @@ internal sealed class ConsumeMiddlewarePipeline(
         var callbackName = context.MediumMessage.Origin.GetCallbackName();
         var callbackHeaders = consumeHeaders.ResponseHeader;
         return string.IsNullOrEmpty(callbackName)
-            ? new ConsumerExecutedResult(resultObj, context.MediumMessage.Origin.GetId(), null, callbackHeaders)
-            : new ConsumerExecutedResult(
-                resultObj,
-                context.MediumMessage.Origin.GetId(),
-                callbackName,
-                callbackHeaders
-            );
+            ? new ConsumerExecutedResult(null, context.MediumMessage.Origin.GetId(), null, callbackHeaders)
+            : new ConsumerExecutedResult(null, context.MediumMessage.Origin.GetId(), callbackName, callbackHeaders);
     }
 
     private async ValueTask _InvokeAsync(
@@ -169,12 +162,9 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
     {
-        var descriptors = descriptorRegistry?.GetConsumeDescriptors(context.MessageType, groupName) ?? [];
-
         if (
-            descriptorRegistry?.Descriptors.Any(static descriptor =>
-                descriptor.Direction == MiddlewareDirection.Consume
-            ) == true
+            descriptorRegistry is not null
+            && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, groupName, out var descriptors)
         )
         {
             return descriptors
@@ -210,16 +200,14 @@ internal sealed class ConsumeMiddlewarePipeline(
         CancellationToken cancellationToken
     )
     {
-        var factory =
-            (Func<object, MediumMessage, MessageHeader, string?, object>)
-                _compiledConsumeContextFactories.GetValue(messageType, _CompileFactoryCallback);
+        var factory = _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
         var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId);
         context.WithCancellationToken(cancellationToken);
 
         return context;
     }
 
-    private static Delegate _CompileFactory(Type messageType)
+    private static Func<object, MediumMessage, MessageHeader, string?, object> _CompileFactory(Type messageType)
     {
         var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
         var messageParam = Expression.Parameter(typeof(object), "message");

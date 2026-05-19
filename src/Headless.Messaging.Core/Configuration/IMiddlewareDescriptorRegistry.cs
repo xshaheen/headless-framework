@@ -8,9 +8,13 @@ internal interface IMiddlewareDescriptorRegistry
 
     MiddlewareDescriptor AddOrGet(MiddlewareDescriptorInput input);
 
-    IReadOnlyList<MiddlewareDescriptor> GetPublishDescriptors(Type messageType);
+    bool TryGetPublishDescriptors(Type messageType, out IReadOnlyList<MiddlewareDescriptor> descriptors);
 
-    IReadOnlyList<MiddlewareDescriptor> GetConsumeDescriptors(Type messageType, string? groupName);
+    bool TryGetConsumeDescriptors(
+        Type messageType,
+        string? groupName,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    );
 }
 
 internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegistry
@@ -57,51 +61,85 @@ internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegist
         }
     }
 
-    public IReadOnlyList<MiddlewareDescriptor> GetPublishDescriptors(Type messageType)
+    public bool TryGetPublishDescriptors(Type messageType, out IReadOnlyList<MiddlewareDescriptor> descriptors)
     {
         lock (_lock)
         {
-            var bus = _descriptors
-                .Where(descriptor =>
-                    descriptor.Direction == MiddlewareDirection.Publish && descriptor.Scope == MiddlewareScope.Bus
-                )
-                .OrderBy(static descriptor => descriptor.Priority)
-                .ThenBy(static descriptor => descriptor.Order);
-            var typed = _descriptors
-                .Where(descriptor =>
-                    descriptor.Direction == MiddlewareDirection.Publish
-                    && descriptor.Scope == MiddlewareScope.Message
-                    && descriptor.MessageType == messageType
-                )
-                .OrderBy(static descriptor => descriptor.Priority)
-                .ThenBy(static descriptor => descriptor.Order);
+            var hasPublishDescriptors = false;
+            var bus = new List<MiddlewareDescriptor>();
+            var typed = new List<MiddlewareDescriptor>();
 
-            return bus.Concat(typed).ToArray();
+            foreach (var descriptor in _descriptors)
+            {
+                if (descriptor.Direction != MiddlewareDirection.Publish)
+                {
+                    continue;
+                }
+
+                hasPublishDescriptors = true;
+
+                if (descriptor.Scope == MiddlewareScope.Bus)
+                {
+                    bus.Add(descriptor);
+                }
+                else if (descriptor.Scope == MiddlewareScope.Message && descriptor.MessageType == messageType)
+                {
+                    typed.Add(descriptor);
+                }
+            }
+
+            descriptors = _Sort(bus).Concat(_Sort(typed)).ToArray();
+
+            return hasPublishDescriptors;
         }
     }
 
-    public IReadOnlyList<MiddlewareDescriptor> GetConsumeDescriptors(Type messageType, string? groupName)
+    public bool TryGetConsumeDescriptors(
+        Type messageType,
+        string? groupName,
+        out IReadOnlyList<MiddlewareDescriptor> descriptors
+    )
     {
         lock (_lock)
         {
-            var bus = _descriptors
-                .Where(descriptor =>
-                    descriptor.Direction == MiddlewareDirection.Consume && descriptor.Scope == MiddlewareScope.Bus
-                )
-                .OrderBy(static descriptor => descriptor.Priority)
-                .ThenBy(static descriptor => descriptor.Order);
-            var typed = _descriptors
-                .Where(descriptor =>
-                    descriptor.Direction == MiddlewareDirection.Consume
-                    && descriptor.Scope == MiddlewareScope.Message
+            var hasConsumeDescriptors = false;
+            var bus = new List<MiddlewareDescriptor>();
+            var typed = new List<MiddlewareDescriptor>();
+
+            foreach (var descriptor in _descriptors)
+            {
+                if (descriptor.Direction != MiddlewareDirection.Consume)
+                {
+                    continue;
+                }
+
+                hasConsumeDescriptors = true;
+
+                if (descriptor.Scope == MiddlewareScope.Bus)
+                {
+                    bus.Add(descriptor);
+                }
+                else if (
+                    descriptor.Scope == MiddlewareScope.Message
                     && descriptor.MessageType == messageType
                     && string.Equals(descriptor.GroupName, groupName, StringComparison.Ordinal)
                 )
-                .OrderBy(static descriptor => descriptor.Priority)
-                .ThenBy(static descriptor => descriptor.Order);
+                {
+                    typed.Add(descriptor);
+                }
+            }
 
-            return bus.Concat(typed).ToArray();
+            descriptors = _Sort(bus).Concat(_Sort(typed)).ToArray();
+
+            return hasConsumeDescriptors;
         }
+    }
+
+    private static IOrderedEnumerable<MiddlewareDescriptor> _Sort(List<MiddlewareDescriptor> descriptors)
+    {
+        return descriptors
+            .OrderBy(static descriptor => descriptor.Priority)
+            .ThenBy(static descriptor => descriptor.Order);
     }
 }
 
