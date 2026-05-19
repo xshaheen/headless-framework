@@ -40,8 +40,4 @@
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Remove="Internal\LegacyAttributes.cs" />
-    <Compile Remove="Internal\ConsumerContext.cs" />
-  </ItemGroup>
 </Project>
