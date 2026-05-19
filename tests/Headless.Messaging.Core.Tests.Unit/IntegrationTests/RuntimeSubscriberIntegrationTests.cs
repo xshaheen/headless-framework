@@ -10,12 +10,12 @@ namespace Tests.IntegrationTests;
 public sealed class RuntimeSubscriberIntegrationTests : TestBase
 {
     [Fact]
-    public async Task should_execute_runtime_handler_with_scoped_di_and_filters()
+    public async Task should_execute_runtime_handler_with_scoped_di_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var publisher = provider.GetRequiredService<IOutboxPublisher>();
-        var filter = provider.GetRequiredService<RecordingConsumeFilter>();
+        var middlewareProbe = provider.GetRequiredService<RecordingConsumeMiddlewareProbe>();
         var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
@@ -34,9 +34,9 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         consumed.Message.Id.Should().Be("first");
         probe.ScopedDependencyIds.Should().ContainSingle();
-        filter.ExecutingCount.Should().Be(1);
-        filter.ExecutedCount.Should().Be(1);
-        filter.ExceptionCount.Should().Be(0);
+        middlewareProbe.ExecutingCount.Should().Be(1);
+        middlewareProbe.ExecutedCount.Should().Be(1);
+        middlewareProbe.ExceptionCount.Should().Be(0);
     }
 
     [Fact]
@@ -124,22 +124,23 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        services.AddSingleton<RecordingConsumeFilter>();
-        services.AddSingleton<IConsumeFilter>(sp => sp.GetRequiredService<RecordingConsumeFilter>());
+        services.AddSingleton<RecordingConsumeMiddlewareProbe>();
         services.AddScoped<ScopedRuntimeDependency>();
         services.AddSingleton<RecordingRuntimeProbe>();
         services.AddSingleton<BlockingRuntimeProbe>();
 
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
-            options.UseConventions(c =>
+        services
+            .AddHeadlessMessaging(options =>
             {
-                c.UseApplicationId("runtime-tests");
-                c.UseVersion("v1");
-            });
-        });
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                options.UseConventions(c =>
+                {
+                    c.UseApplicationId("runtime-tests");
+                    c.UseVersion("v1");
+                });
+            })
+            .AddBusConsumeMiddleware<RecordingConsumeMiddleware>();
 
         if (additionalProcessor is not null)
         {
@@ -156,38 +157,31 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         public Guid Id { get; } = Guid.NewGuid();
     }
 
-    private sealed class RecordingConsumeFilter : ConsumeFilter
+    private sealed class RecordingConsumeMiddleware(RecordingConsumeMiddlewareProbe probe)
+        : IConsumeMiddleware<ConsumeContext>
     {
-        public int ExecutingCount { get; private set; }
-        public int ExecutedCount { get; private set; }
-        public int ExceptionCount { get; private set; }
-
-        public override ValueTask OnSubscribeExecutingAsync(
-            ExecutingContext context,
-            CancellationToken cancellationToken = default
-        )
+        public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
         {
-            ExecutingCount++;
-            return ValueTask.CompletedTask;
-        }
+            probe.ExecutingCount++;
 
-        public override ValueTask OnSubscribeExecutedAsync(
-            ExecutedContext context,
-            CancellationToken cancellationToken = default
-        )
-        {
-            ExecutedCount++;
-            return ValueTask.CompletedTask;
+            try
+            {
+                await next().ConfigureAwait(false);
+                probe.ExecutedCount++;
+            }
+            catch
+            {
+                probe.ExceptionCount++;
+                throw;
+            }
         }
+    }
 
-        public override ValueTask OnSubscribeExceptionAsync(
-            ExceptionContext context,
-            CancellationToken cancellationToken = default
-        )
-        {
-            ExceptionCount++;
-            return ValueTask.CompletedTask;
-        }
+    private sealed class RecordingConsumeMiddlewareProbe
+    {
+        public int ExecutingCount { get; set; }
+        public int ExecutedCount { get; set; }
+        public int ExceptionCount { get; set; }
     }
 
     private sealed class RecordingRuntimeProbe
