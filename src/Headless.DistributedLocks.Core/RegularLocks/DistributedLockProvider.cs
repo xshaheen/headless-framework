@@ -75,15 +75,24 @@ public sealed class DistributedLockProvider(
         var gotLock = false;
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
+        var isFirstAttempt = true;
 
         try
         {
             do
             {
+                // First attempt uses the caller's token only. Otherwise `acquireTimeout: TimeSpan.Zero`
+                // (and other small values) can preempt the storage call before it completes — the
+                // linked `cts.Token` is already cancelled by the time the await runs. Subsequent
+                // retries use the linked token so the user's overall acquire-timeout budget governs
+                // the wait loop. Issue #282.
+                var attemptToken = isFirstAttempt ? cancellationToken : cts.Token;
+                isFirstAttempt = false;
+
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, cts.Token);
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, attemptToken);
                 }
                 catch (OperationCanceledException)
                 {

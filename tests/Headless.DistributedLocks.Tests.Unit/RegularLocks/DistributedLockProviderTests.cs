@@ -120,6 +120,33 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_acquire_lock_when_resource_is_free_and_acquireTimeout_is_zero()
+    {
+        // Regression guard for issue #282: TimeSpan.Zero must mean "try once with no
+        // wait/retry budget", not "fail immediately". On a free resource, the first
+        // storage attempt must complete and return a handle. Empirical observation
+        // by the messaging integration test author was that the real provider returns
+        // null every time under this configuration; see RetryProcessorDistributedLockTests
+        // line 101 comment and tests/Headless.Messaging.PostgreSql.Tests.Integration.
+
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when - try to acquire on a FREE resource with zero acquire timeout
+        var result = await provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: AbortToken
+        );
+
+        // then - handle must be returned; Zero is "no wait", not "no attempt"
+        result.Should().NotBeNull();
+        result!.Resource.Should().Be(resource);
+        result.LockId.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
     public async Task should_retry_with_exponential_backoff()
     {
         // given
