@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using FastExpressionCompiler;
 using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -23,6 +24,7 @@ internal interface IPublishMiddlewarePipeline
 
 internal sealed class PublishMiddlewarePipeline(
     IServiceProvider serviceProvider,
+    IMiddlewareDescriptorRegistry? descriptorRegistry = null,
     ILogger<PublishMiddlewarePipeline>? logger = null
 ) : IPublishMiddlewarePipeline
 {
@@ -45,15 +47,7 @@ internal sealed class PublishMiddlewarePipeline(
         await using var scope = _serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
         var context = new PublishingContext<T>(content, options, delayTime, isTransactional, cancellationToken);
-        var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>().ToArray();
-        var contextType = typeof(PublishingContext<T>);
-        var typedMiddleware = provider
-            .GetServices(typeof(IPublishMiddleware<>).MakeGenericType(contextType))
-            .Where(static middleware => middleware is not null)
-            .Cast<object>()
-            .ToArray();
-
-        var middleware = busMiddleware.Concat(typedMiddleware).ToArray();
+        var middleware = _ResolveMiddleware(provider, context);
         var innerRingCompleted = false;
 
         Func<ValueTask> next = async () =>
@@ -118,6 +112,36 @@ internal sealed class PublishMiddlewarePipeline(
         );
 
         return invoker(middleware, context, next);
+    }
+
+    private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
+    {
+        var descriptors = descriptorRegistry?.GetPublishDescriptors(context.MessageType) ?? [];
+
+        if (descriptors.Count > 0)
+        {
+            return descriptors
+                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                .Where(static middleware => middleware is not null)
+                .Cast<object>()
+                .ToArray();
+        }
+
+        var typedServiceType = typeof(IPublishMiddleware<>).MakeGenericType(context.GetType());
+        var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
+        var typedMiddleware = provider
+            .GetServices(typedServiceType)
+            .Where(static middleware => middleware is not null)
+            .Cast<object>();
+
+        return busMiddleware.Concat(typedMiddleware).ToArray();
+    }
+
+    private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)
+    {
+        return provider
+            .GetServices(descriptor.ServiceType)
+            .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
     }
 
     private static PublishMiddlewareInvoker _CompileTypedInvoker(Type middlewareType, Type contextType)
