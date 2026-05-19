@@ -170,11 +170,18 @@ The same shape is reachable without going through the handler via `IProblemDetai
 `Headless.Api.Core` provides tenant enforcement at the ASP.NET Core authorization boundary:
 
 - Register through `.Authorization(auth => auth.RequireTenant())` on the root tenancy surface.
-- Add `new TenantRequirement()` to the app's `FallbackPolicy`, `DefaultPolicy`, or named policies.
+- Add `new TenantRequirement()` to the app's `FallbackPolicy` or `DefaultPolicy`.
 - Requests require `ICurrentTenant.Id` to be non-blank by default.
 - Mark intentional host-level, public, system, or console-bootstrap endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`.
 - Use `[RequireTenant]` or `.RequireTenant()` when an endpoint/action must opt back into tenant enforcement under broader allow-missing metadata, such as a route group or controller marked public.
 - Keep `UseAuthentication() -> UseHeadlessTenancy() -> UseAuthorization()` ordering so the requirement sees the resolved tenant.
+
+### Limitations
+
+- **Named-policy enforcement is the consumer's responsibility.** `TenantRequirement` is only validated by `HeadlessAuthorizationTenancyValidator` when it appears in `DefaultPolicy` or `FallbackPolicy`. Named policies (`options.AddPolicy("name", policy => ...)`) are NOT inspected — putting `TenantRequirement` there does NOT satisfy the framework's enforcement guarantee.
+- **Per ASP.NET Core's combinator semantics, `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` and `FallbackPolicy`.** Tenant enforcement on such endpoints requires the consumer to compose `TenantRequirement` into every named policy they apply, or to also tag the endpoints with a policy that includes it. The framework cannot validate this composition.
+- **`IAuthorizationMiddlewareResultHandler` ordering.** Register custom result handlers BEFORE `.Authorization(auth => auth.RequireTenant())`. ASP.NET Core resolves the last-registered handler; later registrations replace the framework's tenant mapper. Startup validation emits `HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED` when it detects this misordering.
+- **`[AllowAnonymous]` endpoints bypass the authorization pipeline entirely**, so `TenantRequirement` does not fire. If such a handler reads `ICurrentTenant.Id`, it triggers `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to a 403 with the same `g:tenant-required` body shape. Safer pattern: anonymous endpoints should NOT read `ICurrentTenant.Id`. Use `[AllowMissingTenant]` only when the authorization-pipeline opt-out is what you want.
 
 Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose HTTP path can legitimately run without a tenant. Typical categories:
 

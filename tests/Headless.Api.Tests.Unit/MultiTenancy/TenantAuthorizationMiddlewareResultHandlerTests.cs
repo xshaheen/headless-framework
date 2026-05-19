@@ -4,7 +4,6 @@ using System.Text.Encodings.Web;
 using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Constants;
-using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
@@ -106,9 +105,10 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
     }
 
     [Fact]
-    public async Task should_write_tenant_problem_details_when_tenant_failure_reason_is_present()
+    public async Task should_write_tenant_problem_details_when_failure_reason_handler_is_tenant_handler()
     {
-        // given
+        // given - TenantRequirementHandler emits failure via context.Fail(reason), which populates
+        // FailureReasons rather than FailedRequirements. The result handler must still detect this.
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status403Forbidden,
@@ -128,11 +128,9 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
             )
             .Returns(problemDetails);
         var handler = _CreateHandler(problemDetailsCreator);
+        var tenantHandler = new TenantRequirementHandler(new Headless.Testing.Helpers.TestCurrentTenant());
         var failure = AuthorizationFailure.Failed([
-            new AuthorizationFailureReason(
-                new TenantRequirementHandler(new TestCurrentTenant()),
-                TenantRequirement.FailureReason
-            ),
+            new AuthorizationFailureReason(tenantHandler, TenantRequirement.FailureReason),
         ]);
         var context = new DefaultHttpContext
         {
@@ -160,6 +158,43 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
             .GetString()
             .Should()
             .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+    }
+
+    [Fact]
+    public async Task should_delegate_to_default_handler_when_only_failure_reason_message_matches_without_tenant_requirement()
+    {
+        // given - guards against discriminator-string collisions. A foreign handler that emits
+        // a reason with the same message must NOT be treated as a tenant failure.
+        var handler = _CreateHandler();
+        var foreignHandler = new ForeignRequirementHandler();
+        var failure = AuthorizationFailure.Failed([
+            new AuthorizationFailureReason(foreignHandler, TenantRequirement.FailureReason),
+        ]);
+        var context = new DefaultHttpContext
+        {
+            RequestServices = new ServiceCollection()
+                .AddLogging()
+                .AddAuthentication(options =>
+                {
+                    options.DefaultAuthenticateScheme = "Test";
+                    options.DefaultChallengeScheme = "Test";
+                    options.DefaultForbidScheme = "Test";
+                })
+                .AddScheme<AuthenticationSchemeOptions, TestAuthenticationHandler>("Test", _ => { })
+                .Services.BuildServiceProvider(),
+        };
+
+        // when
+        await handler.HandleAsync(
+            _ => Task.CompletedTask,
+            context,
+            _CreatePolicy(),
+            PolicyAuthorizationResult.Forbid(failure)
+        );
+
+        // then - delegated to default handler (returns 403 with empty body), no tenant body.
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        context.Response.Body.Length.Should().Be(0);
     }
 
     [Fact]
@@ -225,6 +260,19 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
         protected override Task<AuthenticateResult> HandleAuthenticateAsync()
         {
             return Task.FromResult(AuthenticateResult.NoResult());
+        }
+    }
+
+    private sealed class ForeignRequirement : IAuthorizationRequirement;
+
+    private sealed class ForeignRequirementHandler : AuthorizationHandler<ForeignRequirement>
+    {
+        protected override Task HandleRequirementAsync(
+            AuthorizationHandlerContext context,
+            ForeignRequirement requirement
+        )
+        {
+            return Task.CompletedTask;
         }
     }
 }

@@ -28,7 +28,6 @@ public sealed class TenantRequirementTests : TestBase
     private const string _Scheme = "Test";
     private const string _UserHeader = "X-Test-User";
     private const string _TenantHeader = "X-Test-Tenant";
-    private const string _UnauthenticatedHeader = "X-Test-Unauthenticated";
 
     [Fact]
     public async Task should_allow_authenticated_request_with_tenant_claim()
@@ -160,7 +159,55 @@ public sealed class TenantRequirementTests : TestBase
         body.Should().NotContain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
-    private async Task<WebApplication> _CreateAppAsync()
+    [Fact]
+    public async Task should_apply_customize_problem_details_to_auth_path_tenant_response()
+    {
+        // Both the auth-path (this test) and exception-path (next test) responses must include the
+        // consumer's CustomizeProblemDetails customizations because both routes now go through
+        // IProblemDetailsService.TryWriteAsync.
+        await using var app = await _CreateAppAsync(configureProblemDetails: options =>
+            options.CustomizeProblemDetails = context => context.ProblemDetails.Extensions["x-custom"] = "auth-marker"
+        );
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, "/tenant-required", user: "alice");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("x-custom").GetString().Should().Be("auth-marker");
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+    }
+
+    [Fact]
+    public async Task should_apply_customize_problem_details_to_exception_path_tenant_response()
+    {
+        await using var app = await _CreateAppAsync(configureProblemDetails: options =>
+            options.CustomizeProblemDetails = context =>
+                context.ProblemDetails.Extensions["x-custom"] = "exception-marker"
+        );
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, "/throw-missing-tenant", user: "alice", tenantId: "tenant-a");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("x-custom").GetString().Should().Be("exception-marker");
+        doc.RootElement.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+    }
+
+    private async Task<WebApplication> _CreateAppAsync(
+        Action<Microsoft.AspNetCore.Http.ProblemDetailsOptions>? configureProblemDetails = null
+    )
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
@@ -179,6 +226,11 @@ public sealed class TenantRequirementTests : TestBase
         builder.AddHeadlessTenancy(tenancy =>
             tenancy.Http(http => http.ResolveFromClaims()).Authorization(auth => auth.RequireTenant())
         );
+
+        if (configureProblemDetails is not null)
+        {
+            builder.Services.Configure(configureProblemDetails);
+        }
         builder.Services.AddSingleton<IAuthorizationHandler, AlwaysFailRequirementHandler>();
         builder
             .Services.AddAuthentication(options =>
@@ -234,8 +286,7 @@ public sealed class TenantRequirementTests : TestBase
         HttpClient client,
         string path,
         string? user = null,
-        string? tenantId = null,
-        bool unauthenticated = false
+        string? tenantId = null
     )
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
@@ -248,11 +299,6 @@ public sealed class TenantRequirementTests : TestBase
         if (tenantId is not null)
         {
             request.Headers.Add(_TenantHeader, tenantId);
-        }
-
-        if (unauthenticated)
-        {
-            request.Headers.Add(_UnauthenticatedHeader, "true");
         }
 
         return await client.SendAsync(request, AbortToken);
@@ -318,7 +364,6 @@ public sealed class TenantRequirementTests : TestBase
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            var isUnauthenticated = Request.Headers.ContainsKey(_UnauthenticatedHeader);
             var claims = new List<Claim> { new(UserClaimTypes.Name, userValues.ToString()) };
 
             if (Request.Headers.TryGetValue(_TenantHeader, out var tenantValues))
@@ -326,7 +371,7 @@ public sealed class TenantRequirementTests : TestBase
                 claims.Add(new Claim(UserClaimTypes.TenantId, tenantValues.ToString()));
             }
 
-            var identity = new ClaimsIdentity(claims, authenticationType: isUnauthenticated ? null : Scheme.Name);
+            var identity = new ClaimsIdentity(claims, authenticationType: Scheme.Name);
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
