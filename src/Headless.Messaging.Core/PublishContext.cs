@@ -62,6 +62,7 @@ public abstract class PublishContext
     /// <summary>Replaces the active cancellation token for downstream middleware and the inner publisher.</summary>
     public void WithCancellationToken(CancellationToken cancellationToken)
     {
+        _ThrowIfCompleted();
         CancellationToken = cancellationToken;
     }
 

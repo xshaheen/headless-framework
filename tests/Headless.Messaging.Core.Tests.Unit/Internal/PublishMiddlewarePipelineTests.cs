@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -109,11 +110,11 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
             );
 
         // then
-        await act.Should().ThrowAsync<OperationCanceledException>();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task should_preserve_mixed_aggregate_exception_when_matching_oce_is_nested()
+    public async Task should_suppress_mixed_aggregate_exception_after_inner_publish_completed()
     {
         // given
         using var cts = new CancellationTokenSource();
@@ -133,9 +134,31 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
             );
 
         // then
-        var ex = await act.Should().ThrowAsync<AggregateException>();
-        ex.Which.InnerExceptions.Should().Contain(e => e is OperationCanceledException);
-        ex.Which.InnerExceptions.Should().Contain(e => e is InvalidOperationException);
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_convert_pre_success_aggregate_with_matching_oce_to_oce()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var services = _CreateServices(new MiddlewareCallRecorder());
+        services.AddSingleton(cts);
+        services.AddScoped<IPublishMiddleware<PublishContext>, AggregateBeforeNextPublishMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                new MiddlewarePayload("hi"),
+                options: null,
+                delayTime: null,
+                innerPublish: (_, _, _) => Task.CompletedTask,
+                cancellationToken: cts.Token
+            );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
     [Fact]
@@ -191,6 +214,66 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         recorder.Calls.Should().Equal("mutation-blocked");
     }
 
+    [Fact]
+    public async Task should_make_publish_context_read_only_when_inner_middleware_short_circuits()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext>, MutatingAfterNextBusPublishMiddleware>();
+        services.AddScoped<
+            IPublishMiddleware<PublishingContext<MiddlewarePayload>>,
+            ShortCircuitTypedPublishMiddleware
+        >();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            new MiddlewarePayload("hi"),
+            options: null,
+            delayTime: null,
+            innerPublish: (_, _, _) => Task.CompletedTask,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("typed.short-circuit", "mutation-blocked");
+    }
+
+    [Fact]
+    public async Task should_keep_direct_bus_middleware_when_unmatched_typed_descriptor_exists()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext>, RecordingPublishMiddlewareA>();
+        new MessagingBuilder(services).AddPublishMiddlewareFor<
+            MutatingAfterNextTypedPublishMiddleware,
+            MiddlewarePayload
+        >();
+        var provider = services.BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(
+            provider,
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            new OtherMiddlewarePayload("hi"),
+            options: null,
+            delayTime: null,
+            innerPublish: (_, _, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("A.before", "inner", "A.after");
+    }
+
     private static ServiceCollection _CreateServices(MiddlewareCallRecorder recorder)
     {
         var services = new ServiceCollection();
@@ -205,6 +288,8 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
 }
 
 internal sealed record MiddlewarePayload(string Value);
+
+internal sealed record OtherMiddlewarePayload(string Value);
 
 internal sealed class MiddlewareCallRecorder
 {
@@ -281,6 +366,19 @@ internal sealed class MixedAggregateAfterNextPublishMiddleware(CancellationToken
     }
 }
 
+internal sealed class AggregateBeforeNextPublishMiddleware(CancellationTokenSource source)
+    : IPublishMiddleware<PublishContext>
+{
+    public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+    {
+        await source.CancelAsync();
+        throw new AggregateException(
+            new InvalidOperationException("diagnostic sibling"),
+            new OperationCanceledException(source.Token)
+        );
+    }
+}
+
 internal sealed class SwallowingOuterCancellationPublishMiddleware(CancellationTokenSource source)
     : IPublishMiddleware<PublishContext>
 {
@@ -315,5 +413,33 @@ internal sealed class MutatingAfterNextTypedPublishMiddleware(MiddlewareCallReco
         {
             recorder.Record("mutation-blocked");
         }
+    }
+}
+
+internal sealed class MutatingAfterNextBusPublishMiddleware(MiddlewareCallRecorder recorder)
+    : IPublishMiddleware<PublishContext>
+{
+    public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+    {
+        await next();
+
+        try
+        {
+            context.WithOptions(new PublishOptions { TenantId = "too-late" });
+        }
+        catch (InvalidOperationException)
+        {
+            recorder.Record("mutation-blocked");
+        }
+    }
+}
+
+internal sealed class ShortCircuitTypedPublishMiddleware(MiddlewareCallRecorder recorder)
+    : IPublishMiddleware<PublishingContext<MiddlewarePayload>>
+{
+    public ValueTask InvokeAsync(PublishingContext<MiddlewarePayload> context, Func<ValueTask> next)
+    {
+        recorder.Record("typed.short-circuit");
+        return ValueTask.CompletedTask;
     }
 }

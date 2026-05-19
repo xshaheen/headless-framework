@@ -77,24 +77,21 @@ internal sealed class PublishMiddlewarePipeline(
         try
         {
             await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
-
-            if (context.CancellationToken.IsCancellationRequested)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-            }
-        }
-        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
-        {
-            if (ex is AggregateException)
-            {
-                throw;
-            }
-
-            throw new OperationCanceledException(context.CancellationToken);
+            _MarkCompleted(context);
         }
         catch (Exception ex) when (innerRingCompleted())
         {
             logger?.PublishPostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
+            return;
+        }
+        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
+        {
+            throw new OperationCanceledException(context.CancellationToken);
+        }
+
+        if (context.CancellationToken.IsCancellationRequested)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
         }
     }
 
@@ -116,6 +113,8 @@ internal sealed class PublishMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
     {
+        var directMiddleware = _ResolveDirectMiddleware(provider, context).ToArray();
+
         if (
             descriptorRegistry is not null
             && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, out var descriptors)
@@ -125,9 +124,15 @@ internal sealed class PublishMiddlewarePipeline(
                 .Select(descriptor => _ResolveDescriptor(provider, descriptor))
                 .Where(static middleware => middleware is not null)
                 .Cast<object>()
+                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish))
                 .ToArray();
         }
 
+        return directMiddleware;
+    }
+
+    private static object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
+    {
         var typedServiceType = typeof(IPublishMiddleware<>).MakeGenericType(context.GetType());
         var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
         var typedMiddleware = provider
@@ -136,6 +141,19 @@ internal sealed class PublishMiddlewarePipeline(
             .Cast<object>();
 
         return busMiddleware.Concat(typedMiddleware).ToArray();
+    }
+
+    private IEnumerable<object> _GetUntrackedDirectMiddleware(
+        IEnumerable<object> middleware,
+        MiddlewareDirection direction
+    )
+    {
+        var trackedTypes = descriptorRegistry!
+            .Descriptors.Where(descriptor => descriptor.Direction == direction)
+            .Select(descriptor => descriptor.MiddlewareType)
+            .ToHashSet();
+
+        return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
     }
 
     private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)
@@ -181,6 +199,14 @@ internal sealed class PublishMiddlewarePipeline(
         }
 
         return false;
+    }
+
+    private static void _MarkCompleted(PublishContext context)
+    {
+        if (context is ICompletablePublishContext completableContext)
+        {
+            completableContext.MarkCompleted();
+        }
     }
 
     private delegate ValueTask PublishMiddlewareInvoker(

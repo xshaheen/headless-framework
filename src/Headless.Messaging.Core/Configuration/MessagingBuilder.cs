@@ -91,7 +91,7 @@ public class MessageQueueMarkerService(string name)
 /// Initializes a new instance of the <see cref="MessagingBuilder"/> class with the specified service collection.
 /// </remarks>
 /// <param name="services">The <see cref="IServiceCollection"/> where messaging services are being configured.</param>
-public sealed class MessagingBuilder(IServiceCollection services)
+public sealed class MessagingBuilder(IServiceCollection services, MessagingOptions? options = null)
 {
     /// <summary>
     /// Gets the <see cref="IServiceCollection"/> where messaging services are registered and configured.
@@ -101,6 +101,8 @@ public sealed class MessagingBuilder(IServiceCollection services)
     /// in the application's dependency injection container.
     /// </remarks>
     public IServiceCollection Services { get; } = services;
+
+    private readonly MessagingOptions? _options = options;
 
     /// <summary>Registers object-typed publish middleware that runs around every publish operation.</summary>
     public MiddlewareRegistration AddBusPublishMiddleware<T>()
@@ -162,6 +164,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
 
         var contextType = typeof(ConsumeContext<TMessage>);
         var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+        var resolvedGroupName = _options?.ApplyGroupNamePrefix(groupName) ?? groupName;
 
         return _AddMiddleware<TMiddleware>(
             MiddlewareDirection.Consume,
@@ -169,7 +172,7 @@ public sealed class MessagingBuilder(IServiceCollection services)
             serviceType,
             contextType,
             typeof(TMessage),
-            groupName
+            resolvedGroupName
         );
     }
 
@@ -203,18 +206,32 @@ public sealed class MessagingBuilder(IServiceCollection services)
 
     private IMiddlewareDescriptorRegistry _GetOrAddRegistry()
     {
-        var descriptor = Services.FirstOrDefault(static descriptor =>
-            descriptor.ServiceType == typeof(IMiddlewareDescriptorRegistry)
-        );
+        return GetOrAddMiddlewareDescriptorRegistry(Services);
+    }
 
-        if (descriptor?.ImplementationInstance is IMiddlewareDescriptorRegistry registry)
+    internal static IMiddlewareDescriptorRegistry GetOrAddMiddlewareDescriptorRegistry(IServiceCollection services)
+    {
+        Argument.IsNotNull(services);
+
+        var registry = services
+            .Where(static descriptor =>
+                descriptor.ServiceType == typeof(IMiddlewareDescriptorRegistry)
+                || descriptor.ServiceType == typeof(MiddlewareDescriptorRegistry)
+            )
+            .Select(static descriptor => descriptor.ImplementationInstance)
+            .OfType<IMiddlewareDescriptorRegistry>()
+            .FirstOrDefault();
+
+        if (registry is not null)
         {
             return registry;
         }
 
         registry = new MiddlewareDescriptorRegistry();
-        Services.TryAddSingleton(registry);
-        Services.TryAddSingleton<IMiddlewareDescriptorRegistry>(registry);
+        services.RemoveAll<MiddlewareDescriptorRegistry>();
+        services.RemoveAll<IMiddlewareDescriptorRegistry>();
+        services.AddSingleton((MiddlewareDescriptorRegistry)registry);
+        services.AddSingleton(registry);
 
         return registry;
     }

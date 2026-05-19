@@ -42,7 +42,6 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Remove="Internal\LegacyAttributes.cs" />
-    <Compile Remove="Internal\IConsumeFilter.cs" />
     <Compile Remove="Internal\ConsumerContext.cs" />
   </ItemGroup>
 </Project>

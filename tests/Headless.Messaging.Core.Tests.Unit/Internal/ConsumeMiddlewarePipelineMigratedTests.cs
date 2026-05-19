@@ -120,6 +120,56 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
+    public async Task should_dispatch_bus_consume_middleware_by_priority_then_registration_order()
+    {
+        // given
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        var builder = new MessagingBuilder(services);
+        builder.AddBusConsumeMiddleware<PriorityZeroConsumeMiddlewareA>();
+        builder.AddBusConsumeMiddleware<PriorityMinusConsumeMiddleware>().WithPriority(-100);
+        builder.AddBusConsumeMiddleware<PriorityZeroConsumeMiddlewareB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(groupName: "checkout"),
+            new MigratedConsumeMessage("order-1"),
+            typeof(MigratedConsumeMessage),
+            AbortToken
+        );
+
+        // then
+        recorder
+            .Calls.Should()
+            .Equal("minus.before", "A.before", "B.before", "dispatcher", "B.after", "A.after", "minus.after");
+    }
+
+    [Fact]
+    public async Task should_keep_direct_bus_consume_middleware_when_typed_descriptor_group_does_not_match()
+    {
+        // given
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingBusConsumeMiddleware>();
+        new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
+            "checkout"
+        );
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(groupName: "reporting"),
+            new MigratedConsumeMessage("order-1"),
+            typeof(MigratedConsumeMessage),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("bus.before", "dispatcher", "bus.after");
+    }
+
+    [Fact]
     public async Task should_skip_typed_consume_middleware_for_other_group()
     {
         // given
@@ -304,6 +354,39 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
             recorder.Record("bus.before");
             await next().ConfigureAwait(false);
             recorder.Record("bus.after");
+        }
+    }
+
+    private sealed class PriorityZeroConsumeMiddlewareA(MigratedConsumeRecorder recorder)
+        : IConsumeMiddleware<ConsumeContext>
+    {
+        public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            recorder.Record("A.before");
+            await next().ConfigureAwait(false);
+            recorder.Record("A.after");
+        }
+    }
+
+    private sealed class PriorityZeroConsumeMiddlewareB(MigratedConsumeRecorder recorder)
+        : IConsumeMiddleware<ConsumeContext>
+    {
+        public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            recorder.Record("B.before");
+            await next().ConfigureAwait(false);
+            recorder.Record("B.after");
+        }
+    }
+
+    private sealed class PriorityMinusConsumeMiddleware(MigratedConsumeRecorder recorder)
+        : IConsumeMiddleware<ConsumeContext>
+    {
+        public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            recorder.Record("minus.before");
+            await next().ConfigureAwait(false);
+            recorder.Record("minus.after");
         }
     }
 

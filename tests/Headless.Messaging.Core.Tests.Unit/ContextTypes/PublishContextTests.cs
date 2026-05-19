@@ -53,7 +53,7 @@ public sealed class PublishContextTests : TestBase
     }
 
     [Fact]
-    public void should_update_cancellation_token_for_subsequent_reads_before_and_after_completion()
+    public void should_update_cancellation_token_for_subsequent_reads_before_completion()
     {
         // given
         using var first = new CancellationTokenSource();
@@ -69,11 +69,12 @@ public sealed class PublishContextTests : TestBase
         context.WithCancellationToken(second.Token);
         var observedBeforeCompletion = context.CancellationToken;
         context.MarkCompleted();
-        context.WithCancellationToken(first.Token);
+        var act = () => context.WithCancellationToken(first.Token);
 
         // then
         observedBeforeCompletion.Should().Be(second.Token);
-        context.CancellationToken.Should().Be(first.Token);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*read-only after next()*");
+        context.CancellationToken.Should().Be(second.Token);
     }
 
     [Fact]

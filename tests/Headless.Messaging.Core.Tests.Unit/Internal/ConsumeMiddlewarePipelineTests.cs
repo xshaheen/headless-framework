@@ -74,6 +74,29 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
             );
 
         // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_convert_pre_success_aggregate_with_matching_oce_to_oce()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var services = _CreateServices(new MiddlewareCallRecorder());
+        services.AddSingleton(cts);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, AggregateBeforeNextConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MiddlewarePayload("hi"),
+                typeof(MiddlewarePayload),
+                cts.Token
+            );
+
+        // then
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -192,6 +215,19 @@ internal sealed class MatchingOceAfterNextConsumeMiddleware(CancellationTokenSou
         await next();
         await source.CancelAsync();
         throw new OperationCanceledException(source.Token);
+    }
+}
+
+internal sealed class AggregateBeforeNextConsumeMiddleware(CancellationTokenSource source)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        await source.CancelAsync();
+        throw new AggregateException(
+            new InvalidOperationException("diagnostic sibling"),
+            new OperationCanceledException(source.Token)
+        );
     }
 }
 
