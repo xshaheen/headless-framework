@@ -167,25 +167,46 @@ public sealed class RedisDistributedLockStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
-        long totalCount = 0;
+        var endpoints = multiplexer.GetEndPoints();
+        var tasks = new List<Task<long>>(endpoints.Length);
 
-        foreach (var endpoint in multiplexer.GetEndPoints())
+        foreach (var endpoint in endpoints)
         {
             var server = multiplexer.GetServer(endpoint);
+
             if (server.IsReplica || !server.IsConnected)
             {
                 continue;
             }
 
-            await foreach (
-                var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
-            )
-            {
-                totalCount++;
-            }
+            tasks.Add(_CountKeysByPatternAsync(server, pattern, cancellationToken));
         }
 
-        return totalCount;
+        if (tasks.Count is 0)
+        {
+            return 0;
+        }
+
+        var counts = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return counts.Sum();
+    }
+
+    private static async Task<long> _CountKeysByPatternAsync(
+        IServer server,
+        string pattern,
+        CancellationToken cancellationToken
+    )
+    {
+        long count = 0;
+
+        await foreach (
+            var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
+        )
+        {
+            count++;
+        }
+
+        return count;
     }
 
     private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, Dictionary<string, string> result)
