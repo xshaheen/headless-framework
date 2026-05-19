@@ -10,28 +10,6 @@ namespace Headless.Api;
 [PublicAPI]
 public static class SetupMiddlewares
 {
-    /// <summary>Adds the idempotency middleware.</summary>
-    public static IServiceCollection AddIdempotencyMiddleware(
-        this IServiceCollection services,
-        Action<IdempotencyMiddlewareOptions>? setupAction
-    )
-    {
-        services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
-        services.TryAddSingleton<IdempotencyMiddleware>();
-        return services;
-    }
-
-    /// <summary>Adds the idempotency middleware.</summary>
-    public static IServiceCollection AddIdempotencyMiddleware(
-        this IServiceCollection services,
-        Action<IdempotencyMiddlewareOptions, IServiceProvider>? setupAction
-    )
-    {
-        services.Configure<IdempotencyMiddlewareOptions, IdempotencyMiddlewareOptionsValidator>(setupAction);
-        services.TryAddSingleton<IdempotencyMiddleware>();
-        return services;
-    }
-
     /// <summary>Adds the server timing middleware.</summary>
     public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
     {

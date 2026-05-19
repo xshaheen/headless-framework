@@ -25,7 +25,6 @@ dotnet add package Headless.Api.Core
 - HSTS security configuration
 - API versioning integration
 - Device detection (`IWebClientInfoProvider`)
-- Idempotency middleware (`AddIdempotencyMiddleware()`)
 - Server timing middleware
 - Request cancellation handling
 - Diagnostic listeners for debugging (`AddHeadlessApiDiagnosticListeners`)
@@ -41,7 +40,6 @@ services.AddHeadlessApiResponseCompression();
 services.AddHeadlessAntiforgery();
 services.AddStatusCodesRewriterMiddleware();
 services.ConfigureHeadlessDefaultApi();   // Kestrel limits, lowercase URLs, HSTS, default 'self' health check
-services.AddIdempotencyMiddleware(...);
 services.AddServerTimingMiddleware();
 ```
 
