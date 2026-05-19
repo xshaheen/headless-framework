@@ -21,6 +21,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// Provides extension methods for registering and configuring messaging services
 /// in a <see cref="IServiceCollection"/> dependency injection container.
 /// </summary>
+[PublicAPI]
 public static class SetupMessaging
 {
     /// <summary>

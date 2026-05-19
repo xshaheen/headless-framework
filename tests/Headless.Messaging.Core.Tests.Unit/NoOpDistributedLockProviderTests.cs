@@ -10,7 +10,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_return_non_null_handle_when_TryAcquireAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider();
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
 
         // when
         var handle = await sut.TryAcquireAsync("test.resource");
@@ -25,7 +25,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_succeed_when_RenewAsync_called_on_handle()
     {
         // given
-        var sut = new NoOpDistributedLockProvider();
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -40,7 +40,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_be_safe_to_DisposeAsync_multiple_times()
     {
         // given
-        var sut = new NoOpDistributedLockProvider();
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -59,7 +59,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_return_empty_list_when_ListActiveLocksAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider();
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when
@@ -74,7 +74,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_return_zero_when_GetActiveLocksCountAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider();
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when

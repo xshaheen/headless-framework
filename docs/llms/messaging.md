@@ -268,7 +268,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
-- **To enable distributed retry locking, call `UseDistributedLock(provider)` on the `MessagingBuilder`** (e.g. `Headless.DistributedLocks.Core` + a cache or database backend). Calling this overload implicitly sets `UseStorageLock = true`. Messaging registers its lock provider under an internal keyed-DI key so it never conflicts with an app-level `IDistributedLockProvider`. Without a real provider, only `NoOpDistributedLockProvider` is active and the bootstrapper logs EventId 77 Warning on startup. `UseStorageLock` defaults to `false`; skip it when running a single replica or when the storage provider natively prevents duplicate retry pickup.
+- **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 
 ---
 
@@ -755,7 +755,7 @@ var info = new FailedInfo
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, preventing duplicate work across replicas.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
 
@@ -772,15 +772,33 @@ builder.Services.AddHeadlessMessaging(setup => { ... })
 
 Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
 
-**Requirements:**
+### What this is and isn't (correctness vs coordination)
+
+- Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
+- The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
+- Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If renewal of an in-flight lock fails (EventId 79), the handle is cleared but the consume task keeps running — the per-row `LockedUntil` lease takes over as the correctness boundary.
+
+### When to enable
+
+- Multi-replica deployment where many retry pickups would otherwise contend. Each tick on each replica scans the same backlog table; the distributed lock makes only one replica do the scan per tick.
+- Pickup queries that are expensive (large backlog, complex filter, secondary indexes scanned). Even at two replicas, halving the pickup load is observable.
+- Operationally noisy retries without it: lots of "0 messages picked up" log lines from sibling replicas competing for the same backlog.
+
+### When to skip
+
+- Single replica. No contention exists; the lock provider is overhead.
+- Storage provider that natively prevents duplicate pickup (e.g., row-level locking under a `SELECT ... FOR UPDATE` pattern). Per-row `LockedUntil` already covers correctness; the distributed lock would only deduplicate the SELECT itself.
+- Tolerable duplicate pickup churn. Duplicate *pickup* attempts are not duplicate *delivery*; the per-row `LockedUntil` lease still prevents double-dispatch.
+
+### Requirements
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77** at `Warning` level when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real `IDistributedLockProvider` is registered un-keyed at the application level (e.g. via `Headless.DistributedLocks.Redis`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper emits **EventId 78** (`UseStorageLockWithNoOpProviderButRealUnkeyed`) instead so the misconfiguration is obvious.
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
 - `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
 
 **NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
 
-**Lock names:**
+### Lock names
 
 - `messaging.publish-retry-{version}` — held while processing published-message retries.
 - `messaging.receive-retry-{version}` — held while processing received-message retries.
@@ -790,6 +808,24 @@ Both names are built via `Headless.Messaging.Internal.MessagingKeys.PublishRetry
 `{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
 **When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
+
+### EventIds
+
+| EventId | Name | Severity | Trigger | Remediation |
+| --- | --- | --- | --- | --- |
+| 77 | `UseStorageLockWithNoOpProvider` | Warning | `UseStorageLock = true` but no real provider is registered under any key. | Wire a real provider via `MessagingBuilder.UseDistributedLock(...)`, or set `UseStorageLock = false`. |
+| 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | `UseStorageLock = true`, real provider registered un-keyed, but not flowed through `MessagingBuilder.UseDistributedLock(...)`. | Re-register the provider via `MessagingBuilder.UseDistributedLock(...)` so it lands under messaging's keyed slot. |
+| 79 | `ReceivedRetryLockOwnershipLost` | Warning | `RenewAsync` returned `false`; the coarse lock was lost. Per-row `LockedUntil` takes over for the in-flight consume task. | Investigate lock-store TTLs and clock skew if frequent; not a correctness issue. |
+| 80 | `ReceivedRetryLockRenewalFailed` | Warning | `RenewAsync` threw a non-cancellation exception. | Investigate lock-store health if frequent; the in-flight task continues. |
+| 81 | `PublishedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the published-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. |
+| 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. |
+
+### Pros and cons
+
+- **Pros:** less wasted pickup work, cleaner logs at scale, halves backlog scan load per added replica.
+- **Cons:** extra lock-store round trip per tick, extra dependency, more EventIds to monitor (79/80 for renewal, 81-84 for acquire failures).
 
 ---
 

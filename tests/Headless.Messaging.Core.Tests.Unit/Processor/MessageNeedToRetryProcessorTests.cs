@@ -618,7 +618,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
-        var captured = new List<(LogLevel Level, string Name)>();
+        var captured = new List<(LogLevel Level, int Id)>();
         logger
             .When(l =>
                 l.Log(
@@ -629,7 +629,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                     Arg.Any<Func<object, Exception?, string>>()
                 )
             )
-            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Name ?? string.Empty)));
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
         var lockProvider = Substitute.For<IDistributedLockProvider>();
 
@@ -665,29 +665,174 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var afterThree = captured.ToList();
         await sut.ProcessAsync(context);
 
-        // Assert
-        afterTwo
-            .Count(e => string.Equals(e.Name, "GetMessagesFromStorageFailed", StringComparison.Ordinal))
-            .Should()
-            .Be(2);
-        afterTwo.Should().OnlyContain(e => e.Level != LogLevel.Error || e.Name != "RetryStoragePickupFailureEscalated");
+        // Assert — EventId 3110 = GetMessagesFromStorageFailed (warning), 74 = RetryStoragePickupFailureEscalated (error)
+        afterTwo.Count(e => e.Id == 3110).Should().Be(2);
+        afterTwo.Should().OnlyContain(e => e.Level != LogLevel.Error || e.Id != 74);
 
-        afterThree
-            .Count(e =>
-                string.Equals(e.Name, "RetryStoragePickupFailureEscalated", StringComparison.Ordinal)
-                && e.Level == LogLevel.Error
-            )
-            .Should()
-            .Be(1);
+        afterThree.Count(e => e.Id == 74 && e.Level == LogLevel.Error).Should().Be(1);
 
         // Cycle 4 succeeded → no extra escalation/failure events were emitted after the third call.
-        captured
-            .Count(e =>
-                string.Equals(e.Name, "RetryStoragePickupFailureEscalated", StringComparison.Ordinal)
-                || string.Equals(e.Name, "GetMessagesFromStorageFailed", StringComparison.Ordinal)
+        captured.Count(e => e.Id is 74 or 3110).Should().Be(3);
+    }
+
+    // -------------------------------------------------------------------------
+    // #3 — Lock-acquire exception escalation (EventIds 81 / 82)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task should_log_warning_eventid_81_when_published_retry_lock_acquire_throws()
+    {
+        // Arrange — capture EventId.Id from ILogger.Log invocations.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
             )
-            .Should()
-            .Be(3);
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        // Published-path acquire throws once; received-path returns null (no contention).
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLock?>>(_ => throw new InvalidOperationException("lock store down"));
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLock?>(null));
+
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — drive a single cycle; published-path acquire throws.
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Assert — EventId 81 (PublishedRetryLockAcquireFailed) fired at Warning.
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 81);
+        // And the Error escalation EventId 82 did NOT fire (only one failure so far).
+        captured.Should().NotContain(e => e.Id == 82);
+    }
+
+    [Fact]
+    public async Task should_escalate_to_error_eventid_82_after_three_consecutive_published_retry_lock_acquire_throws()
+    {
+        // Arrange — capture EventId.Id from ILogger.Log invocations.
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var publishCallCount = 0;
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLock?>>(_ =>
+            {
+                var n = Interlocked.Increment(ref publishCallCount);
+                // First three throw → escalate to Error on the third. Fourth returns null (success path
+                // means no contention; counter resets via _RecordLockAcquireFailure NOT being called).
+                // To simulate a real "success" that resets the counter we'd need to return a handle;
+                // null is treated as "contested" (no exception path), so the counter does NOT reset.
+                // For this test we want to verify counter reset, so the fourth call returns a handle.
+                if (n <= 3)
+                {
+                    throw new InvalidOperationException("lock store down");
+                }
+                return Task.FromResult<IDistributedLock?>(Substitute.For<IDistributedLock>());
+            });
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLock?>(null));
+
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider);
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Act — drive three cycles; the third must emit EventId 82.
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        var beforeThird = captured.ToList();
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Assert — first two cycles: only EventId 81 (Warning); no EventId 82 (Error) yet.
+        beforeThird.Count(e => e.Id == 81 && e.Level == LogLevel.Warning).Should().Be(2);
+        beforeThird.Should().NotContain(e => e.Id == 82);
+
+        // Third cycle: EventId 82 (Error) fires exactly once.
+        captured.Count(e => e.Id == 82 && e.Level == LogLevel.Error).Should().Be(1);
+
+        // Fourth cycle: lock acquire succeeds → counter resets via the unified counter (storage-pickup
+        // / lock-acquire share _CounterRef). Drive one more cycle to verify no further escalation.
+        captured.Clear();
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        captured.Should().NotContain(e => e.Id == 82, "successful acquire (returning a handle) does not emit further escalation");
     }
 
     // -------------------------------------------------------------------------
@@ -839,6 +984,18 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Assert — no renewal because the prior consume task completed before this tick.
         // (Cycle 2 acquires its own lock and finishes; no renewal between ticks.)
         await renewableLock.DidNotReceive().RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // Also assert: the processor always passes acquireTimeout: TimeSpan.Zero (non-blocking try-once).
+        // A future refactor that wires a non-zero timeout would silently change semantics; this lock-in
+        // guarantees the regression surfaces.
+        await lockProvider
+            .Received()
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                acquireTimeout: TimeSpan.Zero,
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

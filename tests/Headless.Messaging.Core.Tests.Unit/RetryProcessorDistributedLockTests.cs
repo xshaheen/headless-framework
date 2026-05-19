@@ -97,6 +97,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
+    [Trait(
+        "ScenarioNote",
+        "uses TrackingLockProvider that grants immediately and ignores acquireTimeout: TimeSpan.Zero;"
+            + " real-provider behavior with Zero timeout is asserted separately by"
+            + " DistributedLockProviderTests.should_acquire_lock_when_resource_is_free_and_acquireTimeout_is_zero"
+    )]
     public async Task should_renew_received_retry_lock_when_consume_task_spans_polling_ticks()
     {
         // Arrange — use a always-granting provider so we can inspect RenewalCount on the returned handle.

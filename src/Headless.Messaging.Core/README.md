@@ -501,3 +501,20 @@ When `UseStorageLock = false` (default), `IDistributedLockProvider` is never cal
 - Starts background hosted service for message processing
 - Creates database tables for outbox storage (via storage provider)
 - Establishes transport connections (via transport provider)
+
+## Distributed Lock EventIds
+
+Retry-processor EventIds emitted when `UseStorageLock = true`:
+
+| EventId | Name | Severity | Trigger | Remediation |
+| --- | --- | --- | --- | --- |
+| 77 | `UseStorageLockWithNoOpProvider` | Warning | No real provider registered under any key. | Wire `MessagingBuilder.UseDistributedLock(...)` or set `UseStorageLock = false`. |
+| 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | Real provider registered un-keyed but not flowed through `UseDistributedLock(...)`. | Re-register via `MessagingBuilder.UseDistributedLock(...)`. |
+| 79 | `ReceivedRetryLockOwnershipLost` | Warning | Renewal returned `false`; coarse lock lost. Per-row `LockedUntil` takes over. | Investigate lock-store TTLs / clock skew if frequent. |
+| 80 | `ReceivedRetryLockRenewalFailed` | Warning | Renewal threw a non-cancellation exception. | Investigate lock-store health if frequent. |
+| 81 | `PublishedRetryLockAcquireFailed` | Warning | Acquire threw on the published-retry path. | Investigate lock-store health if persistent. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. |
+| 83 | `ReceivedRetryLockAcquireFailed` | Warning | Acquire threw on the received-retry path. | Investigate lock-store health if persistent. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. |
+
+See [Distributed Lock Integration](../../docs/llms/messaging.md#distributed-lock-integration) for the two-layer correctness model and when to enable / skip.

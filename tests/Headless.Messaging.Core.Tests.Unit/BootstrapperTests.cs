@@ -136,6 +136,35 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_warn_with_eventid_78_when_unkeyed_real_provider_exists_but_use_distributed_lock_not_called()
+    {
+        // Misconfiguration repro: user wired up a real IDistributedLockProvider (e.g. via
+        // Headless.DistributedLocks.Redis) but forgot to call MessagingBuilder.UseDistributedLock(...).
+        // The bootstrapper must emit EventId 78 (UseStorageLockWithNoOpProviderButRealUnkeyed) so the
+        // operator can distinguish this case from EventId 77 (no provider at all).
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var unkeyedRealProvider = Substitute.For<IDistributedLockProvider>();
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = true,
+            extraSetup: services => services.AddSingleton(unkeyedRealProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 78,
+            "EventId 78 must fire when a real un-keyed IDistributedLockProvider exists but UseDistributedLock(...) was not called"
+        );
+        captured.Should().NotContain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+            "EventId 77 (the no-provider-at-all case) must NOT fire when an un-keyed real provider exists"
+        );
+    }
+
+    [Fact]
     public async Task should_not_log_warning_when_real_lock_provider_is_registered()
     {
         var captured = new List<(LogLevel Level, EventId EventId)>();
@@ -185,13 +214,9 @@ public sealed class BootstrapperTests : TestBase
             .BeSameAs(messagingProvider);
 
         // The processor type itself is what we care about — it must hold the messaging-keyed one.
-        // Use reflection to verify the field since it's private; cheaper than rewiring DI.
-        var lockProviderField = typeof(MessageNeedToRetryProcessor).GetField(
-            "_lockProvider",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
-        );
-        lockProviderField.Should().NotBeNull("MessageNeedToRetryProcessor must carry a _lockProvider field");
-        var injected = lockProviderField!.GetValue(processor);
+        // Exposed via internal helper (InternalsVisibleTo) instead of reflection so the test stays
+        // resilient to private-field renames.
+        var injected = processor.LockProvider;
         injected.Should().BeSameAs(messagingProvider, "the processor must receive the messaging-keyed provider, not the un-keyed app-level one");
         injected.Should().NotBeSameAs(appLevelProvider);
     }

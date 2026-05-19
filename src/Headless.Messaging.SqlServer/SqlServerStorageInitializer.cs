@@ -10,7 +10,7 @@ namespace Headless.Messaging.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of <see cref="IStorageInitializer"/> for database schema setup.
-/// Creates required tables (published, received, lock) and indexes on first run.
+/// Creates required tables (published, received) and indexes on first run.
 /// </summary>
 public sealed class SqlServerStorageInitializer(
     ILogger<SqlServerStorageInitializer> logger,

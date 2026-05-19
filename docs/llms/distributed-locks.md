@@ -369,3 +369,11 @@ No additional configuration beyond Redis connection.
 
 - Registers `IDistributedLockStorage` as singleton
 - Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+
+---
+
+# Messaging Integration
+
+`Headless.Messaging.Core` isolates its `IDistributedLockProvider` under the **keyed-DI key `"headless.messaging"`** — a plain un-keyed `IDistributedLockProvider` registration is NOT picked up by the retry processor. Wire the provider through `MessagingBuilder.UseDistributedLock(provider)` or the factory overload `UseDistributedLock(sp => ...)`. The bootstrapper logs Warning EventId 77 when `UseStorageLock = true` but only `NoOpDistributedLockProvider` is found under the messaging key, and Warning EventId 78 when a real provider is registered un-keyed but never flowed through `UseDistributedLock(...)`.
+
+For when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock), see [Distributed Lock Integration in messaging.md](messaging.md#distributed-lock-integration).

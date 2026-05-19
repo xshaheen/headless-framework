@@ -10,7 +10,7 @@ namespace Headless.Messaging.Internal;
 /// Single-replica deployments (no contention) work correctly; multi-replica deployments
 /// with <c>UseStorageLock=true</c> will log a startup warning via the bootstrapper.
 /// </summary>
-internal sealed class NoOpDistributedLockProvider : IDistributedLockProvider
+internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : IDistributedLockProvider
 {
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
@@ -23,7 +23,9 @@ internal sealed class NoOpDistributedLockProvider : IDistributedLockProvider
         CancellationToken cancellationToken = default
     )
     {
-        return Task.FromResult<IDistributedLock?>(new NoOpDistributedLock(resource));
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult<IDistributedLock?>(new NoOpDistributedLock(resource, timeProvider));
     }
 
     public Task<bool> RenewAsync(
@@ -66,15 +68,15 @@ internal sealed class NoOpDistributedLockProvider : IDistributedLockProvider
         return Task.FromResult(0L);
     }
 
-    private sealed class NoOpDistributedLock(string resource) : IDistributedLock
+    private sealed class NoOpDistributedLock(string resource, TimeProvider timeProvider) : IDistributedLock
     {
         public string LockId { get; } = Guid.NewGuid().ToString("N");
 
         public string Resource { get; } = resource;
 
-        public int RenewalCount { get; private set; }
+        public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
@@ -85,7 +87,7 @@ internal sealed class NoOpDistributedLockProvider : IDistributedLockProvider
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
         {
-            RenewalCount++;
+            cancellationToken.ThrowIfCancellationRequested();
 
             return Task.FromResult(true);
         }

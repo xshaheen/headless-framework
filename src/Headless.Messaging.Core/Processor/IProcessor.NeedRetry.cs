@@ -30,10 +30,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly TimeSpan _baseInterval;
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
-    private readonly IDistributedLockProvider _lockProvider;
+    internal IDistributedLockProvider LockProvider { get; }
     private readonly ICircuitBreakerMonitor? _circuitBreakerMonitor;
     private readonly bool _adaptivePolling;
     private readonly double _circuitOpenRateThreshold;
+    private readonly string _publishRetryResource;
+    private readonly string _receiveRetryResource;
     private Task? _receivedRetryConsumeTask;
     private Task? _publishedRetryConsumeTask;
     private volatile IDistributedLock? _receivedRetryHandle;
@@ -48,11 +50,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     //   (sequential) and ResetBackpressureAsync (callable from any thread). All increments use
     //   Interlocked.Increment and all resets use Interlocked.Exchange to avoid non-atomic
     //   read-modify-write races. Direct reads (comparisons) are safe for aligned int fields.
-    // - _receivedRetryHandle is declared volatile: single-writer (_ProcessReceivedAsync, which
-    //   runs as a background Task) and single-reader (the renewal branch in ProcessAsync, which
-    //   runs on the poll-tick thread). Volatile guarantees the reader observes the latest
-    //   assignment without needing a full Interlocked operation. The finally-clear in
-    //   _ProcessReceivedAsync is also visible promptly to the renewal reader.
+    // - _receivedRetryHandle is declared volatile and has two writers:
+    //     (a) _ProcessReceivedAsync (background Task) — assigns the handle after acquire and clears it
+    //         in the finally block when the work body completes.
+    //     (b) ProcessAsync (poll-tick thread) — clears the handle when RenewAsync returns false.
+    //   Volatile is sufficient because neither writer performs a compound read-modify-write on the
+    //   field; both perform unconditional reference assignments (which are atomic on .NET). The
+    //   reader (the renewal branch in ProcessAsync) observes the latest assignment without needing
+    //   a full Interlocked operation.
     private long _currentIntervalTicks;
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
@@ -91,12 +96,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _dispatcher = dispatcher;
         _baseInterval = retryOptions.Value.BaseInterval;
         _currentIntervalTicks = _baseInterval.Ticks;
-        _lockProvider = lockProvider;
+        LockProvider = lockProvider;
         _circuitBreakerMonitor = circuitBreakerMonitor;
 
         _adaptivePolling = retryOptions.Value.AdaptivePolling;
         _maxInterval = retryOptions.Value.MaxPollingInterval;
         _circuitOpenRateThreshold = retryOptions.Value.CircuitOpenRateThreshold;
+
+        // Cache the resource names once; MessagingOptions.Version is effectively immutable after
+        // bootstrap so per-tick string interpolation is wasted work.
+        _publishRetryResource = MessagingKeys.PublishRetryResource(options.Value.Version);
+        _receiveRetryResource = MessagingKeys.ReceiveRetryResource(options.Value.Version);
     }
 
     /// <inheritdoc />
@@ -165,12 +175,18 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 TaskScheduler.Default
             );
 
+            // VSTHRD003 false positive: we're not awaiting `t` here — Interlocked.CompareExchange
+            // performs an atomic reference comparison + swap. The lambda parameter happens to be
+            // a Task, but the call is a pure scalar CAS on the reference slot. Pattern matches the
+            // CAS loops at lines 553/576 that use the same primitive on int fields.
+#pragma warning disable VSTHRD003
             _ = _publishedRetryConsumeTask.ContinueWith(
-                _ => _publishedRetryConsumeTask = null,
+                t => Interlocked.CompareExchange(ref _publishedRetryConsumeTask, null, t),
                 CancellationToken.None,
                 TaskContinuationOptions.ExecuteSynchronously,
                 TaskScheduler.Default
             );
+#pragma warning restore VSTHRD003
         }
 
         if (_options.Value.UseStorageLock && _receivedRetryConsumeTask is { IsCompleted: false })
@@ -185,6 +201,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                         .ConfigureAwait(false);
                     if (!renewed)
                     {
+                        // Best-effort coarse coordination: clear the handle so the next tick re-acquires
+                        // from scratch. The in-flight dispatch task keeps running under per-row LockedUntil,
+                        // which is the actual correctness primitive against double-dispatch (see the
+                        // "Distributed Lock Integration" section in docs/llms/messaging.md). The full
+                        // lock-loss signaling story — LeaseMonitor + IDistributedLock.HandleLostToken —
+                        // is tracked in #296 (depends on #289 Phase 2 shipping the abstraction).
                         _logger.ReceivedRetryLockOwnershipLost();
                         _receivedRetryHandle = null;
                     }
@@ -196,6 +218,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 catch (Exception ex)
                 {
                     _logger.ReceivedRetryLockRenewalFailed(ex);
+                    // Mirror the !renewed branch above: null the handle on exception so the next tick
+                    // re-acquires fresh instead of retrying the same possibly-dead handle on every
+                    // subsequent poll. The whole manual-renewal loop is replaced by LeaseMonitor in #296.
+                    _receivedRetryHandle = null;
                 }
             }
 
@@ -222,12 +248,16 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             TaskScheduler.Default
         );
 
+        // VSTHRD003 false positive: same scalar-CAS pattern as the published-path continuation above.
+        // Interlocked.CompareExchange atomically nulls the field only if it still points at `t`.
+#pragma warning disable VSTHRD003
         _ = _receivedRetryConsumeTask.ContinueWith(
-            _ => _receivedRetryConsumeTask = null,
+            t => Interlocked.CompareExchange(ref _receivedRetryConsumeTask, null, t),
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default
         );
+#pragma warning restore VSTHRD003
 
         await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
     }
@@ -242,7 +272,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        await using var acquiredHandle = await _TryAcquirePublishedLockAsync(context).ConfigureAwait(false);
+        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Published, context).ConfigureAwait(false);
         if (acquiredHandle is null)
         {
             return;
@@ -261,7 +291,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        await using var acquiredHandle = await _TryAcquireReceivedLockAsync(context).ConfigureAwait(false);
+        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Received, context).ConfigureAwait(false);
         if (acquiredHandle is null)
         {
             return;
@@ -279,46 +309,24 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     }
 
     /// <summary>
-    /// Attempts to acquire the published-retry distributed lock, wrapping <see cref="IDistributedLockProvider.TryAcquireAsync"/>
-    /// in the per-kind escalation-counter pattern shared with storage-pickup failures so adaptive polling backs off
-    /// on lock-store outages rather than tight-looping.
+    /// Attempts to acquire the published-retry or received-retry distributed lock, wrapping
+    /// <see cref="IDistributedLockProvider.TryAcquireAsync"/> in the per-kind escalation-counter pattern shared with
+    /// storage-pickup failures so adaptive polling backs off on lock-store outages rather than tight-looping.
     /// </summary>
-    private async Task<IDistributedLock?> _TryAcquirePublishedLockAsync(ProcessingContext context)
+    private async Task<IDistributedLock?> _TryAcquireLockAsync(StoragePickupKind kind, ProcessingContext context)
     {
-        try
+        var resource = kind switch
         {
-            return await _lockProvider
-                .TryAcquireAsync(
-                    MessagingKeys.PublishRetryResource(_options.Value.Version),
-                    timeUntilExpires: _GetLockTtl(),
-                    acquireTimeout: TimeSpan.Zero,
-                    cancellationToken: context.CancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _RecordLockAcquireFailure(StoragePickupKind.Published, ex);
-            return null;
-        }
-    }
+            StoragePickupKind.Published => _publishRetryResource,
+            StoragePickupKind.Received => _receiveRetryResource,
+            _ => throw new InvalidOperationException($"Unknown storage pickup kind: {kind}"),
+        };
 
-    /// <summary>
-    /// Attempts to acquire the received-retry distributed lock, wrapping <see cref="IDistributedLockProvider.TryAcquireAsync"/>
-    /// in the per-kind escalation-counter pattern shared with storage-pickup failures so adaptive polling backs off
-    /// on lock-store outages rather than tight-looping.
-    /// </summary>
-    private async Task<IDistributedLock?> _TryAcquireReceivedLockAsync(ProcessingContext context)
-    {
         try
         {
-            return await _lockProvider
+            return await LockProvider
                 .TryAcquireAsync(
-                    MessagingKeys.ReceiveRetryResource(_options.Value.Version),
+                    resource,
                     timeUntilExpires: _GetLockTtl(),
                     acquireTimeout: TimeSpan.Zero,
                     cancellationToken: context.CancellationToken
@@ -331,7 +339,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         catch (Exception ex)
         {
-            _RecordLockAcquireFailure(StoragePickupKind.Received, ex);
+            _RecordLockAcquireFailure(kind, ex);
             return null;
         }
     }
@@ -435,7 +443,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             case StoragePickupKind.Received:
                 return ref _consecutiveReceivedPickupFailures;
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
+                throw new InvalidOperationException($"Unknown storage pickup kind: {kind}");
         }
     }
 
@@ -448,6 +456,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     /// </summary>
     private void _RecordLockAcquireFailure(StoragePickupKind kind, Exception ex)
     {
+        // The failure counter here is shared with storage-pickup failures: _GetSafelyAsync
+        // (above) resets the same counter to 0 on a healthy storage call, which means a
+        // persistent lock-store outage is masked whenever the database itself is fine. The
+        // counter conflation is documented as intentional pending #296 (split lock vs storage
+        // counters once #289 surfaces IDistributedLock.HandleLostToken as the canonical
+        // lock-loss signal — at that point the lock-side gets its own escalation EventId).
         var failureCount = Interlocked.Increment(ref _CounterRef(kind));
         _CompareExchangeDouble();
 
@@ -474,7 +488,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 }
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(kind), kind, @"Unknown storage pickup kind.");
+                throw new InvalidOperationException($"Unknown storage pickup kind: {kind}");
         }
     }
 

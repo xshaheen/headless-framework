@@ -92,6 +92,7 @@ public class MessageQueueMarkerService(string name)
 /// Initializes a new instance of the <see cref="MessagingBuilder"/> class with the specified service collection.
 /// </remarks>
 /// <param name="services">The <see cref="IServiceCollection"/> where messaging services are being configured.</param>
+[PublicAPI]
 public sealed class MessagingBuilder(IServiceCollection services, MessagingOptions? options = null)
 {
     /// <summary>
