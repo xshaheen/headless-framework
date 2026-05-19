@@ -14,14 +14,14 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.Internal;
 
 /// <summary>
 /// Tests for F9 — <see cref="PublishingContext{TMessage}.IsTransactional"/>: surfaces the transactional
 /// boundary as a typed contract so post-success middleware can detect when a publish is enrolled
 /// in an ambient outbox transaction whose commit is the caller's responsibility.
 /// </summary>
-public sealed class PublishedContextIsTransactionalTests : TestBase
+public sealed class IsTransactionalPropagationTests : TestBase
 {
     private sealed record TestMessage(string Value);
 
