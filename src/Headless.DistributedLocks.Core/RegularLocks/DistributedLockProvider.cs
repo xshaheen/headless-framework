@@ -81,12 +81,13 @@ public sealed class DistributedLockProvider(
         {
             do
             {
-                // First attempt uses the caller's token only. Otherwise `acquireTimeout: TimeSpan.Zero`
-                // (and other small values) can preempt the storage call before it completes — the
-                // linked `cts.Token` is already cancelled by the time the await runs. Subsequent
-                // retries use the linked token so the user's overall acquire-timeout budget governs
-                // the wait loop. Issue #282.
-                var attemptToken = isFirstAttempt ? cancellationToken : cts.Token;
+                // First attempt with `acquireTimeout: TimeSpan.Zero` uses the caller's token only.
+                // Otherwise the linked `cts.Token` is already cancelled by the time the await
+                // runs (the `timeoutCts` fires immediately for Zero), preempting the storage
+                // call before it can complete. For non-zero `acquireTimeout` values we want the
+                // user's budget to bound even the first attempt — otherwise the budget silently
+                // fails to cover the most expensive operation. Issue #282; tightened by review of #284.
+                var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
                 isFirstAttempt = false;
 
                 // Try to acquire the lock
