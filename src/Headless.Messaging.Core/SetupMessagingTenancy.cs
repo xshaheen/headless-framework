@@ -78,7 +78,7 @@ public sealed class HeadlessMessagingTenancyBuilder
         _builder = Argument.IsNotNull(builder);
     }
 
-    /// <summary>Registers publish and consume filters that propagate tenant context through messages.</summary>
+    /// <summary>Registers publish and consume middleware that propagates tenant context through messages.</summary>
     /// <returns>The same messaging tenancy builder.</returns>
     public HeadlessMessagingTenancyBuilder PropagateTenant()
     {

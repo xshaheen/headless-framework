@@ -158,7 +158,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
 
 /// <summary>
 /// Attaches and detaches ephemeral runtime message handlers.
-/// Runtime delegates share scoped DI, filters, diagnostics, correlation, and failure semantics with class-based <see cref="IConsume{TMessage}" /> handlers.
+/// Runtime delegates share scoped DI, middleware, diagnostics, correlation, and failure semantics with class-based <see cref="IConsume{TMessage}" /> handlers.
 /// </summary>
 public interface IRuntimeSubscriber
 {

@@ -81,7 +81,7 @@ public class MessageQueueMarkerService(string name)
 
 /// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.
-/// This builder allows registration of subscriber filters, custom subscriber assembly scanning, and other messaging extensions.
+/// This builder allows registration of middleware, custom subscriber assembly scanning, and other messaging extensions.
 /// </summary>
 /// <remarks>
 /// The <see cref="MessagingBuilder"/> is typically obtained through the <c>AddHeadlessMessaging()</c> extension method on <see cref="IServiceCollection"/>,
@@ -97,83 +97,10 @@ public sealed class MessagingBuilder(IServiceCollection services)
     /// Gets the <see cref="IServiceCollection"/> where messaging services are registered and configured.
     /// </summary>
     /// <remarks>
-    /// This collection is used by all builder methods to register necessary services, filters, and extensions
+    /// This collection is used by all builder methods to register necessary services, middleware, and extensions
     /// in the application's dependency injection container.
     /// </remarks>
     public IServiceCollection Services { get; } = services;
-
-    /// <summary>
-    /// Registers a subscriber filter that will be applied to all subscriber method executions.
-    /// Filters can be used for cross-cutting concerns such as logging, error handling, and transaction management.
-    /// </summary>
-    /// <typeparam name="T">
-    /// The type of the filter to register. Must implement <see cref="IConsumeFilter"/> and be instantiable.
-    /// The filter is registered with a scoped lifetime; a new instance is created per consumed message.
-    /// </typeparam>
-    /// <returns>The current <see cref="MessagingBuilder"/> instance to support fluent method chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Multiple filter types can be registered by calling this method with different type arguments. The
-    /// executing phase runs in registration order, and the executed and exception phases run in reverse,
-    /// matching ASP.NET Core MVC filter pipeline semantics. Registering multiple filters of the same
-    /// interface stacks them — they do not override one another.
-    /// </para>
-    /// <para>
-    /// Filters execute in registration order during the executing phase, and in reverse registration
-    /// order during the executed and exception phases. Registering multiple filters of the same
-    /// interface stacks them — they compose into a chain rather than replacing one another. Backed
-    /// by <c>TryAddEnumerable</c>, so calls with the same <typeparamref name="T"/> are idempotent
-    /// (no double-registration), while calls with different type arguments register additional filters.
-    /// </para>
-    /// </remarks>
-    /// <example>
-    /// <code>
-    /// services.AddHeadlessMessaging(options =>
-    /// {
-    ///     options.UseRabbitMq(r => r.HostName = "localhost");
-    ///     options.UseSqlServer("connection_string");
-    /// })
-    /// .AddSubscribeFilter&lt;LoggingFilter&gt;()
-    /// .AddSubscribeFilter&lt;ExceptionHandlingFilter&gt;();
-    /// </code>
-    /// </example>
-    public MessagingBuilder AddSubscribeFilter<T>()
-        where T : class, IConsumeFilter
-    {
-        Services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, T>());
-        return this;
-    }
-
-    /// <summary>
-    /// Registers a publishing filter applied to every <see cref="IMessagePublisher.PublishAsync"/> and
-    /// <see cref="IScheduledPublisher.PublishDelayAsync"/> call.
-    /// </summary>
-    /// <typeparam name="T">
-    /// The filter type. Must implement <see cref="IPublishFilter"/>. Registered with scoped lifetime;
-    /// a new instance is created per publish operation by the pipeline's per-call DI scope.
-    /// </typeparam>
-    /// <returns>The current <see cref="MessagingBuilder"/> instance to support fluent method chaining.</returns>
-    /// <remarks>
-    /// <para>
-    /// Filters execute in registration order during the executing phase, and in reverse registration
-    /// order during the executed and exception phases — mirroring <see cref="AddSubscribeFilter{T}"/>
-    /// and ASP.NET Core MVC filter pipeline semantics. Registering multiple filters of the same
-    /// interface stacks them — they compose into a chain rather than replacing one another.
-    /// </para>
-    /// <para>
-    /// Backed by <c>TryAddEnumerable</c>, so calls with the same <typeparamref name="T"/> are
-    /// idempotent (no double-registration), while calls with different type arguments register
-    /// additional filters. Filters can mutate <see cref="PublishingContext.Options"/> via the
-    /// <c>with</c> expression; the mutated value is passed to
-    /// <see cref="MessagePublishRequestFactory"/> and inherits the existing 4-case integrity policy.
-    /// </para>
-    /// </remarks>
-    public MessagingBuilder AddPublishFilter<T>()
-        where T : class, IPublishFilter
-    {
-        Services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, T>());
-        return this;
-    }
 
     /// <summary>Registers object-typed publish middleware that runs around every publish operation.</summary>
     public MiddlewareRegistration AddBusPublishMiddleware<T>()
