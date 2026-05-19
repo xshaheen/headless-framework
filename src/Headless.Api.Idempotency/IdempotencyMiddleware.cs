@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Buffers;
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
@@ -34,13 +33,6 @@ internal sealed partial class IdempotencyMiddleware(
     private readonly IProblemDetailsCreator _problemDetailsCreator = problemDetailsCreator;
     private readonly IServiceProvider _serviceProvider = serviceProvider;
     private readonly ILogger<IdempotencyMiddleware> _logger = logger;
-
-    /// <summary>
-    /// Per-endpoint-metadata cache of merged options. Metadata is endpoint-scoped and
-    /// effectively immutable after route registration, so we can clone+merge once and reuse
-    /// the result for every request that lands on the same endpoint.
-    /// </summary>
-    private static readonly ConcurrentDictionary<IdempotencyMetadata, IdempotencyOptions> _MergedOptionsCache = new();
 
     public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
@@ -612,16 +604,15 @@ internal sealed partial class IdempotencyMiddleware(
             return appOptions;
         }
 
-        // Cache the merged options per metadata instance (metadata is endpoint-scoped and
-        // effectively immutable after route registration). The delegate may inspect state that
-        // changes per request only via ShouldApply/KeyDeriver/RequestFingerprint, all of which
-        // are invoked per request at call sites — never at clone time.
-        return _MergedOptionsCache.GetOrAdd(metadata, m =>
-        {
-            var cloned = appOptions.Clone();
-            m.Configure(cloned);
-            return cloned;
-        });
+        // Clone + merge per request. A static cache keyed by metadata captured `appOptions` from
+        // the first observation, which silently ignored subsequent IOptionsSnapshot reloads for
+        // endpoints with WithIdempotency(...) while plain endpoints honored reloads — an
+        // asymmetric drift that was very hard to debug. Cloning per request costs a struct copy
+        // plus two HashSet allocations (Methods, ReplayHeaderAllowlist), well below request-flow
+        // noise.
+        var cloned = appOptions.Clone();
+        metadata.Configure(cloned);
+        return cloned;
     }
 
     private string _BuildCacheKey(HttpContext context, IdempotencyOptions options, string keyHeader)
