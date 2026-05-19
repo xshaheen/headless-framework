@@ -661,9 +661,13 @@ public sealed class RedisCache(
             return 0;
         }
 
-        if (string.IsNullOrEmpty(prefix) && string.IsNullOrEmpty(_keyPrefix))
+        var usePrefix = !string.IsNullOrEmpty(prefix) || !string.IsNullOrEmpty(_keyPrefix);
+        var tasks = new List<Task<long>>(endpoints.Length);
+
+        if (usePrefix)
         {
-            long total = 0;
+            const int chunkSize = 2500;
+            var pattern = $"{_GetKey(prefix)}*";
 
             foreach (var endpoint in endpoints)
             {
@@ -674,41 +678,31 @@ public sealed class RedisCache(
                     continue;
                 }
 
-                try
-                {
-                    total += await server.DatabaseSizeAsync().ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    _logger.LogUnableToReadDatabaseSize(e, server.EndPoint);
-                }
+                tasks.Add(_CountKeysByPatternAsync(server, pattern, chunkSize, cancellationToken));
             }
-
-            return total;
         }
-
-        const int chunkSize = 2500;
-        var pattern = $"{_GetKey(prefix)}*";
-        long count = 0;
-
-        foreach (var endpoint in endpoints)
+        else
         {
-            var server = options.ConnectionMultiplexer.GetServer(endpoint);
-
-            if (server.IsReplica)
+            foreach (var endpoint in endpoints)
             {
-                continue;
-            }
+                var server = options.ConnectionMultiplexer.GetServer(endpoint);
 
-            await foreach (
-                var _ in server.KeysAsync(pattern: pattern, pageSize: chunkSize).WithCancellation(cancellationToken)
-            )
-            {
-                count++;
+                if (server.IsReplica)
+                {
+                    continue;
+                }
+
+                tasks.Add(_SafeDatabaseSizeAsync(server));
             }
         }
 
-        return count;
+        if (tasks.Count is 0)
+        {
+            return 0;
+        }
+
+        var counts = await Task.WhenAll(tasks).ConfigureAwait(false);
+        return counts.Sum();
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
@@ -1235,6 +1229,38 @@ public sealed class RedisCache(
         }
 
         return deleted;
+    }
+
+    private async Task<long> _SafeDatabaseSizeAsync(IServer server)
+    {
+        try
+        {
+            return await server.DatabaseSizeAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.LogUnableToReadDatabaseSize(e, server.EndPoint);
+            return 0;
+        }
+    }
+
+    private static async Task<long> _CountKeysByPatternAsync(
+        IServer server,
+        string pattern,
+        int pageSize,
+        CancellationToken cancellationToken
+    )
+    {
+        long count = 0;
+
+        await foreach (
+            var _ in server.KeysAsync(pattern: pattern, pageSize: pageSize).WithCancellation(cancellationToken)
+        )
+        {
+            count++;
+        }
+
+        return count;
     }
 
     #endregion
