@@ -191,7 +191,11 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
         RuleFor(x => x.OnCacheError).IsInEnum();
         When(x => x.InFlightStrategy == InFlightStrategy.WaitAndReplay, () =>
         {
-            RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(5));
+            // Cap at 1 minute: each loser holds an ASP.NET worker thread for up to this duration.
+            // High retry concurrency × long timeout → thread-pool exhaustion. Operators with
+            // legitimate long-handler workloads should prefer Reject + client-side backoff
+            // (the pattern used by Stripe, AWS, Square, PayPal).
+            RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(1));
             RuleFor(x => x.WinnerLockLease)
                 .GreaterThan(TimeSpan.Zero)
                 .LessThanOrEqualTo(TimeSpan.FromHours(1))

@@ -134,6 +134,17 @@ Mitigations are the operator's responsibility:
 3. **Tighten `IdempotencyKeyExpiration`** if your workload doesn't need 24-hour replay windows. Stripe defaults to 24 hours; many internal services are fine with 1–4 hours.
 4. **Tighten `MaxBodySizeForHashing`** so each cached record is smaller. The default 1 MiB is generous; pick a value matched to the actual p99 of your mutation payloads.
 
+## Choosing an `InFlightStrategy`
+
+`Reject` (default) is the production-proven pattern used by Stripe, AWS, Square, PayPal: concurrent same-key requests get an immediate 409 `g:idempotency_in_flight`; the client backs off and retries. The server never blocks a worker thread on a lock.
+
+`WaitAndReplay` is an advanced opt-in. Each loser blocks an ASP.NET worker thread for up to `InFlightLockTimeout` waiting on the winner's distributed lock. The trade-off:
+
+- **Pro:** Single-flight semantics invisible to the client — losers replay the winner's response transparently.
+- **Con:** `N` concurrent losers × up to `InFlightLockTimeout` of worker-thread occupancy. Under a retry storm against a slow handler, Kestrel's worker pool can be exhausted, blocking unrelated traffic.
+
+`InFlightLockTimeout` is validator-capped at 1 minute (down from a prior 5 minutes) to bound this blast radius. Pair `WaitAndReplay` with a rate limiter (see Security & Quotas) and keep the timeout short enough that worst-case worker occupancy stays well below your thread-pool budget. If you find yourself reaching for higher values, prefer `Reject` plus client-side backoff/jitter — that's what every major payment processor ships.
+
 ## Boundary Doctrine
 
 This is HTTP middleware, not a Mediator pipeline behavior. For the four structural reasons an `IdempotencyBehavior<,>` is rejected, see [`docs/llms/mediator.md`](../../docs/llms/mediator.md).
