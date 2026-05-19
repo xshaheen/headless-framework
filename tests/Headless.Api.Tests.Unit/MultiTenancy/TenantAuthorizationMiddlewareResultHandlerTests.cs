@@ -205,7 +205,10 @@ public sealed class TenantAuthorizationMiddlewareResultHandlerTests
     {
         problemDetailsCreator ??= Substitute.For<IProblemDetailsCreator>();
 
-        return new TenantAuthorizationMiddlewareResultHandler(problemDetailsCreator);
+        return new TenantAuthorizationMiddlewareResultHandler(
+            new AuthorizationMiddlewareResultHandler(),
+            problemDetailsCreator
+        );
     }
 
     private static AuthorizationPolicy _CreatePolicy()

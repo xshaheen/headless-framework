@@ -9,23 +9,18 @@ using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.MultiTenancy;
 
-[PublicAPI]
-public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCreator problemDetailsCreator)
-    : IAuthorizationMiddlewareResultHandler
+internal sealed class TenantAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
 {
-    private readonly IProblemDetailsCreator _problemDetailsCreator = Argument.IsNotNull(problemDetailsCreator);
+    private readonly IAuthorizationMiddlewareResultHandler _inner;
+    private readonly IProblemDetailsCreator _problemDetailsCreator;
 
-    private readonly HeadlessAuthorizationMiddlewareResultHandlerFallback _fallback = new(
-        new AuthorizationMiddlewareResultHandler()
-    );
-
-    internal TenantAuthorizationMiddlewareResultHandler(
-        IProblemDetailsCreator problemDetailsCreator,
-        HeadlessAuthorizationMiddlewareResultHandlerFallback fallback
+    public TenantAuthorizationMiddlewareResultHandler(
+        IAuthorizationMiddlewareResultHandler inner,
+        IProblemDetailsCreator problemDetailsCreator
     )
-        : this(problemDetailsCreator)
     {
-        _fallback = Argument.IsNotNull(fallback);
+        _inner = Argument.IsNotNull(inner);
+        _problemDetailsCreator = Argument.IsNotNull(problemDetailsCreator);
     }
 
     public async Task HandleAsync(
@@ -42,7 +37,7 @@ public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCr
 
         if (!_IsTenantRequirementFailure(authorizeResult))
         {
-            await _fallback.Inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
+            await _inner.HandleAsync(next, context, policy, authorizeResult).ConfigureAwait(false);
 
             return;
         }
@@ -51,7 +46,6 @@ public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCr
             detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
             error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
         );
-        context.Response.StatusCode = StatusCodes.Status403Forbidden;
         await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
 
@@ -69,9 +63,4 @@ public sealed class TenantAuthorizationMiddlewareResultHandler(IProblemDetailsCr
                 string.Equals(reason.Message, TenantRequirement.FailureReason, StringComparison.Ordinal)
             );
     }
-}
-
-internal sealed class HeadlessAuthorizationMiddlewareResultHandlerFallback(IAuthorizationMiddlewareResultHandler inner)
-{
-    public IAuthorizationMiddlewareResultHandler Inner { get; } = Argument.IsNotNull(inner);
 }

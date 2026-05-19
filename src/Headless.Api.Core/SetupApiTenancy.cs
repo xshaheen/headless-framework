@@ -217,77 +217,20 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     {
         if (
             services.Any(descriptor =>
-                descriptor.ServiceType == typeof(HeadlessAuthorizationMiddlewareResultHandlerFallback)
+                descriptor.ServiceType == typeof(TenantAuthorizationMiddlewareResultHandlerRegistration)
             )
         )
         {
             return;
         }
 
-        var previousHandler = services.LastOrDefault(descriptor =>
-            descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler) && !descriptor.IsKeyedService
-        );
-
-        if (previousHandler is not null)
-        {
-            services.Remove(previousHandler);
-        }
-
-        services.Add(_CreateFallbackDescriptor(previousHandler));
-        services.Add(
-            ServiceDescriptor.Transient<IAuthorizationMiddlewareResultHandler>(
-                serviceProvider => new TenantAuthorizationMiddlewareResultHandler(
-                    serviceProvider.GetRequiredService<IProblemDetailsCreator>(),
-                    serviceProvider.GetRequiredService<HeadlessAuthorizationMiddlewareResultHandlerFallback>()
-                )
-            )
-        );
-    }
-
-    private static ServiceDescriptor _CreateFallbackDescriptor(ServiceDescriptor? descriptor)
-    {
-        if (descriptor is null)
-        {
-            return ServiceDescriptor.Transient<HeadlessAuthorizationMiddlewareResultHandlerFallback>(
-                _ => new HeadlessAuthorizationMiddlewareResultHandlerFallback(
-                    new AuthorizationMiddlewareResultHandler()
-                )
-            );
-        }
-
-        return ServiceDescriptor.Describe(
-            typeof(HeadlessAuthorizationMiddlewareResultHandlerFallback),
-            serviceProvider => new HeadlessAuthorizationMiddlewareResultHandlerFallback(
-                _CreateAuthorizationMiddlewareResultHandler(serviceProvider, descriptor)
-            ),
-            descriptor.Lifetime
-        );
-    }
-
-    private static IAuthorizationMiddlewareResultHandler _CreateAuthorizationMiddlewareResultHandler(
-        IServiceProvider serviceProvider,
-        ServiceDescriptor descriptor
-    )
-    {
-        if (descriptor.ImplementationInstance is IAuthorizationMiddlewareResultHandler instance)
-        {
-            return instance;
-        }
-
-        if (descriptor.ImplementationFactory is not null)
-        {
-            return (IAuthorizationMiddlewareResultHandler)descriptor.ImplementationFactory(serviceProvider);
-        }
-
-        if (descriptor.ImplementationType is not null)
-        {
-            return (IAuthorizationMiddlewareResultHandler)
-                ActivatorUtilities.CreateInstance(serviceProvider, descriptor.ImplementationType);
-        }
-
-        throw new InvalidOperationException("Unsupported authorization middleware result handler descriptor.");
+        services.TryAddTransient<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
+        services.Decorate<IAuthorizationMiddlewareResultHandler, TenantAuthorizationMiddlewareResultHandler>();
+        services.AddSingleton<TenantAuthorizationMiddlewareResultHandlerRegistration>();
     }
 }
+
+internal sealed class TenantAuthorizationMiddlewareResultHandlerRegistration;
 
 internal sealed class HeadlessAuthorizationTenancyValidator : IHeadlessTenancyValidator
 {
