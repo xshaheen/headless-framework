@@ -20,7 +20,7 @@ namespace Tests.MultiTenancy;
 public sealed class SetupMessagingTenancyTests : TestBase
 {
     [Fact]
-    public void should_register_tenant_propagation_filters_from_headless_tenancy_root()
+    public void should_register_tenant_propagation_middleware_from_headless_tenancy_root()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -31,8 +31,8 @@ public sealed class SetupMessagingTenancyTests : TestBase
         // then
         builder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IConsumeFilter)
-                && descriptor.ImplementationType == typeof(TenantPropagationConsumeFilter)
+                descriptor.ServiceType == typeof(IConsumeMiddleware<ConsumeContext>)
+                && descriptor.ImplementationType == typeof(TenantPropagationConsumeMiddleware)
             )
             .Should()
             .ContainSingle()
@@ -40,8 +40,8 @@ public sealed class SetupMessagingTenancyTests : TestBase
             .Be(ServiceLifetime.Scoped);
         builder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IPublishFilter)
-                && descriptor.ImplementationType == typeof(TenantPropagationPublishFilter)
+                descriptor.ServiceType == typeof(IPublishMiddleware<PublishContext>)
+                && descriptor.ImplementationType == typeof(TenantPropagationPublishMiddleware)
             )
             .Should()
             .ContainSingle()
@@ -97,27 +97,27 @@ public sealed class SetupMessagingTenancyTests : TestBase
     }
 
     [Fact]
-    public void should_not_duplicate_tenant_propagation_filters_when_root_called_twice()
+    public void should_not_duplicate_tenant_propagation_middleware_when_root_called_twice()
     {
         // given
         var rootBuilder = Host.CreateApplicationBuilder();
 
-        // when — repeated root configuration must not double-register either filter type.
+        // when — repeated root configuration must not double-register either middleware type.
         rootBuilder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
         rootBuilder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
 
         // then
         rootBuilder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IConsumeFilter)
-                && descriptor.ImplementationType == typeof(TenantPropagationConsumeFilter)
+                descriptor.ServiceType == typeof(IConsumeMiddleware<ConsumeContext>)
+                && descriptor.ImplementationType == typeof(TenantPropagationConsumeMiddleware)
             )
             .Should()
             .ContainSingle();
         rootBuilder
             .Services.Where(descriptor =>
-                descriptor.ServiceType == typeof(IPublishFilter)
-                && descriptor.ImplementationType == typeof(TenantPropagationPublishFilter)
+                descriptor.ServiceType == typeof(IPublishMiddleware<PublishContext>)
+                && descriptor.ImplementationType == typeof(TenantPropagationPublishMiddleware)
             )
             .Should()
             .ContainSingle();

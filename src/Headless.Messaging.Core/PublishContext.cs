@@ -65,6 +65,21 @@ public abstract class PublishContext
         CancellationToken = cancellationToken;
     }
 
+    /// <summary>Replaces the active publish options before the inner publisher runs.</summary>
+    public void WithOptions(PublishOptions? options)
+    {
+        _ThrowIfCompleted();
+        OptionsCore = options;
+        RefreshOptionSnapshot(options);
+    }
+
+    /// <summary>Replaces the active scheduled delay before the inner publisher runs.</summary>
+    public void WithDelayTime(TimeSpan? delayTime)
+    {
+        _ThrowIfCompleted();
+        DelayTimeCore = delayTime;
+    }
+
     private protected void RefreshOptionSnapshot(PublishOptions? options)
     {
         Headers = new MessageHeader(
@@ -74,6 +89,21 @@ public abstract class PublishContext
         );
         Topic = options?.Topic;
     }
+
+    private protected bool IsCompleted { get; private set; }
+
+    private protected void Complete()
+    {
+        IsCompleted = true;
+    }
+
+    private protected void _ThrowIfCompleted()
+    {
+        if (IsCompleted)
+        {
+            throw new InvalidOperationException("PublishingContext is read-only after next() returned (R10).");
+        }
+    }
 }
 
 /// <summary>Strongly-typed publish context for middleware registered against a specific message type.</summary>
@@ -81,8 +111,6 @@ public abstract class PublishContext
 [PublicAPI]
 public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePublishContext
 {
-    private bool _isCompleted;
-
     /// <summary>Initializes a new instance of the <see cref="PublishingContext{TMessage}"/> class.</summary>
     public PublishingContext(
         TMessage? content,
@@ -105,23 +133,14 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     public new PublishOptions? Options
     {
         get => OptionsCore;
-        set
-        {
-            _ThrowIfCompleted();
-            OptionsCore = value;
-            RefreshOptionSnapshot(value);
-        }
+        set { WithOptions(value); }
     }
 
     /// <summary>Gets or sets the scheduled delay before the inner publisher runs.</summary>
     public new TimeSpan? DelayTime
     {
         get => DelayTimeCore;
-        set
-        {
-            _ThrowIfCompleted();
-            DelayTimeCore = value;
-        }
+        set { WithDelayTime(value); }
     }
 
     /// <summary>
@@ -131,14 +150,6 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
 
     public void MarkCompleted()
     {
-        _isCompleted = true;
-    }
-
-    private void _ThrowIfCompleted()
-    {
-        if (_isCompleted)
-        {
-            throw new InvalidOperationException("PublishingContext is read-only after next() returned (R10).");
-        }
+        Complete();
     }
 }
