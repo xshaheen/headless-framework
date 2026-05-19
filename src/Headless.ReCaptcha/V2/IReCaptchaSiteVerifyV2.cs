@@ -67,6 +67,7 @@ public sealed class ReCaptchaSiteVerifyV2(
                 var responseBody = await httpResponseMessage
                     .Content.ReadAsStringAsync(cancellationToken)
                     .ConfigureAwait(false);
+
                 logger.LogRecaptchaVerificationFailed(httpResponseMessage.StatusCode, responseBody);
             }
 
