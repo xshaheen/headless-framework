@@ -622,5 +622,48 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         problemDetails.Detail.Should().Be("custom-detail");
     }
 
+    [Fact]
+    public void should_fill_payload_too_large_title_type_and_detail_for_413_when_unset()
+    {
+        // given - bare 413 (e.g., IdempotencyMiddleware oversize-Reject path constructs
+        // ProblemDetails inline and runs it through Normalize since IProblemDetailsCreator
+        // intentionally has no PayloadTooLarge factory). ASP.NET Core's default
+        // ApiBehaviorOptions.ClientErrorMapping does not include 413, so the lookup
+        // leaves Title/Type null; the explicit case in _Normalize backfills them.
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails { Status = 413 };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.PayloadTooLarge);
+        problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.PayloadTooLarge);
+        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.PayloadTooLarge);
+    }
+
+    [Fact]
+    public void should_preserve_existing_title_type_and_detail_for_413()
+    {
+        // given - caller-built 413 already has fields set (e.g., a custom domain
+        // descriptor passed through Normalize). Normalize must not overwrite them.
+        var creator = _CreateCreator();
+        var problemDetails = new ProblemDetails
+        {
+            Status = 413,
+            Title = "custom-title",
+            Type = "custom-type",
+            Detail = "custom-detail",
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Title.Should().Be("custom-title");
+        problemDetails.Type.Should().Be("custom-type");
+        problemDetails.Detail.Should().Be("custom-detail");
+    }
+
     #endregion
 }

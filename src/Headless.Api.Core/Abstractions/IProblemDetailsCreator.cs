@@ -144,7 +144,7 @@ public interface IProblemDetailsCreator
     /// <remarks>
     /// Resolves <c>Title</c>/<c>Type</c> from <see cref="Microsoft.AspNetCore.Mvc.ApiBehaviorOptions.ClientErrorMapping"/>,
     /// then fills missing <c>Title</c>/<c>Type</c>/<c>Detail</c> for status codes the framework
-    /// cares about (404, 408, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/>.
+    /// cares about (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/>.
     /// Always stamps <c>traceId</c>, <c>buildNumber</c>, <c>commitNumber</c>, and <c>timestamp</c>
     /// extensions, plus <c>Instance</c> from the current request path. Idempotent: existing values
     /// are preserved.
@@ -348,16 +348,22 @@ public sealed class ProblemDetailsCreator(
                 );
 
                 break;
-            // 408 and 501 are not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping,
+            // 408, 413, and 501 are not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping,
             // so the lookup above leaves Title and Type null. Backfill from the framework's own
             // constants here — same path as 500/404 — so empty-body responses written by
-            // RequestTimeoutsMiddleware (408) or any middleware that just sets the status code (501)
-            // produce the same shape as the IProblemDetailsCreator.RequestTimeout()/NotImplemented()
-            // factories. Detail is also filled, which ClientErrorMapping cannot carry.
+            // RequestTimeoutsMiddleware (408), IdempotencyMiddleware oversize (413), or any middleware
+            // that just sets the status code (501) produce a consistent shape. Detail is also filled,
+            // which ClientErrorMapping cannot carry.
             case 408:
                 problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.RequestTimeout;
                 problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.RequestTimeout;
                 problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.RequestTimeout;
+
+                break;
+            case 413:
+                problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.PayloadTooLarge;
+                problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.PayloadTooLarge;
+                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.PayloadTooLarge;
 
                 break;
             case 501:
