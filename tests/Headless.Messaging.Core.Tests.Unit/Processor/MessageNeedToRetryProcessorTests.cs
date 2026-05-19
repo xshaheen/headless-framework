@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests.Processor;
 
@@ -1107,5 +1108,138 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await acquiredLock.DidNotReceive().RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
         // And the handle was disposed at least once per cycle (so finally ran).
         await acquiredLock.Received().DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_log_EventId_79_when_received_retry_renewal_returns_false()
+    {
+        // Companion to should_clear_received_retry_handle_when_renewal_returns_false: that test
+        // covers the behavioural side-effect (handle cleared). This one covers the log-emission
+        // half of the contract — EventId 79 (ReceivedRetryLockOwnershipLost) must surface at
+        // Warning so operator monitoring on ownership-loss noise is observable.
+        var capturedLog = new List<(LogLevel Level, EventId EventId)>();
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            builder.AddProvider(new CapturingLoggerProvider(capturedLog)));
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        // Block the received consume task so the renewal branch fires on tick 2.
+        var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<IEnumerable<MediumMessage>>(blocker.Task));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var lostLock = Substitute.For<IDistributedLock>();
+        lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(lostLock));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            loggerFactory.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Tick 1 — acquire and block
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Tick 2 — renewal returns false, EventId 79 must fire
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Assert
+        capturedLog.Should().Contain(
+            entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 79,
+            "EventId 79 (ReceivedRetryLockOwnershipLost) must fire when the renewal returns false");
+
+        // Cleanup
+        blocker.TrySetResult([]);
+        await Task.Delay(50, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_log_EventId_80_and_clear_handle_when_received_retry_renewal_throws()
+    {
+        // EventId 80 (ReceivedRetryLockRenewalFailed) covers the infrastructure-failure path:
+        // RenewAsync throws (Redis unavailable, network partition). The processor must catch the
+        // exception, log it at Warning, clear the cached handle so the next cycle re-acquires
+        // fresh, and continue running. No prior test guards this path — yet it's the failure
+        // mode operators most need confidence in.
+        var capturedLog = new List<(LogLevel Level, EventId EventId)>();
+        using var loggerFactory = Microsoft.Extensions.Logging.LoggerFactory.Create(builder =>
+            builder.AddProvider(new CapturingLoggerProvider(capturedLog)));
+
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+
+        var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ => new ValueTask<IEnumerable<MediumMessage>>(blocker.Task));
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        // RenewAsync throws on tick 2 — simulates lock-store outage / network partition.
+        var failingLock = Substitute.For<IDistributedLock>();
+        failingLock
+            .RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns<Task<bool>>(_ => throw new InvalidOperationException("simulated lock-store outage"));
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(failingLock));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(
+            options,
+            retryOpts,
+            loggerFactory.CreateLogger<MessageNeedToRetryProcessor>(),
+            dispatcher,
+            lockProvider
+        );
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Tick 1 — acquire and block
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Tick 2 — RenewAsync throws; processor must catch, log EventId 80, clear handle, continue
+        var act = async () => await sut.ProcessAsync(context);
+        await act.Should().NotThrowAsync(
+            "renewal-throw is treated as transient; the in-flight consume task continues under per-row LockedUntil");
+        await Task.Delay(100, AbortToken);
+
+        // Tick 3 — handle should now be null; renewal must NOT fire again on the same dead handle
+        failingLock.ClearReceivedCalls();
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+
+        // Assert — EventId 80 fired once at Warning during tick 2
+        capturedLog.Should().Contain(
+            entry => entry.Level == LogLevel.Warning && entry.EventId.Id == 80,
+            "EventId 80 (ReceivedRetryLockRenewalFailed) must fire when RenewAsync throws");
+
+        // And the handle was cleared so tick 3 did not re-invoke RenewAsync on the same handle
+        await failingLock.DidNotReceive().RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+
+        // Cleanup
+        blocker.TrySetResult([]);
+        await Task.Delay(50, AbortToken);
     }
 }

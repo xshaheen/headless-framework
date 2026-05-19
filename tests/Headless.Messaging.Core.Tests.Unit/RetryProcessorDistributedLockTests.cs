@@ -213,6 +213,65 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
+    public async Task should_skip_published_pickup_when_previous_task_is_in_progress()
+    {
+        // Arrange — published path is reached (always-granted lock), but the first storage call
+        // is held open via a TaskCompletionSource so _publishedRetryConsumeTask never completes
+        // before the second tick. The in-progress guard at IProcessor.NeedRetry.cs:172 must skip
+        // spawning a new task while the previous one is still running under UseStorageLock.
+        var fakeLock = Substitute.For<IDistributedLock>();
+        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(true));
+        var alwaysGranted = Substitute.For<IDistributedLockProvider>();
+        alwaysGranted
+            .TryAcquireAsync(
+                Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
+
+        // The TCS fires from inside GetPublishedMessagesOfNeedRetryAsync so the test knows
+        // exactly when _publishedRetryConsumeTask is in the running state. The published task
+        // itself blocks until storageBlocker completes.
+        var publishedCallFired = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var storage = Substitute.For<IDataStorage>();
+        storage.GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage.GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                publishedCallFired.TrySetResult();
+                return new ValueTask<IEnumerable<MediumMessage>>(
+                    storageBlocker.Task.ContinueWith(
+                        _ => (IEnumerable<MediumMessage>)[],
+                        TaskScheduler.Default));
+            });
+
+        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: alwaysGranted);
+        using var context = _CreateContext(storage);
+
+        try
+        {
+            // Act — tick 1: spawns the published-retry task that blocks inside the storage call
+            await processor.ProcessAsync(context);
+            await publishedCallFired.Task.WaitAsync(AbortToken);
+
+            // Act — tick 2: in-progress guard must skip spawning a second published-retry task
+            await processor.ProcessAsync(context);
+            await Task.Delay(200, AbortToken);
+
+            // Assert — exactly one storage pickup despite two ProcessAsync ticks
+            await storage.Received(1).GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            // Cleanup — release the blocked task so the processor's background continuations
+            // can complete and the test framework can dispose cleanly.
+            storageBlocker.TrySetResult();
+        }
+    }
+
+    [Fact]
     public async Task should_return_null_when_TryAcquireAsync_acquireTimeout_Zero_and_lock_already_held()
     {
         // Arrange — hold the lock with the first acquire
