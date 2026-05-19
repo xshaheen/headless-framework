@@ -1,0 +1,112 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Testing.Tests;
+
+namespace Tests.ContextTypes;
+
+public sealed class PublishContextTests : TestBase
+{
+    [Fact]
+    public void should_allow_options_and_delay_mutation_before_completion()
+    {
+        // given
+        var context = new PublishingContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            new PublishOptions { CorrelationId = "corr-1" },
+            TimeSpan.FromSeconds(1)
+        );
+
+        // when
+        context.Options = context.Options! with
+        {
+            TenantId = "tenant-1",
+        };
+        context.DelayTime = TimeSpan.FromSeconds(5);
+
+        // then
+        context.Options!.TenantId.Should().Be("tenant-1");
+        context.Options.CorrelationId.Should().Be("corr-1");
+        context.DelayTime.Should().Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void should_reject_options_and_delay_mutation_after_completion()
+    {
+        // given
+        var context = new PublishingContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            new PublishOptions { TenantId = "tenant-1" },
+            TimeSpan.FromSeconds(1)
+        );
+
+        // when
+        context.MarkCompleted();
+        var optionsAct = () => context.Options = new PublishOptions { TenantId = "tenant-2" };
+        var delayAct = () => context.DelayTime = TimeSpan.FromSeconds(10);
+
+        // then
+        optionsAct.Should().Throw<InvalidOperationException>().WithMessage("*read-only after next()*");
+        delayAct.Should().Throw<InvalidOperationException>().WithMessage("*read-only after next()*");
+        context.Options!.TenantId.Should().Be("tenant-1");
+        context.DelayTime.Should().Be(TimeSpan.FromSeconds(1));
+    }
+
+    [Fact]
+    public void should_update_cancellation_token_for_subsequent_reads_before_and_after_completion()
+    {
+        // given
+        using var first = new CancellationTokenSource();
+        using var second = new CancellationTokenSource();
+        var context = new PublishingContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            options: null,
+            delayTime: null,
+            cancellationToken: first.Token
+        );
+
+        // when
+        context.WithCancellationToken(second.Token);
+        var observedBeforeCompletion = context.CancellationToken;
+        context.MarkCompleted();
+        context.WithCancellationToken(first.Token);
+
+        // then
+        observedBeforeCompletion.Should().Be(second.Token);
+        context.CancellationToken.Should().Be(first.Token);
+    }
+
+    [Fact]
+    public void should_expose_base_and_typed_publish_fields()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var options = new PublishOptions
+        {
+            Topic = "orders",
+            TenantId = "tenant-1",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-feature"] = "enabled" },
+        };
+
+        // when
+        var context = new PublishingContext<OrderPlaced>(
+            new OrderPlaced("order-1"),
+            options,
+            delayTime: null,
+            isTransactional: true,
+            cancellationToken: cts.Token
+        );
+        PublishContext baseContext = context;
+
+        // then
+        context.Content!.OrderId.Should().Be("order-1");
+        context.IsTransactional.Should().BeTrue();
+        baseContext.Content.Should().BeSameAs(context.Content);
+        baseContext.MessageType.Should().Be<OrderPlaced>();
+        baseContext.CancellationToken.Should().Be(cts.Token);
+        baseContext.Headers["x-feature"].Should().Be("enabled");
+        baseContext.Topic.Should().Be("orders");
+    }
+
+    private sealed record OrderPlaced(string OrderId);
+}
