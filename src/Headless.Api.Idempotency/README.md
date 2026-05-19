@@ -123,6 +123,17 @@ services.AddSingleton<ISerializer>(_ => new Headless.Serializer.MessagePackSeria
 
 Without the `AllowPrivate` resolver, MessagePack rejects `IdempotencyRecord` at runtime with `Building dynamic formatter only allows public type`. The MessagePack path rebuilds the `Headers` dictionary with the default ordinal-case-sensitive comparer; the middleware never does case-insensitive lookups on the record's `Headers` (only iterates it during replay), so replay correctness is preserved.
 
+## Security & Quotas
+
+This middleware enforces **response replay correctness**, not cache quota. Without an upstream rate limiter, an authenticated client can exhaust the cache backend by spraying random `Idempotency-Key` values with maximum-allowed bodies — at the default 1 MiB body cap and 24-hour TTL, a sustained burst of 100 req/s for 60 seconds allocates ~6 GiB of cache, surviving 24 hours. Legitimate records get evicted; the idempotency guarantee silently breaks for other tenants sharing the cache.
+
+Mitigations are the operator's responsibility:
+
+1. **Layer a rate limiter ahead of `UseIdempotency()`** — `Headless.RateLimiting.*` or `Microsoft.AspNetCore.RateLimiting` capped by tenant/user/IP. The rate limiter must run **before** `UseIdempotency()` so rejected requests do not allocate cache slots.
+2. **Size the cache backend with eviction.** Redis: configure `maxmemory` with `maxmemory-policy allkeys-lru` so abuse causes cold-key eviction rather than write-rejection. The idempotency `Complete` records are recoverable on eviction (replay simply re-executes the handler).
+3. **Tighten `IdempotencyKeyExpiration`** if your workload doesn't need 24-hour replay windows. Stripe defaults to 24 hours; many internal services are fine with 1–4 hours.
+4. **Tighten `MaxBodySizeForHashing`** so each cached record is smaller. The default 1 MiB is generous; pick a value matched to the actual p99 of your mutation payloads.
+
 ## Boundary Doctrine
 
 This is HTTP middleware, not a Mediator pipeline behavior. For the four structural reasons an `IdempotencyBehavior<,>` is rejected, see [`docs/llms/mediator.md`](../../docs/llms/mediator.md).
