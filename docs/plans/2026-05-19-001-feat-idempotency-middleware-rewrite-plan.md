@@ -1,6 +1,6 @@
 ---
 created: 2026-05-19
-status: active
+status: completed
 type: feat
 issue: https://github.com/xshaheen/headless-framework/issues/280
 origin: docs/brainstorms/2026-05-19-idempotency-middleware-rewrite-requirements.md

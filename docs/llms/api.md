@@ -91,6 +91,7 @@ Additional packages:
 - `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
+- `Headless.Api.Idempotency` — Stripe-style idempotency middleware: cache full HTTP responses on first execution and replay them byte-equivalent on identical retries. See [docs/llms/mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
 
 ## Agent Instructions
 
@@ -98,6 +99,7 @@ Additional packages:
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
+- For idempotent-replay middleware, register `services.AddIdempotency(o => { ... })` and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. Idempotency reads `ICurrentTenant.Id` for cache-key composition; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not allocate cache slots. `InFlightStrategy = WaitAndReplay` requires `IDistributedLockProvider`; the DI startup validator fails fast if it is missing.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()` and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false` and `options.Validation.RequireMapHeadlessEndpoints = false`.
