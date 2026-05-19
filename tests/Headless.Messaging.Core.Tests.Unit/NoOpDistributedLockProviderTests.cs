@@ -55,6 +55,26 @@ public sealed class NoOpDistributedLockProviderTests
     }
 
     [Fact]
+    public async Task should_not_increment_renewal_count_when_RenewAsync_token_is_already_cancelled()
+    {
+        // given
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var handle = await sut.TryAcquireAsync("test.resource");
+        handle.Should().NotBeNull();
+        handle!.RenewalCount.Should().Be(0);
+
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await handle.RenewAsync(TimeSpan.FromMinutes(1), cts.Token);
+
+        // then — ThrowIfCancellationRequested fires before the Interlocked.Increment
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        handle.RenewalCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_be_safe_to_DisposeAsync_multiple_times()
     {
         // given

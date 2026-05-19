@@ -61,15 +61,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
 
-    // Tracks consecutive storage-pickup failures per call site so adaptive polling backs off
-    // (rather than accelerating from artificially "clean" cycles when storage throws and returns
-    // an empty list). Escalates to Error after _StoragePickupErrorEscalationThreshold to surface
-    // ongoing outages.
+    // Tracks consecutive failures per call site so adaptive polling backs off (rather than
+    // accelerating from artificially "clean" cycles when work throws and returns an empty list).
+    // BOTH storage-pickup failures (_GetSafelyAsync) AND lock-acquire failures
+    // (_RecordLockAcquireFailure) increment the same field per kind — the conflation is
+    // intentional and documented on _RecordLockAcquireFailure, pending #296. Escalates to Error
+    // after _StoragePickupErrorEscalationThreshold to surface ongoing outages.
     //
-    // The counter is kept per pickup kind (Published / Received) because both paths call
-    // _GetSafelyAsync independently. A shared counter would let a healthy path reset the streak
-    // every cycle, masking a persistent failure on the other path — so the Error escalation log
-    // would never fire even when one side has been down for hours.
+    // The counter is kept per pickup kind (Published / Received) because both paths run
+    // independently. A shared counter would let a healthy path reset the streak every cycle,
+    // masking a persistent failure on the other path — so the Error escalation log would never
+    // fire even when one side has been down for hours.
     private int _consecutivePublishedPickupFailures;
     private int _consecutiveReceivedPickupFailures;
 
