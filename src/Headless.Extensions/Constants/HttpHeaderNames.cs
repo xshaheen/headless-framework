@@ -14,6 +14,7 @@ public static class HttpHeaderNames
     public const string XPoweredBy = "X-Powered-By";
     public const string Locale = "X-Locale";
     public const string IdempotencyKey = "X-Idempotency-Key";
+    public const string IdempotentReplayed = "Idempotent-Replayed";
     public const string ClientVersion = "X-Client-Version";
     public const string Location = "Location";
     public const string ContentDisposition = "Content-Disposition";
