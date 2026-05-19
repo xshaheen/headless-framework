@@ -107,6 +107,19 @@ app.MapPost("/webhooks", HandleWebhook)
 - On cache miss, inserts an `InFlight` marker before invoking the handler, then upserts the `Complete` record afterward. The marker uses the same TTL as `IdempotencyKeyExpiration` so a slow handler cannot lose its slot to early eviction.
 - When the response body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is **not** stored and replay does not apply to that request, regardless of `OversizeBehavior`. `OversizeBehavior` controls **request**-body handling only.
 
+## Cache Serialization
+
+`IdempotencyRecord` is `internal sealed`. The default Redis cache binding (`Headless.Caching.Redis` + `Headless.Serializer.Json`) serializes through `System.Text.Json`, and the record carries an explicit `JsonConverter` on its `Headers` property to preserve `StringComparer.OrdinalIgnoreCase` across the round-trip. No consumer configuration is required for the JSON path.
+
+When swapping the cache serializer to `Headless.Serializer.MessagePack`, configure the serializer with `ContractlessStandardResolverAllowPrivate.Instance` so MessagePack's dynamic formatter accepts internal types:
+
+```csharp
+services.AddSingleton<ISerializer>(_ => new Headless.Serializer.MessagePackSerializer(
+    MessagePackSerializerOptions.Standard.WithResolver(ContractlessStandardResolverAllowPrivate.Instance)));
+```
+
+Without the `AllowPrivate` resolver, MessagePack rejects `IdempotencyRecord` at runtime with `Building dynamic formatter only allows public type`. The MessagePack path rebuilds the `Headers` dictionary with the default ordinal-case-sensitive comparer; the middleware never does case-insensitive lookups on the record's `Headers` (only iterates it during replay), so replay correctness is preserved.
+
 ## Boundary Doctrine
 
 This is HTTP middleware, not a Mediator pipeline behavior. For the four structural reasons an `IdempotencyBehavior<,>` is rejected, see [`docs/llms/mediator.md`](../../docs/llms/mediator.md).
