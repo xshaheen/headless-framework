@@ -1,0 +1,48 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Abstractions;
+using Headless.Checks;
+using Headless.Messaging.Internal;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Messaging.MultiTenancy;
+
+/// <summary>Stamps <see cref="PublishOptions.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
+[PublicAPI]
+public sealed class TenantPropagationPublishMiddleware(
+    ICurrentTenant currentTenant,
+    ILogger<TenantPropagationPublishMiddleware>? logger = null
+) : IPublishMiddleware<PublishContext>
+{
+    /// <summary>Framework priority for tenant stamping middleware.</summary>
+    public const int Priority = -1000;
+
+    private readonly ICurrentTenant _currentTenant = Argument.IsNotNull(currentTenant);
+
+    /// <inheritdoc/>
+    public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
+    {
+        Argument.IsNotNull(context);
+        Argument.IsNotNull(next);
+
+        if (context.Options?.TenantId is null && _currentTenant.Id is { } ambientTenantId)
+        {
+            if (string.IsNullOrWhiteSpace(ambientTenantId))
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            if (ambientTenantId.Length > PublishOptions.TenantIdMaxLength)
+            {
+                logger?.AmbientTenantPropagationDropped(ambientTenantId.Length);
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            context.WithOptions((context.Options ?? new PublishOptions()) with { TenantId = ambientTenantId });
+        }
+
+        await next().ConfigureAwait(false);
+    }
+}
