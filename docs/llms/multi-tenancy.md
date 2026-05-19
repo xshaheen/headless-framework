@@ -145,7 +145,7 @@ Resulting response shape (same for both surfaces):
   "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
-    "code": "g:tenant-required",
+    "code": "g:tenant_required",
     "description": "An operation required an ambient tenant context but none was set."
   },
   "traceId": "...",
@@ -181,7 +181,7 @@ The same shape is reachable without going through the handler via `IProblemDetai
 - **Named-policy enforcement is the consumer's responsibility.** `TenantRequirement` is only validated by `HeadlessAuthorizationTenancyValidator` when it appears in `DefaultPolicy` or `FallbackPolicy`. Named policies (`options.AddPolicy("name", policy => ...)`) are NOT inspected — putting `TenantRequirement` there does NOT satisfy the framework's enforcement guarantee.
 - **Per ASP.NET Core's combinator semantics, `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` and `FallbackPolicy`.** Tenant enforcement on such endpoints requires the consumer to compose `TenantRequirement` into every named policy they apply, or to also tag the endpoints with a policy that includes it. The framework cannot validate this composition.
 - **`IAuthorizationMiddlewareResultHandler` ordering.** Register custom result handlers BEFORE `.Authorization(auth => auth.RequireTenant())`. ASP.NET Core resolves the last-registered handler; later registrations replace the framework's tenant mapper. Startup validation emits `HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED` when it detects this misordering.
-- **`[AllowAnonymous]` endpoints bypass the authorization pipeline entirely**, so `TenantRequirement` does not fire. If such a handler reads `ICurrentTenant.Id`, it triggers `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to a 403 with the same `g:tenant-required` body shape. Safer pattern: anonymous endpoints should NOT read `ICurrentTenant.Id`. Use `[AllowMissingTenant]` only when the authorization-pipeline opt-out is what you want.
+- **`[AllowAnonymous]` endpoints bypass the authorization pipeline entirely**, so `TenantRequirement` does not fire. If such a handler reads `ICurrentTenant.Id`, it triggers `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to a 403 with the same `g:tenant_required` body shape. Safer pattern: anonymous endpoints should NOT read `ICurrentTenant.Id`. Use `[AllowMissingTenant]` only when the authorization-pipeline opt-out is what you want.
 
 Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose HTTP path can legitimately run without a tenant. Typical categories:
 
@@ -189,7 +189,7 @@ Apply `[AllowMissingTenant]` or `.AllowMissingTenant()` to every endpoint whose 
 - **Admin, system, or console-bootstrap endpoints** dispatched under a host-level identity rather than a tenant-scoped one.
 - **Authenticated endpoints reachable by non-tenant-scoped principal types** (admin, partner, service-account, cross-tenant principals — any identity that does not mint the tenant claim).
 
-Forgetting the opt-out on one of these surfaces produces a 403 `g:tenant-required` for legitimate callers. Tenant-scoped endpoints that genuinely require tenant context must omit it.
+Forgetting the opt-out on one of these surfaces produces a 403 `g:tenant_required` for legitimate callers. Tenant-scoped endpoints that genuinely require tenant context must omit it.
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
@@ -287,7 +287,7 @@ When enabled, `SaveChanges()` and `SaveChangesAsync()` reject unsafe `IMultiTena
 
 Missing tenant context uses the shared `Headless.Abstractions.MissingTenantContextException`, so HTTP hosts using `UseExceptionHandler()` get the existing normalized 403 mapping. Cross-tenant mutation uses `Headless.Abstractions.CrossTenantWriteException` (located in `Headless.Core` to keep the failure shared across packages without forcing an Api → EF project reference).
 
-`HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross-tenant-write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
+`HeadlessApiExceptionHandler` (registered by `AddHeadlessProblemDetails()`) maps `CrossTenantWriteException` to HTTP 409 Conflict with the `g:cross_tenant_write` error descriptor and emits a structured warning log (event name `CrossTenantWriteException`). No exception data is leaked into the response body — only the descriptor code and title.
 
 `CrossTenantWriteException` is non-transient and must NOT be retried. Catch-all retry policies (for example `Policy.Handle<Exception>()`) should exclude it explicitly; retrying a cross-tenant write either fails identically or — if the ambient tenant context changes between attempts — persists the unsafe write.
 
@@ -414,7 +414,7 @@ SignalR hub invocations start new execution flows after the initial upgrade requ
 
 Integration tests that build the host (for example `WebApplicationFactory`) will execute the tenancy startup validator at host start. Tests that exercise HTTP tenancy must include `UseHeadlessTenancy()` in their pipeline so `HeadlessHttpTenancyValidator` sees the runtime marker — otherwise startup fails with `HEADLESS_TENANCY_HTTP_MIDDLEWARE_MISSING`. Tests that need to skip validation entirely should not call `AddHeadlessTenancy(...)` at all, or should compose only the seams they exercise. The startup validator runs as an `IHostedLifecycleService.StartingAsync` step so it executes before any other hosted service's `StartAsync`.
 
-Tests that assert the normalized 403 `g:tenant-required` ProblemDetails (or any other `HeadlessApiExceptionHandler` failure shape) must build the host with a production-style environment. The common ASP.NET pattern only calls `app.UseExceptionHandler()` outside Development, so a default-Development test client lets the exception escape as the developer error page instead of the handler's ProblemDetails response. Use a `WebApplicationFactory` variant that sets `Environment = Production` (or your repo's equivalent helper) when the assertion target is the handler's output.
+Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any other `HeadlessApiExceptionHandler` failure shape) must build the host with a production-style environment. The common ASP.NET pattern only calls `app.UseExceptionHandler()` outside Development, so a default-Development test client lets the exception escape as the developer error page instead of the handler's ProblemDetails response. Use a `WebApplicationFactory` variant that sets `Environment = Production` (or your repo's equivalent helper) when the assertion target is the handler's output.
 
 ## Failure Modes to Watch
 

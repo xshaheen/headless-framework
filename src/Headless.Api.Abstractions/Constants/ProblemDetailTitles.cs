@@ -28,14 +28,14 @@ public static class HeadlessProblemDetailsConstants
     {
         public static ErrorDescriptor TenantContextRequired { get; } =
             new(
-                code: "g:tenant-required",
+                code: "g:tenant_required",
                 description: Details.TenantContextRequired,
                 severity: ValidationSeverity.Error
             );
 
         public static ErrorDescriptor CrossTenantWrite { get; } =
             new(
-                code: "g:cross-tenant-write",
+                code: "g:cross_tenant_write",
                 description: Details.CrossTenantWrite,
                 severity: ValidationSeverity.Error
             );

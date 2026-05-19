@@ -209,8 +209,8 @@ Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register 
 
 | Exception | Response |
 |-----------|----------|
-| `Headless.Abstractions.MissingTenantContextException` | 403 (standard `forbidden` title; identified by `error.code: g:tenant-required`) |
-| `Headless.Abstractions.CrossTenantWriteException` | 409 with `errors` array containing the `g:cross-tenant-write` descriptor; non-transient, MUST NOT be retried |
+| `Headless.Abstractions.MissingTenantContextException` | 403 (standard `forbidden` title; identified by `error.code: g:tenant_required`) |
+| `Headless.Abstractions.CrossTenantWriteException` | 409 with `errors` array containing the `g:cross_tenant_write` descriptor; non-transient, MUST NOT be retried |
 | `Headless.Exceptions.ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `Headless.Exceptions.EntityNotFoundException` | 404 |
@@ -239,7 +239,7 @@ Tenancy response shape:
   "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
-    "code": "g:tenant-required",
+    "code": "g:tenant_required",
     "description": "An operation required an ambient tenant context but none was set."
   },
   "traceId": "...",

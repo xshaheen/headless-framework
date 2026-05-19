@@ -210,7 +210,7 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     /// Call <c>RequireTenant()</c> AFTER any custom <see cref="IAuthorizationMiddlewareResultHandler"/>
     /// registrations. ASP.NET Core resolves the last-registered handler at runtime; consumer
     /// registrations made after <c>RequireTenant()</c> replace the framework's tenant-mapping
-    /// handler and silently disable the structured <c>g:tenant-required</c> 403 response. The
+    /// handler and silently disable the structured <c>g:tenant_required</c> 403 response. The
     /// startup validator emits <see cref="AuthorizationResultHandlerReplacedDiagnosticCode"/> when
     /// it detects this misordering.
     ///
@@ -311,7 +311,7 @@ internal sealed class HeadlessAuthorizationTenancyValidator : IHeadlessTenancyVa
                         + $"IAuthorizationMiddlewareResultHandler is '{resolved.GetType().FullName}' — not the "
                         + "framework's TenantAuthorizationMiddlewareResultHandler. The tenant-mapping handler "
                         + "has been replaced, so tenant authorization failures will not produce the structured "
-                        + "g:tenant-required 403 response. Call .Authorization(a => a.RequireTenant()) AFTER "
+                        + "g:tenant_required 403 response. Call .Authorization(a => a.RequireTenant()) AFTER "
                         + "all custom IAuthorizationMiddlewareResultHandler registrations."
                 );
             }

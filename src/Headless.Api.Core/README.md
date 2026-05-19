@@ -70,13 +70,13 @@ publicGroup.MapGet("/status", () => Results.Ok());
 publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 ```
 
-`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant-required` ProblemDetails shape as the exception-handler fallback.
+`TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant_required` ProblemDetails shape as the exception-handler fallback.
 
 ### Limitations
 
 - **Place `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`** for framework-level enforcement. The startup validator does NOT inspect named policies (`options.AddPolicy("name", ...)`), and `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` / `FallbackPolicy` per ASP.NET Core's combinator semantics. If you use named policies, composing `TenantRequirement` into each is your responsibility.
 - **Register custom `IAuthorizationMiddlewareResultHandler` instances BEFORE `.Authorization(auth => auth.RequireTenant())`.** ASP.NET Core resolves the last-registered handler; later registrations silently replace the framework's tenant mapper. Startup validation emits `HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED` when the resolved handler is not Headless's.
-- **`[AllowAnonymous]` endpoints bypass the authorization pipeline**, so `TenantRequirement` does not fire. If the handler reads `ICurrentTenant.Id` it throws `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to the same `g:tenant-required` 403. Prefer not reading `ICurrentTenant.Id` from anonymous endpoints; use `[AllowMissingTenant]` only when you want the authorization-pipeline opt-out specifically.
+- **`[AllowAnonymous]` endpoints bypass the authorization pipeline**, so `TenantRequirement` does not fire. If the handler reads `ICurrentTenant.Id` it throws `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to the same `g:tenant_required` 403. Prefer not reading `ICurrentTenant.Id` from anonymous endpoints; use `[AllowMissingTenant]` only when you want the authorization-pipeline opt-out specifically.
 
 ## Exception Mapping
 
@@ -84,8 +84,8 @@ publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 
 | Exception | Response |
 |-----------|----------|
-| `MissingTenantContextException` | 403 (identified by `error.code: g:tenant-required`) |
-| `CrossTenantWriteException` | 409 (identified by `error.code: g:cross-tenant-write`) |
+| `MissingTenantContextException` | 403 (identified by `error.code: g:tenant_required`) |
+| `CrossTenantWriteException` | 409 (identified by `error.code: g:cross_tenant_write`) |
 | `ConflictException` | 409 with `errors` |
 | `FluentValidation.ValidationException` | 422 with field errors |
 | `EntityNotFoundException` | 404 |
@@ -107,7 +107,7 @@ Tenancy response shape (other exceptions follow the same normalization):
   "status": 403,
   "detail": "An operation required an ambient tenant context but none was set.",
   "error": {
-    "code": "g:tenant-required",
+    "code": "g:tenant_required",
     "description": "An operation required an ambient tenant context but none was set."
   },
   "traceId": "...",
