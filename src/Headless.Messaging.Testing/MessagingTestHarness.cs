@@ -434,7 +434,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     private static void _DecoratePipeline(IServiceCollection services, MessageObservationStore store)
     {
-        var original = services.FirstOrDefault(d => d.ServiceType == typeof(IConsumeExecutionPipeline));
+        var original = services.FirstOrDefault(d => d.ServiceType == typeof(IConsumeMiddlewarePipeline));
 
         if (original is null)
         {
@@ -443,10 +443,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         services.Remove(original);
 
-        services.AddSingleton<IConsumeExecutionPipeline>(sp =>
+        services.AddSingleton<IConsumeMiddlewarePipeline>(sp =>
         {
-            var inner = _ResolveFromDescriptor<IConsumeExecutionPipeline>(sp, original);
-            return new RecordingConsumeExecutionPipeline(inner, store);
+            var inner = _ResolveFromDescriptor<IConsumeMiddlewarePipeline>(sp, original);
+            return new RecordingConsumeMiddlewarePipeline(inner, store);
         });
     }
 

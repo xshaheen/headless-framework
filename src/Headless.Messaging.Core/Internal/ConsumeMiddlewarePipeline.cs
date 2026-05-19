@@ -95,6 +95,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             }
 
             innerRingCompleted = true;
+            consumeContext.MarkCompleted();
         };
 
         for (var i = middleware.Length - 1; i >= 0; i--)
@@ -123,24 +124,21 @@ internal sealed class ConsumeMiddlewarePipeline(
         try
         {
             await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
-
-            if (context.CancellationToken.IsCancellationRequested)
-            {
-                context.CancellationToken.ThrowIfCancellationRequested();
-            }
-        }
-        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
-        {
-            if (ex is AggregateException)
-            {
-                throw;
-            }
-
-            throw new OperationCanceledException(context.CancellationToken);
+            context.MarkCompleted();
         }
         catch (Exception ex) when (innerRingCompleted())
         {
             logger?.ConsumePostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
+            return;
+        }
+        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
+        {
+            throw new OperationCanceledException(context.CancellationToken);
+        }
+
+        if (context.CancellationToken.IsCancellationRequested)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
         }
     }
 
@@ -162,6 +160,8 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private object[] _ResolveMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
     {
+        var directMiddleware = _ResolveDirectMiddleware(provider, context).ToArray();
+
         if (
             descriptorRegistry is not null
             && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, groupName, out var descriptors)
@@ -171,9 +171,15 @@ internal sealed class ConsumeMiddlewarePipeline(
                 .Select(descriptor => _ResolveDescriptor(provider, descriptor))
                 .Where(static middleware => middleware is not null)
                 .Cast<object>()
+                .Concat(_GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume))
                 .ToArray();
         }
 
+        return directMiddleware;
+    }
+
+    private static object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
+    {
         var typedServiceType = typeof(IConsumeMiddleware<>).MakeGenericType(context.GetType());
         var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>();
         var typedMiddleware = provider
@@ -182,6 +188,19 @@ internal sealed class ConsumeMiddlewarePipeline(
             .Cast<object>();
 
         return busMiddleware.Concat(typedMiddleware).ToArray();
+    }
+
+    private IEnumerable<object> _GetUntrackedDirectMiddleware(
+        IEnumerable<object> middleware,
+        MiddlewareDirection direction
+    )
+    {
+        var trackedTypes = descriptorRegistry!
+            .Descriptors.Where(descriptor => descriptor.Direction == direction)
+            .Select(descriptor => descriptor.MiddlewareType)
+            .ToHashSet();
+
+        return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
     }
 
     private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)

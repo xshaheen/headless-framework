@@ -14,6 +14,7 @@ namespace Headless.Messaging;
 public record class ConsumeContext
 {
     private CancellationToken _cancellationToken;
+    private bool _isCompleted;
 
     /// <summary>
     /// Gets the deserialized message object. May be <see langword="null"/> only for invalid custom construction.
@@ -43,7 +44,17 @@ public record class ConsumeContext
     /// </summary>
     public void WithCancellationToken(CancellationToken cancellationToken)
     {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+        }
+
         _cancellationToken = cancellationToken;
+    }
+
+    internal void MarkCompleted()
+    {
+        _isCompleted = true;
     }
 
     /// <summary>

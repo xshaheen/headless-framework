@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -79,6 +80,22 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     }
 
     [Fact]
+    public void should_apply_configured_group_prefix_to_typed_consume_middleware_group()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = services.AddHeadlessMessaging(options => options.Options.GroupNamePrefix = "tenant");
+
+        // when
+        builder.AddConsumeMiddlewareFor<TypedConsumeMiddleware, OrderPlaced>("checkout");
+
+        // then
+        var descriptor = _GetRegistry(services)
+            .Descriptors.Single(x => x.MiddlewareType == typeof(TypedConsumeMiddleware));
+        descriptor.GroupName.Should().Be("tenant.checkout");
+    }
+
+    [Fact]
     public void should_record_typed_publish_middleware_message_type()
     {
         // given
@@ -150,6 +167,89 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
             .Equal("minus.before", "A.before", "B.before", "inner", "B.after", "A.after", "minus.after");
     }
 
+    [Fact]
+    public async Task should_use_same_registry_for_middleware_chained_after_AddHeadlessMessaging()
+    {
+        // given
+        var recorder = new MiddlewareOrderRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services
+            .AddHeadlessMessaging(_ => { })
+            .AddBusPublishMiddleware<PriorityZeroPublishMiddlewareA>()
+            .WithPriority(100)
+            .AddBusPublishMiddleware<PriorityMinusPublishMiddleware>()
+            .WithPriority(-100);
+        var provider = services.BuildServiceProvider();
+        var pipeline = provider.GetRequiredService<IPublishMiddlewarePipeline>();
+
+        // when
+        await pipeline.ExecuteAsync(
+            new OrderPlaced("order-1"),
+            options: null,
+            delayTime: null,
+            innerPublish: (_, _, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("minus.before", "A.before", "inner", "A.after", "minus.after");
+    }
+
+    [Fact]
+    public async Task should_keep_bus_middleware_when_typed_publish_descriptor_does_not_match_message()
+    {
+        // given
+        var recorder = new MiddlewareOrderRecorder();
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        var builder = new MessagingBuilder(services);
+        builder.AddBusPublishMiddleware<PriorityZeroPublishMiddlewareA>();
+        builder.AddPublishMiddlewareFor<TypedPublishMiddleware, OrderPlaced>();
+        var provider = services.BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(
+            provider,
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            new OtherOrderPlaced("order-2"),
+            options: null,
+            delayTime: null,
+            innerPublish: (_, _, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("A.before", "inner", "A.after");
+    }
+
+    [Fact]
+    public void should_not_expose_legacy_filter_surface()
+    {
+        // given
+        var assembly = typeof(IPublishMiddleware<>).Assembly;
+        var typeNames = assembly.DefinedTypes.Select(static type => type.FullName);
+        var builderMethods = typeof(MessagingBuilder)
+            .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .Select(static method => method.Name);
+
+        // then
+        typeNames.Should().NotContain("Headless.Messaging.IPublishFilter`1");
+        typeNames.Should().NotContain("Headless.Messaging.IConsumeFilter`1");
+        builderMethods.Should().NotContain("AddPublishFilter");
+        builderMethods.Should().NotContain("AddSubscribeFilter");
+    }
+
     private static IMiddlewareDescriptorRegistry _GetRegistry(IServiceCollection services)
     {
         return (IMiddlewareDescriptorRegistry)
@@ -157,6 +257,8 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     }
 
     private sealed record OrderPlaced(string OrderId);
+
+    private sealed record OtherOrderPlaced(string OrderId);
 
     private sealed class NoopBusConsumeMiddleware : IConsumeMiddleware<ConsumeContext>
     {
