@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Reflection;
+using Headless.Checks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -172,5 +173,159 @@ public sealed class MessagingBuilder(IServiceCollection services)
     {
         Services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, T>());
         return this;
+    }
+
+    /// <summary>Registers object-typed publish middleware that runs around every publish operation.</summary>
+    public MiddlewareRegistration AddBusPublishMiddleware<T>()
+        where T : class
+    {
+        var contextType = _GetMiddlewareContextType(typeof(T), typeof(IPublishMiddleware<>), typeof(PublishContext));
+        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<T>(
+            MiddlewareDirection.Publish,
+            MiddlewareScope.Bus,
+            serviceType,
+            contextType,
+            messageType: null,
+            groupName: null
+        );
+    }
+
+    /// <summary>Registers object-typed consume middleware that runs around every consume operation.</summary>
+    public MiddlewareRegistration AddBusConsumeMiddleware<T>()
+        where T : class
+    {
+        var contextType = _GetMiddlewareContextType(typeof(T), typeof(IConsumeMiddleware<>), typeof(ConsumeContext));
+        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<T>(
+            MiddlewareDirection.Consume,
+            MiddlewareScope.Bus,
+            serviceType,
+            contextType,
+            messageType: null,
+            groupName: null
+        );
+    }
+
+    /// <summary>Registers publish middleware for a specific message type.</summary>
+    public MiddlewareRegistration AddPublishMiddlewareFor<TMiddleware, TMessage>()
+        where TMiddleware : class, IPublishMiddleware<PublishingContext<TMessage>>
+    {
+        var contextType = typeof(PublishingContext<TMessage>);
+        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<TMiddleware>(
+            MiddlewareDirection.Publish,
+            MiddlewareScope.Message,
+            serviceType,
+            contextType,
+            typeof(TMessage),
+            groupName: null
+        );
+    }
+
+    /// <summary>Registers consume middleware for a specific message type and consumer group.</summary>
+    public MiddlewareRegistration AddConsumeMiddlewareFor<TMiddleware, TMessage>(string groupName)
+        where TMiddleware : class, IConsumeMiddleware<ConsumeContext<TMessage>>
+        where TMessage : class
+    {
+        Argument.IsNotNullOrWhiteSpace(groupName);
+
+        var contextType = typeof(ConsumeContext<TMessage>);
+        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<TMiddleware>(
+            MiddlewareDirection.Consume,
+            MiddlewareScope.Message,
+            serviceType,
+            contextType,
+            typeof(TMessage),
+            groupName
+        );
+    }
+
+    private MiddlewareRegistration _AddMiddleware<TMiddleware>(
+        MiddlewareDirection direction,
+        MiddlewareScope scope,
+        Type serviceType,
+        Type contextType,
+        Type? messageType,
+        string? groupName
+    )
+        where TMiddleware : class
+    {
+        Services.TryAddEnumerable(ServiceDescriptor.Scoped(serviceType, typeof(TMiddleware)));
+
+        var descriptor = _GetOrAddRegistry()
+            .AddOrGet(
+                new MiddlewareDescriptorInput(
+                    direction,
+                    scope,
+                    typeof(TMiddleware),
+                    serviceType,
+                    contextType,
+                    messageType,
+                    groupName
+                )
+            );
+
+        return new MiddlewareRegistration(this, descriptor);
+    }
+
+    private IMiddlewareDescriptorRegistry _GetOrAddRegistry()
+    {
+        var descriptor = Services.FirstOrDefault(static descriptor =>
+            descriptor.ServiceType == typeof(IMiddlewareDescriptorRegistry)
+        );
+
+        if (descriptor?.ImplementationInstance is IMiddlewareDescriptorRegistry registry)
+        {
+            return registry;
+        }
+
+        registry = new MiddlewareDescriptorRegistry();
+        Services.TryAddSingleton(registry);
+        Services.TryAddSingleton<IMiddlewareDescriptorRegistry>(registry);
+
+        return registry;
+    }
+
+    private static Type _GetMiddlewareContextType(Type middlewareType, Type openMiddlewareType, Type baseContextType)
+    {
+        var contextTypes = middlewareType
+            .GetInterfaces()
+            .Where(type => type.IsGenericType && type.GetGenericTypeDefinition() == openMiddlewareType)
+            .Select(type => type.GetGenericArguments()[0])
+            .ToArray();
+
+        if (contextTypes.Length == 0)
+        {
+            throw new ArgumentException(
+                $"Middleware `{middlewareType.FullName}` must implement `{openMiddlewareType.Name}`.",
+                nameof(middlewareType)
+            );
+        }
+
+        if (contextTypes.Length > 1)
+        {
+            throw new ArgumentException(
+                $"Middleware `{middlewareType.FullName}` must implement exactly one `{openMiddlewareType.Name}` interface.",
+                nameof(middlewareType)
+            );
+        }
+
+        var contextType = contextTypes[0];
+
+        if (!baseContextType.IsAssignableFrom(contextType))
+        {
+            throw new ArgumentException(
+                $"Middleware `{middlewareType.FullName}` context `{contextType.FullName}` must derive from `{baseContextType.FullName}`.",
+                nameof(middlewareType)
+            );
+        }
+
+        return contextType;
     }
 }

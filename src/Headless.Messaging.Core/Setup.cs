@@ -93,6 +93,10 @@ public static class SetupMessaging
         var options = setup.Options;
         services.AddSingleton(_ => services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
+        services.TryAddSingleton<MiddlewareDescriptorRegistry>();
+        services.TryAddSingleton<IMiddlewareDescriptorRegistry>(sp =>
+            sp.GetRequiredService<MiddlewareDescriptorRegistry>()
+        );
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();

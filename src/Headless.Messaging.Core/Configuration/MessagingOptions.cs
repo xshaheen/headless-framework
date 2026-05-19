@@ -411,7 +411,7 @@ public sealed class MessagingOptions
 
 internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOptions>
 {
-    public MessagingOptionsValidator()
+    public MessagingOptionsValidator(IMiddlewareDescriptorRegistry? middlewareDescriptorRegistry = null)
     {
         RuleFor(x => x.RetryPolicy)
             .NotNull()
@@ -427,5 +427,35 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .WithMessage("CommandTimeout must be greater than zero.")
             .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
             .WithMessage("CommandTimeout must not exceed 5 minutes.");
+        RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
+    }
+
+    private static void _ValidateMiddlewareDescriptors(IMiddlewareDescriptorRegistry? registry)
+    {
+        if (registry is null)
+        {
+            return;
+        }
+
+        foreach (var descriptor in registry.Descriptors)
+        {
+            if (descriptor.Scope != MiddlewareScope.Bus || !_IsTypedContext(descriptor.ContextType))
+            {
+                continue;
+            }
+
+            throw new MessagingConfigurationException(
+                $"Middleware `{descriptor.MiddlewareType.FullName}` is registered at bus scope but declares typed context `{descriptor.ContextType.FullName}`. Typed middleware must use AddConsumeMiddlewareFor<...>(group) or AddPublishMiddlewareFor<...>()."
+            );
+        }
+    }
+
+    private static bool _IsTypedContext(Type contextType)
+    {
+        return contextType.IsGenericType
+            && (
+                contextType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
+                || contextType.GetGenericTypeDefinition() == typeof(PublishingContext<>)
+            );
     }
 }

@@ -5,6 +5,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -24,6 +25,7 @@ internal interface IConsumeMiddlewarePipeline
 internal sealed class ConsumeMiddlewarePipeline(
     IServiceProvider serviceProvider,
     IRuntimeConsumerRegistry runtimeRegistry,
+    IMiddlewareDescriptorRegistry? descriptorRegistry = null,
     ILogger<ConsumeMiddlewarePipeline>? logger = null
 ) : IConsumeMiddlewarePipeline
 {
@@ -59,13 +61,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>().ToArray();
-        var typedMiddleware = provider
-            .GetServices(typeof(IConsumeMiddleware<>).MakeGenericType(consumeContext.GetType()))
-            .Where(static middleware => middleware is not null)
-            .Cast<object>()
-            .ToArray();
-        var middleware = busMiddleware.Concat(typedMiddleware).ToArray();
+        var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
         object? resultObj = null;
         var innerRingCompleted = false;
 
@@ -168,6 +164,36 @@ internal sealed class ConsumeMiddlewarePipeline(
         );
 
         return invoker(middleware, context, next);
+    }
+
+    private object[] _ResolveMiddleware(IServiceProvider provider, ConsumeContext context, string? groupName)
+    {
+        var descriptors = descriptorRegistry?.GetConsumeDescriptors(context.MessageType, groupName) ?? [];
+
+        if (descriptors.Count > 0)
+        {
+            return descriptors
+                .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                .Where(static middleware => middleware is not null)
+                .Cast<object>()
+                .ToArray();
+        }
+
+        var typedServiceType = typeof(IConsumeMiddleware<>).MakeGenericType(context.GetType());
+        var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>();
+        var typedMiddleware = provider
+            .GetServices(typedServiceType)
+            .Where(static middleware => middleware is not null)
+            .Cast<object>();
+
+        return busMiddleware.Concat(typedMiddleware).ToArray();
+    }
+
+    private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)
+    {
+        return provider
+            .GetServices(descriptor.ServiceType)
+            .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
     }
 
     private ConsumeContext _BuildConsumeContext(
