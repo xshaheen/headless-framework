@@ -511,88 +511,110 @@ internal sealed partial class IdempotencyMiddleware(
 
         context.Response.Body = originalBody;
 
-        var effectivePredicate = options.ShouldCacheResponse ?? DefaultCachePredicate.Instance;
-        var shouldCache = effectivePredicate(context);
-
-        if (shouldCache && !captureStream.TruncatedCapture)
+        // Finalize cache operations use CancellationToken.None because the handler has already
+        // succeeded — the marker must either be promoted to a Complete record or removed.
+        // Allowing post-handler cancellation to abort this path leaves a 24-hour orphan that
+        // blocks every subsequent retry of the key. The outer try/catch handles any residual
+        // cancellation (e.g., a future code addition that respects `ct`) and runs cleanup.
+        try
         {
-            var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
-            foreach (var header in context.Response.Headers)
+            var effectivePredicate = options.ShouldCacheResponse ?? DefaultCachePredicate.Instance;
+            var shouldCache = effectivePredicate(context);
+
+            if (shouldCache && !captureStream.TruncatedCapture)
             {
-                if (options.ReplayHeaderAllowlist.Contains(header.Key))
+                var capturedHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+                foreach (var header in context.Response.Headers)
                 {
-                    capturedHeaders[header.Key] = header.Value.ToArray()!;
+                    if (options.ReplayHeaderAllowlist.Contains(header.Key))
+                    {
+                        capturedHeaders[header.Key] = header.Value.ToArray()!;
+                    }
                 }
-            }
 
-            var completeRecord = new IdempotencyRecord
-            {
-                Kind = RecordKind.Complete,
-                StatusCode = context.Response.StatusCode,
-                Headers = capturedHeaders,
-                Body = captureStream.CapturedBytes,
-                Fingerprint = fingerprint,
-                CreatedAt = clock.UtcNow,
-            };
+                var completeRecord = new IdempotencyRecord
+                {
+                    Kind = RecordKind.Complete,
+                    StatusCode = context.Response.StatusCode,
+                    Headers = capturedHeaders,
+                    Body = captureStream.CapturedBytes,
+                    Fingerprint = fingerprint,
+                    CreatedAt = clock.UtcNow,
+                };
 
-            // Re-check the marker before writing the Complete record. If another writer has
-            // already taken the slot (e.g., we crashed earlier and the second attempt path is
-            // executing in another process), don't clobber their record.
-            //
-            // Post-handler site: the response is already committed, so cache exceptions cannot
-            // be surfaced to the client. On exception, log and proceed with UpsertAsync —
-            // losing the cache slot for a successful handler run is a worse outcome than the
-            // (rare) risk of clobbering a parallel writer we cannot observe.
-            CacheValue<IdempotencyRecord>? current = null;
-            try
-            {
-                current = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-            }
-            catch (Exception cacheEx)
-            {
-                LogCacheFailure("finalize-marker-recheck", cacheKey, options.OnCacheError.ToString(), cacheEx);
-            }
-
-            if (current is not null
-                && (!current.HasValue
-                    || current.Value!.Kind != RecordKind.InFlight
-                    || current.Value!.Fingerprint is null
-                    || !_FingerprintEquals(current.Value!.Fingerprint, fingerprint)))
-            {
-                LogFinalizeSkippedMarkerChanged(cacheKey);
-                return;
-            }
-
-            try
-            {
-                await cache.UpsertAsync(cacheKey, completeRecord, options.IdempotencyKeyExpiration, ct).ConfigureAwait(false);
-            }
-            catch (Exception upsertEx)
-            {
-                LogFinalizeFailed(cacheKey, upsertEx);
+                // Re-check the marker before writing the Complete record. If another writer has
+                // already taken the slot (e.g., we crashed earlier and the second attempt path is
+                // executing in another process), don't clobber their record.
+                //
+                // Post-handler site: the response is already committed, so cache exceptions cannot
+                // be surfaced to the client. On exception, log and proceed with UpsertAsync —
+                // losing the cache slot for a successful handler run is a worse outcome than the
+                // (rare) risk of clobbering a parallel writer we cannot observe.
+                CacheValue<IdempotencyRecord>? current = null;
                 try
                 {
-                    // Cleanup must outlive request cancellation
+                    current = await cache.GetAsync<IdempotencyRecord>(cacheKey, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception cacheEx)
+                {
+                    LogCacheFailure("finalize-marker-recheck", cacheKey, options.OnCacheError.ToString(), cacheEx);
+                }
+
+                if (current is not null
+                    && (!current.HasValue
+                        || current.Value!.Kind != RecordKind.InFlight
+                        || current.Value!.Fingerprint is null
+                        || !_FingerprintEquals(current.Value!.Fingerprint, fingerprint)))
+                {
+                    LogFinalizeSkippedMarkerChanged(cacheKey);
+                    return;
+                }
+
+                try
+                {
+                    await cache.UpsertAsync(cacheKey, completeRecord, options.IdempotencyKeyExpiration, CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception upsertEx)
+                {
+                    LogFinalizeFailed(cacheKey, upsertEx);
+                    try
+                    {
+                        await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception cleanupEx)
+                    {
+                        LogMarkerCleanupFailed(cacheKey, cleanupEx);
+                    }
+                    throw;
+                }
+            }
+            else
+            {
+                try
+                {
                     await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception cleanupEx)
                 {
                     LogMarkerCleanupFailed(cacheKey, cleanupEx);
                 }
-                throw;
             }
         }
-        else
+        catch (OperationCanceledException)
         {
+            // Defensive: even though the finalize cache ops above use CancellationToken.None,
+            // future code additions that respect `ct` would orphan the marker on client
+            // disconnect. Run cleanup so retries are not blocked for IdempotencyKeyExpiration.
             try
             {
-                // Cleanup must outlive request cancellation
                 await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception cleanupEx)
             {
                 LogMarkerCleanupFailed(cacheKey, cleanupEx);
             }
+            // Swallow — the response was already committed (or the client is gone). Rethrowing
+            // would surface a logged 500 the client never sees.
         }
     }
 
