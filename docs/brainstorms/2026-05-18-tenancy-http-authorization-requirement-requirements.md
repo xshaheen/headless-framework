@@ -33,7 +33,9 @@ The right shape for HTTP-dispatched commands is a single `IAuthorizationRequirem
 
 **Endpoint opt-out**
 - R5. Provide a `[AllowMissingTenant]` attribute usable as endpoint metadata (controllers, action methods, Minimal-API endpoints). This is a new attribute living in `Headless.Api.Core`; it is not the same type as the deleted Mediator-side attribute.
+- R5a. Provide a `[RequireTenant]` attribute that opts an endpoint or action back into tenant enforcement when broader metadata (route group, controller) has marked the surface `[AllowMissingTenant]`. Last-applied metadata wins; the handler walks `endpoint.Metadata.Reverse()` and stops at the first `[RequireTenant]` (fail) or `[AllowMissingTenant]` (succeed).
 - R6. Provide a fluent `.AllowMissingTenant()` extension on `IEndpointConventionBuilder` that attaches the attribute as endpoint metadata.
+- R6a. Provide a fluent `.RequireTenant()` extension on `IEndpointConventionBuilder` that attaches `[RequireTenant]` as endpoint metadata, matching the precedence rule in R5a.
 
 **Removal of Mediator-side tenant gating**
 - R7. Delete `TenantRequiredBehavior<TRequest, TResponse>`.
