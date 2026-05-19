@@ -68,6 +68,23 @@ public sealed class IdempotencyOptions
     /// </summary>
     public OnCacheErrorBehavior OnCacheError { get; set; } = OnCacheErrorBehavior.FailOpen;
 
+    /// <summary>
+    /// Whether the default <see cref="KeyDeriver"/> requires an authenticated user identity in
+    /// addition to a tenant. Defaults to <see langword="true"/>. When <see langword="true"/>,
+    /// requests without a resolved <c>ICurrentUser.UserId</c> are passed through without
+    /// idempotency — preventing two anonymous callers in the same tenant from cross-replaying
+    /// each other's responses on a shared idempotency key.
+    /// </summary>
+    /// <remarks>
+    /// Set to <see langword="false"/> for endpoints that legitimately accept anonymous traffic
+    /// at the tenant level (webhook receivers, OAuth callbacks). The cache namespace falls back
+    /// to <c>idem:{tenant}::{method}:{path}{?query}:{key}</c> — two anonymous callers within
+    /// the same tenant sharing an Idempotency-Key WILL replay each other's responses. Operators
+    /// turning this off should ensure callers within the tenant boundary are mutually trusted
+    /// or configure <see cref="KeyDeriver"/> with a stable per-caller identifier.
+    /// </remarks>
+    public bool RequireUserIdentity { get; set; } = true;
+
     /// <summary>Status code returned when the same key is reused with a different body. Must be 409 or 422. Defaults to 422.</summary>
     public int MismatchStatusCode { get; set; } = StatusCodes.Status422UnprocessableEntity;
 
@@ -133,6 +150,7 @@ public sealed class IdempotencyOptions
         MaxBodySizeForHashing = MaxBodySizeForHashing,
         OversizeBehavior = OversizeBehavior,
         OnCacheError = OnCacheError,
+        RequireUserIdentity = RequireUserIdentity,
         MismatchStatusCode = MismatchStatusCode,
         ReplayHeaderAllowlist = new HashSet<string>(ReplayHeaderAllowlist, StringComparer.OrdinalIgnoreCase),
         ShouldCacheResponse = ShouldCacheResponse,

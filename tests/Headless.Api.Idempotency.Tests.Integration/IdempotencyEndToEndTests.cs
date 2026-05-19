@@ -479,6 +479,61 @@ public sealed class IdempotencyEndToEndTests
         firstBody.Should().NotBe(secondBody, "no idempotency means each call runs the handler independently");
     }
 
+    // ── RequireUserIdentity: anon-within-tenant cross-replay prevention ──────
+
+    [Fact]
+    public async Task tenant_only_anonymous_requests_should_pass_through_when_RequireUserIdentity_is_true()
+    {
+        // Default RequireUserIdentity=true: a tenant-resolved but user-anonymous request must
+        // NOT use the default cache key (which would compose idem:{tenant}::POST:/path:{key}
+        // and let two anonymous callers in the same tenant cross-replay each other).
+        await using var app = await IdempotencyTestApp.CreateAsync(tenantHeaderName: "X-Tenant");
+        var userState = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
+        userState.SetAnonymous();
+
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var extraHeaders = new Dictionary<string, string> { ["X-Tenant"] = "acme" };
+        var first = await _Post(client, "/echo", key: "shared-k", body: "same", extraHeaders: extraHeaders);
+        var second = await _Post(client, "/echo", key: "shared-k", body: "same", extraHeaders: extraHeaders);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+        second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+
+        var firstBody = await first.Content.ReadAsStringAsync();
+        var secondBody = await second.Content.ReadAsStringAsync();
+        firstBody.Should().NotBe(secondBody, "tenant-anon pass-through under default RequireUserIdentity must not share a cache slot");
+    }
+
+    [Fact]
+    public async Task tenant_only_anonymous_requests_should_replay_when_RequireUserIdentity_is_false()
+    {
+        // Operators with webhook/OAuth-callback flows opt in: tenant-anon requests participate in
+        // idempotency. Two retries sharing tenant + key + body replay byte-equivalently.
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => o.RequireUserIdentity = false,
+            tenantHeaderName: "X-Tenant");
+        var userState = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
+        userState.SetAnonymous();
+
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var extraHeaders = new Dictionary<string, string> { ["X-Tenant"] = "acme" };
+        var first = await _Post(client, "/echo", key: "webhook-k", body: "same", extraHeaders: extraHeaders);
+        var second = await _Post(client, "/echo", key: "webhook-k", body: "same", extraHeaders: extraHeaders);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.Headers.GetValues(HttpHeaderNames.IdempotentReplayed).Should().ContainSingle().Which.Should().Be("true", "opt-in tenant-anon idempotency replays the original response");
+
+        var firstBody = await first.Content.ReadAsStringAsync();
+        var secondBody = await second.Content.ReadAsStringAsync();
+        secondBody.Should().Be(firstBody, "replay must be byte-equivalent");
+    }
+
     // ── Cache outage: OnCacheError = FailOpen (default) vs Throw ─────────────
 
     [Fact]

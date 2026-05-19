@@ -625,11 +625,21 @@ internal sealed partial class IdempotencyMiddleware(
         var tenant = currentTenant.Id;
         var user = (string?)currentUser.UserId;
 
-        // Refuse to apply idempotency when both tenant and user identity are absent. Returning
-        // an empty sentinel signals the caller to fall through to next(). The previous default
-        // (`idem::POST:/path:key`) collapsed all anonymous requests sharing the same key path
-        // into a single slot, leaking cached responses across unrelated callers.
-        if (string.IsNullOrEmpty(tenant) && string.IsNullOrEmpty(user))
+        // Refuse to apply idempotency when neither identity is resolvable. When RequireUserIdentity
+        // is true (default), tenant-only requests also fall through — preventing two anonymous
+        // callers in the same tenant from cross-replaying each other's responses on a shared
+        // Idempotency-Key. Operators with intentional anon-within-tenant flows (webhook receivers,
+        // OAuth callbacks) set RequireUserIdentity=false and accept the trade-off, or configure
+        // KeyDeriver with a stable per-caller identifier.
+        var tenantMissing = string.IsNullOrEmpty(tenant);
+        var userMissing = string.IsNullOrEmpty(user);
+
+        if (tenantMissing && userMissing)
+        {
+            return string.Empty;
+        }
+
+        if (options.RequireUserIdentity && userMissing)
         {
             return string.Empty;
         }

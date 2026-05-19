@@ -70,6 +70,7 @@ app.Run();
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
 | `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request (Stripe/AWS default — trades the guarantee against an outage-wide 5xx storm). `Throw` propagates the exception as 5xx. |
+| `RequireUserIdentity` | `true` | When `true`, the default cache key requires an authenticated user; tenant-only anonymous requests pass through without idempotency. Set to `false` for webhook receivers / OAuth callbacks that intentionally accept anon traffic at the tenant level (callers within the tenant boundary must be mutually trusted). |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. |
 | `ShouldCacheResponse` | `DefaultCachePredicate.Instance` | Predicate deciding whether a completed response is cached. |
