@@ -4,6 +4,11 @@ using Headless.Checks;
 
 namespace Headless.Messaging;
 
+internal interface ICompletablePublishContext
+{
+    void MarkCompleted();
+}
+
 /// <summary>Object-typed publish context shared by publish middleware.</summary>
 [PublicAPI]
 public abstract class PublishContext
@@ -74,7 +79,7 @@ public abstract class PublishContext
 /// <summary>Strongly-typed publish context for middleware registered against a specific message type.</summary>
 /// <typeparam name="TMessage">The message type being published.</typeparam>
 [PublicAPI]
-public sealed class PublishingContext<TMessage> : PublishContext
+public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePublishContext
 {
     private bool _isCompleted;
 
@@ -124,7 +129,7 @@ public sealed class PublishingContext<TMessage> : PublishContext
     /// </summary>
     public bool IsTransactional { get; init; }
 
-    internal void MarkCompleted()
+    public void MarkCompleted()
     {
         _isCompleted = true;
     }
