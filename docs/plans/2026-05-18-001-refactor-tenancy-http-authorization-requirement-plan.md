@@ -32,7 +32,9 @@ Every requirement from the origin doc maps to one or more implementation units b
 | R3 (succeeds with `[AllowMissingTenant]` metadata) | U1, U7 |
 | R4 (structured failure reason → `g:tenant-required` ProblemDetails) | U3, U4, U7 |
 | R5 (endpoint-side `[AllowMissingTenant]`) | U2, U7 |
+| R5a (endpoint-side `[RequireTenant]` opt-back-in) | U2, U7 |
 | R6 (`.AllowMissingTenant()` extension) | U2, U7 |
+| R6a (`.RequireTenant()` endpoint-convention extension) | U2, U7 |
 | R7 (delete `TenantRequiredBehavior`) | U6 |
 | R8 (delete Mediator-side attribute) | U6 |
 | R9 (delete `.Mediator(...)`, `RequireTenant()`, `HeadlessMediatorTenancyBuilder`) | U6 |
