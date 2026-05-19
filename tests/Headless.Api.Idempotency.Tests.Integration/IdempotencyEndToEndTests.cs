@@ -478,6 +478,51 @@ public sealed class IdempotencyEndToEndTests
         firstBody.Should().NotBe(secondBody, "no idempotency means each call runs the handler independently");
     }
 
+    // ── Cache outage: OnCacheError = FailOpen (default) vs Throw ─────────────
+
+    [Fact]
+    public async Task should_pass_through_to_handler_when_cache_throws_and_OnCacheError_is_FailOpen()
+    {
+        // Default OnCacheError.FailOpen: a hard cache outage (Redis down, ElastiCache failover)
+        // must not produce a 5xx storm on every idempotent endpoint. The middleware logs a
+        // warning and bypasses idempotency for this request, letting the handler run unguarded.
+        // The trade-off — a single retry may execute its handler twice if the outage straddles
+        // attempts — is the explicit Stripe/AWS default.
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            configureServices: services =>
+            {
+                var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Headless.Caching.ICache));
+                if (descriptor is not null) { services.Remove(descriptor); }
+                services.AddSingleton<Headless.Caching.ICache, IdempotencyTestApp.ThrowingCache>();
+            });
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var response = await _Post(client, "/echo", key: "cache-fail-open", body: "hello");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, "FailOpen bypasses idempotency and runs the handler");
+        response.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("no replay attempted under cache outage");
+    }
+
+    [Fact]
+    public async Task should_propagate_cache_exception_when_OnCacheError_is_Throw()
+    {
+        // Opt-in strict mode: cache exceptions surface as 5xx so operators see the outage
+        // directly instead of silently losing the idempotency guarantee.
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => o.OnCacheError = OnCacheErrorBehavior.Throw,
+            configureServices: services =>
+            {
+                var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Headless.Caching.ICache));
+                if (descriptor is not null) { services.Remove(descriptor); }
+                services.AddSingleton<Headless.Caching.ICache, IdempotencyTestApp.ThrowingCache>();
+            });
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var response = await _Post(client, "/echo", key: "cache-throw", body: "hello");
+
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
+    }
+
     private static async Task<HttpResponseMessage> _Post(
         HttpClient client,
         string path,

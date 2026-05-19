@@ -41,6 +41,14 @@ public sealed class IdempotencyOptions
     /// <summary>How requests whose body exceeds <see cref="MaxBodySizeForHashing"/> are handled.</summary>
     public OversizeBehavior OversizeBehavior { get; set; } = OversizeBehavior.Reject;
 
+    /// <summary>
+    /// How the middleware reacts when the underlying <see cref="Headless.Caching.ICache"/> throws.
+    /// Defaults to <see cref="OnCacheErrorBehavior.FailOpen"/>: log a warning and bypass
+    /// idempotency for the failing request. Switch to <see cref="OnCacheErrorBehavior.Throw"/>
+    /// for environments that prefer 5xx over silently dropping the guarantee.
+    /// </summary>
+    public OnCacheErrorBehavior OnCacheError { get; set; } = OnCacheErrorBehavior.FailOpen;
+
     /// <summary>Status code returned when the same key is reused with a different body. Must be 409 or 422. Defaults to 422.</summary>
     public int MismatchStatusCode { get; set; } = StatusCodes.Status422UnprocessableEntity;
 
@@ -103,6 +111,7 @@ public sealed class IdempotencyOptions
         InFlightLockTimeout = InFlightLockTimeout,
         MaxBodySizeForHashing = MaxBodySizeForHashing,
         OversizeBehavior = OversizeBehavior,
+        OnCacheError = OnCacheError,
         MismatchStatusCode = MismatchStatusCode,
         ReplayHeaderAllowlist = new HashSet<string>(ReplayHeaderAllowlist, StringComparer.OrdinalIgnoreCase),
         ShouldCacheResponse = ShouldCacheResponse,
@@ -140,6 +149,7 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
         RuleFor(x => x.MismatchStatusCode)
             .Must(c => c is StatusCodes.Status409Conflict or StatusCodes.Status422UnprocessableEntity)
             .WithMessage("MismatchStatusCode must be 409 or 422.");
+        RuleFor(x => x.OnCacheError).IsInEnum();
         When(x => x.InFlightStrategy == InFlightStrategy.WaitAndReplay, () =>
         {
             RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(5));

@@ -134,7 +134,22 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        var existing = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+        CacheValue<IdempotencyRecord> existing;
+        try
+        {
+            existing = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+        }
+        catch (Exception cacheEx)
+        {
+            LogCacheFailure("existing-record-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+            {
+                throw;
+            }
+
+            await next(context).ConfigureAwait(false);
+            return;
+        }
 
         if (existing.HasValue)
         {
@@ -205,7 +220,22 @@ internal sealed partial class IdempotencyMiddleware(
                 // Sentinel TTL matches the completed-record TTL: a shorter marker TTL plus the
                 // hard-coded +5s safety margin meant a slow handler could see its marker evicted
                 // before finalize, opening the door to false in-flight rejects on retries.
-                var inserted = await cache.TryInsertAsync(cacheKey, marker, options.IdempotencyKeyExpiration, ct).ConfigureAwait(false);
+                bool inserted;
+                try
+                {
+                    inserted = await cache.TryInsertAsync(cacheKey, marker, options.IdempotencyKeyExpiration, ct).ConfigureAwait(false);
+                }
+                catch (Exception cacheEx)
+                {
+                    LogCacheFailure("sentinel-tryinsert", cacheKey, options.OnCacheError.ToString(), cacheEx);
+                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+                    {
+                        throw;
+                    }
+
+                    await next(context).ConfigureAwait(false);
+                    return;
+                }
 
                 if (inserted)
                 {
@@ -213,7 +243,22 @@ internal sealed partial class IdempotencyMiddleware(
                     return;
                 }
 
-                var racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+                CacheValue<IdempotencyRecord> racePeek;
+                try
+                {
+                    racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+                }
+                catch (Exception cacheEx)
+                {
+                    LogCacheFailure("race-peek-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+                    if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+                    {
+                        throw;
+                    }
+
+                    await next(context).ConfigureAwait(false);
+                    return;
+                }
 
                 if (!racePeek.HasValue)
                 {
@@ -357,7 +402,27 @@ internal sealed partial class IdempotencyMiddleware(
             return;
         }
 
-        var postLock = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+        CacheValue<IdempotencyRecord> postLock;
+        try
+        {
+            postLock = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+        }
+        catch (Exception cacheEx)
+        {
+            LogCacheFailure("post-lock-get", cacheKey, options.OnCacheError.ToString(), cacheEx);
+            if (options.OnCacheError == OnCacheErrorBehavior.Throw)
+            {
+                throw;
+            }
+
+            // Loser path: we cannot read the winner's record. Return a recoverable 409 so the
+            // client retries — bypassing to next() here would re-execute the handler and break
+            // the idempotency guarantee outright.
+            LogInFlightTimeout(cacheKey);
+            var failOpenPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
+            await Results.Problem(failOpenPd).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
 
         if (postLock.HasValue && postLock.Value!.Kind == RecordKind.Complete)
         {
@@ -441,11 +506,26 @@ internal sealed partial class IdempotencyMiddleware(
             // Re-check the marker before writing the Complete record. If another writer has
             // already taken the slot (e.g., we crashed earlier and the second attempt path is
             // executing in another process), don't clobber their record.
-            var current = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-            if (!current.HasValue
-                || current.Value!.Kind != RecordKind.InFlight
-                || current.Value!.Fingerprint is null
-                || !_FingerprintEquals(current.Value!.Fingerprint, fingerprint))
+            //
+            // Post-handler site: the response is already committed, so cache exceptions cannot
+            // be surfaced to the client. On exception, log and proceed with UpsertAsync —
+            // losing the cache slot for a successful handler run is a worse outcome than the
+            // (rare) risk of clobbering a parallel writer we cannot observe.
+            CacheValue<IdempotencyRecord>? current = null;
+            try
+            {
+                current = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+            }
+            catch (Exception cacheEx)
+            {
+                LogCacheFailure("finalize-marker-recheck", cacheKey, options.OnCacheError.ToString(), cacheEx);
+            }
+
+            if (current is not null
+                && (!current.HasValue
+                    || current.Value!.Kind != RecordKind.InFlight
+                    || current.Value!.Fingerprint is null
+                    || !_FingerprintEquals(current.Value!.Fingerprint, fingerprint)))
             {
                 LogFinalizeSkippedMarkerChanged(cacheKey);
                 return;
@@ -655,4 +735,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency marker cleanup failed for key {CacheKey}")]
     private partial void LogMarkerCleanupFailed(string cacheKey, Exception exception);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency cache call failed at {Site} for key {CacheKey}; behavior={Behavior}")]
+    private partial void LogCacheFailure(string site, string cacheKey, string behavior, Exception exception);
 }

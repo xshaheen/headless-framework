@@ -30,7 +30,8 @@ internal static class IdempotencyTestApp
         string? tenantHeaderName = null,
         bool withLockProvider = false,
         TestHandlerGate? handlerGate = null,
-        InMemoryDistributedLockProvider? lockProvider = null
+        InMemoryDistributedLockProvider? lockProvider = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         var builder = WebApplication.CreateBuilder(
@@ -95,6 +96,10 @@ internal static class IdempotencyTestApp
             o.InFlightStrategy = InFlightStrategy.Reject;
             configure?.Invoke(o);
         });
+
+        // Tests can override or replace any of the above registrations (e.g., swap ICache for a
+        // throwing decorator). Runs after the default wiring so Replace<TService>() works.
+        configureServices?.Invoke(builder.Services);
 
         var app = builder.Build();
 
@@ -336,6 +341,71 @@ internal static class IdempotencyTestApp
         public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    /// <summary>
+    /// <see cref="ICache"/> stand-in that throws <see cref="InvalidOperationException"/> on every
+    /// call. Used by the cache-failure integration tests to simulate a hard cache outage. The
+    /// idempotency middleware should either fail open (default) or rethrow depending on
+    /// <see cref="IdempotencyOptions.OnCacheError"/>.
+    /// </summary>
+    internal sealed class ThrowingCache : Headless.Caching.ICache
+    {
+        private static InvalidOperationException _Boom() => new("simulated cache outage");
+
+        public ValueTask<Headless.Caching.CacheValue<T>> GetOrAddAsync<T>(string key, Func<CancellationToken, ValueTask<T?>> factory, TimeSpan expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<IDictionary<string, Headless.Caching.CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<IDictionary<string, Headless.Caching.CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<Headless.Caching.CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<Headless.Caching.CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+
+        public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw _Boom();
     }
 
     internal sealed class InMemoryDistributedLock(string resource, SemaphoreSlim semaphore) : IDistributedLock

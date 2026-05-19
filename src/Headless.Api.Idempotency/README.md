@@ -68,6 +68,7 @@ app.Run();
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. |
 | `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
+| `OnCacheError` | `FailOpen` | `FailOpen` logs a warning and bypasses idempotency for the failing request (Stripe/AWS default — trades the guarantee against an outage-wide 5xx storm). `Throw` propagates the exception as 5xx. |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. |
 | `ShouldCacheResponse` | `DefaultCachePredicate.Instance` | Predicate deciding whether a completed response is cached. |
