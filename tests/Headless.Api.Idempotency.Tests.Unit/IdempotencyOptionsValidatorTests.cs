@@ -62,6 +62,28 @@ public sealed class IdempotencyOptionsValidatorTests
     }
 
     [Fact]
+    public void should_fail_when_max_body_size_exceeds_64_mib()
+    {
+        var options = _CreateValidOptions();
+        options.MaxBodySizeForHashing = (64 * 1024 * 1024) + 1;
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldHaveValidationErrorFor(x => x.MaxBodySizeForHashing);
+    }
+
+    [Fact]
+    public void should_pass_when_max_body_size_is_exactly_64_mib()
+    {
+        var options = _CreateValidOptions();
+        options.MaxBodySizeForHashing = 64 * 1024 * 1024;
+
+        var result = _sut.TestValidate(options);
+
+        result.ShouldNotHaveValidationErrorFor(x => x.MaxBodySizeForHashing);
+    }
+
+    [Fact]
     public void should_fail_when_in_flight_lock_timeout_is_zero()
     {
         var options = _CreateValidOptions();

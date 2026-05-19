@@ -32,47 +32,51 @@ internal sealed class CaptureStream : Stream
     public override bool CanRead => false;
     public override bool CanSeek => false;
     public override bool CanWrite => !_disposed;
-    public override long Length => _inner.Length;
+
+    public override long Length => throw new NotSupportedException("CaptureStream is forward-only.");
 
     public override long Position
     {
-        get => _inner.Position;
-        set => throw new NotSupportedException();
+        get => throw new NotSupportedException("CaptureStream is forward-only.");
+        set => throw new NotSupportedException("CaptureStream is forward-only.");
     }
 
     public override void Write(byte[] buffer, int offset, int count)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _inner.Write(buffer, offset, count);
+        // Append to the in-memory capture before forwarding. The append is in-memory and
+        // cannot throw; if the inner write later throws, the captured buffer still represents
+        // exactly what the handler intended to send up to that point.
         _AppendToBuffer(buffer.AsSpan(offset, count));
+        _inner.Write(buffer, offset, count);
     }
 
     public override void Write(ReadOnlySpan<byte> buffer)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _inner.Write(buffer);
         _AppendToBuffer(buffer);
+        _inner.Write(buffer);
     }
 
     public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await _inner.WriteAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
         _AppendToBuffer(buffer.AsSpan(offset, count));
+        await _inner.WriteAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
     }
 
     public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await _inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
         _AppendToBuffer(buffer.Span);
+        await _inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
 
     public override void WriteByte(byte value)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _inner.WriteByte(value);
         _AppendToBuffer(new ReadOnlySpan<byte>(in value));
+        _inner.WriteByte(value);
     }
 
     public override void Flush() => _inner.Flush();

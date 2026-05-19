@@ -87,14 +87,16 @@ public sealed class SetupIdempotencyTests
     }
 
     [Fact]
-    public void should_apply_default_cache_predicate_when_consumer_left_it_null()
+    public void should_leave_cache_predicate_null_when_consumer_left_it_null()
     {
+        // Options are a pure value — no DI-time mutation that injects a default. The middleware
+        // falls back to DefaultCachePredicate.Instance at request time when this is null.
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddIdempotency(_ => { });
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
-        resolved.ShouldCacheResponse.Should().BeSameAs(DefaultCachePredicate.Instance);
+        resolved.ShouldCacheResponse.Should().BeNull();
     }
 
     [Fact]

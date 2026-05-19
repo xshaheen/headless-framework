@@ -19,16 +19,19 @@
       PublicKeyToken=b77a5c561934e089
     </value>
   </resheader>
-  <data name="g:idempotency-key-reused" xml:space="preserve">
+  <data name="g:idempotency_key_reused" xml:space="preserve">
     <value>Same idempotency key reused with a different request body.</value>
   </data>
-  <data name="g:idempotency-in-flight" xml:space="preserve">
+  <data name="g:idempotency_in_flight" xml:space="preserve">
     <value>An identical request with this idempotency key is still being processed. Retry after a short backoff.</value>
   </data>
-  <data name="g:idempotency-in-flight-timeout" xml:space="preserve">
+  <data name="g:idempotency_in_flight_timeout" xml:space="preserve">
     <value>Timed out waiting for an in-flight request with this idempotency key to complete.</value>
   </data>
-  <data name="g:idempotency-body-too-large" xml:space="preserve">
+  <data name="g:idempotency_body_too_large" xml:space="preserve">
     <value>Request body exceeds the configured limit for idempotency processing.</value>
+  </data>
+  <data name="g:idempotency_key_malformed" xml:space="preserve">
+    <value>Idempotency-Key header is malformed (length over 255, contains control characters, or multi-valued).</value>
   </data>
 </root>

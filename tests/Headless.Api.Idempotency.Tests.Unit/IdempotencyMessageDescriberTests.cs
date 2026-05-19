@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.Idempotency;
 using Headless.Api.Resources;
 
 namespace Tests;
@@ -7,11 +8,21 @@ namespace Tests;
 public sealed class IdempotencyMessageDescriberTests
 {
     [Fact]
+    public void error_code_constants_match_descriptor_codes()
+    {
+        IdempotencyMessageDescriber.KeyReused().Code.Should().Be(IdempotencyErrorCodes.KeyReused);
+        IdempotencyMessageDescriber.InFlight().Code.Should().Be(IdempotencyErrorCodes.InFlight);
+        IdempotencyMessageDescriber.InFlightTimeout().Code.Should().Be(IdempotencyErrorCodes.InFlightTimeout);
+        IdempotencyMessageDescriber.BodyTooLarge().Code.Should().Be(IdempotencyErrorCodes.BodyTooLarge);
+        IdempotencyMessageDescriber.KeyMalformed().Code.Should().Be(IdempotencyErrorCodes.KeyMalformed);
+    }
+
+    [Fact]
     public void key_reused_should_return_expected_code()
     {
         var descriptor = IdempotencyMessageDescriber.KeyReused();
 
-        descriptor.Code.Should().Be("g:idempotency-key-reused");
+        descriptor.Code.Should().Be("g:idempotency_key_reused");
     }
 
     [Fact]
@@ -27,7 +38,7 @@ public sealed class IdempotencyMessageDescriberTests
     {
         var descriptor = IdempotencyMessageDescriber.InFlight();
 
-        descriptor.Code.Should().Be("g:idempotency-in-flight");
+        descriptor.Code.Should().Be("g:idempotency_in_flight");
     }
 
     [Fact]
@@ -43,7 +54,7 @@ public sealed class IdempotencyMessageDescriberTests
     {
         var descriptor = IdempotencyMessageDescriber.InFlightTimeout();
 
-        descriptor.Code.Should().Be("g:idempotency-in-flight-timeout");
+        descriptor.Code.Should().Be("g:idempotency_in_flight_timeout");
     }
 
     [Fact]
@@ -59,7 +70,7 @@ public sealed class IdempotencyMessageDescriberTests
     {
         var descriptor = IdempotencyMessageDescriber.BodyTooLarge();
 
-        descriptor.Code.Should().Be("g:idempotency-body-too-large");
+        descriptor.Code.Should().Be("g:idempotency_body_too_large");
     }
 
     [Fact]

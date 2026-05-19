@@ -8,84 +8,15 @@ using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
 using Headless.Primitives;
-using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Tests;
 
-public sealed class IdempotencyMiddlewareTests : TestBase
+public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 {
-    private IdempotencyMiddleware _CreateMiddleware(
-        IOptionsSnapshot<IdempotencyOptions>? options = null,
-        ICache? cache = null,
-        ICurrentTenant? currentTenant = null,
-        IProblemDetailsCreator? problemDetailsCreator = null,
-        IClock? clock = null,
-        ICancellationTokenProvider? cancellationTokenProvider = null,
-        ILogger<IdempotencyMiddleware>? logger = null,
-        IServiceProvider? serviceProvider = null
-    )
-    {
-        if (options is null)
-        {
-            var snapshot = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
-            snapshot.Value.Returns(new IdempotencyOptions());
-            options = snapshot;
-        }
-
-        cache ??= Substitute.For<ICache>();
-
-        if (currentTenant is null)
-        {
-            currentTenant = Substitute.For<ICurrentTenant>();
-            currentTenant.Id.Returns((string?)null);
-        }
-
-        problemDetailsCreator ??= Substitute.For<IProblemDetailsCreator>();
-
-        if (clock is null)
-        {
-            clock = Substitute.For<IClock>();
-            clock.UtcNow.Returns(DateTimeOffset.UtcNow);
-        }
-
-        if (cancellationTokenProvider is null)
-        {
-            cancellationTokenProvider = Substitute.For<ICancellationTokenProvider>();
-            cancellationTokenProvider.Token.Returns(CancellationToken.None);
-        }
-
-        logger ??= LoggerFactory.CreateLogger<IdempotencyMiddleware>();
-        serviceProvider ??= new ServiceCollection().AddLogging().BuildServiceProvider();
-
-        return new IdempotencyMiddleware(options, cache, currentTenant, problemDetailsCreator, clock, cancellationTokenProvider, logger, serviceProvider);
-    }
-
-    private static DefaultHttpContext _CreateContext(
-        string? idempotencyKey = null,
-        string method = "POST",
-        string path = "/v1/test",
-        byte[]? body = null
-    )
-    {
-        var ctx = new DefaultHttpContext();
-        ctx.RequestServices = new ServiceCollection().AddLogging().AddProblemDetails().BuildServiceProvider();
-        ctx.Request.Method = method;
-        ctx.Request.Path = path;
-        ctx.Request.Body = body is { Length: > 0 } ? new MemoryStream(body) : new MemoryStream();
-        ctx.Response.Body = new MemoryStream();
-
-        if (idempotencyKey is not null)
-        {
-            ctx.Request.Headers.Append(HttpHeaderNames.IdempotencyKey, idempotencyKey);
-        }
-
-        return ctx;
-    }
 
     // ── pass-through ──────────────────────────────────────────────────────────
 
@@ -93,8 +24,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     public async Task should_pass_through_when_idempotency_key_header_is_missing()
     {
         var cache = Substitute.For<ICache>();
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(); // no header
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(); // no header
 
         var nextCalled = false;
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -107,8 +38,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     public async Task should_pass_through_when_method_is_not_in_methods_set()
     {
         var cache = Substitute.For<ICache>();
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", method: "GET");
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", method: "GET");
 
         var nextCalled = false;
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -123,8 +54,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     public async Task should_pass_through_when_key_is_whitespace_or_empty(string key)
     {
         var cache = Substitute.For<ICache>();
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: key);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: key);
 
         var nextCalled = false;
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -163,8 +94,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("t1");
 
-        var middleware = _CreateMiddleware(cache: cache, currentTenant: tenant);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(cache: cache, currentTenant: tenant);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
         var nextCalled = false;
 
         // when
@@ -200,8 +131,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
              .Returns(new CacheValue<IdempotencyRecord>(record, hasValue: true));
 
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         var nextCalled = false;
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -213,9 +144,32 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     // ── cache key composition ─────────────────────────────────────────────────
 
     [Fact]
-    public async Task should_use_empty_string_for_null_tenant_in_cache_key()
+    public async Task should_pass_through_when_tenant_and_user_are_null()
     {
-        // null tenant → double-colon in key (idem::POST:/v1/x:k1)
+        // No tenant + no user + no KeyDeriver → middleware refuses to apply idempotency
+        // (returning an empty sentinel key) rather than collapsing anonymous callers into
+        // a single cache slot. Falls through to next.
+        var cache = Substitute.For<ICache>();
+
+        var tenant = Substitute.For<ICurrentTenant>();
+        tenant.Id.Returns((string?)null);
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns((UserId?)null);
+
+        var middleware = CreateMiddleware(cache: cache, currentTenant: tenant, currentUser: user);
+        var context = CreateContext(idempotencyKey: "k1", path: "/v1/x");
+        var nextCalled = false;
+
+        await middleware.InvokeAsync(context, ctx => { nextCalled = true; ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        nextCalled.Should().BeTrue();
+        await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await cache.DidNotReceive().TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_use_tenant_and_user_in_cache_key()
+    {
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
              .Returns(CacheValue<IdempotencyRecord>.NoValue);
@@ -223,21 +177,23 @@ public sealed class IdempotencyMiddlewareTests : TestBase
              .Returns(true);
 
         var tenant = Substitute.For<ICurrentTenant>();
-        tenant.Id.Returns((string?)null);
+        tenant.Id.Returns("T1");
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns(new UserId("U7"));
 
-        var middleware = _CreateMiddleware(cache: cache, currentTenant: tenant);
-        var context = _CreateContext(idempotencyKey: "k1", path: "/v1/x");
+        var middleware = CreateMiddleware(cache: cache, currentTenant: tenant, currentUser: user);
+        var context = CreateContext(idempotencyKey: "k1", path: "/v1/x");
 
         await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
 
         await cache.Received().GetAsync<IdempotencyRecord>(
-            Arg.Is<string>(k => k == "idem::POST:/v1/x:k1"),
+            Arg.Is<string>(k => k == "idem:T1:U7:POST:/v1/x:k1"),
             Arg.Any<CancellationToken>()
         );
     }
 
     [Fact]
-    public async Task should_use_tenant_id_in_cache_key()
+    public async Task should_use_anon_marker_when_only_tenant_is_present()
     {
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -248,13 +204,13 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("T1");
 
-        var middleware = _CreateMiddleware(cache: cache, currentTenant: tenant);
-        var context = _CreateContext(idempotencyKey: "k1", path: "/v1/x");
+        var middleware = CreateMiddleware(cache: cache, currentTenant: tenant);
+        var context = CreateContext(idempotencyKey: "k1", path: "/v1/x");
 
         await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
 
         await cache.Received().GetAsync<IdempotencyRecord>(
-            Arg.Is<string>(k => k == "idem:T1:POST:/v1/x:k1"),
+            Arg.Is<string>(k => k == "idem:T1:anon:POST:/v1/x:k1"),
             Arg.Any<CancellationToken>()
         );
     }
@@ -267,15 +223,17 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         // given
         byte[] body = [5, 6, 7];
         byte[] fingerprint = SHA256.HashData(body);
+        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = fingerprint, CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
+        // First GetAsync (initial lookup) → NoValue; second GetAsync (marker re-check before upsert) → our InFlight marker.
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
         var nextCalled = false;
 
         // when
@@ -319,8 +277,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2]);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2]);
 
         var act = () => middleware.InvokeAsync(context, _ => throw new InvalidOperationException("boom"));
 
@@ -356,8 +314,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
-        var middleware = _CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
         var nextCalled = false;
 
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -366,7 +324,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.Received(1).UnprocessableEntity(
             Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                 d.ContainsKey("idempotency_key") &&
-                d["idempotency_key"].Any(e => e.Code == "g:idempotency-key-reused")
+                d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
             )
         );
     }
@@ -397,13 +355,13 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var options = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
         options.Value.Returns(new IdempotencyOptions { MismatchStatusCode = 409 });
 
-        var middleware = _CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-key-reused"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_key_reused"))
         );
         problemDetailsCreator.DidNotReceive().UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>());
     }
@@ -428,15 +386,15 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(new ProblemDetails { Status = 409 });
 
-        var middleware = _CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
         var nextCalled = false;
 
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
 
         nextCalled.Should().BeFalse();
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_in_flight"))
         );
     }
 
@@ -460,15 +418,15 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.Conflict(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
             .Returns(new ProblemDetails { Status = 409 });
 
-        var middleware = _CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
         var nextCalled = false;
 
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
 
         nextCalled.Should().BeFalse();
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_in_flight"))
         );
     }
 
@@ -495,15 +453,15 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
             .Returns(new ProblemDetails { Status = 422 });
 
-        var middleware = _CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).UnprocessableEntity(
             Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                 d.ContainsKey("idempotency_key") &&
-                d["idempotency_key"].Any(e => e.Code == "g:idempotency-key-reused")
+                d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
             )
         );
     }
@@ -520,7 +478,45 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var options = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
         options.Value.Returns(new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay });
 
-        return _CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator, serviceProvider: sp);
+        return CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator, serviceProvider: sp);
+    }
+
+    [Fact]
+    public async Task should_acquire_lock_before_handler_under_wait_and_replay_winner_path()
+    {
+        // Winner path: TryInsert succeeds → middleware should acquire the lock BEFORE invoking
+        // next so losers actually block on lock contention rather than racing on an unrelated mutex.
+        byte[] body = [1, 2, 3];
+        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var dlock = Substitute.For<IDistributedLock>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockAcquired = false;
+        lockProvider.TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+                    .Returns(_ =>
+                    {
+                        lockAcquired = true;
+                        return Task.FromResult<IDistributedLock?>(dlock);
+                    });
+
+        var nextSawLock = false;
+        var middleware = _CreateMiddlewareWithLock(cache, lockProvider);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, ctx =>
+        {
+            nextSawLock = lockAcquired;
+            ctx.Response.StatusCode = 200;
+            return Task.CompletedTask;
+        });
+
+        nextSawLock.Should().BeTrue();
     }
 
     [Fact]
@@ -553,7 +549,7 @@ public sealed class IdempotencyMiddlewareTests : TestBase
                     .Returns(dlock);
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
         var nextCalled = false;
 
         await middleware.InvokeAsync(context, _ => { nextCalled = true; return Task.CompletedTask; });
@@ -566,7 +562,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [Fact]
     public async Task should_return_409_timeout_when_lock_acquisition_times_out()
     {
-        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = [1], CreatedAt = DateTimeOffset.UtcNow };
+        byte[] body = [1, 2, 3];
+        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -581,12 +578,12 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             .Returns(new ProblemDetails { Status = 409 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight-timeout"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_in_flight_timeout"))
         );
     }
 
@@ -621,14 +618,14 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             .Returns(new ProblemDetails { Status = 422 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: body);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).UnprocessableEntity(
             Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d =>
                 d.ContainsKey("idempotency_key") &&
-                d["idempotency_key"].Any(e => e.Code == "g:idempotency-key-reused")
+                d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused")
             )
         );
     }
@@ -636,7 +633,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     [Fact]
     public async Task should_return_409_timeout_on_wait_and_replay_when_post_lock_record_is_inflight()
     {
-        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = [1], CreatedAt = DateTimeOffset.UtcNow };
+        byte[] body = [1, 2, 3];
+        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -655,19 +653,20 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             .Returns(new ProblemDetails { Status = 409 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight-timeout"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_in_flight_timeout"))
         );
     }
 
     [Fact]
     public async Task should_return_409_timeout_on_wait_and_replay_when_post_lock_record_is_missing()
     {
-        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = [1], CreatedAt = DateTimeOffset.UtcNow };
+        byte[] body = [1, 2, 3];
+        var inFlight = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -686,12 +685,12 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             .Returns(new ProblemDetails { Status = 409 });
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider, problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         problemDetailsCreator.Received(1).Conflict(
-            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency-in-flight-timeout"))
+            Arg.Is<IReadOnlyCollection<ErrorDescriptor>>(es => es.Any(e => e.Code == "g:idempotency_in_flight_timeout"))
         );
     }
 
@@ -720,8 +719,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         problemDetailsCreator.When(p => p.Normalize(Arg.Any<ProblemDetails>()))
                              .Do(_ => pdNormalized = true);
 
-        var middleware = _CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
+        var middleware = CreateMiddleware(options: options, cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
         var nextCalled = false;
 
         // when
@@ -742,8 +741,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var options = _OptionsWithCap(cap: 5, behavior: OversizeBehavior.PassThrough);
         var cache = Substitute.For<ICache>();
 
-        var middleware = _CreateMiddleware(options: options, cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
+        var middleware = CreateMiddleware(options: options, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5, 6, 7, 8]);
         var nextCalled = false;
 
         // when
@@ -773,8 +772,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(options: options, cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5]);
+        var middleware = CreateMiddleware(options: options, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3, 4, 5]);
         var nextCalled = false;
 
         // when
@@ -803,8 +802,8 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
 
         // when — handler returns 503
         await middleware.InvokeAsync(context, ctx =>
@@ -823,14 +822,17 @@ public sealed class IdempotencyMiddlewareTests : TestBase
     public async Task should_cache_422_response_using_default_predicate()
     {
         // given — no custom predicate, response is 422 (cacheable per AE5)
+        byte[] body = [1, 2, 3];
+        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
+
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         // when — handler returns 422
         await middleware.InvokeAsync(context, ctx =>
@@ -855,14 +857,16 @@ public sealed class IdempotencyMiddlewareTests : TestBase
         var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
         opts.Value.Returns(new IdempotencyOptions { ShouldCacheResponse = _ => true });
 
+        byte[] body = [1, 2, 3];
+        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
-        var middleware = _CreateMiddleware(options: opts, cache: cache);
-        var context = _CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        var middleware = CreateMiddleware(options: opts, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
 
         // when — handler returns 503
         await middleware.InvokeAsync(context, ctx =>
@@ -878,5 +882,287 @@ public sealed class IdempotencyMiddlewareTests : TestBase
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>()
         );
+    }
+
+    // ── new behaviors introduced by middleware rewrite ───────────────────────
+
+    [Fact]
+    public async Task should_remove_marker_when_upsert_throws()
+    {
+        // given — UpsertAsync fails after successful next; middleware must remove the marker and rethrow
+        byte[] body = [1, 2, 3];
+        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+        cache.UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        var act = () => middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await cache.Received(1).RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_skip_upsert_when_marker_recheck_finds_no_value()
+    {
+        // given — pre-next marker is present (TryInsert succeeded) but disappears before finalize
+        byte[] body = [1, 2, 3];
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_skip_upsert_when_marker_recheck_finds_different_fingerprint()
+    {
+        // given — another writer raced and replaced the marker with a different fingerprint
+        byte[] body = [1, 2, 3];
+        var otherMarker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData([9, 9, 9]), CreatedAt = DateTimeOffset.UtcNow };
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(otherMarker, hasValue: true));
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_return_422_when_inflight_marker_has_different_fingerprint()
+    {
+        // given — cached InFlight marker exists with a fingerprint that does NOT match the incoming body
+        byte[] body = [1, 2, 3];
+        var inFlight = new IdempotencyRecord
+        {
+            Kind = RecordKind.InFlight,
+            Fingerprint = SHA256.HashData([9, 9, 9]),
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(new CacheValue<IdempotencyRecord>(inFlight, hasValue: true));
+
+        var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
+        problemDetailsCreator.UnprocessableEntity(Arg.Any<Dictionary<string, List<ErrorDescriptor>>>())
+            .Returns(new ProblemDetails { Status = 422 });
+
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        // mismatch wins over in-flight 409
+        problemDetailsCreator.Received(1).UnprocessableEntity(
+            Arg.Is<Dictionary<string, List<ErrorDescriptor>>>(d => d["idempotency_key"].Any(e => e.Code == "g:idempotency_key_reused"))
+        );
+    }
+
+    [Theory]
+    [InlineData("abcd")]   // SOH control character
+    [InlineData("abcd")]   // DEL
+    [InlineData("ab\ncd")]       // newline
+    public async Task should_reject_with_400_when_key_contains_control_characters(string malformedKey)
+    {
+        var cache = Substitute.For<ICache>();
+        var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
+        problemDetailsCreator.BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
+            .Returns(new ProblemDetails { Status = 400 });
+
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: malformedKey, body: [1, 2, 3]);
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        problemDetailsCreator.Received(1).BadRequest(
+            Arg.Any<string?>(),
+            Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == "g:idempotency_key_malformed")
+        );
+        await cache.DidNotReceive().GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_reject_with_400_when_key_exceeds_255_characters()
+    {
+        var longKey = new string('a', 256);
+
+        var cache = Substitute.For<ICache>();
+        var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
+        problemDetailsCreator.BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
+            .Returns(new ProblemDetails { Status = 400 });
+
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: longKey, body: [1, 2, 3]);
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        problemDetailsCreator.Received(1).BadRequest(
+            Arg.Any<string?>(),
+            Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == "g:idempotency_key_malformed")
+        );
+    }
+
+    [Fact]
+    public async Task should_reject_with_400_when_key_is_multi_valued()
+    {
+        var cache = Substitute.For<ICache>();
+        var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
+        problemDetailsCreator.BadRequest(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
+            .Returns(new ProblemDetails { Status = 400 });
+
+        var middleware = CreateMiddleware(cache: cache, problemDetailsCreator: problemDetailsCreator);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+        context.Request.Headers.Append(HttpHeaderNames.IdempotencyKey, "k2");
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        problemDetailsCreator.Received(1).BadRequest(
+            Arg.Any<string?>(),
+            Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == "g:idempotency_key_malformed")
+        );
+    }
+
+    [Fact]
+    public async Task should_clear_preexisting_allowlist_header_before_writing_replay()
+    {
+        // given — Content-Type set upstream BEFORE idempotency middleware runs replay
+        byte[] body = [1, 2, 3];
+        byte[] fingerprint = SHA256.HashData(body);
+        var record = new IdempotencyRecord
+        {
+            Kind = RecordKind.Complete,
+            StatusCode = 200,
+            Headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = ["application/json"],
+            },
+            Body = [10],
+            Fingerprint = fingerprint,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(new CacheValue<IdempotencyRecord>(record, hasValue: true));
+
+        var middleware = CreateMiddleware(cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+        context.Response.Headers["Content-Type"] = "text/plain"; // upstream value
+
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
+
+        // Captured value (application/json) wins; upstream text/plain is cleared.
+        context.Response.Headers["Content-Type"].ToString().Should().Be("application/json");
+    }
+
+    [Fact]
+    public async Task should_short_circuit_sha256_when_custom_request_fingerprint_provided()
+    {
+        // given — RequestFingerprint delegate returns a fixed value WITHOUT touching the body
+        byte[] body = [1, 2, 3];
+        byte[] fakeFingerprint = [0xDE, 0xAD, 0xBE, 0xEF];
+
+        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
+        opts.Value.Returns(new IdempotencyOptions
+        {
+            RequestFingerprint = _ => new ValueTask<byte[]>(fakeFingerprint),
+        });
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(
+                 new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = fakeFingerprint, CreatedAt = DateTimeOffset.UtcNow },
+                 hasValue: true));
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = CreateMiddleware(options: opts, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: body);
+
+        await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        // Marker carries the custom fingerprint — SHA-256 path was skipped.
+        await cache.Received(1).TryInsertAsync(
+            Arg.Any<string>(),
+            Arg.Is<IdempotencyRecord>(r => r.Fingerprint != null && r.Fingerprint.SequenceEqual(fakeFingerprint)),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>()
+        );
+    }
+
+    [Fact]
+    public async Task should_pass_inflight_marker_ttl_equal_to_key_expiration()
+    {
+        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
+        opts.Value.Returns(new IdempotencyOptions { IdempotencyKeyExpiration = TimeSpan.FromHours(7) });
+
+        TimeSpan? capturedMarkerTtl = null;
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(
+                Arg.Any<string>(),
+                Arg.Any<IdempotencyRecord>(),
+                Arg.Do<TimeSpan?>(t => capturedMarkerTtl = t),
+                Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = CreateMiddleware(options: opts, cache: cache);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2, 3]);
+
+        await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
+
+        capturedMarkerTtl.Should().Be(TimeSpan.FromHours(7));
+    }
+
+    [Fact]
+    public async Task should_use_cancellation_token_none_for_marker_cleanup()
+    {
+        // given — cts is cancelled by the handler before it throws; cleanup must still run
+        // with CancellationToken.None (i.e., a non-cancelled token).
+        var cts = new CancellationTokenSource();
+        var ctp = Substitute.For<ICancellationTokenProvider>();
+        ctp.Token.Returns(cts.Token);
+
+        var cache = Substitute.For<ICache>();
+        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
+        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+
+        var middleware = CreateMiddleware(cache: cache, cancellationTokenProvider: ctp);
+        var context = CreateContext(idempotencyKey: "k1", body: [1, 2]);
+
+        var act = () => middleware.InvokeAsync(context, async _ =>
+        {
+            await cts.CancelAsync();
+            throw new InvalidOperationException("boom");
+        });
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        await cache.Received(1).RemoveAsync(Arg.Any<string>(), Arg.Is<CancellationToken>(c => !c.IsCancellationRequested));
     }
 }

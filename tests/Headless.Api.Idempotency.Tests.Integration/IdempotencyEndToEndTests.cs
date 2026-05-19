@@ -66,7 +66,7 @@ public sealed class IdempotencyEndToEndTests
         conflict.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
         var json = await conflict.Content.ReadAsStringAsync();
-        json.Should().Contain("g:idempotency-key-reused");
+        json.Should().Contain("g:idempotency_key_reused");
     }
 
     [Fact]
@@ -133,7 +133,7 @@ public sealed class IdempotencyEndToEndTests
 
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
         var json = await response.Content.ReadAsStringAsync();
-        json.Should().Contain("g:idempotency-body-too-large");
+        json.Should().Contain("g:idempotency_body_too_large");
     }
 
     [Fact]

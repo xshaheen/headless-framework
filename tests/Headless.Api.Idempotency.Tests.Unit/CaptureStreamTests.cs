@@ -216,4 +216,37 @@ public sealed class CaptureStreamTests
 
         capture.CanSeek.Should().BeFalse();
     }
+
+    [Fact]
+    public void length_throws_not_supported_exception()
+    {
+        var inner = new MemoryStream();
+        using var capture = new CaptureStream(inner, _Cap);
+
+        var act = () => _ = capture.Length;
+
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    [Fact]
+    public void position_get_throws_not_supported_exception()
+    {
+        var inner = new MemoryStream();
+        using var capture = new CaptureStream(inner, _Cap);
+
+        var act = () => _ = capture.Position;
+
+        act.Should().Throw<NotSupportedException>();
+    }
+
+    [Fact]
+    public void position_set_throws_not_supported_exception()
+    {
+        var inner = new MemoryStream();
+        using var capture = new CaptureStream(inner, _Cap);
+
+        var act = () => capture.Position = 0;
+
+        act.Should().Throw<NotSupportedException>();
+    }
 }

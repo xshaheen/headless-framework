@@ -19,5 +19,18 @@ public sealed class IdempotencyMetadata
         Configure = configure;
     }
 
+    /// <summary>
+    /// Delegate invoked once per metadata instance (cached by reference) against a fresh clone of
+    /// the application-level options. All scalar properties (<see cref="IdempotencyOptions.IdempotencyKeyExpiration"/>,
+    /// <see cref="IdempotencyOptions.InFlightStrategy"/>, <see cref="IdempotencyOptions.MismatchStatusCode"/>,
+    /// etc.) and collection/delegate properties (<see cref="IdempotencyOptions.Methods"/>,
+    /// <see cref="IdempotencyOptions.ReplayHeaderAllowlist"/>, <see cref="IdempotencyOptions.KeyDeriver"/>,
+    /// <see cref="IdempotencyOptions.RequestFingerprint"/>, <see cref="IdempotencyOptions.ShouldApply"/>,
+    /// <see cref="IdempotencyOptions.ShouldCacheResponse"/>) are honored.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IdempotencyOptions.HeaderName"/> overrides are ignored — the middleware reads the
+    /// idempotency-key request header before resolving endpoint metadata.
+    /// </remarks>
     public Action<IdempotencyOptions> Configure { get; }
 }

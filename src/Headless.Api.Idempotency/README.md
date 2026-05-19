@@ -7,8 +7,10 @@ Stripe-style HTTP idempotency middleware for ASP.NET Core. Cache full HTTP respo
 Legacy "idempotency as a uniqueness guard" (409 on any duplicate key) makes the receipt unrecoverable: a client whose first response was lost on the wire retries with the same key and gets 409 instead of the original 201. This package implements the standard contract (Stripe, AWS, PayPal, Square, IETF `draft-ietf-httpapi-idempotency-key-header`):
 
 - **Same key + same body** → replay original response (status, allowlisted headers, body bytes).
-- **Same key + different body** → 422 Unprocessable Content (`g:idempotency-key-reused`).
-- **Same key, original in flight** → 409 Conflict (`g:idempotency-in-flight`), or `WaitAndReplay` with a distributed lock.
+- **Same key + different body** → 422 Unprocessable Content (`g:idempotency_key_reused`).
+- **Same key, original in flight** → 409 Conflict (`g:idempotency_in_flight`), or `WaitAndReplay` with a distributed lock.
+- **Same key, lock acquisition timed out under `WaitAndReplay`** → 409 Conflict (`g:idempotency_in_flight_timeout`) — distinct from `g:idempotency_in_flight` so callers can branch.
+- **Idempotency-Key header malformed** (length over 255, control characters, multi-valued) → 400 Bad Request (`g:idempotency_key_malformed`).
 - **New key** → execute fresh.
 
 ## Key Features
@@ -65,7 +67,7 @@ app.Run();
 | `InFlightStrategy` | `Reject` | `Reject` returns 409 on concurrent same-key requests. `WaitAndReplay` blocks on a distributed lock and replays the winner. |
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. |
 | `MaxBodySizeForHashing` | 1 MiB | Maximum body size eligible for fingerprinting. |
-| `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency-body-too-large`). `PassThrough` runs the handler without idempotency guarantees. |
+| `OversizeBehavior` | `Reject` | `Reject` returns 413 (`g:idempotency_body_too_large`). `PassThrough` runs the handler without idempotency guarantees. |
 | `MismatchStatusCode` | 422 | Status code for fingerprint mismatch. Must be 409 or 422. |
 | `ReplayHeaderAllowlist` | Content-Type, Content-Language, Content-Encoding, Content-Disposition, Location, Link, ETag, Last-Modified, Cache-Control, Vary | Response headers copied into the cached record. |
 | `ShouldCacheResponse` | `DefaultCachePredicate.Instance` | Predicate deciding whether a completed response is cached. |
@@ -99,10 +101,11 @@ app.MapPost("/webhooks", HandleWebhook)
 
 ## Side Effects
 
-- Reads `ICurrentTenant.Id` for cache-key composition; register `UseIdempotency()` AFTER tenant resolution and authorization so unauthenticated requests do not allocate cache slots.
+- Reads `ICurrentTenant.Id` and `ICurrentUser.UserId` for cache-key composition; register `UseIdempotency()` AFTER tenant resolution and authorization so unauthenticated requests do not allocate cache slots. When **both** tenant and user identity are absent and no `KeyDeriver` is configured, the middleware refuses to apply idempotency (logs a warning, passes through). Configure `KeyDeriver` explicitly for fully anonymous endpoints.
 - Buffers the request body up to `MaxBodySizeForHashing + 1` bytes via `HttpRequest.EnableBuffering`.
-- On replay, writes `Idempotent-Replayed: true` to the response.
-- On cache miss, inserts an `InFlight` marker before invoking the handler, then upserts the `Complete` record afterward; the marker TTL is `InFlightLockTimeout + 5s` so a crashed handler unblocks retries.
+- On replay, writes `Idempotent-Replayed: true` to the response. Pre-existing allowlisted response headers set by upstream middleware are removed before captured headers are written, so replay is byte-equivalent regardless of per-request mutations earlier in the pipeline. Headers outside the allowlist (e.g., `traceparent`) are left in place.
+- On cache miss, inserts an `InFlight` marker before invoking the handler, then upserts the `Complete` record afterward. The marker uses the same TTL as `IdempotencyKeyExpiration` so a slow handler cannot lose its slot to early eviction.
+- When the response body exceeds `MaxBodySizeForHashing` (`captureStream.TruncatedCapture`), the completed record is **not** stored and replay does not apply to that request, regardless of `OversizeBehavior`. `OversizeBehavior` controls **request**-body handling only.
 
 ## Boundary Doctrine
 

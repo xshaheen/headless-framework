@@ -114,6 +114,31 @@ public sealed class IdempotencyRecordSerializationTests
         restored.Body.Should().Equal(allBytes);
     }
 
+    [Fact]
+    public void headers_lookups_remain_case_insensitive_after_round_trip()
+    {
+        var original = new IdempotencyRecord
+        {
+            Kind = RecordKind.Complete,
+            StatusCode = 200,
+            Headers = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = ["application/json"],
+                ["Cache-Control"] = ["no-store"],
+            },
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+
+        var json = JsonSerializer.Serialize(original, _options);
+        var restored = JsonSerializer.Deserialize<IdempotencyRecord>(json, _options)!;
+
+        // Lowercase keys must hit the case-insensitive comparer.
+        restored.Headers["content-type"].Should().Equal("application/json");
+        restored.Headers["CACHE-CONTROL"].Should().Equal("no-store");
+        restored.Headers.ContainsKey("Content-Type").Should().BeTrue();
+        restored.Headers.ContainsKey("content-TYPE").Should().BeTrue();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
