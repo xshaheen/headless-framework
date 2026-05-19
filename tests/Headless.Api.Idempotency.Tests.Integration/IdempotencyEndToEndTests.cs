@@ -5,6 +5,12 @@ using Headless.Api.Idempotency;
 using Headless.Constants;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
+
+// CA2025: `_Post` builds an `HttpRequestMessage` under `using var` and awaits `SendAsync` inline,
+// so the request disposes only after the SendAsync task completes. Concurrency tests store the
+// returned Task to interleave with another request, which the analyzer cannot see is safe.
+#pragma warning disable CA2025
 
 namespace Tests;
 
@@ -134,6 +140,12 @@ public sealed class IdempotencyEndToEndTests
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Contain("g:idempotency_body_too_large");
+
+        // 413 is not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping, so the
+        // middleware constructs the ProblemDetails inline and runs it through Normalize. The
+        // shape must match other status codes (404/408/500/501) — title and type must be set.
+        json.Should().Contain($"\"title\":\"{HeadlessProblemDetailsConstants.Titles.PayloadTooLarge}\"");
+        json.Should().Contain($"\"type\":\"{HeadlessProblemDetailsConstants.Types.PayloadTooLarge}\"");
     }
 
     [Fact]
@@ -244,6 +256,129 @@ public sealed class IdempotencyEndToEndTests
         var mismatch = await _Post(client, "/strict", key: "k1", body: "two");
 
         mismatch.StatusCode.Should().Be(HttpStatusCode.Conflict, "endpoint override changes mismatch status to 409");
+    }
+
+    // ── AE3: concurrent in-flight with Reject strategy ───────────────────────
+
+    [Fact]
+    public async Task concurrent_requests_with_reject_strategy_should_invoke_handler_once_and_409_the_loser()
+    {
+        var gate = new IdempotencyTestApp.TestHandlerGate();
+        await using var app = await IdempotencyTestApp.CreateAsync(handlerGate: gate);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        // Fire the winner first so it inserts the InFlight marker, then wait for it to enter
+        // the handler before firing the loser. This guarantees the loser observes InFlight.
+        var winnerTask = _Post(client, "/echo", key: "k1", body: "hello");
+        await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(2));
+        var loserTask = _Post(client, "/echo", key: "k1", body: "hello");
+
+        // The loser should reject immediately on the in-flight marker without invoking the handler.
+        var loser = await loserTask;
+        loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var loserBody = await loser.Content.ReadAsStringAsync();
+        loserBody.Should().Contain("g:idempotency_in_flight");
+
+        // Now release the winner and verify it completed normally.
+        gate.Release();
+        var winner = await winnerTask;
+        winner.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // The handler must have been entered exactly once (the loser never reached it).
+        gate.InvocationCount.Should().Be(1, "Reject strategy short-circuits before invoking the handler");
+    }
+
+    // ── AE4: concurrent in-flight with WaitAndReplay strategy ────────────────
+
+    [Fact]
+    public async Task concurrent_requests_with_wait_and_replay_should_block_loser_until_winner_completes_then_replay()
+    {
+        var gate = new IdempotencyTestApp.TestHandlerGate();
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromSeconds(10); },
+            withLockProvider: true,
+            handlerGate: gate);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var winnerTask = _Post(client, "/echo", key: "k1", body: "hello");
+        await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(2));
+
+        var loserTask = _Post(client, "/echo", key: "k1", body: "hello");
+        // The loser must NOT complete while the winner is gated — it should be blocked on the
+        // distributed lock. Give it half a second to confirm it's still pending.
+        await Task.Delay(500);
+        loserTask.IsCompleted.Should().BeFalse("loser is blocked on the WaitAndReplay lock");
+
+        // Release the winner; both should now succeed, with the loser observing a byte-for-byte
+        // replay of the winner's response (same invocation GUID, Idempotent-Replayed: true).
+        gate.Release();
+        var winner = await winnerTask;
+        var loser = await loserTask;
+
+        winner.StatusCode.Should().Be(HttpStatusCode.Created);
+        loser.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        winner.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("winner ran the handler");
+        loser.Headers.Should().Contain(h => h.Key == HttpHeaderNames.IdempotentReplayed, "loser observed the replay");
+
+        var winnerBody = await winner.Content.ReadAsStringAsync();
+        var loserBody = await loser.Content.ReadAsStringAsync();
+        loserBody.Should().Be(winnerBody, "replay must be byte-equivalent to the original");
+
+        gate.InvocationCount.Should().Be(1, "WaitAndReplay never invokes the handler twice for the same key");
+    }
+
+    [Fact]
+    public async Task wait_and_replay_should_409_with_in_flight_timeout_when_winner_does_not_finish_before_acquire_timeout()
+    {
+        var gate = new IdempotencyTestApp.TestHandlerGate();
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromMilliseconds(250); },
+            withLockProvider: true,
+            handlerGate: gate);
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var winnerTask = _Post(client, "/echo", key: "k1", body: "hello");
+        await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(2));
+
+        // Loser's acquire timeout is shorter than the winner's hold — it should give up and
+        // return 409 g:idempotency_in_flight_timeout rather than block indefinitely.
+        var loser = await _Post(client, "/echo", key: "k1", body: "hello");
+
+        loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        var loserBody = await loser.Content.ReadAsStringAsync();
+        loserBody.Should().Contain("g:idempotency_in_flight_timeout");
+
+        gate.Release();
+        await winnerTask;
+    }
+
+    // ── AE8: null-tenant + anonymous user → pass-through (no shared bucket) ──
+
+    [Fact]
+    public async Task anonymous_requests_with_no_tenant_and_no_user_identity_should_pass_through_without_replay()
+    {
+        await using var app = await IdempotencyTestApp.CreateAsync();
+        var userState = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
+        userState.SetAnonymous();
+
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        var first = await _Post(client, "/echo", key: "k1", body: "same");
+        var second = await _Post(client, "/echo", key: "k1", body: "same");
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        // Pass-through path must not emit the replay header, and must invoke the handler each time
+        // (proven by per-invocation GUID in the body — two distinct GUIDs prove the cache slot
+        // was never used).
+        first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+        second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
+
+        var firstBody = await first.Content.ReadAsStringAsync();
+        var secondBody = await second.Content.ReadAsStringAsync();
+        firstBody.Should().NotBe(secondBody, "no idempotency means each call runs the handler independently");
     }
 
     private static async Task<HttpResponseMessage> _Post(
