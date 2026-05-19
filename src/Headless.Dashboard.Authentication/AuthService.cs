@@ -53,7 +53,7 @@ public sealed class AuthService : IAuthService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Authentication error");
+            _logger.LogAuthenticationError(ex);
             return AuthResult.Failure("Authentication error");
         }
     }
@@ -192,4 +192,15 @@ public sealed class AuthService : IAuthService
 
         return Task.FromResult(AuthResult.Failure("Host authentication required"));
     }
+}
+
+internal static partial class AuthServiceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "AuthenticationError",
+        Level = LogLevel.Error,
+        Message = "Authentication error"
+    )]
+    public static partial void LogAuthenticationError(this ILogger logger, Exception exception);
 }

@@ -66,23 +66,16 @@ public static class Run
         {
             if (attempts > 1 && logger?.IsEnabled(LogLevel.Information) == true)
             {
-                logger.LogInformation(
-                    "Retrying {Attempts} attempt after {Delay:g}...",
-                    attempts,
-                    timeProvider.GetUtcNow().Subtract(startTime)
-                );
+                logger.LogRetryingAttempt(attempts, timeProvider.GetUtcNow().Subtract(startTime));
             }
 
             try
             {
                 return await action(state, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (attempts < maxAttempts)
+            catch (Exception e) when (attempts < maxAttempts)
             {
-                if (logger?.IsEnabled(LogLevel.Error) == true)
-                {
-                    logger.LogError(ex, "Retry error: {Message}", ex.Message);
-                }
+                logger?.LogRetryError(e, e.Message);
 
                 await timeProvider
                     .DelayUntilElapsedOrCancel(currentBackoffTime.Milliseconds(), cancellationToken)
@@ -270,4 +263,18 @@ public static class Run
     #endregion
 
     private static readonly int[] _DefaultBackoffIntervals = [100, 1000, 2000, 2000, 5000, 5000, 10000, 30000, 60000];
+}
+
+internal static partial class RunLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "RetryingAttempt",
+        Level = LogLevel.Information,
+        Message = "Retrying {Attempts} attempt after {Delay:g}..."
+    )]
+    public static partial void LogRetryingAttempt(this ILogger logger, int attempts, TimeSpan delay);
+
+    [LoggerMessage(EventId = 2, EventName = "RetryError", Level = LogLevel.Error, Message = "Retry error: {Message}")]
+    public static partial void LogRetryError(this ILogger logger, Exception exception, string message);
 }

@@ -38,7 +38,7 @@ internal sealed class NodeHeartBeatBackgroundService(
             }
             catch (Exception e)
             {
-                logger.LogError(e, "Heartbeat background service failed");
+                logger.LogHeartbeatFailed(e);
                 await timeProvider.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }
@@ -75,4 +75,15 @@ internal sealed class NodeHeartBeatBackgroundService(
         _tickerHeartBeatPeriodicTimer.Dispose();
         base.Dispose();
     }
+}
+
+internal static partial class NodeHeartBeatBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeartbeatFailed",
+        Level = LogLevel.Error,
+        Message = "Heartbeat background service failed"
+    )]
+    public static partial void LogHeartbeatFailed(this ILogger logger, Exception exception);
 }

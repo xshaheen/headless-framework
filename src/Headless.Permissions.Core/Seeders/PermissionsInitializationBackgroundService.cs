@@ -136,7 +136,7 @@ public sealed class PermissionsInitializationBackgroundService(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to save static permissions to the database");
+                    logger.LogFailedToSaveStaticPermissions(e);
 
                     throw; // Polly will catch it
                 }
@@ -162,9 +162,28 @@ public sealed class PermissionsInitializationBackgroundService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to pre-cache dynamic permissions");
+            logger.LogFailedToPreCacheDynamicPermissions(e);
 
             throw;
         }
     }
+}
+
+internal static partial class PermissionsInitializationBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToSaveStaticPermissions",
+        Level = LogLevel.Error,
+        Message = "Failed to save static permissions to the database"
+    )]
+    public static partial void LogFailedToSaveStaticPermissions(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FailedToPreCacheDynamicPermissions",
+        Level = LogLevel.Error,
+        Message = "Failed to pre-cache dynamic permissions"
+    )]
+    public static partial void LogFailedToPreCacheDynamicPermissions(this ILogger logger, Exception exception);
 }

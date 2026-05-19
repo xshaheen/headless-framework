@@ -22,7 +22,7 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Processor '{ProcessorName}' failed. Retrying...", inner.ToString());
+                _logger.LogProcessorFailedRetrying(ex, inner.ToString());
                 await context.WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
             }
         }
@@ -32,4 +32,19 @@ public sealed class InfiniteRetryProcessor(IProcessor inner, ILoggerFactory logg
     {
         return inner.ToString();
     }
+}
+
+internal static partial class InfiniteRetryProcessorLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "ProcessorFailedRetrying",
+        Level = LogLevel.Warning,
+        Message = "Processor '{ProcessorName}' failed. Retrying..."
+    )]
+    public static partial void LogProcessorFailedRetrying(
+        this ILogger logger,
+        Exception exception,
+        string? processorName
+    );
 }

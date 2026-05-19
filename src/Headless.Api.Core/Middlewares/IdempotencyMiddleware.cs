@@ -12,22 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Api.Middlewares;
 
-public sealed class IdempotencyMiddlewareOptions
-{
-    /// <summary>
-    /// Gets or sets the time until the idempotency key expires.
-    /// </summary>
-    public TimeSpan? IdempotencyKeyExpiration { get; set; } = TimeSpan.FromHours(1);
-}
-
-public sealed class IdempotencyMiddlewareOptionsValidator : AbstractValidator<IdempotencyMiddlewareOptions>
-{
-    public IdempotencyMiddlewareOptionsValidator()
-    {
-        RuleFor(x => x.IdempotencyKeyExpiration).GreaterThan(TimeSpan.Zero);
-    }
-}
-
 public sealed class IdempotencyMiddleware(
     ICache cache,
     IOptionsSnapshot<IdempotencyMiddlewareOptions> optionsAccessor,
@@ -67,8 +51,34 @@ public sealed class IdempotencyMiddleware(
             return;
         }
 
-        logger.LogWarning("Idempotency key {IdempotencyKey} already exists, returning 409 Conflict.", idempotencyKey);
+        logger.LogDuplicatedIdempotencyKey(idempotencyKey);
         var problemDetails = problemDetailsCreator.Conflict(GeneralMessageDescriber.DuplicatedRequest());
+
         await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
     }
+}
+
+public sealed class IdempotencyMiddlewareOptions
+{
+    /// <summary>Gets or sets the time until the idempotency key expires.</summary>
+    public TimeSpan? IdempotencyKeyExpiration { get; set; } = TimeSpan.FromHours(1);
+}
+
+public sealed class IdempotencyMiddlewareOptionsValidator : AbstractValidator<IdempotencyMiddlewareOptions>
+{
+    public IdempotencyMiddlewareOptionsValidator()
+    {
+        RuleFor(x => x.IdempotencyKeyExpiration).GreaterThan(TimeSpan.Zero);
+    }
+}
+
+internal static partial class IdempotencyMiddlewareLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "DuplicatedIdempotencyKey",
+        Level = LogLevel.Warning,
+        Message = "Idempotency key {IdempotencyKey} already exists, returning 409 Conflict."
+    )]
+    public static partial void LogDuplicatedIdempotencyKey(this ILogger logger, string idempotencyKey);
 }

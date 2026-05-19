@@ -57,7 +57,7 @@ internal sealed class HeadlessAuditPersistence(
         {
             // Elevated to Error: capture failure means an audit-tracked entity change is going to be
             // persisted without its audit row. Operators must see this in logs.
-            logger?.LogError(ex, "Audit change capture failed.");
+            logger?.LogAuditCaptureFailed(ex);
 
             var strategy = _auditOptions?.Value.CaptureErrorStrategy ?? CaptureErrorStrategy.Continue;
 
@@ -322,4 +322,15 @@ internal sealed class HeadlessAuditPersistence(
     }
 
     private sealed record PropertySnapshot(string Name, object? OriginalValue, bool IsModified);
+}
+
+internal static partial class HeadlessAuditPersistenceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "AuditCaptureFailed",
+        Level = LogLevel.Error,
+        Message = "Audit change capture failed."
+    )]
+    public static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception);
 }

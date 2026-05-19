@@ -730,11 +730,7 @@ internal sealed class ConsumerRegister(
             }
             catch (Exception e)
             {
-                _logger.LogError(
-                    e,
-                    "An exception occurred when process received message. Message:'{Message}'.",
-                    transportMessage
-                );
+                _logger.LogProcessReceivedMessageFailed(e, transportMessage);
 
                 await client.RejectAsync(sender);
 
@@ -883,11 +879,7 @@ internal sealed class ConsumerRegister(
                 }
                 catch (Exception ex)
                 {
-                    Logger.LogError(
-                        ex,
-                        "Failed to pause newly added consumer client for group '{GroupName}'.",
-                        GroupName
-                    );
+                    Logger.LogPauseNewlyAddedClientFailed(ex, GroupName);
                 }
             }
         }
@@ -995,4 +987,31 @@ internal sealed class ConsumerRegister(
     }
 
     #endregion
+}
+
+internal static partial class ConsumerRegisterLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "ProcessReceivedMessageFailed",
+        Level = LogLevel.Error,
+        Message = "An exception occurred when process received message. Message:'{Message}'."
+    )]
+    public static partial void LogProcessReceivedMessageFailed(
+        this ILogger logger,
+        Exception exception,
+        TransportMessage message
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "PauseNewlyAddedClientFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to pause newly added consumer client for group '{GroupName}'."
+    )]
+    public static partial void LogPauseNewlyAddedClientFailed(
+        this ILogger logger,
+        Exception exception,
+        string groupName
+    );
 }

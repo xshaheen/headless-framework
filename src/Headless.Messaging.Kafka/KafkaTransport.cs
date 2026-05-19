@@ -53,7 +53,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
             {
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.LogDebug("kafka topic message [{GetName}] has been published.", message.GetName());
+                    _logger.LogKafkaTopicMessagePublished(message.GetName());
                 }
 
                 return OperateResult.Success;
@@ -76,4 +76,15 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class KafkaTransportLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "KafkaTopicMessagePublished",
+        Level = LogLevel.Debug,
+        Message = "kafka topic message [{GetName}] has been published."
+    )]
+    public static partial void LogKafkaTopicMessagePublished(this ILogger logger, string getName);
 }

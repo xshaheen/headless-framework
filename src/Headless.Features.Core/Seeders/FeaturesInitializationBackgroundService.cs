@@ -133,7 +133,7 @@ public sealed class FeaturesInitializationBackgroundService(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to save static features to the database");
+                    logger.LogFailedToSaveStaticFeatures(e);
 
                     throw; // Polly will catch it
                 }
@@ -159,9 +159,28 @@ public sealed class FeaturesInitializationBackgroundService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to pre-cache dynamic features");
+            logger.LogFailedToPreCacheDynamicFeatures(e);
 
             throw;
         }
     }
+}
+
+internal static partial class FeaturesInitializationBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToSaveStaticFeatures",
+        Level = LogLevel.Error,
+        Message = "Failed to save static features to the database"
+    )]
+    public static partial void LogFailedToSaveStaticFeatures(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FailedToPreCacheDynamicFeatures",
+        Level = LogLevel.Error,
+        Message = "Failed to pre-cache dynamic features"
+    )]
+    public static partial void LogFailedToPreCacheDynamicFeatures(this ILogger logger, Exception exception);
 }

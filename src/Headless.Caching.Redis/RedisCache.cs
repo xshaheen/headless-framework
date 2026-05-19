@@ -46,11 +46,11 @@ public sealed class RedisCache(
     private const int _BatchSize = 250;
 
     // Cached selectors avoid per-call delegate allocation on the hot path.
-    private static readonly ScriptSelector _replaceIfEqualSelector = static l => l.ReplaceIfEqualScript;
-    private static readonly ScriptSelector _removeIfEqualSelector = static l => l.RemoveIfEqualScript;
-    private static readonly ScriptSelector _incrementSelector = static l => l.IncrementWithExpireScript;
-    private static readonly ScriptSelector _setIfHigherSelector = static l => l.SetIfHigherScript;
-    private static readonly ScriptSelector _setIfLowerSelector = static l => l.SetIfLowerScript;
+    private static readonly ScriptSelector _ReplaceIfEqualSelector = static l => l.ReplaceIfEqualScript;
+    private static readonly ScriptSelector _RemoveIfEqualSelector = static l => l.RemoveIfEqualScript;
+    private static readonly ScriptSelector _IncrementSelector = static l => l.IncrementWithExpireScript;
+    private static readonly ScriptSelector _SetIfHigherSelector = static l => l.SetIfHigherScript;
+    private static readonly ScriptSelector _SetIfLowerSelector = static l => l.SetIfLowerScript;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
@@ -234,7 +234,7 @@ public sealed class RedisCache(
         var redisResult = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _replaceIfEqualSelector,
+                _ReplaceIfEqualSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -272,7 +272,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _incrementSelector,
+                _IncrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -309,7 +309,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _incrementSelector,
+                _IncrementSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -346,7 +346,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _setIfHigherSelector,
+                _SetIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -383,7 +383,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _setIfHigherSelector,
+                _SetIfHigherSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -420,7 +420,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _setIfLowerSelector,
+                _SetIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -457,7 +457,7 @@ public sealed class RedisCache(
         var result = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _setIfLowerSelector,
+                _SetIfLowerSelector,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
@@ -678,9 +678,9 @@ public sealed class RedisCache(
                 {
                     total += await server.DatabaseSizeAsync().ConfigureAwait(false);
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    _logger.LogError(ex, "Unable to read database size from {Endpoint}", server.EndPoint);
+                    _logger.LogUnableToReadDatabaseSize(e, server.EndPoint);
                 }
             }
 
@@ -791,7 +791,7 @@ public sealed class RedisCache(
         var redisResult = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                _removeIfEqualSelector,
+                _RemoveIfEqualSelector,
                 new { key = (RedisKey)_GetKey(key), expected = expectedValue },
                 cancellationToken
             )
@@ -836,14 +836,9 @@ public sealed class RedisCache(
                         var count = await _database.KeyDeleteAsync(hashSlotKeys).ConfigureAwait(false);
                         deleted += count;
                     }
-                    catch (Exception ex)
+                    catch (Exception e)
                     {
-                        _logger.LogError(
-                            ex,
-                            "Unable to delete {HashSlot} keys ({Keys})",
-                            hashSlotGroup.Key,
-                            hashSlotKeys
-                        );
+                        _logger.LogUnableToDeleteHashSlotKeys(e, hashSlotGroup.Key, hashSlotKeys);
                     }
                 }
             }
@@ -857,9 +852,9 @@ public sealed class RedisCache(
                     var count = await _database.KeyDeleteAsync(batch).ConfigureAwait(false);
                     deleted += count;
                 }
-                catch (Exception ex)
+                catch (Exception e)
                 {
-                    _logger.LogError(ex, "Unable to delete keys ({Keys})", batch);
+                    _logger.LogUnableToDeleteKeys(e, batch);
                 }
             }
         }
@@ -1026,9 +1021,9 @@ public sealed class RedisCache(
             var value = _FromRedisValue<T>(redisValue);
             return new CacheValue<T>(value, true);
         }
-        catch (Exception ex)
+        catch (Exception e)
         {
-            _logger.LogError(ex, "Unable to deserialize value {Value} to type {Type}", redisValue, typeof(T).FullName);
+            _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
             throw;
         }
     }
@@ -1053,14 +1048,9 @@ public sealed class RedisCache(
                     result.Add(value);
                 }
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                _logger.LogError(
-                    ex,
-                    "Unable to deserialize value {Value} to type {Type}",
-                    redisValue,
-                    typeof(T).FullName
-                );
+                _logger.LogDeserializationFailed(e, redisValue, typeof(T).FullName);
                 throw;
             }
         }
@@ -1223,10 +1213,7 @@ public sealed class RedisCache(
 
         if (expiredValues > 0)
         {
-            if (_logger.IsEnabled(LogLevel.Trace))
-            {
-                _logger.LogTrace("Removed {ExpiredValues} expired values for key: {Key}", expiredValues, key);
-            }
+            _logger.LogExpiredValuesRemoved(expiredValues, key);
         }
     }
 
@@ -1257,4 +1244,61 @@ public sealed class RedisCache(
     {
         _keyedLock.Dispose();
     }
+}
+
+internal static partial class RedisCacheLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "UnableToReadDatabaseSize",
+        Level = LogLevel.Error,
+        Message = "Unable to read database size from {Endpoint}"
+    )]
+    public static partial void LogUnableToReadDatabaseSize(
+        this ILogger logger,
+        Exception exception,
+        System.Net.EndPoint? endpoint
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "UnableToDeleteHashSlotKeys",
+        Level = LogLevel.Error,
+        Message = "Unable to delete {HashSlot} keys ({Keys})"
+    )]
+    public static partial void LogUnableToDeleteHashSlotKeys(
+        this ILogger logger,
+        Exception exception,
+        int hashSlot,
+        RedisKey[] keys
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "UnableToDeleteKeys",
+        Level = LogLevel.Error,
+        Message = "Unable to delete keys ({Keys})"
+    )]
+    public static partial void LogUnableToDeleteKeys(this ILogger logger, Exception exception, RedisKey[] keys);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "DeserializationFailed",
+        Level = LogLevel.Error,
+        Message = "Unable to deserialize value {Value} to type {Type}"
+    )]
+    public static partial void LogDeserializationFailed(
+        this ILogger logger,
+        Exception exception,
+        RedisValue value,
+        string? type
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "ExpiredValuesRemoved",
+        Level = LogLevel.Trace,
+        Message = "Removed {ExpiredValues} expired values for key: {Key}"
+    )]
+    public static partial void LogExpiredValuesRemoved(this ILogger logger, long expiredValues, string key);
 }

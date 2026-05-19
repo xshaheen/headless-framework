@@ -37,8 +37,7 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug(
-                "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}",
+            logger.LogPulsarConfiguration(
                 BrokerAddressDisplay.Format(_options.ServiceUrl),
                 _options.EnableClientLog,
                 _options.TlsOptions is not null
@@ -117,4 +116,20 @@ public sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
         return _client!.NewProducer().Topic(topic).CreateAsync();
     }
+}
+
+internal static partial class ConnectionFactoryLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "PulsarConfiguration",
+        Level = LogLevel.Debug,
+        Message = "Messaging Pulsar configuration: ServiceUrl={ServiceUrl}, EnableClientLog={EnableClientLog}, HasTlsOptions={HasTlsOptions}"
+    )]
+    public static partial void LogPulsarConfiguration(
+        this ILogger logger,
+        string serviceUrl,
+        bool enableClientLog,
+        bool hasTlsOptions
+    );
 }

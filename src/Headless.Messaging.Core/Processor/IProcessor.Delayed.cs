@@ -44,13 +44,32 @@ public sealed class MessageDelayedProcessor(ILogger<MessageDelayedProcessor> log
                 .ScheduleMessagesOfDelayedAsync(scheduleTask, context.CancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (DbException ex)
+        catch (DbException e)
         {
-            logger.LogWarning(ex, "Get delayed messages from storage failed. Retrying...");
+            logger.LogGetDelayedMessagesFailed(e);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Schedule delayed message failed!");
+            logger.LogScheduleDelayedMessageFailed(ex);
         }
     }
+}
+
+internal static partial class MessageDelayedProcessorLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "GetDelayedMessagesFailed",
+        Level = LogLevel.Warning,
+        Message = "Get delayed messages from storage failed. Retrying..."
+    )]
+    public static partial void LogGetDelayedMessagesFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "ScheduleDelayedMessageFailed",
+        Level = LogLevel.Error,
+        Message = "Schedule delayed message failed!"
+    )]
+    public static partial void LogScheduleDelayedMessageFailed(this ILogger logger, Exception exception);
 }

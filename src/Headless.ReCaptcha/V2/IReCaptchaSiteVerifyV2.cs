@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Headless.ReCaptcha.Contracts;
 using Headless.ReCaptcha.Internals;
 using Microsoft.Extensions.Logging;
@@ -63,11 +64,10 @@ public sealed class ReCaptchaSiteVerifyV2(
         {
             if (logger.IsEnabled(LogLevel.Information))
             {
-                logger.LogInformation(
-                    "Recaptcha verification failed with status code {StatusCode} and response {Response}",
-                    httpResponseMessage.StatusCode,
-                    await httpResponseMessage.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false)
-                );
+                var responseBody = await httpResponseMessage
+                    .Content.ReadAsStringAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                logger.LogRecaptchaVerificationFailed(httpResponseMessage.StatusCode, responseBody);
             }
 
             httpResponseMessage.EnsureSuccessStatusCode();
@@ -93,4 +93,19 @@ public sealed class ReCaptchaSiteVerifyV2(
         return response
             ?? throw new InvalidOperationException("Failed to deserialize reCAPTCHA response. Response was null.");
     }
+}
+
+internal static partial class ReCaptchaSiteVerifyV2Log
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "RecaptchaV2VerificationFailed",
+        Level = LogLevel.Information,
+        Message = "Recaptcha verification failed with status code {StatusCode} and response {Response}"
+    )]
+    public static partial void LogRecaptchaVerificationFailed(
+        this ILogger logger,
+        HttpStatusCode statusCode,
+        string response
+    );
 }

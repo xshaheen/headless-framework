@@ -88,18 +88,9 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception e) when (e is not OptionsValidationException)
             {
-                if (ex is OptionsValidationException)
-                {
-                    throw;
-                }
-
-                logger.LogWarning(
-                    ex,
-                    "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues.",
-                    entry.Metadata.ClrType.FullName
-                );
+                logger.LogAuditCaptureFailed(e, entry.Metadata.ClrType.FullName);
             }
         }
 
@@ -128,7 +119,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         }
 
         _hasLoggedDisabledWarning = true;
-        logger.LogWarning("Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture.");
+        logger.LogAuditDisabled();
     }
 
     private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
@@ -449,12 +440,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 }
                 catch (Exception ex)
                 {
-                    logger.LogWarning(
-                        ex,
-                        "Sensitive value transformer threw for {EntityType}.{PropertyName}. Falling back to Redact.",
-                        clrType.FullName ?? clrType.Name,
-                        propertyName
-                    );
+                    logger.LogSensitiveTransformerFailed(ex, clrType.FullName ?? clrType.Name, propertyName);
 
                     _ApplyValues(
                         changeType,
@@ -591,4 +577,36 @@ internal static class AuditActionNames
     public const string Updated = "entity.updated";
     public const string Deleted = "entity.deleted";
     public const string Unknown = "entity.unknown";
+}
+
+internal static partial class EfAuditChangeCaptureLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "AuditCaptureFailed",
+        Level = LogLevel.Warning,
+        Message = "Audit capture failed for entity {EntityType}. Audit entry skipped; entity save continues."
+    )]
+    public static partial void LogAuditCaptureFailed(this ILogger logger, Exception exception, string? entityType);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "AuditDisabled",
+        Level = LogLevel.Warning,
+        Message = "Audit logging is disabled. Set AuditLogOptions.IsEnabled = true to enable audit capture."
+    )]
+    public static partial void LogAuditDisabled(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SensitiveTransformerFailed",
+        Level = LogLevel.Warning,
+        Message = "Sensitive value transformer threw for {EntityType}.{PropertyName}. Falling back to Redact."
+    )]
+    public static partial void LogSensitiveTransformerFailed(
+        this ILogger logger,
+        Exception exception,
+        string entityType,
+        string propertyName
+    );
 }

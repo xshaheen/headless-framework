@@ -20,7 +20,7 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to get content for file {FileId}", Id);
+            logger.LogFailedToGetContent(e, Id);
             throw;
         }
     }
@@ -29,4 +29,15 @@ internal sealed class TusAzureFileWrapper(TusAzureFile azureFile, BlobClient blo
     {
         return await Task.FromResult(azureFile.Metadata.ToTus());
     }
+}
+
+internal static partial class TusAzureFileWrapperLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToGetContent",
+        Level = LogLevel.Error,
+        Message = "Failed to get content for file {FileId}"
+    )]
+    public static partial void LogFailedToGetContent(this ILogger logger, Exception exception, string fileId);
 }
