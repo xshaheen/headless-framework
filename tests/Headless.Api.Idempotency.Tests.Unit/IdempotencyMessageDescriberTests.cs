@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Idempotency;
-using Headless.Api.Resources;
 
 namespace Tests;
 

@@ -493,7 +493,7 @@ public sealed class IdempotencyEndToEndTests
 
         using var client = IdempotencyTestApp.CreateClient(app);
 
-        var extraHeaders = new Dictionary<string, string> { ["X-Tenant"] = "acme" };
+        var extraHeaders = new Dictionary<string, string>(StringComparer.Ordinal) { ["X-Tenant"] = "acme" };
         var first = await _Post(client, "/echo", key: "shared-k", body: "same", extraHeaders: extraHeaders);
         var second = await _Post(client, "/echo", key: "shared-k", body: "same", extraHeaders: extraHeaders);
 
@@ -521,7 +521,7 @@ public sealed class IdempotencyEndToEndTests
 
         using var client = IdempotencyTestApp.CreateClient(app);
 
-        var extraHeaders = new Dictionary<string, string> { ["X-Tenant"] = "acme" };
+        var extraHeaders = new Dictionary<string, string>(StringComparer.Ordinal) { ["X-Tenant"] = "acme" };
         var first = await _Post(client, "/echo", key: "webhook-k", body: "same", extraHeaders: extraHeaders);
         var second = await _Post(client, "/echo", key: "webhook-k", body: "same", extraHeaders: extraHeaders);
 

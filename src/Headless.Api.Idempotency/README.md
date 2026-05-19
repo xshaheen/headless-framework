@@ -102,6 +102,22 @@ app.MapPost("/webhooks", HandleWebhook)
 - `Headless.Hosting`
 - `Microsoft.AspNetCore.App` (framework reference)
 
+## Middleware Ordering
+
+Register `UseIdempotency()` **after** authentication and tenancy resolution (so cache keys never serve cross-tenant or unauthenticated traffic), and **before** any middleware that wraps or replaces `HttpResponse.Body`. Response-body swapping middleware that runs inside `UseIdempotency()` interferes with the response-capture stream the middleware installs on the cache-miss path:
+
+- `UseResponseCompression()` — must be registered **before** `UseIdempotency()`. When placed after, the compression middleware wraps the capture stream with `gzip`/`brotli` encoding, so the bytes the idempotency middleware records are compressed payloads. Subsequent replays then write pre-compressed bytes through the un-wrapped response, producing garbled responses for clients that didn't negotiate the encoding, or double-encoded responses for clients that did. Compress **outside** of idempotency.
+- `UseResponseCaching()`, output-caching middleware, and any custom middleware that calls `context.Response.Body = ...` — same constraint. Place them outside (before) `UseIdempotency()` in the pipeline.
+
+```csharp
+app.UseAuthentication();
+app.UseHeadlessTenancy();
+app.UseAuthorization();
+app.UseResponseCompression();   // outside idempotency
+app.UseIdempotency();           // installs response-capture stream
+app.MapPost("/disbursements", CreateDisbursement);
+```
+
 ## Side Effects
 
 - Reads `ICurrentTenant.Id` and `ICurrentUser.UserId` for cache-key composition; register `UseIdempotency()` AFTER tenant resolution and authorization so unauthenticated requests do not allocate cache slots. When **both** tenant and user identity are absent and no `KeyDeriver` is configured, the middleware refuses to apply idempotency (logs a warning, passes through). Configure `KeyDeriver` explicitly for fully anonymous endpoints.

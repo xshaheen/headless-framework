@@ -279,24 +279,68 @@ internal static class IdempotencyTestApp
     }
 
     /// <summary>
-    /// In-memory <see cref="IDistributedLockProvider"/> backed by a SemaphoreSlim per resource.
+    /// In-memory <see cref="IDistributedLockProvider"/> that models lease expiry. Each resource
+    /// tracks an owner lock-id and an absolute expiration timestamp; <see cref="TryAcquireAsync"/>
+    /// considers the slot free either when no owner is set OR when the current owner's lease has
+    /// elapsed (lock stealing). Releasing a lock whose lease already expired is a silent no-op so
+    /// the original holder cannot disturb a successor.
+    ///
+    /// Why model expiry: production lock providers (Redis SET NX PX, ZooKeeper ephemeral nodes)
+    /// always allow another caller to acquire a previously-leased resource once the lease elapses,
+    /// even if the original holder has not released. A pure semaphore-per-resource double hides
+    /// this behavior — handler code that depends on lease semantics (e.g., short
+    /// <c>WinnerLockLease</c> values, lease-shorter-than-handler-runtime bugs) passes integration
+    /// tests against a semaphore double and fails in production against Redis.
+    ///
     /// Implements only TryAcquireAsync + IDistributedLock.DisposeAsync — the surface the
     /// idempotency middleware actually uses. Other interface methods throw NotSupportedException.
-    /// Production lock providers (Redis, etc.) carry richer semantics; this double exists so
-    /// integration tests can exercise the WaitAndReplay path without spinning up the messaging
-    /// infrastructure the framework's DistributedLockProvider depends on.
     /// </summary>
     internal sealed class InMemoryDistributedLockProvider : IDistributedLockProvider
     {
-        private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+        internal sealed class LockSlot
+        {
+            private readonly Lock _sync = new();
+            private string _ownerLockId = string.Empty;
+            private DateTimeOffset _expiresAt = DateTimeOffset.MinValue;
+
+            public string? TryAcquireOrSteal(TimeSpan lease)
+            {
+                lock (_sync)
+                {
+                    var now = DateTimeOffset.UtcNow;
+                    if (_ownerLockId.Length != 0 && now < _expiresAt)
+                    {
+                        return null;
+                    }
+
+                    var newLockId = Guid.NewGuid().ToString("N");
+                    _ownerLockId = newLockId;
+                    _expiresAt = now + lease;
+                    return newLockId;
+                }
+            }
+
+            public void ReleaseIfOwner(string lockId)
+            {
+                lock (_sync)
+                {
+                    if (_ownerLockId == lockId)
+                    {
+                        _ownerLockId = string.Empty;
+                        _expiresAt = DateTimeOffset.MinValue;
+                    }
+                }
+            }
+        }
+
+        private readonly ConcurrentDictionary<string, LockSlot> _slots = new(StringComparer.Ordinal);
 
         /// <summary>
-        /// Test hook fired before <c>semaphore.WaitAsync</c>. Receives the resource name, the
+        /// Test hook fired before the lock state is evaluated. Receives the resource name, the
         /// lease (<c>timeUntilExpires</c>), the acquire timeout, and the cancellation token.
         /// Tests use this to widen specific race windows (e.g., the WaitAndReplay
         /// TryInsert→TryAcquire race), capture argument values for assertions, or throw to
-        /// simulate provider outages. The semaphore is NOT held during the hook — the hook
-        /// must not assume mutual exclusion against the lock state.
+        /// simulate provider outages. No mutual exclusion is held during the hook.
         /// </summary>
         public Func<string, TimeSpan?, TimeSpan?, CancellationToken, Task>? BeforeAcquireAsync { get; init; }
 
@@ -316,18 +360,38 @@ internal static class IdempotencyTestApp
                 await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken).ConfigureAwait(false);
             }
 
-            var semaphore = _locks.GetOrAdd(resource, static _ => new SemaphoreSlim(1, 1));
-            var timeout = acquireTimeout ?? DefaultAcquireTimeout;
-            bool acquired;
-            try
+            var lease = timeUntilExpires ?? DefaultTimeUntilExpires;
+            var acquireTimeoutEffective = acquireTimeout ?? DefaultAcquireTimeout;
+            var slot = _slots.GetOrAdd(resource, static _ => new LockSlot());
+            var deadline = DateTimeOffset.UtcNow + acquireTimeoutEffective;
+
+            while (true)
             {
-                acquired = await semaphore.WaitAsync(timeout, cancellationToken).ConfigureAwait(false);
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return null;
+                }
+
+                var acquiredLockId = slot.TryAcquireOrSteal(lease);
+                if (acquiredLockId is not null)
+                {
+                    return new InMemoryDistributedLock(resource, acquiredLockId, slot);
+                }
+
+                if (DateTimeOffset.UtcNow >= deadline)
+                {
+                    return null;
+                }
+
+                try
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    return null;
+                }
             }
-            catch (OperationCanceledException)
-            {
-                return null;
-            }
-            return acquired ? new InMemoryDistributedLock(resource, semaphore) : null;
         }
 
         public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -410,11 +474,15 @@ internal static class IdempotencyTestApp
         public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw _Boom();
     }
 
-    internal sealed class InMemoryDistributedLock(string resource, SemaphoreSlim semaphore) : IDistributedLock
+    internal sealed class InMemoryDistributedLock(
+        string resource,
+        string lockId,
+        InMemoryDistributedLockProvider.LockSlot slot
+    ) : IDistributedLock
     {
         private int _released;
 
-        public string LockId { get; } = Guid.NewGuid().ToString("N");
+        public string LockId { get; } = lockId;
 
         public string Resource { get; } = resource;
 
@@ -426,10 +494,7 @@ internal static class IdempotencyTestApp
 
         public Task ReleaseAsync()
         {
-            if (Interlocked.Exchange(ref _released, 1) == 0)
-            {
-                semaphore.Release();
-            }
+            _ReleaseIfStillOwner();
             return Task.CompletedTask;
         }
 
@@ -437,11 +502,22 @@ internal static class IdempotencyTestApp
 
         public ValueTask DisposeAsync()
         {
-            if (Interlocked.Exchange(ref _released, 1) == 0)
-            {
-                semaphore.Release();
-            }
+            _ReleaseIfStillOwner();
             return ValueTask.CompletedTask;
+        }
+
+        private void _ReleaseIfStillOwner()
+        {
+            if (Interlocked.Exchange(ref _released, 1) != 0)
+            {
+                return;
+            }
+
+            // Silent no-op if our lease already expired and another acquirer took over.
+            // This mirrors Redis-style lock providers, where ReleaseAsync uses a Lua script
+            // that checks the stored token before deleting — preventing a lapsed holder from
+            // releasing a successor's lock.
+            slot.ReleaseIfOwner(LockId);
         }
     }
 }

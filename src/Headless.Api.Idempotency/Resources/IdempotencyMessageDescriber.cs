@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Headless.Api.Resources;
 using Headless.Primitives;
 
-namespace Headless.Api.Resources;
+namespace Headless.Api.Idempotency;
 
 internal static class IdempotencyMessageDescriber
 {

@@ -4,7 +4,6 @@ using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
-using Headless.Api.Resources;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.DistributedLocks;
@@ -145,28 +144,7 @@ internal sealed partial class IdempotencyMiddleware(
 
         if (existing.HasValue)
         {
-            var rec = existing.Value!;
-
-            if (rec.Kind == RecordKind.Complete)
-            {
-                if (rec.Fingerprint != null && _FingerprintEquals(rec.Fingerprint, fingerprint))
-                {
-                    await _ReplayAsync(context, rec, options, cacheKey, ct).ConfigureAwait(false);
-                    return;
-                }
-
-                await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                return;
-            }
-
-            // InFlight: mismatched payloads still report 422 (mismatch), not 409 (in-flight).
-            if (rec.Fingerprint != null && !_FingerprintEquals(rec.Fingerprint, fingerprint))
-            {
-                await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                return;
-            }
-
-            await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+            await _DispatchExistingRecordAsync(context, existing.Value!, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
             return;
         }
 
@@ -248,7 +226,7 @@ internal sealed partial class IdempotencyMiddleware(
 
                 if (inserted)
                 {
-                    await _ExecuteAndFinalizeCoreAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
+                    await _ExecuteAndFinalizeCoreAsync(context, next, cacheKey, marker, fingerprint, options, ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -275,30 +253,7 @@ internal sealed partial class IdempotencyMiddleware(
                     continue;
                 }
 
-                var raceRec = racePeek.Value!;
-
-                if (raceRec.Kind == RecordKind.Complete)
-                {
-                    if (raceRec.Fingerprint != null && _FingerprintEquals(raceRec.Fingerprint, fingerprint))
-                    {
-                        await _ReplayAsync(context, raceRec, options, cacheKey, ct).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                    }
-
-                    return;
-                }
-
-                // InFlight race winner — fingerprint mismatch still goes to 422, not 409.
-                if (raceRec.Fingerprint != null && !_FingerprintEquals(raceRec.Fingerprint, fingerprint))
-                {
-                    await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
-                    return;
-                }
-
-                await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+                await _DispatchExistingRecordAsync(context, racePeek.Value!, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -361,7 +316,44 @@ internal sealed partial class IdempotencyMiddleware(
         LogReplayHit(cacheKey);
     }
 
-    private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options, string cacheKey, CancellationToken ct)
+    /// <summary>
+    /// Routes an already-existing cache record (either observed at the top-of-pipeline cache hit,
+    /// or surfaced during the cache-miss race-peek after TryInsert lost the insertion race) to
+    /// the correct response: replay for matching Complete, 422 for mismatched fingerprint regardless
+    /// of Kind, in-flight response (409 or wait-and-replay) for matching InFlight.
+    /// </summary>
+    private async Task _DispatchExistingRecordAsync(
+        HttpContext context,
+        IdempotencyRecord rec,
+        IdempotencyOptions options,
+        byte[] fingerprint,
+        string cacheKey,
+        CancellationToken ct
+    )
+    {
+        if (rec.Kind == RecordKind.Complete)
+        {
+            if (rec.Fingerprint != null && _FingerprintEquals(rec.Fingerprint, fingerprint))
+            {
+                await _ReplayAsync(context, rec, options, cacheKey, ct).ConfigureAwait(false);
+                return;
+            }
+
+            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
+            return;
+        }
+
+        // InFlight: mismatched payloads still report 422 (mismatch), not 409 (in-flight).
+        if (rec.Fingerprint != null && !_FingerprintEquals(rec.Fingerprint, fingerprint))
+        {
+            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
+            return;
+        }
+
+        await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+    }
+
+    private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options, string cacheKey)
     {
         LogFingerprintMismatch(cacheKey);
         var descriptor = IdempotencyMessageDescriber.KeyReused();
@@ -466,7 +458,7 @@ internal sealed partial class IdempotencyMiddleware(
                 return;
             }
 
-            await _WriteMismatchAsync(context, options, cacheKey, ct).ConfigureAwait(false);
+            await _WriteMismatchAsync(context, options, cacheKey).ConfigureAwait(false);
             return;
         }
 
@@ -480,6 +472,7 @@ internal sealed partial class IdempotencyMiddleware(
         HttpContext context,
         RequestDelegate next,
         string cacheKey,
+        IdempotencyRecord insertedMarker,
         byte[] fingerprint,
         IdempotencyOptions options,
         CancellationToken ct
@@ -494,9 +487,10 @@ internal sealed partial class IdempotencyMiddleware(
         {
             await next(context).ConfigureAwait(false);
         }
-        catch
+        catch (Exception handlerEx)
         {
             context.Response.Body = originalBody;
+            LogHandlerThrew(cacheKey, handlerEx);
             try
             {
                 // Cleanup must outlive request cancellation
@@ -542,41 +536,29 @@ internal sealed partial class IdempotencyMiddleware(
                     CreatedAt = clock.UtcNow,
                 };
 
-                // Re-check the marker before writing the Complete record. If another writer has
-                // already taken the slot (e.g., we crashed earlier and the second attempt path is
-                // executing in another process), don't clobber their record.
+                // Compare-and-swap the marker we inserted with the Complete record in a single
+                // round trip. TryReplaceIfEqualAsync only promotes when the stored value still
+                // equals `insertedMarker` (IEquatable<IdempotencyRecord> compares Kind,
+                // StatusCode, CreatedAt, Body, Fingerprint, and Headers), which guarantees we
+                // never clobber a parallel writer that already filled the slot.
                 //
                 // Post-handler site: the response is already committed, so cache exceptions cannot
-                // be surfaced to the client. On exception, log and proceed with UpsertAsync —
-                // losing the cache slot for a successful handler run is a worse outcome than the
-                // (rare) risk of clobbering a parallel writer we cannot observe.
-                CacheValue<IdempotencyRecord>? current = null;
+                // be surfaced to the client. On CAS failure (false), the slot was overwritten by
+                // another writer or evicted; log and move on rather than overwrite their record.
+                bool replaced;
                 try
                 {
-                    current = await cache.GetAsync<IdempotencyRecord>(cacheKey, CancellationToken.None).ConfigureAwait(false);
+                    replaced = await cache.TryReplaceIfEqualAsync(
+                        cacheKey,
+                        insertedMarker,
+                        completeRecord,
+                        options.IdempotencyKeyExpiration,
+                        CancellationToken.None
+                    ).ConfigureAwait(false);
                 }
-                catch (Exception cacheEx)
+                catch (Exception casEx)
                 {
-                    LogCacheFailure("finalize-marker-recheck", cacheKey, options.OnCacheError.ToString(), cacheEx);
-                }
-
-                if (current is not null
-                    && (!current.HasValue
-                        || current.Value!.Kind != RecordKind.InFlight
-                        || current.Value!.Fingerprint is null
-                        || !_FingerprintEquals(current.Value!.Fingerprint, fingerprint)))
-                {
-                    LogFinalizeSkippedMarkerChanged(cacheKey);
-                    return;
-                }
-
-                try
-                {
-                    await cache.UpsertAsync(cacheKey, completeRecord, options.IdempotencyKeyExpiration, CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception upsertEx)
-                {
-                    LogFinalizeFailed(cacheKey, upsertEx);
+                    LogFinalizeFailed(cacheKey, casEx);
                     try
                     {
                         await cache.RemoveAsync(cacheKey, CancellationToken.None).ConfigureAwait(false);
@@ -586,6 +568,11 @@ internal sealed partial class IdempotencyMiddleware(
                         LogMarkerCleanupFailed(cacheKey, cleanupEx);
                     }
                     throw;
+                }
+
+                if (!replaced)
+                {
+                    LogFinalizeSkippedMarkerChanged(cacheKey);
                 }
             }
             else
@@ -666,15 +653,40 @@ internal sealed partial class IdempotencyMiddleware(
             return string.Empty;
         }
 
-        var method = context.Request.Method.ToUpperInvariant();
+        var method = _CanonicalMethod(context.Request.Method);
         var path = context.Request.Path.Value ?? "";
         // QueryString participates so endpoints that branch on query parameters (e.g.,
         // ?action=void vs ?action=capture, ?dry_run=true vs ?dry_run=false) don't cross-replay
         // when the client reuses the same idempotency key. QueryString.Value includes the
         // leading "?" or is empty when no query exists.
         var query = context.Request.QueryString.Value ?? string.Empty;
-        return $"idem:{tenant ?? string.Empty}:{user ?? "anon"}:{method}:{path}{query}:{keyHeader}";
+        // Anonymous-user fallback uses an empty segment rather than a literal "anon" so a real
+        // UserId equal to the string "anon" cannot collide with the anonymous bucket. Combined
+        // with the unambiguous `:` separator, the two cases are distinguishable:
+        //   idem:{tenant}:anon:POST:/x:K  ← real UserId "anon"
+        //   idem:{tenant}::POST:/x:K     ← anonymous (RequireUserIdentity=false flow)
+        return $"idem:{tenant ?? string.Empty}:{user ?? string.Empty}:{method}:{path}{query}:{keyHeader}";
     }
+
+    /// <summary>
+    /// Returns the canonical (uppercase) form of an HTTP method without per-request allocation
+    /// for the common cases. <c>HttpMethods.IsXxx</c> performs an ordinal-ignore-case comparison
+    /// and the corresponding constant is an interned string, so a request arriving with any
+    /// casing of a known method maps to the same constant reference.
+    /// </summary>
+    private static string _CanonicalMethod(string method) => method switch
+    {
+        _ when HttpMethods.IsPost(method) => HttpMethods.Post,
+        _ when HttpMethods.IsPut(method) => HttpMethods.Put,
+        _ when HttpMethods.IsPatch(method) => HttpMethods.Patch,
+        _ when HttpMethods.IsDelete(method) => HttpMethods.Delete,
+        _ when HttpMethods.IsGet(method) => HttpMethods.Get,
+        _ when HttpMethods.IsHead(method) => HttpMethods.Head,
+        _ when HttpMethods.IsOptions(method) => HttpMethods.Options,
+        _ when HttpMethods.IsTrace(method) => HttpMethods.Trace,
+        _ when HttpMethods.IsConnect(method) => HttpMethods.Connect,
+        _ => method.ToUpperInvariant(),
+    };
 
     /// <summary>
     /// Validates an idempotency-key header value: single-valued, length &lt;= 255, no control
@@ -760,6 +772,18 @@ internal sealed partial class IdempotencyMiddleware(
                 var customFingerprint = await options.RequestFingerprint!(context).ConfigureAwait(false);
                 // Rewind unconditionally — the delegate may have consumed the body
                 requestBody.Position = 0;
+
+                // A delegate that returns null/empty would collapse every distinct request body
+                // onto a single fingerprint (FixedTimeEquals on zero-length spans returns true),
+                // letting any two requests cross-replay. Treat that as a programming error.
+                if (customFingerprint is null || customFingerprint.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        "IdempotencyOptions.RequestFingerprint returned null or an empty byte[]; "
+                        + "the delegate must produce a non-empty hash of the request payload."
+                    );
+                }
+
                 return (customFingerprint, false);
             }
 
@@ -812,4 +836,7 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Idempotency winner-lock contended for key {CacheKey}; deferring to in-flight response path")]
     private partial void LogWinnerLockContended(string cacheKey);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Idempotency handler threw for key {CacheKey}; removing in-flight marker before propagating")]
+    private partial void LogHandlerThrew(string cacheKey, Exception exception);
 }
