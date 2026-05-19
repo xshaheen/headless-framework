@@ -88,7 +88,7 @@ public sealed class MetricsService(IDirectPublisher publisher)
 - `AddConsumer<TConsumer, TMessage>(topic)` is the library-author registration API when a package wants to contribute consumers through DI.
 - topic and group defaults are deterministic; duplicate registrations fail fast by default.
 - direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
-- runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, filters, and correlation behavior stay aligned.
+- runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
 - `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.
 - `IBootstrapper.IsStarted` becomes `true` only after required messaging processors finish startup successfully.
 - Concurrent `BootstrapAsync(...)` callers share the same in-flight startup work; canceling a later caller's wait does not abort the shared bootstrap.
@@ -197,38 +197,46 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
-## Filters
+## Middleware
 
-Both sides of the pipeline support cross-cutting middleware via `IConsumeFilter` and `IPublishFilter`. Each interface exposes an `Executing` / `Executed` / `Exception` triad. Filters compose into a chain — `Executing` runs in registration order, `Executed` and `Exception` run in reverse (mirroring ASP.NET Core MVC).
+Both sides of the pipeline support cross-cutting middleware via `IConsumeMiddleware<TContext>` and `IPublishMiddleware<TContext>`. Middleware composes russian-doll style around the handler or publisher: code before `await next()` runs before the inner ring, and code after it runs after successful inner work.
 
 ```csharp
-public sealed class LoggingConsumeFilter(ILogger<LoggingConsumeFilter> logger) : ConsumeFilter
+public sealed class LoggingConsumeMiddleware(ILogger<LoggingConsumeMiddleware> logger)
+    : IConsumeMiddleware<ConsumeContext>
 {
-    public override ValueTask OnSubscribeExecutingAsync(ExecutingContext context)
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
     {
-        logger.LogInformation("Consuming {MessageId}", context.MediumMessage.Origin.GetId());
-        return ValueTask.CompletedTask;
+        logger.LogInformation("Consuming {MessageId}", context.MessageId);
+        await next();
     }
 }
 
-public sealed class CorrelationPublishFilter : PublishFilter
+public sealed class CorrelationPublishMiddleware : IPublishMiddleware<PublishingContext<OrderPlaced>>
 {
-    public override ValueTask OnPublishExecutingAsync(PublishingContext context)
+    public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next)
     {
         context.Options = (context.Options ?? new PublishOptions()) with
         {
             CorrelationId = context.Options?.CorrelationId ?? Guid.NewGuid().ToString(),
         };
-        return ValueTask.CompletedTask;
+        return next();
     }
 }
 
 builder.Services.AddHeadlessMessaging(setup => { /* ... */ })
-    .AddSubscribeFilter<LoggingConsumeFilter>()
-    .AddPublishFilter<CorrelationPublishFilter>();
+    .AddBusConsumeMiddleware<LoggingConsumeMiddleware>()
+    .AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>();
 ```
 
-Both registrations are idempotent (`TryAddEnumerable` under the hood). `OnPublishExecutedAsync` runs after the message is accepted; exceptions from that phase are logged and suppressed to avoid caller retries that duplicate the message. Setting `PublishExceptionContext.ExceptionHandled = true` silently swallows a pre-accept publish failure — only do this when the filter has rerouted the message to a durable sink.
+Registration scopes:
+
+- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
+- `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
+- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
+- `.WithPriority(int)`: lower values run first; ties use registration order. Framework tenant propagation middleware uses priority `-1000`, so user middleware defaults (`0`) run after tenant restoration/stamping.
+
+Middleware can short-circuit by returning without calling `next`. Use ordinary `try/catch` around `await next()` for compensation and error policy. The framework still guards two runtime invariants: post-success middleware failures are logged and suppressed only after the inner ring completed, and cancellation matching `context.CancellationToken` is never silently swallowed. `PublishingContext<T>.Options` and `DelayTime` are mutable before `await next()` and throw after `next()` returns; reads, including `IsTransactional`, remain valid.
 
 ### Multi-Tenancy Propagation
 
@@ -240,7 +248,7 @@ builder.AddHeadlessTenancy(
 );
 ```
 
-`PropagateTenant()` registers a built-in filter pair that ties the wire envelope to `ICurrentTenant`. `RequireTenantOnPublish()` flips strict publish tenancy so every publish must resolve a tenant from `PublishOptions.TenantId` or the ambient tenant.
+`PropagateTenant()` registers built-in middleware that ties the wire envelope to `ICurrentTenant`. `RequireTenantOnPublish()` flips strict publish tenancy so every publish must resolve a tenant from `PublishOptions.TenantId` or the ambient tenant.
 
 `AddHeadlessTenancy(...).Messaging(m => m.PropagateTenant())` is the single composition point for tenant propagation. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed in favor of the root tenancy seam.
 
@@ -249,7 +257,7 @@ builder.AddHeadlessTenancy(
 
 Tenant propagation requires a real `ICurrentTenant`. `AddHeadlessMessaging()` registers only the safe `NullCurrentTenant` fallback; `Headless.Api` and `Headless.Orm.EntityFramework` setup replace that fallback while preserving consumer-provided tenant implementations.
 
-The consume filter trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
+The consume middleware trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
 
 ### Diagnostics / PII
 
@@ -340,7 +348,7 @@ It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for
 - **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
 - **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token).
 
-For a single exit point covering both Stop and Exhausted, use an `IConsumeFilter` / `IPublishFilter`.
+For a single exit point covering both Stop and Exhausted, use consume/publish middleware.
 
 ### Inline vs Persisted Retry Paths
 

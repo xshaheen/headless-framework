@@ -37,7 +37,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Get consul nodes raised an exception. Exception:{Message}", e.Message);
+            _logger.LogGetConsulNodesFailed(e, e.Message);
         }
 
         return null;
@@ -64,7 +64,7 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
         {
             cache.Set("messaging.nodes.count", 0, TimeSpan.FromSeconds(20));
 
-            _logger.LogError(ex, "Get k8s services raised an exception");
+            _logger.LogGetK8sServicesFailed(ex);
 
             return [];
         }
@@ -308,4 +308,23 @@ public class K8sNodeDiscoveryProvider(ILoggerFactory logger, IMemoryCache cache,
 
         return messagingTagScope;
     }
+}
+
+internal static partial class K8sNodeDiscoveryProviderLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "GetConsulNodesFailed",
+        Level = LogLevel.Error,
+        Message = "Get consul nodes raised an exception. Exception:{Message}"
+    )]
+    public static partial void LogGetConsulNodesFailed(this ILogger logger, Exception exception, string message);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "GetK8sServicesFailed",
+        Level = LogLevel.Error,
+        Message = "Get k8s services raised an exception"
+    )]
+    public static partial void LogGetK8sServicesFailed(this ILogger logger, Exception exception);
 }

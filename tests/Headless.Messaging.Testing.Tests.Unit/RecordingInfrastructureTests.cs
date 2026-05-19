@@ -266,11 +266,11 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // RecordingConsumeExecutionPipeline
+    // RecordingConsumeMiddlewarePipeline
     // ═══════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_records_consumed_on_success()
+    public async Task RecordingConsumeMiddlewarePipeline_records_consumed_on_success()
     {
         // given
         var store = new MessageObservationStore();
@@ -278,7 +278,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload { Value = "ok" };
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -290,7 +290,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_records_faulted_and_rethrows_on_handler_failure()
+    public async Task RecordingConsumeMiddlewarePipeline_records_faulted_and_rethrows_on_handler_failure()
     {
         // given
         var store = new MessageObservationStore();
@@ -299,7 +299,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var payload = new SimplePayload();
         var ex = new InvalidOperationException("handler blew up");
         var inner = new FakePipeline(ex);
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         var act = async () => await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -311,7 +311,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_faulted_entry_carries_exception()
+    public async Task RecordingConsumeMiddlewarePipeline_faulted_entry_carries_exception()
     {
         // given
         var store = new MessageObservationStore();
@@ -320,7 +320,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var payload = new SimplePayload();
         var ex = new InvalidOperationException("boom");
         var inner = new FakePipeline(ex);
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         try
@@ -336,7 +336,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_extracts_message_id_and_topic_from_context()
+    public async Task RecordingConsumeMiddlewarePipeline_extracts_message_id_and_topic_from_context()
     {
         // given
         var store = new MessageObservationStore();
@@ -344,7 +344,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "ctx-id-7", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -356,7 +356,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_extracts_correlation_id_from_context()
+    public async Task RecordingConsumeMiddlewarePipeline_extracts_correlation_id_from_context()
     {
         // given
         var store = new MessageObservationStore();
@@ -364,7 +364,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -374,7 +374,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_sets_correct_message_type()
+    public async Task RecordingConsumeMiddlewarePipeline_sets_correct_message_type()
     {
         // given
         var store = new MessageObservationStore();
@@ -382,7 +382,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -392,7 +392,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_forwards_to_inner_pipeline()
+    public async Task RecordingConsumeMiddlewarePipeline_forwards_to_inner_pipeline()
     {
         // given
         var store = new MessageObservationStore();
@@ -400,7 +400,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -410,7 +410,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingConsumeExecutionPipeline_sets_null_correlation_id_when_absent()
+    public async Task RecordingConsumeMiddlewarePipeline_sets_null_correlation_id_when_absent()
     {
         // given
         var store = new MessageObservationStore();
@@ -418,7 +418,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
-        var pipeline = new RecordingConsumeExecutionPipeline(inner, store);
+        var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
         await pipeline.ExecuteAsync(context, payload, typeof(SimplePayload), AbortToken);
@@ -482,9 +482,9 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     /// <summary>
-    /// Stub <see cref="IConsumeExecutionPipeline"/> that either returns a fixed result or throws a fixed exception.
+    /// Stub <see cref="IConsumeMiddlewarePipeline"/> that either returns a fixed result or throws a fixed exception.
     /// </summary>
-    private sealed class FakePipeline : IConsumeExecutionPipeline
+    private sealed class FakePipeline : IConsumeMiddlewarePipeline
     {
         private readonly ConsumerExecutedResult? _result;
         private readonly Exception? _exception;

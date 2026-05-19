@@ -5,8 +5,10 @@ using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Testing.Internal;
 
-internal sealed class RecordingConsumeExecutionPipeline(IConsumeExecutionPipeline inner, MessageObservationStore store)
-    : IConsumeExecutionPipeline
+internal sealed class RecordingConsumeMiddlewarePipeline(
+    IConsumeMiddlewarePipeline inner,
+    MessageObservationStore store
+) : IConsumeMiddlewarePipeline
 {
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,

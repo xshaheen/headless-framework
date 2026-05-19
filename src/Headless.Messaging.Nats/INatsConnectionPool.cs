@@ -36,11 +36,7 @@ public sealed class NatsConnectionPool : INatsConnectionPool
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug(
-                "NATS connection pool created with {PoolSize} connections to {Servers}.",
-                poolSize,
-                ServersAddress
-            );
+            logger.LogNatsConnectionPoolCreated(poolSize, ServersAddress);
         }
     }
 
@@ -83,4 +79,15 @@ public sealed class NatsConnectionPool : INatsConnectionPool
             await connection.DisposeAsync().ConfigureAwait(false);
         }
     }
+}
+
+internal static partial class NatsConnectionPoolLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "NatsConnectionPoolCreated",
+        Level = LogLevel.Debug,
+        Message = "NATS connection pool created with {PoolSize} connections to {Servers}."
+    )]
+    public static partial void LogNatsConnectionPoolCreated(this ILogger logger, int poolSize, string servers);
 }

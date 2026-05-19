@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Net;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
 using Headless.Checks;
@@ -69,11 +70,7 @@ public sealed class AwsSnsSmsSender(
                 return SendSingleSmsResponse.Succeeded();
             }
 
-            logger.LogError(
-                "Failed to send SMS to {DestinationCount} recipients, StatusCode={StatusCode}",
-                request.Destinations.Count,
-                publishResponse.HttpStatusCode
-            );
+            logger.LogSmsSendFailed(request.Destinations.Count, publishResponse.HttpStatusCode);
 
             return SendSingleSmsResponse.Failed(
                 $"Failed to send SMS using AWS with status code {publishResponse.HttpStatusCode}"
@@ -85,13 +82,28 @@ public sealed class AwsSnsSmsSender(
         }
         catch (Exception e)
         {
-            logger.LogError(
-                e,
-                "Failed to send SMS using AWS to {DestinationCount} recipients",
-                request.Destinations.Count
-            );
+            logger.LogSmsSendException(e, request.Destinations.Count);
 
             return SendSingleSmsResponse.Failed(e.Message);
         }
     }
+}
+
+internal static partial class AwsSnsSmsSenderLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "SmsSendFailed",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS to {DestinationCount} recipients, StatusCode={StatusCode}"
+    )]
+    public static partial void LogSmsSendFailed(this ILogger logger, int destinationCount, HttpStatusCode statusCode);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SmsSendException",
+        Level = LogLevel.Error,
+        Message = "Failed to send SMS using AWS to {DestinationCount} recipients"
+    )]
+    public static partial void LogSmsSendException(this ILogger logger, Exception exception, int destinationCount);
 }

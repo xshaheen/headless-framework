@@ -60,7 +60,7 @@ public static class Headers
 
     /// <summary>
     /// Multi-tenancy identifier for the message, populated from <see cref="PublishOptions.TenantId"/> at publish time
-    /// and exposed on <see cref="ConsumeContext{TMessage}.TenantId"/> at consume time.
+    /// and exposed on <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> at consume time.
     /// </summary>
     /// <remarks>
     /// <para>

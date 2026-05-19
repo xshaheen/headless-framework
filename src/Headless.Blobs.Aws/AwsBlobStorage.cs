@@ -323,11 +323,7 @@ public sealed class AwsBlobStorage(
             deleteRequest.Objects ??= [];
             deleteRequest.Objects.AddRange(keys);
 
-            _logger.LogInformation(
-                "Deleting {FileCount} files matching {SearchPattern}",
-                keys.Length,
-                blobSearchPattern
-            );
+            _logger.LogDeletingFiles(keys.Length, blobSearchPattern);
 
             var deleteResponse = await s3.DeleteObjectsAsync(deleteRequest, cancellationToken).ConfigureAwait(false);
 
@@ -346,11 +342,7 @@ public sealed class AwsBlobStorage(
                 }
             }
 
-            _logger.LogTrace(
-                "Deleted {FileCount} files matching {SearchPattern}",
-                deleteResponse.DeletedObjects?.Count ?? 0,
-                blobSearchPattern
-            );
+            _logger.LogDeletedFiles(deleteResponse.DeletedObjects?.Count ?? 0, blobSearchPattern);
 
             count += deleteResponse.DeletedObjects?.Count ?? 0;
             deleteRequest.Objects?.Clear();
@@ -366,7 +358,7 @@ public sealed class AwsBlobStorage(
             );
         }
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
+        _logger.LogFinishedDeletingFiles(count, blobSearchPattern);
 
         return count;
     }
@@ -443,11 +435,7 @@ public sealed class AwsBlobStorage(
 
         if (!deleteResponse.HttpStatusCode.IsSuccessStatusCode())
         {
-            _logger.LogError(
-                "Failed to delete original object {OldBucket}/{OldKey} after copy, rolling back",
-                oldBucket,
-                oldKey
-            );
+            _logger.LogFailedToDeleteOriginalRollback(oldBucket, oldKey);
 
             // Compensating transaction: delete the copy to restore original state
             var compensate = new DeleteObjectRequest { BucketName = newBucket, Key = newKey };
@@ -681,7 +669,7 @@ public sealed class AwsBlobStorage(
             ContinuationToken = continuationToken,
         };
 
-        _logger.LogTrace("Getting file list matching {Prefix} and {Pattern}...", criteria.Prefix, criteria.Pattern);
+        _logger.LogGettingFileList(criteria.Prefix, criteria.Pattern);
 
         ListObjectsV2Response? response;
 
@@ -831,4 +819,47 @@ public sealed class AwsBlobStorage(
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
+}
+
+internal static partial class AwsBlobStorageLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "DeletingFiles",
+        Level = LogLevel.Information,
+        Message = "Deleting {FileCount} files matching {SearchPattern}"
+    )]
+    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "DeletedFiles",
+        Level = LogLevel.Trace,
+        Message = "Deleted {FileCount} files matching {SearchPattern}"
+    )]
+    public static partial void LogDeletedFiles(this ILogger logger, int fileCount, string? searchPattern);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "FinishedDeletingFiles",
+        Level = LogLevel.Trace,
+        Message = "Finished deleting {FileCount} files matching {SearchPattern}"
+    )]
+    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "FailedToDeleteOriginalRollback",
+        Level = LogLevel.Error,
+        Message = "Failed to delete original object {OldBucket}/{OldKey} after copy, rolling back"
+    )]
+    public static partial void LogFailedToDeleteOriginalRollback(this ILogger logger, string oldBucket, string oldKey);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "GettingFileList",
+        Level = LogLevel.Trace,
+        Message = "Getting file list matching {Prefix} and {Pattern}..."
+    )]
+    public static partial void LogGettingFileList(this ILogger logger, string? prefix, Regex? pattern);
 }

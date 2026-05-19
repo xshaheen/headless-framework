@@ -9,7 +9,7 @@ namespace Tests.IntegrationTests;
 public sealed class SharedConsumeScopeIntegrationTests : TestBase
 {
     [Fact]
-    public async Task should_use_same_scope_for_class_handler_and_filter()
+    public async Task should_use_same_scope_for_class_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
         var publisher = provider.GetRequiredService<IOutboxPublisher>();
@@ -23,13 +23,13 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         await recorder.WaitForClassHandlerAsync(AbortToken);
 
-        recorder.FilterScopedIds.Should().ContainSingle();
+        recorder.MiddlewareScopedIds.Should().ContainSingle();
         recorder.ClassHandlerScopedIds.Should().ContainSingle();
-        recorder.FilterScopedIds.Single().Should().Be(recorder.ClassHandlerScopedIds.Single());
+        recorder.MiddlewareScopedIds.Single().Should().Be(recorder.ClassHandlerScopedIds.Single());
     }
 
     [Fact]
-    public async Task should_use_same_scope_for_runtime_handler_and_filter()
+    public async Task should_use_same_scope_for_runtime_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
         var publisher = provider.GetRequiredService<IOutboxPublisher>();
@@ -59,9 +59,9 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         await recorder.WaitForRuntimeHandlerAsync(AbortToken);
 
-        recorder.FilterScopedIds.Should().ContainSingle();
+        recorder.MiddlewareScopedIds.Should().ContainSingle();
         recorder.RuntimeHandlerScopedIds.Should().ContainSingle();
-        recorder.FilterScopedIds.Single().Should().Be(recorder.RuntimeHandlerScopedIds.Single());
+        recorder.MiddlewareScopedIds.Single().Should().Be(recorder.RuntimeHandlerScopedIds.Single());
     }
 
     private async Task<ServiceProvider> _CreateStartedProviderAsync()
@@ -75,20 +75,20 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         services.AddSingleton<ScopedExecutionRecorder>();
         services.AddScoped<ScopedExecutionDependency>();
-        services.AddScoped<ScopedExecutionFilter>();
-        services.AddScoped<IConsumeFilter>(sp => sp.GetRequiredService<ScopedExecutionFilter>());
 
-        services.AddHeadlessMessaging(options =>
-        {
-            options.UseInMemoryMessageQueue();
-            options.UseInMemoryStorage();
-            options.UseConventions(c =>
+        services
+            .AddHeadlessMessaging(options =>
             {
-                c.UseApplicationId("shared-scope-tests");
-                c.UseVersion("v1");
-            });
-            options.Subscribe<ScopedClassConsumer>().Topic("scope.class").Group("scope.class");
-        });
+                options.UseInMemoryMessageQueue();
+                options.UseInMemoryStorage();
+                options.UseConventions(c =>
+                {
+                    c.UseApplicationId("shared-scope-tests");
+                    c.UseVersion("v1");
+                });
+                options.Subscribe<ScopedClassConsumer>().Topic("scope.class").Group("scope.class");
+            })
+            .AddBusConsumeMiddleware<ScopedExecutionMiddleware>();
 
         var provider = services.BuildServiceProvider();
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
@@ -107,13 +107,13 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         private readonly TaskCompletionSource _classHandled = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly TaskCompletionSource _runtimeHandled = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public ConcurrentQueue<Guid> FilterScopedIds { get; } = [];
+        public ConcurrentQueue<Guid> MiddlewareScopedIds { get; } = [];
         public ConcurrentQueue<Guid> ClassHandlerScopedIds { get; } = [];
         public ConcurrentQueue<Guid> RuntimeHandlerScopedIds { get; } = [];
 
-        public void RecordFilter(Guid scopedId)
+        public void RecordMiddleware(Guid scopedId)
         {
-            FilterScopedIds.Enqueue(scopedId);
+            MiddlewareScopedIds.Enqueue(scopedId);
         }
 
         public void RecordClassHandler(Guid scopedId)
@@ -139,16 +139,15 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         }
     }
 
-    private sealed class ScopedExecutionFilter(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
-        : ConsumeFilter
+    private sealed class ScopedExecutionMiddleware(
+        ScopedExecutionRecorder recorder,
+        ScopedExecutionDependency dependency
+    ) : IConsumeMiddleware<ConsumeContext>
     {
-        public override ValueTask OnSubscribeExecutingAsync(
-            ExecutingContext context,
-            CancellationToken cancellationToken = default
-        )
+        public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
         {
-            recorder.RecordFilter(dependency.Id);
-            return ValueTask.CompletedTask;
+            recorder.RecordMiddleware(dependency.Id);
+            await next().ConfigureAwait(false);
         }
     }
 

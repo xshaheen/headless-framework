@@ -217,7 +217,7 @@ internal sealed class Dispatcher : IDispatcher
             }
             else
             {
-                // Per-message scope: scoped services resolved during ExecuteAsync (consumer, filters,
+                // Per-message scope: scoped services resolved during ExecuteAsync (consumer, middleware,
                 // user OnExhausted callback) all share the same scope instance for this message.
                 await using var dispatchScope = _scopeFactory.CreateAsyncScope();
                 await _executor

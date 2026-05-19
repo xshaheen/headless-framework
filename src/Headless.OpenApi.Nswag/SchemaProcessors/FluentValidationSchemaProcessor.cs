@@ -74,7 +74,7 @@ public sealed class FluentValidationSchemaProcessor(
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Applying IncludeRules for type '{Type}' fails", context.ContextualType.Name);
+            _logger.LogIncludeRulesFailed(e, context.ContextualType.Name);
 
             if (_throwOnError)
             {
@@ -126,22 +126,11 @@ public sealed class FluentValidationSchemaProcessor(
                 {
                     rule.Apply(new RuleContext(context, propertyName, propertyValidator));
 
-                    _logger.LogDebug(
-                        "Rule '{RuleName}' applied for property '{TypeName}.{Key}'",
-                        rule.RuleName,
-                        declaringType.Name,
-                        propertyName
-                    );
+                    _logger.LogRuleApplied(rule.RuleName, declaringType.Name, propertyName);
                 }
                 catch (Exception e)
                 {
-                    _logger.LogError(
-                        e,
-                        "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'",
-                        rule.RuleName,
-                        declaringType.Name,
-                        propertyName
-                    );
+                    _logger.LogRuleApplyError(e, rule.RuleName, declaringType.Name, propertyName);
 
                     if (_throwOnError)
                     {
@@ -154,10 +143,7 @@ public sealed class FluentValidationSchemaProcessor(
 
     private void _ApplyRulesToSchema(SchemaProcessorContext context, IValidator validator)
     {
-        _logger.LogDebug(
-            "Applying FluentValidation rules to swagger schema for type '{Type}'",
-            context.ContextualType.Name
-        );
+        _logger.LogApplyingRules(context.ContextualType.Name);
 
         // Loop through properties
         foreach (var propertyName in context.Schema.Properties.Keys)
@@ -177,22 +163,11 @@ public sealed class FluentValidationSchemaProcessor(
                     {
                         rule.Apply(new RuleContext(context, propertyName, propertyValidator));
 
-                        _logger.LogDebug(
-                            "Rule '{RuleName}' applied for property '{TypeName}.{Key}'",
-                            rule.RuleName,
-                            context.ContextualType.Name,
-                            propertyName
-                        );
+                        _logger.LogRuleApplied(rule.RuleName, context.ContextualType.Name, propertyName);
                     }
                     catch (Exception e)
                     {
-                        _logger.LogError(
-                            e,
-                            "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'",
-                            rule.RuleName,
-                            context.ContextualType.Name,
-                            propertyName
-                        );
+                        _logger.LogRuleApplyError(e, rule.RuleName, context.ContextualType.Name, propertyName);
 
                         if (_throwOnError)
                         {
@@ -260,7 +235,7 @@ public sealed class FluentValidationSchemaProcessor(
         }
         catch (Exception e)
         {
-            _logger.LogWarning(0, e, "GetValidator for type '{TypeName}' fails", type.Name);
+            _logger.LogGetValidatorFailed(e, type.Name);
 
             return null;
         }
@@ -293,4 +268,53 @@ public sealed class FluentValidationSchemaProcessor(
 
         return map.Values.ToList();
     }
+}
+
+internal static partial class FluentValidationSchemaProcessorLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "IncludeRulesFailed",
+        Level = LogLevel.Error,
+        Message = "Applying IncludeRules for type '{Type}' fails"
+    )]
+    public static partial void LogIncludeRulesFailed(this ILogger logger, Exception exception, string type);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "RuleApplied",
+        Level = LogLevel.Debug,
+        Message = "Rule '{RuleName}' applied for property '{TypeName}.{Key}'"
+    )]
+    public static partial void LogRuleApplied(this ILogger logger, string ruleName, string typeName, string key);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "RuleApplyError",
+        Level = LogLevel.Error,
+        Message = "Error on apply rule '{RuleName}' for property '{TypeName}.{Key}'"
+    )]
+    public static partial void LogRuleApplyError(
+        this ILogger logger,
+        Exception exception,
+        string ruleName,
+        string typeName,
+        string key
+    );
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "ApplyingRules",
+        Level = LogLevel.Debug,
+        Message = "Applying FluentValidation rules to swagger schema for type '{Type}'"
+    )]
+    public static partial void LogApplyingRules(this ILogger logger, string type);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "GetValidatorFailed",
+        Level = LogLevel.Warning,
+        Message = "GetValidator for type '{TypeName}' fails"
+    )]
+    public static partial void LogGetValidatorFailed(this ILogger logger, Exception exception, string typeName);
 }

@@ -74,11 +74,7 @@ public sealed class AzureBlobStorage(
 
         if (stream.CanSeek && stream.Position != 0)
         {
-            logger.LogWarning(
-                "Stream position was {Position}, resetting to 0 for blob {BlobName}",
-                stream.Position,
-                blobName
-            );
+            logger.LogStreamPositionReset(stream.Position, blobName);
             stream.Seek(0, SeekOrigin.Begin);
         }
 
@@ -208,12 +204,7 @@ public sealed class AzureBlobStorage(
             await files.NextPageAsync(cancellationToken).ConfigureAwait(false);
         } while (files.HasMore);
 
-        logger.LogTrace(
-            "Finished deleting {FileCount} files matching {@Container} {SearchPattern}",
-            count,
-            container,
-            blobSearchPattern
-        );
+        logger.LogFinishedDeletingFiles(count, container, blobSearchPattern);
 
         return count;
     }
@@ -281,7 +272,7 @@ public sealed class AzureBlobStorage(
 
         if (!copyResult)
         {
-            logger.LogWarning("Unable to copy {BlobName} to {NewBlobName}", blobName, newBlobName);
+            logger.LogUnableToCopyBlob(blobName, newBlobName);
 
             return false;
         }
@@ -292,7 +283,7 @@ public sealed class AzureBlobStorage(
         {
             // Rollback: delete the copy to avoid data duplication
             await DeleteAsync(newBlobContainer, newBlobName, cancellationToken).ConfigureAwait(false);
-            logger.LogWarning("Rename failed for {BlobName}, rolled back copy", blobName);
+            logger.LogRenameFailedRolledBack(blobName);
 
             return false;
         }
@@ -512,7 +503,7 @@ public sealed class AzureBlobStorage(
                     {
                         if (criteria.Pattern?.IsMatch(blobItem.Name) == false)
                         {
-                            logger.LogTrace("Skipping {Path}: Doesn't match pattern", blobItem.Name);
+                            logger.LogSkippingPathPatternMismatch(blobItem.Name);
                             continue;
                         }
 
@@ -556,11 +547,7 @@ public sealed class AzureBlobStorage(
             }
             catch (Exception e)
             {
-                logger.LogError(
-                    e,
-                    "Error getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}",
-                    pageSizeToLoad
-                );
+                logger.LogErrorGettingBlobs(e, pageSizeToLoad);
                 throw;
             }
         }
@@ -724,4 +711,60 @@ public sealed class AzureBlobStorage(
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
+}
+
+internal static partial class AzureBlobStorageLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "StreamPositionReset",
+        Level = LogLevel.Warning,
+        Message = "Stream position was {Position}, resetting to 0 for blob {BlobName}"
+    )]
+    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobName);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FinishedDeletingFiles",
+        Level = LogLevel.Trace,
+        Message = "Finished deleting {FileCount} files matching {@Container} {SearchPattern}"
+    )]
+    public static partial void LogFinishedDeletingFiles(
+        this ILogger logger,
+        int fileCount,
+        string[] container,
+        string? searchPattern
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "UnableToCopyBlob",
+        Level = LogLevel.Warning,
+        Message = "Unable to copy {BlobName} to {NewBlobName}"
+    )]
+    public static partial void LogUnableToCopyBlob(this ILogger logger, string blobName, string newBlobName);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "RenameFailedRolledBack",
+        Level = LogLevel.Warning,
+        Message = "Rename failed for {BlobName}, rolled back copy"
+    )]
+    public static partial void LogRenameFailedRolledBack(this ILogger logger, string blobName);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "SkippingPathPatternMismatch",
+        Level = LogLevel.Trace,
+        Message = "Skipping {Path}: Doesn't match pattern"
+    )]
+    public static partial void LogSkippingPathPatternMismatch(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "ErrorGettingBlobs",
+        Level = LogLevel.Error,
+        Message = "Error getting blobs from Azure Storage. PageSizeToLoad={PageSizeToLoad}"
+    )]
+    public static partial void LogErrorGettingBlobs(this ILogger logger, Exception exception, int pageSizeToLoad);
 }

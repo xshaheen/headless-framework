@@ -16,7 +16,7 @@ namespace Tests.MultiTenancy;
 public sealed record TenantOrderEvent(string OrderId);
 
 /// <summary>
-/// Captures both the typed <see cref="ConsumeContext{T}.TenantId"/> and the ambient
+/// Captures both the typed <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> and the ambient
 /// <see cref="ICurrentTenant.Id"/> observed inside the consumer body. Used by E2E tests to
 /// verify that tenant context is restored from the envelope before user code runs.
 /// </summary>
@@ -109,13 +109,13 @@ public sealed class TenantPropagationE2ETests : TestBase
             services.AddTransient<TenantCapturingConsumer>();
             services.AddSingleton<FlakyTenantConsumer>();
 
-            services.AddHeadlessMessaging(setup =>
+            var messagingBuilder = services.AddHeadlessMessaging(setup =>
             {
                 setup.UseInMemoryMessageQueue();
                 setup.UseInMemoryStorage();
                 configureMessaging(setup);
             });
-            services.AddTenantPropagationServices();
+            messagingBuilder.AddTenantPropagationServices();
         });
     }
 
@@ -310,7 +310,7 @@ public sealed class TenantPropagationE2ETests : TestBase
     public async Task should_propagate_tenant_through_chained_publishes()
     {
         // given — Consumer A re-publishes from inside its consume scope; Consumer B captures.
-        // The chain proves that the consume filter restored ICurrentTenant *before* user code
+        // The chain proves that the consume middleware restored ICurrentTenant *before* user code
         // (and the inner publish filter), so the ambient tenant is stamped onto the second hop.
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(

@@ -352,7 +352,7 @@ The `TenantId` envelope property is populated automatically from the canonical `
 
 #### Automatic Propagation
 
-For end-to-end propagation, opt in to the built-in filter pair:
+For end-to-end propagation, opt in to the built-in middleware pair:
 
 ```csharp
 using Headless.Messaging.MultiTenancy;
@@ -363,11 +363,11 @@ builder.AddHeadlessTenancy(tenancy => tenancy
 builder.Services.AddHeadlessMessaging(options => { /* ... */ });
 ```
 
-This registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
+This registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
 
 Tenant propagation is composed exclusively through the root tenancy seam — the previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. The seam registration is idempotent and fails fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
 
-**Trust boundary.** The consume filter trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this filter. Otherwise an attacker who can publish to the bus can impersonate any tenant.
+**Trust boundary.** The consume middleware trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this middleware. Otherwise an attacker who can publish to the bus can impersonate any tenant.
 
 #### Manual Propagation
 

@@ -14,14 +14,14 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Tests;
+namespace Tests.Internal;
 
 /// <summary>
-/// Tests for F9 — <see cref="PublishedContext.IsTransactional"/>: surfaces the transactional
-/// boundary as a typed contract so post-success filters can detect when a publish is enrolled
+/// Tests for F9 — <see cref="PublishingContext{TMessage}.IsTransactional"/>: surfaces the transactional
+/// boundary as a typed contract so post-success middleware can detect when a publish is enrolled
 /// in an ambient outbox transaction whose commit is the caller's responsibility.
 /// </summary>
-public sealed class PublishedContextIsTransactionalTests : TestBase
+public sealed class IsTransactionalPropagationTests : TestBase
 {
     private sealed record TestMessage(string Value);
 
@@ -32,8 +32,8 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishFilter<IsTransactionalCapturingFilter>();
-        var pipeline = new PublishExecutionPipeline(services.BuildServiceProvider());
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        var pipeline = _BuildPublishPipeline(services);
 
         var transport = new RecordingTransport();
         var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
@@ -64,20 +64,20 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
     public async Task should_set_IsTransactional_true_when_outbox_publisher_is_non_autocommit()
     {
         // given — non-AutoCommit ambient transaction: the publish is buffered into the outbox
-        // and waits for the caller to commit. Filters running OnPublishExecutedAsync should see
+        // and waits for the caller to commit. Post-success middleware should see
         // IsTransactional = true so they can defer durable side-effects until after commit.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishFilter<IsTransactionalCapturingFilter>();
-        var pipeline = new PublishExecutionPipeline(services.BuildServiceProvider());
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        var pipeline = _BuildPublishPipeline(services);
 
         var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: false, ambientTransaction: true);
 
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
 
-        // then — the executed-phase filter saw the transactional flag
+        // then — post-success middleware saw the transactional flag
         observed.Captured.Should().BeTrue();
     }
 
@@ -85,12 +85,12 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
     public async Task should_set_IsTransactional_false_when_outbox_publisher_is_autocommit()
     {
         // given — AutoCommit branch: the publisher commits inside the call, so for downstream
-        // filters there is no caller-driven rollback to worry about; flag stays false.
+        // middleware there is no caller-driven rollback to worry about; flag stays false.
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishFilter<IsTransactionalCapturingFilter>();
-        var pipeline = new PublishExecutionPipeline(services.BuildServiceProvider());
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        var pipeline = _BuildPublishPipeline(services);
 
         var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: true, ambientTransaction: true);
 
@@ -109,8 +109,8 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
         var observed = new TransactionalCapture();
         var services = new ServiceCollection();
         services.AddSingleton(observed);
-        new MessagingBuilder(services).AddPublishFilter<IsTransactionalCapturingFilter>();
-        var pipeline = new PublishExecutionPipeline(services.BuildServiceProvider());
+        new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
+        var pipeline = _BuildPublishPipeline(services);
 
         var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: false, ambientTransaction: false);
 
@@ -122,7 +122,7 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
     }
 
     private static (OutboxPublisher publisher, TestOutboxTransaction? tx) _BuildOutboxPublisher(
-        PublishExecutionPipeline pipeline,
+        IPublishMiddlewarePipeline pipeline,
         bool autoCommit,
         bool ambientTransaction
     )
@@ -184,23 +184,27 @@ public sealed class PublishedContextIsTransactionalTests : TestBase
         );
         return (outbox, tx);
     }
+
+    private static PublishMiddlewarePipeline _BuildPublishPipeline(ServiceCollection services)
+    {
+        var provider = services.BuildServiceProvider();
+        return new PublishMiddlewarePipeline(provider, provider.GetService<IMiddlewareDescriptorRegistry>());
+    }
+
+    private sealed class IsTransactionalCapturingMiddleware(TransactionalCapture capture)
+        : IPublishMiddleware<PublishingContext<TestMessage>>
+    {
+        public async ValueTask InvokeAsync(PublishingContext<TestMessage> context, Func<ValueTask> next)
+        {
+            await next().ConfigureAwait(false);
+            capture.Captured = context.IsTransactional;
+        }
+    }
 }
 
 internal sealed class TransactionalCapture
 {
     public bool Captured { get; set; }
-}
-
-internal sealed class IsTransactionalCapturingFilter(TransactionalCapture capture) : PublishFilter
-{
-    public override ValueTask OnPublishExecutedAsync(
-        PublishedContext context,
-        CancellationToken cancellationToken = default
-    )
-    {
-        capture.Captured = context.IsTransactional;
-        return ValueTask.CompletedTask;
-    }
 }
 
 internal sealed class RecordingTransport : ITransport

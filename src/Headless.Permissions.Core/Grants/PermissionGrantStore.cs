@@ -85,18 +85,18 @@ public sealed class PermissionGrantStore(
     {
         var cacheKey = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
 
-        logger.LogDebug("PermissionStore.GetCacheItemAsync: {CacheKey}", cacheKey);
+        logger.LogGetCacheItem(cacheKey);
 
         var existValueCacheItem = await cache.GetAsync(cacheKey, cancellationToken);
 
         if (existValueCacheItem.HasValue)
         {
-            logger.LogDebug("Permission found in the cache: {CacheKey}", cacheKey);
+            logger.LogPermissionFoundInCache(cacheKey);
 
             return PermissionGrantStatus.From(existValueCacheItem.Value?.IsGranted);
         }
 
-        logger.LogDebug("Permission not found in the cache: {CacheKey}", cacheKey);
+        logger.LogPermissionNotFoundInCache(cacheKey);
 
         var valueCacheItem = await _CacheAllAndGetAsync(providerName, providerKey, name, cancellationToken);
 
@@ -364,9 +364,11 @@ public sealed class PermissionGrantStore(
                 tenantId
             ));
 
-        if (newDenials.Any())
+        var permissionGrantRecords = newDenials as PermissionGrantRecord[] ?? newDenials.ToArray();
+
+        if (permissionGrantRecords.Any())
         {
-            await repository.InsertManyAsync(newDenials, cancellationToken);
+            await repository.InsertManyAsync(permissionGrantRecords, cancellationToken);
         }
 
         // Update cache with denials
@@ -401,11 +403,11 @@ public sealed class PermissionGrantStore(
             .Select(x => _GetPermissionNameFormCacheKey(x.Key))
             .ToArray();
 
-        logger.LogDebug("PermissionStore._GetCachedItemsAsync: {@CacheKeys}", cacheKeys);
+        logger.LogGetCachedItems(cacheKeys);
 
         if (notCachedNames.Length == 0)
         {
-            logger.LogDebug("Found in the cache: {@CacheKeys}", cacheKeys);
+            logger.LogFoundInCache(cacheKeys);
 
             return cacheItemsMap.ToDictionary(
                 x => _GetPermissionNameFormCacheKey(x.Key),
@@ -415,7 +417,7 @@ public sealed class PermissionGrantStore(
         }
 
         // Some cache items aren't found in the cache, get them from the database
-        logger.LogDebug("Not found in the cache: {@Names}", notCachedNames as object);
+        logger.LogNotFoundInCache(notCachedNames);
 
         var newCacheItems = await _CacheSomeAsync(notCachedNames, providerName, providerKey, cancellationToken);
         var result = new Dictionary<string, PermissionGrantStatus>(StringComparer.Ordinal);
@@ -438,18 +440,14 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
-        logger.LogDebug(
-            "Getting not cache granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}",
-            providerName,
-            providerKey
-        );
+        logger.LogGettingNotCachedGrantedPermissions(providerName, providerKey);
 
         var definitions = await _GetDbPermissionsDefinitionsAsync(names, cancellationToken);
         var dbPermissionGrants = await repository.GetListAsync(names, providerName, providerKey, cancellationToken);
 
         var grantsLookup = dbPermissionGrants.ToDictionary(g => g.Name, g => g.IsGranted, StringComparer.Ordinal);
 
-        logger.LogDebug("Setting the cache items. Count: {PermissionsCount}", definitions.Length);
+        logger.LogSettingCacheItems(definitions.Length);
 
         var cacheItems = new Dictionary<string, PermissionGrantCacheItem>(StringComparer.Ordinal);
 
@@ -464,7 +462,7 @@ public sealed class PermissionGrantStore(
         }
 
         await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
-        logger.LogDebug("Finished setting the cache items. Count: {PermissionsCount}", definitions.Length);
+        logger.LogFinishedSettingCacheItems(definitions.Length);
 
         return cacheItems;
     }
@@ -478,16 +476,12 @@ public sealed class PermissionGrantStore(
     {
         var definitions = await permissionDefinitionManager.GetPermissionsAsync(cancellationToken);
 
-        logger.LogDebug(
-            "Getting all granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}",
-            providerName,
-            providerKey
-        );
+        logger.LogGettingAllGrantedPermissions(providerName, providerKey);
 
         var allPermissionGrants = await repository.GetListAsync(providerName, providerKey, cancellationToken);
         var grantsLookup = allPermissionGrants.ToDictionary(g => g.Name, g => g.IsGranted, StringComparer.Ordinal);
 
-        logger.LogDebug("Permissions - Set the cache items. Count: {DefinitionsCount}", definitions.Count);
+        logger.LogSettingCacheItemsForDefinitions(definitions.Count);
 
         Dictionary<string, PermissionGrantCacheItem> cacheItems = new(StringComparer.Ordinal);
         var permissionIsGranted = PermissionGrantStatus.Undefined;
@@ -510,7 +504,7 @@ public sealed class PermissionGrantStore(
 
         await cache.UpsertAllAsync(cacheItems, _cacheExpiration, cancellationToken);
 
-        logger.LogDebug("Finished setting the cache items. Count: {DefinitionsCount}", definitions.Count);
+        logger.LogFinishedSettingCacheItemsForDefinitions(definitions.Count);
 
         return permissionIsGranted;
     }
@@ -541,4 +535,111 @@ public sealed class PermissionGrantStore(
     }
 
     #endregion
+}
+
+internal static partial class PermissionGrantStoreLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "GetCacheItem",
+        Level = LogLevel.Debug,
+        Message = "PermissionStore.GetCacheItemAsync: {CacheKey}"
+    )]
+    public static partial void LogGetCacheItem(this ILogger logger, string cacheKey);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "PermissionFoundInCache",
+        Level = LogLevel.Debug,
+        Message = "Permission found in the cache: {CacheKey}"
+    )]
+    public static partial void LogPermissionFoundInCache(this ILogger logger, string cacheKey);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "PermissionNotFoundInCache",
+        Level = LogLevel.Debug,
+        Message = "Permission not found in the cache: {CacheKey}"
+    )]
+    public static partial void LogPermissionNotFoundInCache(this ILogger logger, string cacheKey);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "GetCachedItems",
+        Level = LogLevel.Debug,
+        Message = "PermissionStore._GetCachedItemsAsync: {@CacheKeys}"
+    )]
+    public static partial void LogGetCachedItems(this ILogger logger, IReadOnlyList<string> cacheKeys);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "FoundInCache",
+        Level = LogLevel.Debug,
+        Message = "Found in the cache: {@CacheKeys}"
+    )]
+    public static partial void LogFoundInCache(this ILogger logger, IReadOnlyList<string> cacheKeys);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "NotFoundInCache",
+        Level = LogLevel.Debug,
+        Message = "Not found in the cache: {@Names}"
+    )]
+    public static partial void LogNotFoundInCache(this ILogger logger, string[] names);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "GettingNotCachedGrantedPermissions",
+        Level = LogLevel.Debug,
+        Message = "Getting not cache granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}"
+    )]
+    public static partial void LogGettingNotCachedGrantedPermissions(
+        this ILogger logger,
+        string providerName,
+        string providerKey
+    );
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "SettingCacheItems",
+        Level = LogLevel.Debug,
+        Message = "Setting the cache items. Count: {PermissionsCount}"
+    )]
+    public static partial void LogSettingCacheItems(this ILogger logger, int permissionsCount);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "FinishedSettingCacheItems",
+        Level = LogLevel.Debug,
+        Message = "Finished setting the cache items. Count: {PermissionsCount}"
+    )]
+    public static partial void LogFinishedSettingCacheItems(this ILogger logger, int permissionsCount);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "GettingAllGrantedPermissions",
+        Level = LogLevel.Debug,
+        Message = "Getting all granted permissions from the repository for this provider name,key: {ProviderName},{ProviderKey}"
+    )]
+    public static partial void LogGettingAllGrantedPermissions(
+        this ILogger logger,
+        string providerName,
+        string providerKey
+    );
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "SettingCacheItemsForDefinitions",
+        Level = LogLevel.Debug,
+        Message = "Permissions - Set the cache items. Count: {DefinitionsCount}"
+    )]
+    public static partial void LogSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "FinishedSettingCacheItemsForDefinitions",
+        Level = LogLevel.Debug,
+        Message = "Finished setting the cache items. Count: {DefinitionsCount}"
+    )]
+    public static partial void LogFinishedSettingCacheItemsForDefinitions(this ILogger logger, int definitionsCount);
 }

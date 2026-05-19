@@ -48,7 +48,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogDebug("NATS stream message [{Name}] published, seq={Seq}.", message.GetName(), ack.Seq);
+                logger.LogNatsStreamMessagePublished(message.GetName(), ack.Seq);
             }
 
             return OperateResult.Success;
@@ -85,4 +85,15 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
     {
         return new NatsJSPubOpts { MsgId = message.GetId() };
     }
+}
+
+internal static partial class NatsTransportLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "NatsStreamMessagePublished",
+        Level = LogLevel.Debug,
+        Message = "NATS stream message [{Name}] published, seq={Seq}."
+    )]
+    public static partial void LogNatsStreamMessagePublished(this ILogger logger, string name, ulong seq);
 }

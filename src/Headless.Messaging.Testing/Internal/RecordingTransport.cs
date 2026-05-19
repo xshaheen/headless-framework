@@ -56,12 +56,7 @@ internal sealed class RecordingTransport(
                         // SendAsync already succeeded; throwing here would mask infrastructure errors
                         // as application errors. Log so a WaitForPublished<T> that subsequently times
                         // out has a diagnostic trail; otherwise the deserialization failure is invisible.
-                        logger?.LogWarning(
-                            ex,
-                            "RecordingTransport failed to deserialize observed payload as {MessageType}; falling back to TransportMessage. WaitForPublished<{MessageType}> will time out.",
-                            resolvedType.FullName,
-                            resolvedType.FullName
-                        );
+                        logger?.LogDeserializeObservedPayloadFailed(ex, resolvedType.FullName);
                     }
                 }
             }
@@ -121,4 +116,19 @@ internal sealed class RecordingTransport(
                 return null;
             }
         );
+}
+
+internal static partial class RecordingTransportLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "DeserializeObservedPayloadFailed",
+        Level = LogLevel.Warning,
+        Message = "RecordingTransport failed to deserialize observed payload as {MessageType}; falling back to TransportMessage. WaitForPublished<{MessageType}> will time out."
+    )]
+    public static partial void LogDeserializeObservedPayloadFailed(
+        this ILogger logger,
+        Exception exception,
+        string? messageType
+    );
 }

@@ -18,7 +18,7 @@ public interface ISubscribeInvoker
     Task<ConsumerExecutedResult> InvokeAsync(ConsumerContext context, CancellationToken cancellationToken = default);
 }
 
-internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeExecutionPipeline executionPipeline)
+internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewarePipeline executionPipeline)
     : ISubscribeInvoker
 {
     public async Task<ConsumerExecutedResult> InvokeAsync(

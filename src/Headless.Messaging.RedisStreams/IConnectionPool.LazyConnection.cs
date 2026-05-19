@@ -42,10 +42,7 @@ public class AsyncLazyRedisConnection(
 
             if (!connection.IsConnected)
             {
-                logger.LogWarning(
-                    "Can't establish redis connection,trying to establish connection [attempt {Attempt}].",
-                    attempt
-                );
+                logger.LogRedisConnectionAttemptFailed(attempt);
 
                 await timeProvider.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
 
@@ -93,4 +90,15 @@ public sealed class RedisConnection(IConnectionMultiplexer connection) : IDispos
 
         _isDisposed = true;
     }
+}
+
+internal static partial class AsyncLazyRedisConnectionLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "RedisConnectionAttemptFailed",
+        Level = LogLevel.Warning,
+        Message = "Can't establish redis connection,trying to establish connection [attempt {Attempt}]."
+    )]
+    public static partial void LogRedisConnectionAttemptFailed(this ILogger logger, int attempt);
 }

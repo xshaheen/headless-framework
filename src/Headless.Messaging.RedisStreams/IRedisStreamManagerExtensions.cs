@@ -29,12 +29,7 @@ internal static class RedisStreamManagerExtensions
             {
                 if (ex.GetRedisErrorType() == RedisErrorTypes.Unknown)
                 {
-                    logger?.LogError(
-                        ex,
-                        "Redis error while creating consumer group [{ConsumerGroup}] of stream [{Position}]",
-                        consumerGroup,
-                        position.Key
-                    );
+                    logger?.LogCreateConsumerGroupFailed(ex, consumerGroup, position.Key);
                 }
             }
 
@@ -103,4 +98,20 @@ internal static class RedisStreamManagerExtensions
             throw;
         }
     }
+}
+
+internal static partial class RedisStreamManagerExtensionsLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "CreateConsumerGroupFailed",
+        Level = LogLevel.Error,
+        Message = "Redis error while creating consumer group [{ConsumerGroup}] of stream [{Position}]"
+    )]
+    public static partial void LogCreateConsumerGroupFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumerGroup,
+        RedisKey position
+    );
 }

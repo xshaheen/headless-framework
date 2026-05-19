@@ -16,7 +16,7 @@ container
         setup.UseInMemoryStorage();
         setup.UseInMemoryMessageQueue();
     })
-    .AddSubscribeFilter<CustomConsumerFilter>();
+    .AddBusConsumeMiddleware<CustomConsumerMiddleware>();
 
 var sp = container.BuildServiceProvider();
 

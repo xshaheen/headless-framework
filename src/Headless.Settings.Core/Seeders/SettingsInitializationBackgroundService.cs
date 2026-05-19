@@ -133,7 +133,7 @@ public sealed class SettingsInitializationBackgroundService(
                 }
                 catch (Exception e)
                 {
-                    logger.LogError(e, "Failed to save static settings to the database");
+                    logger.LogFailedToSaveStaticSettings(e);
 
                     throw; // Polly will catch it
                 }
@@ -158,9 +158,28 @@ public sealed class SettingsInitializationBackgroundService(
         }
         catch (Exception e)
         {
-            logger.LogError(e, "Failed to pre-cache dynamic settings");
+            logger.LogFailedToPreCacheDynamicSettings(e);
 
             throw;
         }
     }
+}
+
+internal static partial class SettingsInitializationBackgroundServiceLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToSaveStaticSettings",
+        Level = LogLevel.Error,
+        Message = "Failed to save static settings to the database"
+    )]
+    public static partial void LogFailedToSaveStaticSettings(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "FailedToPreCacheDynamicSettings",
+        Level = LogLevel.Error,
+        Message = "Failed to pre-cache dynamic settings"
+    )]
+    public static partial void LogFailedToPreCacheDynamicSettings(this ILogger logger, Exception exception);
 }

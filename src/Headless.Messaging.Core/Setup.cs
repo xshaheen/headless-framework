@@ -93,6 +93,7 @@ public static class SetupMessaging
         var options = setup.Options;
         services.AddSingleton(_ => services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
+        MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
@@ -112,11 +113,11 @@ public static class SetupMessaging
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
 
         services.TryAddSingleton<IConsumerServiceSelector, ConsumerServiceSelector>();
-        services.TryAddSingleton<IConsumeExecutionPipeline, ConsumeExecutionPipeline>();
-        // Singleton-with-internal-AsyncScope, mirroring IConsumeExecutionPipeline above. Both publishers
+        services.TryAddSingleton<IConsumeMiddlewarePipeline, ConsumeMiddlewarePipeline>();
+        // Singleton-with-internal-AsyncScope, mirroring IConsumeMiddlewarePipeline above. Both publishers
         // it serves are Singleton too, so a Scoped pipeline would be a captive dependency. Per-publish
-        // scope is created inside ExecuteAsync so scoped IPublishFilter instances resolve fresh per call.
-        services.TryAddSingleton<IPublishExecutionPipeline, PublishExecutionPipeline>();
+        // scope is created inside ExecuteAsync so scoped publish middleware instances resolve fresh per call.
+        services.TryAddSingleton<IPublishMiddlewarePipeline, PublishMiddlewarePipeline>();
         services.TryAddSingleton<ISubscribeInvoker, SubscribeInvoker>();
         services.TryAddSingleton<MethodMatcherCache>();
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
@@ -186,7 +187,7 @@ public static class SetupMessaging
         services.TryAddSingleton<IBootstrapper>(sp => sp.GetRequiredService<Bootstrapper>());
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
-        return new MessagingBuilder(services);
+        return new MessagingBuilder(services, options);
     }
 
     /// <summary>

@@ -31,27 +31,30 @@ public static class SetupMessagingTenancy
         return builder;
     }
 
-    internal static IServiceCollection AddTenantPropagationServices(this IServiceCollection services)
+    internal static MessagingBuilder AddTenantPropagationServices(this MessagingBuilder builder)
     {
-        Argument.IsNotNull(services);
+        Argument.IsNotNull(builder);
 
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IConsumeFilter, TenantPropagationConsumeFilter>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IPublishFilter, TenantPropagationPublishFilter>());
+        builder
+            .AddBusConsumeMiddleware<TenantPropagationConsumeMiddleware>()
+            .WithPriority(TenantPropagationConsumeMiddleware.Priority)
+            .AddBusPublishMiddleware<TenantPropagationPublishMiddleware>()
+            .WithPriority(TenantPropagationPublishMiddleware.Priority);
 
         // Standardized ICurrentTenant primitives — see Headless.Messaging.Core/Setup.cs for the
         // rationale. CurrentTenant.Id returns null when no AsyncLocal value is set so the publish
         // strict-tenancy guard still fails fast under TenantContextRequired = true.
-        services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
-        services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+        builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
+        builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
         // Routes through the unified IHeadlessTenancyValidator collection aggregated by
         // HeadlessTenancyStartupValidator (IHostedLifecycleService) — runs in StartingAsync before any
         // IHostedService.StartAsync so a misconfigured tenancy posture fails fast.
-        services.TryAddEnumerable(
+        builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, TenantPropagationStartupValidator>()
         );
 
-        return services;
+        return builder;
     }
 }
 
@@ -75,11 +78,11 @@ public sealed class HeadlessMessagingTenancyBuilder
         _builder = Argument.IsNotNull(builder);
     }
 
-    /// <summary>Registers publish and consume filters that propagate tenant context through messages.</summary>
+    /// <summary>Registers publish and consume middleware that propagates tenant context through messages.</summary>
     /// <returns>The same messaging tenancy builder.</returns>
     public HeadlessMessagingTenancyBuilder PropagateTenant()
     {
-        _builder.Services.AddTenantPropagationServices();
+        new MessagingBuilder(_builder.Services).AddTenantPropagationServices();
         _builder.RecordSeam(Seam, TenantPostureStatus.Propagating, PropagateTenantCapability);
 
         return this;

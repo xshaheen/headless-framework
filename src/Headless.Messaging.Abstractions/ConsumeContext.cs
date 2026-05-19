@@ -1,32 +1,61 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Messaging;
 
 /// <summary>
-/// Provides context information for message consumption, including the message payload and metadata.
+/// Provides object-typed context information for message consumption.
 /// </summary>
-/// <typeparam name="TMessage">The type of the message being consumed.</typeparam>
 /// <remarks>
-/// <para>
-/// This context is created for each message consumption and provides access to:
-/// <list type="bullet">
-/// <item><description>The strongly-typed message payload</description></item>
-/// <item><description>Message metadata (ID, correlation ID, timestamps)</description></item>
-/// <item><description>Custom headers for cross-cutting concerns</description></item>
-/// </list>
-/// </para>
+/// This base type is used by object-typed consume middleware that should apply to every message type.
+/// Use <see cref="ConsumeContext{TMessage}"/> when the middleware or consumer needs strongly-typed payload access.
 /// </remarks>
-public sealed record ConsumeContext<TMessage>
-    where TMessage : class
+public record class ConsumeContext
 {
+    private CancellationToken _cancellationToken;
+    private bool _isCompleted;
+
     /// <summary>
-    /// Gets the strongly-typed message payload.
+    /// Gets the deserialized message object. May be <see langword="null"/> only for invalid custom construction.
     /// </summary>
-    /// <value>
-    /// The deserialized message object that will be processed by the consumer.
-    /// This property is never null.
-    /// </value>
-    public required TMessage Message { get; init; }
+    public object? Message { get; init; }
+
+    /// <summary>
+    /// Gets the runtime type of <see cref="Message"/>.
+    /// </summary>
+    public Type MessageType
+    {
+        get;
+        init { field = Argument.IsNotNull(value); }
+    } = typeof(object);
+
+    /// <summary>
+    /// Gets the cancellation token currently active for this consume operation.
+    /// </summary>
+    public CancellationToken CancellationToken
+    {
+        get => _cancellationToken;
+        internal init => _cancellationToken = value;
+    }
+
+    /// <summary>
+    /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
+    /// </summary>
+    public void WithCancellationToken(CancellationToken cancellationToken)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+        }
+
+        _cancellationToken = cancellationToken;
+    }
+
+    internal void MarkCompleted()
+    {
+        _isCompleted = true;
+    }
 
     /// <summary>
     /// Gets the unique identifier for this message.
@@ -108,7 +137,7 @@ public sealed record ConsumeContext<TMessage>
     /// Gets the multi-tenancy identifier for this message.
     /// </summary>
     /// <value>
-    /// The tenant identifier carried on the <see cref="Headers.TenantId"/> wire header
+    /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
     /// (<c>"headless-tenant-id"</c>), populated from <see cref="PublishOptions"/>.TenantId at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
     /// <see cref="PublishOptions.TenantIdMaxLength"/> (lenient consume-side handling).
@@ -164,8 +193,8 @@ public sealed record ConsumeContext<TMessage>
     /// </list>
     /// </para>
     /// <para>
-    /// Multi-tenancy is first-class: prefer <see cref="ConsumeContext{TMessage}.TenantId"/> over reading the
-    /// <see cref="Headers.TenantId"/> header directly.
+    /// Multi-tenancy is first-class: prefer <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> over reading the
+    /// <c>Headers.TenantId</c> header directly.
     /// </para>
     /// </remarks>
     public required MessageHeader Headers { get; init; }
@@ -205,4 +234,39 @@ public sealed record ConsumeContext<TMessage>
     /// </list>
     /// </remarks>
     public required string Topic { get; init; }
+}
+
+/// <summary>
+/// Provides context information for message consumption, including the message payload and metadata.
+/// </summary>
+/// <typeparam name="TMessage">The type of the message being consumed.</typeparam>
+/// <remarks>
+/// <para>
+/// This context is created for each message consumption and provides access to:
+/// <list type="bullet">
+/// <item><description>The strongly-typed message payload</description></item>
+/// <item><description>Message metadata (ID, correlation ID, timestamps)</description></item>
+/// <item><description>Custom headers for cross-cutting concerns</description></item>
+/// </list>
+/// </para>
+/// </remarks>
+public record class ConsumeContext<TMessage> : ConsumeContext
+    where TMessage : class
+{
+    /// <summary>
+    /// Gets the strongly-typed message payload.
+    /// </summary>
+    /// <value>
+    /// The deserialized message object that will be processed by the consumer.
+    /// This property is never null.
+    /// </value>
+    public new required TMessage Message
+    {
+        get => (TMessage)base.Message!;
+        init
+        {
+            base.Message = value;
+            MessageType = typeof(TMessage);
+        }
+    }
 }

@@ -194,7 +194,7 @@ public static class ApiSetup
             );
 
             builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-            builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
+            builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
             builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
             builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
             builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
@@ -338,7 +338,10 @@ public static class ApiSetup
     }
 
     /// <summary>Applies the default Headless API middleware order. Idempotent.</summary>
-    public static WebApplication UseHeadless(this WebApplication app, Action<HeadlessApiDefaultsOptions>? configure = null)
+    public static WebApplication UseHeadless(
+        this WebApplication app,
+        Action<HeadlessApiDefaultsOptions>? configure = null
+    )
     {
         Argument.IsNotNull(app);
 

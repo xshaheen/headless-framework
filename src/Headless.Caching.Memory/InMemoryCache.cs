@@ -60,7 +60,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         if ((_maxMemorySize.HasValue || _maxEntrySize.HasValue) && _sizeCalculator is null)
         {
             throw new ArgumentException(
-                "SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
+                @"SizeCalculator is required when MaxMemorySize or MaxEntrySize is set.",
                 nameof(options)
             );
         }
@@ -1118,15 +1118,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         try
         {
             var value = existingEntry.GetValue<T>();
-            return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, true));
+            return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
         {
-            _logger.LogWarning(
-                ex,
-                "Deserialization error for cache key (hash: {KeyHash})",
-                string.GetHashCode(key, StringComparison.Ordinal)
-            );
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
     }
@@ -1874,9 +1870,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
                 }
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                _logger.LogWarning(ex, "Cache maintenance task failed");
+                _logger.LogMaintenanceTaskFailed(e);
             }
 
             if (ShouldCompact)
@@ -2168,6 +2164,25 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     }
 
     #endregion
+}
+
+internal static partial class InMemoryCacheLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "DeserializationError",
+        Level = LogLevel.Warning,
+        Message = "Deserialization error for cache key (hash: {KeyHash})"
+    )]
+    public static partial void LogDeserializationError(this ILogger logger, Exception exception, int keyHash);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "MaintenanceTaskFailed",
+        Level = LogLevel.Warning,
+        Message = "Cache maintenance task failed"
+    )]
+    public static partial void LogMaintenanceTaskFailed(this ILogger logger, Exception exception);
 }
 
 file static class ConcurrentDictionaryExtensions

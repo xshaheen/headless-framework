@@ -34,7 +34,7 @@ public sealed class DisposableDistributedLock(
     {
         if (logger.IsEnabled(LogLevel.Trace))
         {
-            logger.LogTrace("Renewing lock {Resource} ({LockId})", Resource, LockId);
+            logger.LogDisposableLockRenewing(Resource, LockId);
         }
 
         var result = await lockProvider
@@ -43,7 +43,7 @@ public sealed class DisposableDistributedLock(
 
         if (!result)
         {
-            logger.LogDebug("Unable to renew lock {Resource} ({LockId})", Resource, LockId);
+            logger.LogDisposableLockRenewFailed(Resource, LockId);
 
             return false;
         }
@@ -52,7 +52,7 @@ public sealed class DisposableDistributedLock(
 
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug("Renewed lock {Resource} ({LockId})", Resource, LockId);
+            logger.LogDisposableLockRenewed(Resource, LockId);
         }
 
         return true;
@@ -78,12 +78,7 @@ public sealed class DisposableDistributedLock(
             {
                 var elapsed = timeProvider.GetElapsedTime(_timestamp);
 
-                logger.LogDebug(
-                    "Releasing lock: R={Resource} Id={LockId} after {Duration:g}",
-                    Resource,
-                    LockId,
-                    elapsed
-                );
+                logger.LogDisposableLockReleasing(Resource, LockId, elapsed);
             }
 
             await lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
@@ -96,7 +91,7 @@ public sealed class DisposableDistributedLock(
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogTrace("Disposing lock: R={Resource} Id={LockId}", Resource, LockId);
+            logger.LogDisposableLockDisposing(Resource, LockId);
         }
 
         try
@@ -107,13 +102,82 @@ public sealed class DisposableDistributedLock(
         {
             if (logger.IsEnabled(LogLevel.Error))
             {
-                logger.LogError(e, "Unable to release lock: R={Resource} Id={LockId}", Resource, LockId);
+                logger.LogDisposableLockReleaseFailed(e, Resource, LockId);
             }
         }
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogTrace("Disposed lock: R={Resource} Id={LockId}", Resource, LockId);
+            logger.LogDisposableLockDisposed(Resource, LockId);
         }
     }
+}
+
+internal static partial class DisposableDistributedLockLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "DisposableLockRenewing",
+        Level = LogLevel.Trace,
+        Message = "Renewing lock {Resource} ({LockId})"
+    )]
+    public static partial void LogDisposableLockRenewing(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "DisposableLockRenewFailed",
+        Level = LogLevel.Debug,
+        Message = "Unable to renew lock {Resource} ({LockId})"
+    )]
+    public static partial void LogDisposableLockRenewFailed(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "DisposableLockRenewed",
+        Level = LogLevel.Debug,
+        Message = "Renewed lock {Resource} ({LockId})"
+    )]
+    public static partial void LogDisposableLockRenewed(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "DisposableLockReleasing",
+        Level = LogLevel.Debug,
+        Message = "Releasing lock: R={Resource} Id={LockId} after {Duration:g}"
+    )]
+    public static partial void LogDisposableLockReleasing(
+        this ILogger logger,
+        string resource,
+        string lockId,
+        TimeSpan duration
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "DisposableLockDisposing",
+        Level = LogLevel.Trace,
+        Message = "Disposing lock: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogDisposableLockDisposing(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "DisposableLockReleaseFailed",
+        Level = LogLevel.Error,
+        Message = "Unable to release lock: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogDisposableLockReleaseFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId
+    );
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "DisposableLockDisposed",
+        Level = LogLevel.Trace,
+        Message = "Disposed lock: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogDisposableLockDisposed(this ILogger logger, string resource, string lockId);
 }

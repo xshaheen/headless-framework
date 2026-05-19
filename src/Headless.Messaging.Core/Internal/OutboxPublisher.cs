@@ -14,7 +14,7 @@ internal sealed class OutboxPublisher(
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
     IOutboxTransactionAccessor transactionAccessor,
-    IPublishExecutionPipeline publishPipeline,
+    IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
 ) : IOutboxPublisher, IScheduledPublisher
 {
@@ -29,7 +29,7 @@ internal sealed class OutboxPublisher(
     )
     {
         // Pre-decide whether this publish lands on the non-AutoCommit transactional branch so the
-        // pipeline can stamp PublishedContext.IsTransactional before the post-success filters run.
+        // pipeline can stamp PublishingContext.IsTransactional before post-success middleware resumes.
         var isTransactional = _IsNonAutoCommitTransactional();
 
         return publishPipeline.ExecuteAsync(
@@ -37,8 +37,8 @@ internal sealed class OutboxPublisher(
             options,
             delayTime: null,
             // DelayTime is undefined for the immediate publish path; ignored.
-            innerPublish: (filteredOptions, _, ct) =>
-                _PublishInternalAsync(publishRequestFactory.Create(contentObj, filteredOptions), ct),
+            innerPublish: (middlewareOptions, _, ct) =>
+                _PublishInternalAsync(publishRequestFactory.Create(contentObj, middlewareOptions), ct),
             isTransactional,
             cancellationToken
         );
@@ -57,13 +57,13 @@ internal sealed class OutboxPublisher(
             contentObj,
             options,
             delayTime,
-            innerPublish: (filteredOptions, filteredDelay, ct) =>
+            innerPublish: (middlewareOptions, middlewareDelay, ct) =>
             {
-                // Filter mutated DelayTime to null → drop to immediate-publish path; otherwise use the
-                // filter-mutated value, falling back to the caller-supplied delay if the filter left it untouched.
-                var request = filteredDelay.HasValue
-                    ? publishRequestFactory.Create(contentObj, filteredOptions, filteredDelay.Value)
-                    : publishRequestFactory.Create(contentObj, filteredOptions);
+                // Middleware mutated DelayTime to null -> drop to immediate-publish path; otherwise use the
+                // middleware-mutated value, falling back to the caller-supplied delay if middleware left it untouched.
+                var request = middlewareDelay.HasValue
+                    ? publishRequestFactory.Create(contentObj, middlewareOptions, middlewareDelay.Value)
+                    : publishRequestFactory.Create(contentObj, middlewareOptions);
                 return _PublishInternalAsync(request, ct);
             },
             isTransactional,

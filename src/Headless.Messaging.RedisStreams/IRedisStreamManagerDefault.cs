@@ -144,7 +144,7 @@ internal class RedisStreamManager(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Redis error when trying read consumer group {ConsumerGroup}", consumerGroup);
+            logger.LogReadConsumerGroupFailed(ex, consumerGroup);
         }
 
         return [];
@@ -154,4 +154,19 @@ internal class RedisStreamManager(
     {
         _redis = await connectionsPool.ConnectAsync().ConfigureAwait(false);
     }
+}
+
+internal static partial class RedisStreamManagerLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "ReadConsumerGroupFailed",
+        Level = LogLevel.Error,
+        Message = "Redis error when trying read consumer group {ConsumerGroup}"
+    )]
+    public static partial void LogReadConsumerGroupFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumerGroup
+    );
 }

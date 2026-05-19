@@ -128,11 +128,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             // Reset stream position for seekable streams
             if (stream.CanSeek && stream.Position != 0)
             {
-                _logger.LogWarning(
-                    "Stream position was {Position}, resetting to 0 for blob {BlobName}",
-                    stream.Position,
-                    blobName
-                );
+                _logger.LogStreamPositionReset(stream.Position, blobName);
                 stream.Seek(0, SeekOrigin.Begin);
             }
 
@@ -188,7 +184,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error saving {Path}: {Message}", blobPath, e.Message);
+            _logger.LogErrorSavingBlob(e, blobPath, e.Message);
 
             throw;
         }
@@ -267,7 +263,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         CancellationToken cancellationToken
     )
     {
-        _logger.LogTrace("Deleting {Path}", blobPath);
+        _logger.LogDeletingPath(blobPath);
 
         // Atomic delete using Lua script to ensure both blob and info are deleted together
         var result = await Run.WithRetriesAsync(
@@ -338,7 +334,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var blobs = await _GetFileListAsync(container, blobSearchPattern, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
-        _logger.LogInformation("Deleting {FileCount} files matching {SearchPattern}", blobs.Count, blobSearchPattern);
+        _logger.LogDeletingFiles(blobs.Count, blobSearchPattern);
 
         var (blobsContainer, infoContainer) = _BuildContainerPath(container);
 
@@ -376,7 +372,7 @@ public sealed class RedisBlobStorage : IBlobStorage
             )
             .ConfigureAwait(false);
 
-        _logger.LogTrace("Finished deleting {FileCount} files matching {SearchPattern}", count, blobSearchPattern);
+        _logger.LogFinishedDeletingFiles(count, blobSearchPattern);
 
         return count;
     }
@@ -400,7 +396,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
         var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        _logger.LogInformation("Renaming {Path} to {NewPath}", srcBlobPath, dstBlobPath);
+        _logger.LogRenamingPath(srcBlobPath, dstBlobPath);
 
         var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
         var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
@@ -423,7 +419,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error renaming {Path} to {NewPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
+            _logger.LogErrorRenamingPath(e, srcBlobPath, dstBlobPath, e.Message);
 
             throw;
         }
@@ -448,7 +444,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var srcBlobPath = _BuildBlobPath(blobContainer, blobName);
         var dstBlobPath = _BuildBlobPath(newBlobContainer, newBlobName);
-        _logger.LogTrace("Copying {Path} to {TargetPath}", srcBlobPath, dstBlobPath);
+        _logger.LogCopyingPath(srcBlobPath, dstBlobPath);
 
         var (srcBlobsContainer, srcInfoContainer) = _BuildContainerPath(blobContainer);
         var (dstBlobsContainer, dstInfoContainer) = _BuildContainerPath(newBlobContainer);
@@ -471,7 +467,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Error copying {Path} to {TargetPath}: {Message}", srcBlobPath, dstBlobPath, e.Message);
+            _logger.LogErrorCopyingPath(e, srcBlobPath, dstBlobPath, e.Message);
 
             throw;
         }
@@ -493,7 +489,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Checking if {Path} exists", blobPath);
+        _logger.LogCheckingIfPathExists(blobPath);
 
         return await Run.WithRetriesAsync(
             () => Database.HashExistsAsync(infoContainer, blobPath),
@@ -518,7 +514,7 @@ public sealed class RedisBlobStorage : IBlobStorage
         var (blobsContainer, _) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
 
-        _logger.LogTrace("Getting file stream for {Path}", blobPath);
+        _logger.LogGettingFileStream(blobPath);
 
         var fileContent = await Run.WithRetriesAsync(
                 () => Database.HashGetAsync(blobsContainer, blobPath),
@@ -529,7 +525,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (fileContent.IsNull)
         {
-            _logger.LogDebug("File not found: {Path}", blobPath);
+            _logger.LogFileNotFound(blobPath);
 
             return null;
         }
@@ -550,7 +546,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var (_, infoContainer) = _BuildContainerPath(container);
         var blobPath = _BuildBlobPath(container, blobName);
-        _logger.LogTrace("Getting file info for {Path}", blobPath);
+        _logger.LogGettingFileInfo(blobPath);
 
         var blobInfo = await Run.WithRetriesAsync(
             (Database, infoContainer, blobPath),
@@ -560,7 +556,7 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         if (!blobInfo.HasValue)
         {
-            _logger.LogDebug("File not found: {Path}", blobPath);
+            _logger.LogFileNotFound(blobPath);
 
             return null;
         }
@@ -864,4 +860,123 @@ public sealed class RedisBlobStorage : IBlobStorage
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     #endregion
+}
+
+internal static partial class RedisBlobStorageLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "StreamPositionReset",
+        Level = LogLevel.Warning,
+        Message = "Stream position was {Position}, resetting to 0 for blob {BlobName}"
+    )]
+    public static partial void LogStreamPositionReset(this ILogger logger, long position, string blobName);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "ErrorSavingBlob",
+        Level = LogLevel.Error,
+        Message = "Error saving {Path}: {Message}"
+    )]
+    public static partial void LogErrorSavingBlob(
+        this ILogger logger,
+        Exception exception,
+        string path,
+        string message
+    );
+
+    [LoggerMessage(EventId = 3, EventName = "DeletingPath", Level = LogLevel.Trace, Message = "Deleting {Path}")]
+    public static partial void LogDeletingPath(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "DeletingFiles",
+        Level = LogLevel.Information,
+        Message = "Deleting {FileCount} files matching {SearchPattern}"
+    )]
+    public static partial void LogDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "FinishedDeletingFiles",
+        Level = LogLevel.Trace,
+        Message = "Finished deleting {FileCount} files matching {SearchPattern}"
+    )]
+    public static partial void LogFinishedDeletingFiles(this ILogger logger, int fileCount, string? searchPattern);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "RenamingPath",
+        Level = LogLevel.Information,
+        Message = "Renaming {Path} to {NewPath}"
+    )]
+    public static partial void LogRenamingPath(this ILogger logger, string path, string newPath);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "ErrorRenamingPath",
+        Level = LogLevel.Error,
+        Message = "Error renaming {Path} to {NewPath}: {Message}"
+    )]
+    public static partial void LogErrorRenamingPath(
+        this ILogger logger,
+        Exception exception,
+        string path,
+        string newPath,
+        string message
+    );
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "CopyingPath",
+        Level = LogLevel.Trace,
+        Message = "Copying {Path} to {TargetPath}"
+    )]
+    public static partial void LogCopyingPath(this ILogger logger, string path, string targetPath);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "ErrorCopyingPath",
+        Level = LogLevel.Error,
+        Message = "Error copying {Path} to {TargetPath}: {Message}"
+    )]
+    public static partial void LogErrorCopyingPath(
+        this ILogger logger,
+        Exception exception,
+        string path,
+        string targetPath,
+        string message
+    );
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "CheckingIfPathExists",
+        Level = LogLevel.Trace,
+        Message = "Checking if {Path} exists"
+    )]
+    public static partial void LogCheckingIfPathExists(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "GettingFileStream",
+        Level = LogLevel.Trace,
+        Message = "Getting file stream for {Path}"
+    )]
+    public static partial void LogGettingFileStream(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "FileNotFound",
+        Level = LogLevel.Debug,
+        Message = "File not found: {Path}"
+    )]
+    public static partial void LogFileNotFound(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "GettingFileInfo",
+        Level = LogLevel.Trace,
+        Message = "Getting file info for {Path}"
+    )]
+    public static partial void LogGettingFileInfo(this ILogger logger, string path);
 }

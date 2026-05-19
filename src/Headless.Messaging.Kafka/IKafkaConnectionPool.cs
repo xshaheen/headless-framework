@@ -31,10 +31,7 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
         _maxSize = _options.ConnectionPoolSize;
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDebug(
-                "Kafka servers for messaging: {Servers}",
-                BrokerAddressDisplay.FormatMany(_options.Servers)
-            );
+            logger.LogKafkaServersConfigured(BrokerAddressDisplay.FormatMany(_options.Servers));
         }
     }
 
@@ -93,4 +90,15 @@ public sealed class KafkaConnectionPool : IKafkaConnectionPool, IDisposable
     {
         return new ProducerBuilder<string, byte[]>(config).Build();
     }
+}
+
+internal static partial class KafkaConnectionPoolLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "KafkaServersConfigured",
+        Level = LogLevel.Debug,
+        Message = "Kafka servers for messaging: {Servers}"
+    )]
+    public static partial void LogKafkaServersConfigured(this ILogger logger, string servers);
 }

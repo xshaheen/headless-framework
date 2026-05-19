@@ -50,13 +50,13 @@ internal sealed class AmazonSqsTransport(
 
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
-                    _logger.LogDebug("SNS topic message [{NormalizeForAws}] has been published.", normalizeForAws);
+                    _logger.LogSnsTopicMessagePublished(normalizeForAws);
                 }
 
                 return OperateResult.Success;
             }
 
-            _logger.LogWarning("Can't be found SNS topics for [{NormalizeForAws}]", normalizeForAws);
+            _logger.LogSnsTopicNotFound(normalizeForAws);
 
             return OperateResult.Failed(
                 new PublisherSentFailedException($"Can't be found SNS topics for [{normalizeForAws}]"),
@@ -122,7 +122,7 @@ internal sealed class AmazonSqsTransport(
         }
         catch (Exception e)
         {
-            _logger.LogError(e, "Init topics from aws sns error!");
+            _logger.LogInitSnsTopicsFailed(e);
         }
         finally
         {
@@ -194,4 +194,31 @@ internal sealed class AmazonSqsTransport(
 
         return $"sns.{options.Region.SystemName}.{options.Region.PartitionDnsSuffix}";
     }
+}
+
+internal static partial class AmazonSqsTransportLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "SnsTopicMessagePublished",
+        Level = LogLevel.Debug,
+        Message = "SNS topic message [{NormalizeForAws}] has been published."
+    )]
+    public static partial void LogSnsTopicMessagePublished(this ILogger logger, string normalizeForAws);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SnsTopicNotFound",
+        Level = LogLevel.Warning,
+        Message = "Can't be found SNS topics for [{NormalizeForAws}]"
+    )]
+    public static partial void LogSnsTopicNotFound(this ILogger logger, string normalizeForAws);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "InitSnsTopicsFailed",
+        Level = LogLevel.Error,
+        Message = "Init topics from aws sns error!"
+    )]
+    public static partial void LogInitSnsTopicsFailed(this ILogger logger, Exception exception);
 }
