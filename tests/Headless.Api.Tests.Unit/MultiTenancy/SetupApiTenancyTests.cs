@@ -191,6 +191,66 @@ public sealed class SetupApiTenancyTests
         diagnostics.Should().BeEmpty();
     }
 
+    [Fact]
+    public void should_emit_diagnostic_when_authorization_options_are_unregistered()
+    {
+        // given - ServiceCollection without AddAuthorization(); IOptions<AuthorizationOptions> is unresolvable.
+        var services = new ServiceCollection();
+        var manifest = new TenantPostureManifest();
+        manifest.RecordSeam(HeadlessAuthorizationTenancyBuilder.Seam, TenantPostureStatus.Enforcing);
+        using var serviceProvider = services.BuildServiceProvider();
+        var validator = new HeadlessAuthorizationTenancyValidator();
+
+        // when
+        var diagnostics = validator.Validate(new HeadlessTenancyValidationContext(serviceProvider, manifest)).ToList();
+
+        // then - same diagnostic as the "no TenantRequirement on either policy" branch.
+        diagnostics
+            .Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == HeadlessAuthorizationTenancyBuilder.AuthorizationPolicyMissingDiagnosticCode
+            );
+    }
+
+    [Fact]
+    public void should_emit_diagnostic_when_authorization_result_handler_is_replaced_after_require_tenant()
+    {
+        // given - simulate the canonical wiring, then register a foreign result handler AFTER
+        // RequireTenant(). ASP.NET Core resolves the last-registered handler, so the foreign
+        // handler wins and the framework's tenant-mapping handler never sees the failure.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Services.AddAuthorization(options =>
+        {
+            options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .AddRequirements(new TenantRequirement())
+                .Build();
+        });
+        builder.Services.AddSingleton(Substitute.For<IProblemDetailsCreator>());
+        builder.AddHeadlessTenancy(tenancy => tenancy.Authorization(auth => auth.RequireTenant()));
+        builder.Services.AddSingleton<
+            IAuthorizationMiddlewareResultHandler,
+            ForeignAuthorizationMiddlewareResultHandler
+        >();
+        var manifest = _GetManifest(builder.Services);
+        using var serviceProvider = builder.Services.BuildServiceProvider();
+        var validator = new HeadlessAuthorizationTenancyValidator();
+
+        // when
+        var diagnostics = validator.Validate(new HeadlessTenancyValidationContext(serviceProvider, manifest)).ToList();
+
+        // then
+        diagnostics
+            .Should()
+            .Contain(diagnostic =>
+                diagnostic.Code == HeadlessAuthorizationTenancyBuilder.AuthorizationResultHandlerReplacedDiagnosticCode
+                && diagnostic.Message.Contains(
+                    typeof(ForeignAuthorizationMiddlewareResultHandler).FullName!,
+                    StringComparison.Ordinal
+                )
+            );
+    }
+
     private static bool _IsTenantRequirementHandlerDescriptor(ServiceDescriptor descriptor)
     {
         return descriptor.ServiceType == typeof(IAuthorizationHandler)
@@ -222,6 +282,19 @@ public sealed class SetupApiTenancyTests
             Calls++;
             context.Response.StatusCode = StatusCodes.Status418ImATeapot;
 
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ForeignAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        public Task HandleAsync(
+            RequestDelegate next,
+            HttpContext context,
+            AuthorizationPolicy policy,
+            PolicyAuthorizationResult authorizeResult
+        )
+        {
             return Task.CompletedTask;
         }
     }

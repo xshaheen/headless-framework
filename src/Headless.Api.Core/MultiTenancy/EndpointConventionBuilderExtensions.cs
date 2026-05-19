@@ -9,15 +9,17 @@ namespace Microsoft.AspNetCore.Builder;
 [PublicAPI]
 public static class EndpointConventionBuilderExtensions
 {
-    public static TBuilder AllowMissingTenant<TBuilder>(this TBuilder builder)
+    extension<TBuilder>(TBuilder builder)
         where TBuilder : IEndpointConventionBuilder
     {
-        return builder.WithMetadata(new AllowMissingTenantAttribute());
-    }
+        public TBuilder AllowMissingTenant()
+        {
+            return builder.WithMetadata(new AllowMissingTenantAttribute());
+        }
 
-    public static TBuilder RequireTenant<TBuilder>(this TBuilder builder)
-        where TBuilder : IEndpointConventionBuilder
-    {
-        return builder.WithMetadata(new RequireTenantAttribute());
+        public TBuilder RequireTenant()
+        {
+            return builder.WithMetadata(new RequireTenantAttribute());
+        }
     }
 }

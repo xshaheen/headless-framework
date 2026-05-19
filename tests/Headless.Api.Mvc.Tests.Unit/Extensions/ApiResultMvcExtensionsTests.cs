@@ -253,7 +253,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             });
 
         creator
-            .Forbidden(Arg.Any<IReadOnlyCollection<ErrorDescriptor>>())
+            .Forbidden(error: Arg.Any<ErrorDescriptor>())
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator

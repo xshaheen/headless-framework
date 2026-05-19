@@ -102,24 +102,16 @@ public interface IProblemDetailsCreator
     /// emitted by <c>StatusCodesRewriterMiddleware</c> when ASP.NET Core's authorization pipeline
     /// produces a bare 403).
     /// </summary>
-    /// <param name="errors">
-    /// Optional <see cref="ErrorDescriptor"/>s written to <c>Extensions["errors"]</c> when the
-    /// collection is non-empty. Pass <see langword="null"/> or an empty collection to emit a 403
-    /// carrying no machine-readable discriminator (the default for opaque permission denials).
-    /// </param>
     /// <param name="detail">
     /// Optional detail message. Defaults to the framework's generic forbidden message when
     /// <see langword="null"/>.
     /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> written to <c>Extensions["error"]</c>. Use this for a
-    /// single stable discriminator such as a tenant-context failure.
+    /// single stable discriminator such as a tenant-context failure. Omit to emit a 403 carrying no
+    /// machine-readable discriminator (the default for opaque permission denials).
     /// </param>
-    ProblemDetails Forbidden(
-        IReadOnlyCollection<ErrorDescriptor>? errors = null,
-        string? detail = null,
-        ErrorDescriptor? error = null
-    );
+    ProblemDetails Forbidden(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 401 <see cref="ProblemDetails"/> for unauthenticated requests (typically
@@ -245,11 +237,7 @@ public sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails Forbidden(
-        IReadOnlyCollection<ErrorDescriptor>? errors = null,
-        string? detail = null,
-        ErrorDescriptor? error = null
-    )
+    public ProblemDetails Forbidden(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
@@ -257,11 +245,6 @@ public sealed class ProblemDetailsCreator(
             Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
             Detail = detail ?? HeadlessProblemDetailsConstants.Details.Forbidden,
         };
-
-        if (errors is { Count: > 0 })
-        {
-            problemDetails.Extensions["errors"] = errors;
-        }
 
         _SetError(problemDetails, error);
         _Normalize(problemDetails);

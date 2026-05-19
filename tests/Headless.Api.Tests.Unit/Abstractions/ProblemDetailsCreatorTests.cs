@@ -310,39 +310,13 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var creator = _CreateCreator();
 
         // when
-        var result = creator.Forbidden([]);
+        var result = creator.Forbidden();
 
         // then
         result.Status.Should().Be(StatusCodes.Status403Forbidden);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
         result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.Forbidden);
-    }
-
-    [Fact]
-    public void should_include_errors_in_forbidden_when_provided()
-    {
-        // given
-        var creator = _CreateCreator();
-        var errors = new List<ErrorDescriptor> { new("Missing permission: admin", "PERMISSION") };
-
-        // when
-        var result = creator.Forbidden(errors);
-
-        // then
-        result.Extensions.Should().ContainKey("errors");
-        result.Extensions["errors"].Should().BeEquivalentTo(errors);
-    }
-
-    [Fact]
-    public void should_omit_errors_in_forbidden_when_empty()
-    {
-        // given
-        var creator = _CreateCreator();
-
-        // when
-        var result = creator.Forbidden([]);
-
-        // then
+        result.Extensions.Should().NotContainKey("error");
         result.Extensions.Should().NotContainKey("errors");
     }
 

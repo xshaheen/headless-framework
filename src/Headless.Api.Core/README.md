@@ -74,6 +74,12 @@ publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 
 `TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant-required` ProblemDetails shape as the exception-handler fallback.
 
+### Limitations
+
+- **Place `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`** for framework-level enforcement. The startup validator does NOT inspect named policies (`options.AddPolicy("name", ...)`), and `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` / `FallbackPolicy` per ASP.NET Core's combinator semantics. If you use named policies, composing `TenantRequirement` into each is your responsibility.
+- **Register custom `IAuthorizationMiddlewareResultHandler` instances BEFORE `.Authorization(auth => auth.RequireTenant())`.** ASP.NET Core resolves the last-registered handler; later registrations silently replace the framework's tenant mapper. Startup validation emits `HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED` when the resolved handler is not Headless's.
+- **`[AllowAnonymous]` endpoints bypass the authorization pipeline**, so `TenantRequirement` does not fire. If the handler reads `ICurrentTenant.Id` it throws `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to the same `g:tenant-required` 403. Prefer not reading `ICurrentTenant.Id` from anonymous endpoints; use `[AllowMissingTenant]` only when you want the authorization-pipeline opt-out specifically.
+
 ## Exception Mapping
 
 `AddHeadlessProblemDetails()` registers a single `IExceptionHandler` (`HeadlessApiExceptionHandler`) that maps framework exceptions to normalized ProblemDetails responses. Covers any unhandled exception that bubbles to ASP.NET Core's exception-handler middleware — typically MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
