@@ -12,7 +12,7 @@ internal sealed class DirectPublisher(
     ISerializer serializer,
     ITransport transport,
     IMessagePublishRequestFactory publishRequestFactory,
-    IPublishExecutionPipeline publishPipeline,
+    IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
 ) : IDirectPublisher
 {
@@ -23,7 +23,7 @@ internal sealed class DirectPublisher(
     private readonly ISerializer _serializer = serializer;
     private readonly ITransport _transport = transport;
     private readonly IMessagePublishRequestFactory _publishRequestFactory = publishRequestFactory;
-    private readonly IPublishExecutionPipeline _publishPipeline = publishPipeline;
+    private readonly IPublishMiddlewarePipeline _publishPipeline = publishPipeline;
 
     public Task PublishAsync<T>(
         T? contentObj,

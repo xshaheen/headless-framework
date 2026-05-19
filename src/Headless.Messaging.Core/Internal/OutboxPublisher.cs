@@ -14,7 +14,7 @@ internal sealed class OutboxPublisher(
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
     IOutboxTransactionAccessor transactionAccessor,
-    IPublishExecutionPipeline publishPipeline,
+    IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
 ) : IOutboxPublisher, IScheduledPublisher
 {
