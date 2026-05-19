@@ -1,7 +1,7 @@
 ---
 date: 2026-05-19
 type: feat
-status: active
+status: completed
 origin: docs/brainstorms/2026-05-19-messaging-middleware-pipeline-requirements.md
 ---
 
