@@ -70,13 +70,13 @@ public sealed record PublishOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// When set, the publish pipeline stamps the value into the <see cref="Headers.TenantId"/> wire header.
+    /// When set, the publish pipeline stamps the value into the <c>Headers.TenantId</c> wire header.
     /// When <see langword="null"/>, no header is written and consumers observe a <see langword="null"/>
-    /// <see cref="ConsumeContext{TMessage}.TenantId"/>.
+    /// <c>ConsumeContext&lt;TMessage&gt;.TenantId</c>.
     /// </para>
     /// <para>
     /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
-    /// <see cref="Headers.TenantId"/> through <see cref="Headers"/> without setting this typed property
+    /// <c>Headers.TenantId</c> through <see cref="Headers"/> without setting this typed property
     /// is rejected with <see cref="InvalidOperationException"/>. If the typed property and a matching
     /// raw header are both set, the publish is accepted as a no-op reconciliation; if they disagree,
     /// the publish is rejected.

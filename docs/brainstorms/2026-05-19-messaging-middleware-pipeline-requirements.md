@@ -1,6 +1,7 @@
 ---
 date: 2026-05-19
 topic: messaging-middleware-pipeline
+status: completed
 ---
 
 # Messaging: Typed Middleware Pipeline (replace filter triad)
@@ -8,6 +9,8 @@ topic: messaging-middleware-pipeline
 ## Summary
 
 Replace the current `IPublishFilter` / `IConsumeFilter` triad (executing/executed/exception callbacks) with a single typed-context middleware seam per direction — `IPublishMiddleware<TContext>` / `IConsumeMiddleware<TContext>` — using `next`-delegate semantics, `TContext` polymorphism (object-typed and typed-`T` on the same interface), two registration scopes (bus / per-(T, group)), and numeric-priority ordering. The framework runtime preserves the existing after-success log-and-suppress wrapper and the never-swallow-cancellation guarantee. Implementation uses fast reflection now (FastExpressionCompiler-cached typed dispatch); source-gen lands as a swap-in dispatcher in a separate track without changing the public API. Resolves the #218 "do we need a typed behavior layer?" question by making typed and object-typed needs the same seam.
+
+**Implementation result (2026-05-19):** Shipped with `AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(group)`. Publish uses a single `PublishingContext<T>` with runtime post-`next` mutability lockdown rather than a separate `PublishedContext<T>` type.
 
 ---
 
@@ -112,7 +115,7 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 - R9. Anchor-relative ordering (`.Before<X>()` / `.After<X>()`) is deferred to a follow-on issue until first-party middleware count makes it concrete. Numeric priority covers the v1 case; anchor ordering can be added non-breakingly as a richer alternative when needed.
 
 **Context types**
-- R10. The current `PublishingContext` / `PublishedContext` / `PublishExceptionContext` triad collapses into two context types: `PublishingContext<T>` (mutable; visible to middleware before `await next()` is invoked) and `PublishedContext<T>` (read-only; visible to middleware after `await next()` returns successfully). The split preserves the existing NServiceBus-style compile-time guarantee that `Options` and `DelayTime` cannot be mutated after the publish has happened. Middleware authored against `PublishingContext<T>` sees `Options` and `DelayTime` as mutable on the way in; the same middleware sees `PublishedContext<T>` (a different type with read-only properties) when control returns from `next()`. The pipeline constructs `PublishedContext<T>` from `PublishingContext<T>` at the inner-ring boundary.
+- R10. The current `PublishingContext` / `PublishedContext` / `PublishExceptionContext` triad collapses into one `PublishingContext<T>` over a non-generic `PublishContext` base. `Options` and `DelayTime` are mutable before `await next()`. After the inner publish completes, the pipeline marks the context completed and setters throw `InvalidOperationException`; reads, including `IsTransactional`, remain valid.
 - R12. The consume side requires unsealing the existing `ConsumeContext<T>` record and introducing a non-generic `ConsumeContext` base class. Today `ConsumeContext<TMessage>` is `public sealed record ... where TMessage : class` (`src/Headless.Messaging.Abstractions/ConsumeContext.cs`); the new shape removes `sealed`, chooses class-with-records-disabled or non-sealed-record, and either duplicates members on the base or refactors the typed record to inherit from it. The non-generic `ConsumeContext` exposes the same fields with `Message` typed as `object?` and `MessageType` typed as `Type`. This is a structural change to the public API surface, not a non-event.
 
 **Migration of first-party middleware**
@@ -143,7 +146,7 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 - AE3. **Covers R6, R7.** Given an `IConsumeMiddleware<ConsumeContext<OrderPlaced>>` registered at per-(T, group) scope with group `"checkout-handler"`, when `OrderPlaced` is delivered to a consumer in group `"reporting"`, the middleware does not fire; when delivered to `"checkout-handler"`, it fires.
 - AE3b. **Covers R7.** Given a registration call `AddBusConsumeMiddleware<MyTypedMw>()` where `MyTypedMw : IConsumeMiddleware<ConsumeContext<OrderPlaced>>`, at application startup the host throws `MessagingConfigurationException` naming `MyTypedMw` and the misuse: typed middleware must be registered at per-(T, group) scope.
 - AE4. **Covers R8.** Given `TenantPropagationConsumeMiddleware` with priority `-1000` and `AuditConsumeMiddleware` with priority `200`, when a message arrives, tenant propagation runs first on the way in and last on the way out; audit middleware sees the resolved tenant id when it logs.
-- AE5. **Covers R10.** Given a publish middleware mutates `context.Options.Headers` before `await next()` and tries to mutate them again in code after `next()` returns, the post-`next` mutation fails to compile because the type the middleware now sees is `PublishedContext<T>` with read-only `Options`.
+- AE5. **Covers R10.** Given a publish middleware mutates `context.Options` before `await next()` and tries to mutate it again after `next()` returns, the post-`next` mutation throws `InvalidOperationException` because the pipeline marked `PublishingContext<T>` read-only after the inner publish completed.
 - AE6. **Covers R14.** Given the rewritten `TenantPropagationConsumeMiddleware` runs and the handler throws, the tenant scope is disposed before the exception propagates out of the middleware (because `using` is unwound), without any field-based dispose discipline.
 - AE7. **Covers F5 (saga compensation), R5.** Given a consume middleware reserves inventory before `await next()` and catches the handler's exception to release the reservation, when the handler throws, the release runs and the exception propagates with the original stack trace intact.
 - AE8. **Covers F6 (retry-with-state), R4.** Given a retry middleware calls `context.WithCancellationToken(perAttemptCts.Token)` before each `await next()`, downstream middleware reading `context.CancellationToken` sees the per-attempt token; cancelling the per-attempt CTS aborts only that attempt, not the overall consume operation.
@@ -157,7 +160,7 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 - Adding a new first-party middleware between two existing ones is a one-line registration call with explicit numeric priority; the change does not silently reorder unrelated middleware.
 - #232's `ISendPublisher` / `IBroadcastPublisher` split lands without modifying the `IPublishMiddleware<TContext>` interface or any middleware authored against `PublishContext<T>`.
 - A reader of the messaging docs can decide which scope and `TContext` to use for a new concern in under a minute by following one decision tree, not two.
-- The source-gen track, when it lands, can replace the runtime dispatcher without touching `IPublishMiddleware<TContext>`, `IConsumeMiddleware<TContext>`, `PublishingContext<T>`, `PublishedContext<T>`, `ConsumeContext<T>`, or any registration extension. Source-gen is observable only as a perf and AOT improvement.
+- The source-gen track, when it lands, can replace the runtime dispatcher without touching `IPublishMiddleware<TContext>`, `IConsumeMiddleware<TContext>`, `PublishingContext<T>`, `ConsumeContext<T>`, or any registration extension. Source-gen is observable only as a perf and AOT improvement.
 - **Consumer-observable:** A new user landing on the messaging README and given the goal "write an idempotency middleware for `OrderPlaced`" produces working code on first try within ~10 minutes, including registration. (Validated via README walkthrough or AI-generated-snippet correctness check.)
 - **Consumer-observable:** A developer migrating from MassTransit can map MassTransit's `IFilter<ConsumeContext<T>>` to `IConsumeMiddleware<ConsumeContext<T>>` and its `cfg.UseConsumeFilter` to `AddConsumeMiddlewareFor<...>(group)` without reading the full requirements doc — concept overlap is high enough that a one-page migration table suffices.
 
@@ -181,13 +184,13 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 ## Key Decisions
 
 - **One seam per direction, not two.** Five-framework research (MassTransit, NServiceBus, Wolverine, Rebus, MediatR) shows zero precedent for two parallel registration seams. All five converge on one seam with variation in `TContext` polymorphism, stages, scope, or selective application. Adopting MassTransit's `TContext` polymorphism + scope-tier registration as the baseline.
-- **Cherry-picked over literal MassTransit.** Adopt MassTransit's `TContext` and scope-tier registration, but use MediatR-style typed context properties (no `GetPayload<T>()` bag), NServiceBus's separate context types per phase where it adds compile-time safety (`PublishingContext<T>` vs `PublishedContext<T>`), and a Wolverine-friendly signature so a future source-gen track can inline the chain without API changes. Anchor-relative ordering and endpoint scope are deferred until concrete needs materialize.
+- **Cherry-picked over literal MassTransit.** Adopt MassTransit's `TContext` and scope-tier registration, but use MediatR-style typed context properties (no `GetPayload<T>()` bag) and a Wolverine-friendly signature so a future source-gen track can inline the chain without API changes. Anchor-relative ordering and endpoint scope are deferred until concrete needs materialize.
 - **Separate `IPublishMiddleware` and `IConsumeMiddleware` (not a shared `IMessageMiddleware`).** Publish and consume have different context shapes (Options/DelayTime vs TenantId/Result/Exception), different scope hierarchies in #232, and different first-party concerns. Sharing a base would force `TContext` to be a meaningless join type. All five frameworks separate the directions; Headless follows.
 - **Cancellation on context, not on `next`.** Four-of-four consensus among the messaging frameworks (MassTransit, NServiceBus, Rebus, ASP.NET Core). MediatR's separate-`ct`-parameter shape is the outlier. Context-carried ct allows runtime to inject timeouts or composite tokens without changing the public API.
 - **Standard try/catch exception semantics plus two framework-enforced guarantees.** Middleware bodies use ordinary try/catch (matches all four messaging frameworks). Two correctness properties from the current pipeline are preserved at the runtime layer, not as author discipline: (a) post-success middleware throws are caught and logged so they don't trigger caller retry / duplicate publishes; (b) `OperationCanceledException` is never silently swallowed — runtime detects swallowed OCE via cancellation-state check and rethrows.
 - **Numeric priority for v1; defer anchor-relative ordering.** Two first-party middleware ship in v1 (the two tenant filters). Numeric priority with documented framework constants covers ordering needs. Anchor-relative ordering (`.Before<X>()`) is a richer alternative that can be added non-breakingly when first-party middleware count makes it concrete.
 - **Two scopes for v1 (bus + per-(T, group)); defer endpoint scope.** No first-party middleware in this RFC requires endpoint-level granularity. Headless's transport model has topic + group, not endpoint. Adding endpoint scope from MassTransit verbatim before a concrete need is identified would invent a new abstraction.
-- **Split context (`PublishingContext<T>` vs `PublishedContext<T>`), not single mutable.** Preserves the existing compile-time guarantee that `Options` and `DelayTime` cannot be mutated after publish. Middleware that needs to read post-publish state sees a different type with read-only properties. Aligns with NServiceBus's stage-types-as-safety pattern.
+- **Single `PublishingContext<T>` with runtime read-only transition.** The implementation chose one context object with an internal completed flag. This keeps middleware authoring simple and avoids boundary copying; the trade-off is runtime enforcement instead of compile-time phase typing.
 - **Name "middleware", not "behavior" or "filter".** Avoids collision with `Headless.Mediator.Behaviors` (request/response shape, different concept). Matches ASP.NET Core vocabulary your users already have. "Filter" carries the MVC-triad connotation we're explicitly leaving behind.
 - **Fast reflection now, source-gen later, no public-API change between the two.** The consume pipeline already isn't AOT-clean (`FastExpressionCompiler` + `MakeGenericMethod`); adding typed-middleware dispatch via the same FastExpressionCompiler pattern doesn't regress consume-side AOT posture. Publish-side regresses slightly (publish was AOT-clean) but the source-gen track resolves both. Typed consume-side dispatch uses the existing `ConditionalWeakTable<Type, Delegate>` + `FastExpressionCompiler.CompileFast()` cache pattern (same as `ConsumeExecutionPipeline._BuildConsumeContext`).
 
@@ -195,7 +198,7 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 
 ## Dependencies / Assumptions
 
-- **Forward-compat with #232 (design constraint, not a deliverable):** `PublishingContext<T>` and `PublishedContext<T>` are designed as the bases of a hierarchy that #232 may extend with `SendContext<T>`, `BroadcastContext<T>`, and outbox-aware context surfacing (`IsTransactional`) without breaking middleware authored against `IPublishMiddleware<PublishingContext<T>>`. Middleware authored against the base continues to fire for both send and broadcast.
+- **Forward-compat with #232 (design constraint, not a deliverable):** `PublishingContext<T>` is designed as the base of a hierarchy that #232 may extend with `SendContext<T>`, `BroadcastContext<T>`, and additional outbox-aware context surfacing without breaking middleware authored against `IPublishMiddleware<PublishingContext<T>>`. Middleware authored against the base continues to fire for both send and broadcast.
 - **Source-gen API-stability constraint (design constraint, not a deliverable):** the public middleware API surface — interface signatures, registration extensions, context types — is designed to remain stable when the source-gen track replaces the runtime dispatcher. Validating this requires a generator sketch during planning; see Outstanding Questions.
 - Assumes the source-gen track will eventually land; this is not formally scheduled. If it never lands, the framework retains its current AOT posture (consume side not AOT-clean; publish side regresses from AOT-clean to not-AOT-clean for typed publish middleware) — flagged for downstream tracking.
 - Assumes the FastExpressionCompiler dependency in `Headless.Messaging.Core.csproj` remains acceptable for the lifetime of v1. The source-gen track is expected to remove it.
@@ -206,15 +209,15 @@ The cherry-picked design takes MassTransit's `TContext` polymorphism + scope-tie
 
 ## Outstanding Questions
 
-### Resolve Before Planning
+### Resolved by Implementation
 
-- [Affects R15][User decision] Final registration method naming. Options: `AddBusConsumeMiddleware<T>()` (verbose, explicit) vs `AddConsumeMiddleware<T>()` with scope as a builder method (`.AtBusScope()`, `.ForGroup<T>("g")`).
+- [Resolved 2026-05-19][Affects R15] Registration names are `AddBusPublishMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>()`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(group)`.
+- [Resolved 2026-05-19][Affects R8] Priorities are open-ended `int`; first-party tenant middleware declares `public const int Priority = -1000`, default user priority is `0`, and ties resolve by registration order.
+- [Resolved 2026-05-19][Affects R10] Publish uses one `PublishingContext<T>` instance with runtime setter guards after `await next()`, not a separate `PublishedContext<T>`.
+- [Resolved 2026-05-19][Affects R20] Middleware dispatch uses separate per-pipeline `ConcurrentDictionary<MiddlewareDispatchKey, ...>` caches keyed by `(middleware type, message type)`; consume context construction keeps its existing message-type cache.
 
 ### Deferred to Planning
 
-- [Affects R8][Technical] Numeric priority registration: should priorities be open-ended `int` or constrained to documented bands (e.g., `[-1000, 1000]` with reserved framework ranges)?
-- [Affects R10][Technical] How `PublishingContext<T>` → `PublishedContext<T>` transition is implemented: same instance with `as`-pattern API, separate instances with copy-construct, or some other mechanism. Pick during planning.
-- [Affects R20][Technical] Whether the FastExpressionCompiler-cached invoker per middleware should be a per-pipeline cache or share the existing `_compiledConsumeContextFactories` table. Existing table is keyed on message type; middleware dispatch is keyed on (middleware type, message type) — likely a separate table.
 - [Source-gen prerequisite][Needs research] Confirm that the proposed interface signatures emit cleanly from a Roslyn incremental generator without breaking user-observable `next` semantics (Func<ValueTask> as a parameter is heap-observable; Wolverine sidesteps by not exposing it as a delegate). Validate by sketching a generator stub. **This is a planning blocker, not a planning artifact** — if the sketch reveals a fundamental obstruction, the source-gen stability constraint must be relaxed before R10 and R15 lock.
 
 ### From 2026-05-19 review (strategic, user judgment)

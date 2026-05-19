@@ -253,7 +253,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
 - **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
-- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, filters, diagnostics, retry, and correlation semantics with class handlers.
+- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
 - **One publish shape**: `IDirectPublisher` and `IOutboxPublisher` both use `PublishAsync(message, options, cancellationToken)`. Prefer mappings or conventions for topics, and use `PublishOptions` only for explicit overrides.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
@@ -432,7 +432,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 
 ### `PublishOptions`
 
-`PublishOptions` is the publish-side configuration record. All properties are optional; the record's value equality and `with`-expression-friendly shape are deliberate so filters can mutate a single property without manually copying every other.
+`PublishOptions` is the publish-side configuration record. All properties are optional; the record's value equality and `with`-expression-friendly shape are deliberate so middleware can mutate a single property without manually copying every other.
 
 | Property              | Type                                | Behavior                                                                                                              |
 |-----------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
@@ -690,7 +690,7 @@ It does **NOT** fire on `RetryDecision.Stop`. Stop is the framework's signal for
 - **Permanent exceptions** classified by the backoff strategy (`SubscriberNotFoundException`, `ArgumentException`, `ArgumentNullException`, `InvalidOperationException`, `NotSupportedException`).
 - **Cancellation** (`OperationCanceledException` whose token matches the dispatch cancellation token, including `IHostApplicationLifetime.ApplicationStopping` on the publish side).
 
-If you want a single exit point for *any* unrecoverable failure (Stop + Exhausted), use an `IConsumeFilter` / `IPublishFilter` or capture state in the consumer; `OnExhausted` is only the "retried until the budget ran out" hook.
+If you want a single exit point for *any* unrecoverable failure (Stop + Exhausted), use consume/publish middleware or capture state in the consumer; `OnExhausted` is only the "retried until the budget ran out" hook.
 
 #### MaxInlineRetries — inline vs persisted retry paths
 
@@ -803,44 +803,72 @@ using (currentTenant.Change(tenantId))
 
 Catch `MissingTenantContextException` directly (it inherits from `Exception`, not `InvalidOperationException`) when a cross-cutting handler needs to map it to an HTTP 4xx or suppress retries.
 
-## Filters
+## Middleware
 
-The pipeline supports cross-cutting middleware on both sides via two interfaces:
+The pipeline supports cross-cutting middleware on both sides via typed russian-doll contracts:
 
-- `IConsumeFilter` — runs around every consume invocation. Override `OnSubscribeExecutingAsync` (before user code), `OnSubscribeExecutedAsync` (after success), and `OnSubscribeExceptionAsync` (when consume throws).
-- `IPublishFilter` — runs around every publish (both `IDirectPublisher` and `IOutboxPublisher`). Override `OnPublishExecutingAsync` (before send/store), `OnPublishExecutedAsync` (after success), and `OnPublishExceptionAsync` (when publish throws).
+- `IConsumeMiddleware<TContext>` where `TContext : ConsumeContext`
+- `IPublishMiddleware<TContext>` where `TContext : PublishContext`
 
-**Registration:**
+Middleware receives one mutable context plus `Func<ValueTask> next`. Code before `await next()` runs before the inner ring; code after it runs after a successful inner ring. Use ordinary `try/catch` around `await next()` for compensation, retries, and error policy. Returning without calling `next` short-circuits the inner handler or publisher.
 
 ```csharp
-builder.Services.AddHeadlessMessaging(options =>
+public sealed class AuditConsumeMiddleware(ILogger<AuditConsumeMiddleware> logger)
+    : IConsumeMiddleware<ConsumeContext>
 {
-    // ...
-})
-.AddSubscribeFilter<LoggingConsumeFilter>()
-.AddPublishFilter<LoggingPublishFilter>();
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        logger.LogInformation("Consuming {MessageId}", context.MessageId);
+        await next();
+    }
+}
+
+public sealed class CorrelationPublishMiddleware
+    : IPublishMiddleware<PublishingContext<OrderPlaced>>
+{
+    public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next)
+    {
+        context.Options = (context.Options ?? new PublishOptions()) with
+        {
+            CorrelationId = context.Options?.CorrelationId ?? Guid.NewGuid().ToString(),
+        };
+
+        return next();
+    }
+}
+
+builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+    .AddBusConsumeMiddleware<AuditConsumeMiddleware>()
+    .AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>();
 ```
 
-Both registrations are idempotent — calling them twice with the same `T` does **not** double-register (backed by `TryAddEnumerable`). Multiple distinct filters compose into a chain.
+**Registration scopes:**
 
-**Ordering:** filters mirror ASP.NET Core MVC filter ordering — `OnXExecutingAsync` runs in registration order; `OnXExecutedAsync` and `OnXExceptionAsync` run in **reverse** order. Filters that did not execute their `executing` phase (because an earlier filter threw) are also skipped on the executed/exception phases — only the filters that actually entered are unwound.
+- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume. Bus scope must implement `IPublishMiddleware<PublishContext>` or `IConsumeMiddleware<ConsumeContext>`.
+- `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
+- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
+- Each call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
 
-`IPublishFilter.OnPublishExecutedAsync` runs after the transport or outbox accepts the message. Exceptions from this phase are logged and suppressed so callers do not retry an already-published message. Keep post-success work best-effort, or move required durable work before publishing.
+**Framework guarantees:**
 
-**`PublishExceptionContext.ExceptionHandled` ⚠️:** setting `ExceptionHandled = true` on the publish-side exception context **silently swallows** the publish failure — the caller's `PublishAsync` returns normally as if the message had been sent. This is **not** symmetric with consume-side ack semantics: there is no broker to receive an "ack" on publish, so handled exceptions become invisible failures. Only flip `ExceptionHandled` when the filter has either rerouted the message to a dead-letter sink or recorded a durable trace. Otherwise let the exception propagate so the caller can retry or log.
+- Post-success middleware failures are logged and suppressed only after the inner handler/publisher completed successfully, avoiding duplicate publish or consume retries.
+- `OperationCanceledException` whose token matches `context.CancellationToken` is never silently swallowed, including recursive `AggregateException` cases.
+- After middleware returns normally, the pipeline rechecks `context.CancellationToken.IsCancellationRequested` and throws OCE if the current context token is canceled.
 
-**`PublishedContext.IsTransactional`:** set to `true` only when the publish was buffered into the outbox under an ambient database transaction whose commit is the caller's responsibility (the `OutboxPublisher` non-AutoCommit branch). `DirectPublisher` and the `OutboxPublisher` AutoCommit branch leave it `false`. Filters that record durable side-effects in `OnPublishExecutedAsync` should check this flag and either skip work, enroll in the ambient transaction, or design the side-effect to be idempotent against rollback — surfacing the transactional boundary as a typed contract rather than an undocumented gotcha.
+**Publish context rules:** `PublishingContext<T>.Options` and `DelayTime` are mutable before `await next()`. After the inner publisher completes, the context is marked read-only and setters throw `InvalidOperationException`; reads still work. `PublishingContext<T>.IsTransactional` is `true` only when the publish was buffered into the outbox under a non-AutoCommit ambient transaction whose commit is the caller's responsibility.
+
+**Cancellation token swaps:** middleware that creates per-attempt or per-operation tokens must call `context.WithCancellationToken(...)` before `await next()`. Downstream middleware must re-read `context.CancellationToken` at each await boundary; do not capture it once at method entry.
 
 ### Multi-tenancy
 
-The framework ships a built-in filter pair that propagates the originating tenant on the wire:
+The framework ships built-in middleware that propagates the originating tenant on the wire:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy => tenancy
     .Messaging(messaging => messaging.PropagateTenant()));
 ```
 
-The root tenancy seam registers `TenantPropagationPublishFilter` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeFilter` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
+The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
 
 ## Message Ordering Guarantees
 

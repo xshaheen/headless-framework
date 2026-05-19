@@ -126,7 +126,7 @@ public record class ConsumeContext
     /// Gets the multi-tenancy identifier for this message.
     /// </summary>
     /// <value>
-    /// The tenant identifier carried on the <see cref="Headers.TenantId"/> wire header
+    /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
     /// (<c>"headless-tenant-id"</c>), populated from <see cref="PublishOptions"/>.TenantId at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
     /// <see cref="PublishOptions.TenantIdMaxLength"/> (lenient consume-side handling).
@@ -182,8 +182,8 @@ public record class ConsumeContext
     /// </list>
     /// </para>
     /// <para>
-    /// Multi-tenancy is first-class: prefer <see cref="ConsumeContext{TMessage}.TenantId"/> over reading the
-    /// <see cref="Headers.TenantId"/> header directly.
+    /// Multi-tenancy is first-class: prefer <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> over reading the
+    /// <c>Headers.TenantId</c> header directly.
     /// </para>
     /// </remarks>
     public required MessageHeader Headers { get; init; }
