@@ -96,7 +96,7 @@ public static class AddDistributedLockExtensions
         {
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
+            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
             services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
