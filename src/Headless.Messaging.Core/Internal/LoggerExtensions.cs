@@ -520,6 +520,30 @@ internal static partial class LoggerExtensions
     public static partial void OnExhaustedTimedOut(this ILogger logger, long storageId, double timeoutSeconds);
 
     [LoggerMessage(
+        EventId = 72,
+        EventName = "PublishPostSuccessMiddlewareFailed",
+        Level = LogLevel.Warning,
+        Message = "Publish middleware {MiddlewareType} threw after the inner publish completed; suppressing to avoid duplicate publish."
+    )]
+    public static partial void PublishPostSuccessMiddlewareFailed(
+        this ILogger logger,
+        Exception exception,
+        string middlewareType
+    );
+
+    [LoggerMessage(
+        EventId = 73,
+        EventName = "ConsumePostSuccessMiddlewareFailed",
+        Level = LogLevel.Warning,
+        Message = "Consume middleware {MiddlewareType} threw after the inner consumer completed; suppressing to avoid duplicate consume."
+    )]
+    public static partial void ConsumePostSuccessMiddlewareFailed(
+        this ILogger logger,
+        Exception exception,
+        string middlewareType
+    );
+
+    [LoggerMessage(
         EventId = 68,
         EventName = "BackoffStrategyThrew",
         Level = LogLevel.Error,

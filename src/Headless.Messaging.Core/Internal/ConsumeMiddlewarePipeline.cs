@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
@@ -10,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
-internal interface IConsumeExecutionPipeline
+internal interface IConsumeMiddlewarePipeline
 {
     Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
@@ -20,12 +21,15 @@ internal interface IConsumeExecutionPipeline
     );
 }
 
-internal sealed class ConsumeExecutionPipeline(
+internal sealed class ConsumeMiddlewarePipeline(
     IServiceProvider serviceProvider,
     IRuntimeConsumerRegistry runtimeRegistry,
-    ILogger<ConsumeExecutionPipeline>? logger = null
-) : IConsumeExecutionPipeline
+    ILogger<ConsumeMiddlewarePipeline>? logger = null
+) : IConsumeMiddlewarePipeline
 {
+    private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
+        new();
+
     private readonly ConditionalWeakTable<Type, Delegate> _compiledConsumeContextFactories = new();
 
     private static readonly ConditionalWeakTable<Type, Delegate>.CreateValueCallback _CompileFactoryCallback =
@@ -49,30 +53,24 @@ internal sealed class ConsumeExecutionPipeline(
             context.MediumMessage,
             messageType,
             consumeHeaders,
-            tenantId
+            tenantId,
+            cancellationToken
         );
 
         await using var scope = serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        // Filter chain: executing in registration order, executed/exception in reverse — mirrors ASP.NET MVC.
-        var filters = provider.GetServices<IConsumeFilter>().ToArray();
-        // Tracks how many executing-phase filters completed; only those participate in the exception phase
-        // when an early filter throws during executing — matches ASP.NET MVC stack-discipline semantics.
-        var enteredCount = 0;
+        var busMiddleware = provider.GetServices<IConsumeMiddleware<ConsumeContext>>().Cast<object>().ToArray();
+        var typedMiddleware = provider
+            .GetServices(typeof(IConsumeMiddleware<>).MakeGenericType(consumeContext.GetType()))
+            .Where(static middleware => middleware is not null)
+            .Cast<object>()
+            .ToArray();
+        var middleware = busMiddleware.Concat(typedMiddleware).ToArray();
         object? resultObj = null;
+        var innerRingCompleted = false;
 
-        try
+        Func<ValueTask> next = async () =>
         {
-            var executeParams = new[] { consumeContext, cancellationToken };
-            var etContext = new ExecutingContext(context, executeParams, tenantId);
-            for (var i = 0; i < filters.Length; i++)
-            {
-                // Increment before the call so a filter that throws during executing is counted
-                // as "entered" and gets its exception phase invoked during stack unwind.
-                enteredCount = i + 1;
-                await filters[i].OnSubscribeExecutingAsync(etContext, cancellationToken).ConfigureAwait(false);
-            }
-
             if (
                 descriptor.HandlerId is { Length: > 0 } handlerId
                 && runtimeRegistry.TryGetInvoker(
@@ -83,76 +81,35 @@ internal sealed class ConsumeExecutionPipeline(
                 )
             )
             {
-                await runtimeInvoker.InvokeAsync(consumeContext, provider, cancellationToken).ConfigureAwait(false);
+                await runtimeInvoker
+                    .InvokeAsync(consumeContext, provider, consumeContext.CancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
                 var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
-                await _DispatchAsync(dispatcher, provider, descriptor, consumeContext, messageType, cancellationToken)
+                await _DispatchAsync(
+                        dispatcher,
+                        provider,
+                        descriptor,
+                        consumeContext,
+                        messageType,
+                        consumeContext.CancellationToken
+                    )
                     .ConfigureAwait(false);
             }
 
-            var edContext = new ExecutedContext(context, resultObj);
-            for (var i = filters.Length - 1; i >= 0; i--)
-            {
-                try
-                {
-                    await filters[i].OnSubscribeExecutedAsync(edContext, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception filterEx)
-                {
-                    // Consumer body already committed. Propagating an after-success filter failure —
-                    // including OperationCanceledException — would surface to the transport as a
-                    // consume-failure and trigger a spurious retry of an already-handled message.
-                    // Cancellation has no operational meaning once the consumer body has committed.
-                    logger?.SubscribeExecutedFilterFailed(
-                        filterEx,
-                        filters[i].GetType().FullName ?? filters[i].GetType().Name
-                    );
-                }
-            }
-            resultObj = edContext.Result;
-        }
-        catch (Exception e)
+            innerRingCompleted = true;
+        };
+
+        for (var i = middleware.Length - 1; i >= 0; i--)
         {
-            if (enteredCount == 0)
-            {
-                throw;
-            }
-
-            var exContext = new ExceptionContext(context, e);
-            // Only filters whose executing phase completed participate; reverse stack-unwind order.
-            for (var i = enteredCount - 1; i >= 0; i--)
-            {
-                try
-                {
-                    await filters[i].OnSubscribeExceptionAsync(exContext, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception nested)
-                {
-                    // Preserve the original consumer exception identity for the eventual ReThrow().
-                    // A throwing exception-phase filter must not silently replace the original failure
-                    // or skip the rest of the chain.
-                    logger?.SubscribeExceptionFilterFailed(
-                        nested,
-                        filters[i].GetType().FullName ?? filters[i].GetType().Name
-                    );
-                }
-            }
-
-            // Cancellation is never swallowable: ignore ExceptionHandled when the original failure
-            // was an OperationCanceledException so the host always observes the cancel.
-            // Mirrors IPublishExecutionPipeline:123.
-            if (!exContext.ExceptionHandled || exContext.Exception is OperationCanceledException)
-            {
-                exContext.Exception.ReThrow();
-            }
-
-            if (exContext.Result != null)
-            {
-                resultObj = exContext.Result;
-            }
+            var current = middleware[i];
+            var innerNext = next;
+            next = () => _InvokeAsync(current, consumeContext, innerNext, () => innerRingCompleted);
         }
+
+        await next().ConfigureAwait(false);
 
         var callbackName = context.MediumMessage.Origin.GetCallbackName();
         var callbackHeaders = consumeHeaders.ResponseHeader;
@@ -166,19 +123,69 @@ internal sealed class ConsumeExecutionPipeline(
             );
     }
 
-    private object _BuildConsumeContext(
+    private async ValueTask _InvokeAsync(
+        object middleware,
+        ConsumeContext context,
+        Func<ValueTask> innerNext,
+        Func<bool> innerRingCompleted
+    )
+    {
+        try
+        {
+            await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
+
+            if (context.CancellationToken.IsCancellationRequested)
+            {
+                context.CancellationToken.ThrowIfCancellationRequested();
+            }
+        }
+        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
+        {
+            if (ex is AggregateException)
+            {
+                throw;
+            }
+
+            throw new OperationCanceledException(context.CancellationToken);
+        }
+        catch (Exception ex) when (innerRingCompleted())
+        {
+            logger?.ConsumePostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
+        }
+    }
+
+    private static ValueTask _InvokeMiddlewareAsync(object middleware, ConsumeContext context, Func<ValueTask> next)
+    {
+        if (middleware is IConsumeMiddleware<ConsumeContext> busMiddleware)
+        {
+            return busMiddleware.InvokeAsync(context, next);
+        }
+
+        var invoker = _TypedInvokers.GetOrAdd(
+            new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
+            static (_, state) => _CompileTypedInvoker(state.middlewareType, state.contextType),
+            (middlewareType: middleware.GetType(), contextType: context.GetType())
+        );
+
+        return invoker(middleware, context, next);
+    }
+
+    private ConsumeContext _BuildConsumeContext(
         object messageInstance,
         MediumMessage mediumMessage,
         Type messageType,
         MessageHeader headers,
-        string? tenantId
+        string? tenantId,
+        CancellationToken cancellationToken
     )
     {
         var factory =
             (Func<object, MediumMessage, MessageHeader, string?, object>)
                 _compiledConsumeContextFactories.GetValue(messageType, _CompileFactoryCallback);
+        var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId);
+        context.WithCancellationToken(cancellationToken);
 
-        return factory(messageInstance, mediumMessage, headers, tenantId);
+        return context;
     }
 
     private static Delegate _CompileFactory(Type messageType)
@@ -240,22 +247,18 @@ internal sealed class ConsumeExecutionPipeline(
         );
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
-
         var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
-
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
-
         var timestampBinding = Expression.Bind(
             timestampProperty,
             Expression.Call(
-                typeof(ConsumeExecutionPipeline),
+                typeof(ConsumeMiddlewarePipeline),
                 nameof(_ResolveTimestamp),
                 null,
                 headersProperty,
                 addedProperty
             )
         );
-
         var messageNameKey = Expression.Constant(Headers.MessageName);
         var topicBinding = Expression.Bind(
             topicProperty,
@@ -284,6 +287,26 @@ internal sealed class ConsumeExecutionPipeline(
             tenantIdParam
         );
         return lambda.CompileFast();
+    }
+
+    private static ConsumeMiddlewareInvoker _CompileTypedInvoker(Type middlewareType, Type contextType)
+    {
+        var middlewareParam = Expression.Parameter(typeof(object), "middleware");
+        var contextParam = Expression.Parameter(typeof(ConsumeContext), "context");
+        var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
+        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+        var invokeMethod = serviceType.GetMethod(nameof(IConsumeMiddleware<ConsumeContext>.InvokeAsync))!;
+
+        var body = Expression.Call(
+            Expression.Convert(middlewareParam, serviceType),
+            invokeMethod,
+            Expression.Convert(contextParam, contextType),
+            nextParam
+        );
+
+        return Expression
+            .Lambda<ConsumeMiddlewareInvoker>(body, middlewareParam, contextParam, nextParam)
+            .CompileFast();
     }
 
     private static DateTimeOffset _ResolveTimestamp(IDictionary<string, string?> headers, DateTime added)
@@ -327,4 +350,28 @@ internal sealed class ConsumeExecutionPipeline(
             dispatchMethod.Invoke(dispatcher, [serviceProvider, descriptor, consumeContext, cancellationToken])!;
         await task.ConfigureAwait(false);
     }
+
+    private static bool _ShouldRethrowOce(Exception exception, CancellationToken cancellationToken)
+    {
+        if (
+            exception is OperationCanceledException operationCanceledException
+            && operationCanceledException.CancellationToken == cancellationToken
+        )
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(inner => _ShouldRethrowOce(inner, cancellationToken));
+        }
+
+        return false;
+    }
+
+    private delegate ValueTask ConsumeMiddlewareInvoker(
+        object middleware,
+        ConsumeContext context,
+        Func<ValueTask> next
+    );
 }
