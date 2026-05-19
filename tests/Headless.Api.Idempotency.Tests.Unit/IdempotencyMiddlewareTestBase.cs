@@ -42,8 +42,10 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
 
         cache ??= Substitute.For<ICache>();
 
-        // Default test identity: anonymous user, default tenant "t1". Tests that need to
-        // exercise the "no tenant + no user" branch pass an explicit substitute returning null.
+        // Default test identity: tenant "t1" + authenticated user "u1". A real user is the
+        // default because IdempotencyOptions.RequireUserIdentity defaults to true — anonymous
+        // tenant-only requests fall through without applying idempotency. Tests exercising the
+        // "no user" or "no tenant" branches pass explicit substitutes returning null.
         if (currentTenant is null)
         {
             currentTenant = Substitute.For<ICurrentTenant>();
@@ -53,7 +55,7 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
         if (currentUser is null)
         {
             currentUser = Substitute.For<ICurrentUser>();
-            currentUser.UserId.Returns((UserId?)null);
+            currentUser.UserId.Returns(new UserId("u1"));
         }
 
         problemDetailsCreator ??= Substitute.For<IProblemDetailsCreator>();

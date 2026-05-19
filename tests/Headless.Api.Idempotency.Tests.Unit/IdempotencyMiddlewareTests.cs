@@ -193,8 +193,14 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
-    public async Task should_use_anon_marker_when_only_tenant_is_present()
+    public async Task should_use_empty_user_segment_in_cache_key_when_only_tenant_is_present_and_RequireUserIdentity_is_false()
     {
+        // With RequireUserIdentity=false the middleware permits tenant-only anonymous traffic.
+        // The user segment in the cache key is empty (rather than a literal "anon") so a real
+        // UserId equal to "anon" cannot collide with the anonymous bucket.
+        var opts = Substitute.For<IOptionsSnapshot<IdempotencyOptions>>();
+        opts.Value.Returns(new IdempotencyOptions { RequireUserIdentity = false });
+
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
              .Returns(CacheValue<IdempotencyRecord>.NoValue);
@@ -203,14 +209,16 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var tenant = Substitute.For<ICurrentTenant>();
         tenant.Id.Returns("T1");
+        var user = Substitute.For<ICurrentUser>();
+        user.UserId.Returns((UserId?)null);
 
-        var middleware = CreateMiddleware(cache: cache, currentTenant: tenant);
+        var middleware = CreateMiddleware(options: opts, cache: cache, currentTenant: tenant, currentUser: user);
         var context = CreateContext(idempotencyKey: "k1", path: "/v1/x");
 
         await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
 
         await cache.Received().GetAsync<IdempotencyRecord>(
-            Arg.Is<string>(k => k == "idem:T1:anon:POST:/v1/x:k1"),
+            Arg.Is<string>(k => k == "idem:T1::POST:/v1/x:k1"),
             Arg.Any<CancellationToken>()
         );
     }
@@ -223,13 +231,13 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         // given
         byte[] body = [5, 6, 7];
         byte[] fingerprint = SHA256.HashData(body);
-        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = fingerprint, CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
-        // First GetAsync (initial lookup) → NoValue; second GetAsync (marker re-check before upsert) → our InFlight marker.
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+        cache.TryReplaceIfEqualAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
         var middleware = CreateMiddleware(cache: cache);
@@ -254,9 +262,14 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             Arg.Any<CancellationToken>()
         );
 
-        await cache.Received(1).UpsertAsync(
+        // Finalize uses TryReplaceIfEqualAsync (CAS) to swap the InFlight marker for the
+        // Complete record in a single round trip. The `expected` argument is the marker we
+        // inserted; the `value` argument is the Complete record built from the captured response.
+        await cache.Received(1).TryReplaceIfEqualAsync<IdempotencyRecord>(
             Arg.Any<string>(),
-            Arg.Is<IdempotencyRecord>(r =>
+            Arg.Is<IdempotencyRecord?>(r => r != null && r.Kind == RecordKind.InFlight && r.Fingerprint != null && r.Fingerprint.SequenceEqual(fingerprint)),
+            Arg.Is<IdempotencyRecord?>(r =>
+                r != null &&
                 r.Kind == RecordKind.Complete &&
                 r.StatusCode == 201 &&
                 r.Fingerprint != null &&
@@ -823,12 +836,13 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     {
         // given — no custom predicate, response is 422 (cacheable per AE5)
         byte[] body = [1, 2, 3];
-        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+        cache.TryReplaceIfEqualAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
         var middleware = CreateMiddleware(cache: cache);
@@ -841,10 +855,11 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             return Task.CompletedTask;
         });
 
-        // then — should cache 422
-        await cache.Received(1).UpsertAsync(
+        // then — finalize promotes the marker to a Complete 422 record via CAS
+        await cache.Received(1).TryReplaceIfEqualAsync<IdempotencyRecord>(
             Arg.Any<string>(),
-            Arg.Is<IdempotencyRecord>(r => r.Kind == RecordKind.Complete && r.StatusCode == 422),
+            Arg.Any<IdempotencyRecord?>(),
+            Arg.Is<IdempotencyRecord?>(r => r != null && r.Kind == RecordKind.Complete && r.StatusCode == 422),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>()
         );
@@ -858,11 +873,12 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         opts.Value.Returns(new IdempotencyOptions { ShouldCacheResponse = _ => true });
 
         byte[] body = [1, 2, 3];
-        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(true);
+        cache.TryReplaceIfEqualAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
 
         var middleware = CreateMiddleware(options: opts, cache: cache);
@@ -875,10 +891,11 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             return Task.CompletedTask;
         });
 
-        // then — consumer override wins: 503 IS cached
-        await cache.Received(1).UpsertAsync(
+        // then — consumer override wins: 503 IS cached via CAS
+        await cache.Received(1).TryReplaceIfEqualAsync<IdempotencyRecord>(
             Arg.Any<string>(),
-            Arg.Is<IdempotencyRecord>(r => r.Kind == RecordKind.Complete && r.StatusCode == 503),
+            Arg.Any<IdempotencyRecord?>(),
+            Arg.Is<IdempotencyRecord?>(r => r != null && r.Kind == RecordKind.Complete && r.StatusCode == 503),
             Arg.Any<TimeSpan?>(),
             Arg.Any<CancellationToken>()
         );
@@ -887,18 +904,18 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     // ── new behaviors introduced by middleware rewrite ───────────────────────
 
     [Fact]
-    public async Task should_remove_marker_when_upsert_throws()
+    public async Task should_remove_marker_when_finalize_cas_throws()
     {
-        // given — UpsertAsync fails after successful next; middleware must remove the marker and rethrow
+        // given — TryReplaceIfEqualAsync fails after successful next; middleware must remove the
+        // marker and rethrow so the orphan does not block subsequent retries for the TTL window.
         byte[] body = [1, 2, 3];
-        var marker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData(body), CreatedAt = DateTimeOffset.UtcNow };
 
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(marker, hasValue: true));
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
-        cache.UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+        cache.TryReplaceIfEqualAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("cache down"));
 
         var middleware = CreateMiddleware(cache: cache);
@@ -911,43 +928,35 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     }
 
     [Fact]
-    public async Task should_skip_upsert_when_marker_recheck_finds_no_value()
+    public async Task should_attempt_finalize_cas_after_successful_handler()
     {
-        // given — pre-next marker is present (TryInsert succeeded) but disappears before finalize
+        // Verifies that finalize uses CAS (TryReplaceIfEqualAsync) — not GET+UPSERT — to swap the
+        // marker for the Complete record. When the CAS returns false (marker no longer matches
+        // because it was evicted or overwritten), the middleware logs and does not retry.
         byte[] body = [1, 2, 3];
         var cache = Substitute.For<ICache>();
         cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, CacheValue<IdempotencyRecord>.NoValue);
+             .Returns(CacheValue<IdempotencyRecord>.NoValue);
         cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
              .Returns(true);
+        cache.TryReplaceIfEqualAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<IdempotencyRecord?>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+             .Returns(false);
 
         var middleware = CreateMiddleware(cache: cache);
         var context = CreateContext(idempotencyKey: "k1", body: body);
 
         await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
 
+        await cache.Received(1).TryReplaceIfEqualAsync<IdempotencyRecord>(
+            Arg.Any<string>(),
+            Arg.Is<IdempotencyRecord?>(r => r != null && r.Kind == RecordKind.InFlight),
+            Arg.Is<IdempotencyRecord?>(r => r != null && r.Kind == RecordKind.Complete && r.StatusCode == 200),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>()
+        );
+        // CAS returning false is the "marker no longer ours" path — middleware logs and exits.
         await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task should_skip_upsert_when_marker_recheck_finds_different_fingerprint()
-    {
-        // given — another writer raced and replaced the marker with a different fingerprint
-        byte[] body = [1, 2, 3];
-        var otherMarker = new IdempotencyRecord { Kind = RecordKind.InFlight, Fingerprint = SHA256.HashData([9, 9, 9]), CreatedAt = DateTimeOffset.UtcNow };
-
-        var cache = Substitute.For<ICache>();
-        cache.GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
-             .Returns(CacheValue<IdempotencyRecord>.NoValue, new CacheValue<IdempotencyRecord>(otherMarker, hasValue: true));
-        cache.TryInsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-             .Returns(true);
-
-        var middleware = CreateMiddleware(cache: cache);
-        var context = CreateContext(idempotencyKey: "k1", body: body);
-
-        await middleware.InvokeAsync(context, ctx => { ctx.Response.StatusCode = 200; return Task.CompletedTask; });
-
-        await cache.DidNotReceive().UpsertAsync(Arg.Any<string>(), Arg.Any<IdempotencyRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await cache.DidNotReceive().RemoveAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
