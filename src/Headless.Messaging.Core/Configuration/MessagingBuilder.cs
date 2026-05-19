@@ -289,6 +289,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// </remarks>
     public MessagingBuilder UseDistributedLock(IDistributedLockProvider provider)
     {
+        Argument.IsNotNull(provider);
+
         _RemoveExistingMessagingLockProvider();
         Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
         Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
@@ -310,6 +312,8 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
     /// </remarks>
     public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLockProvider> factory)
     {
+        Argument.IsNotNull(factory);
+
         _RemoveExistingMessagingLockProvider();
         Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, (sp, _) => factory(sp));
         Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);

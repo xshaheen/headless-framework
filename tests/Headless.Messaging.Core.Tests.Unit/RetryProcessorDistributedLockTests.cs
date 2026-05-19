@@ -99,15 +99,14 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     [Fact]
     [Trait(
         "ScenarioNote",
-        "uses TrackingLockProvider that grants immediately and ignores acquireTimeout: TimeSpan.Zero;"
-            + " real-provider behavior with Zero timeout is asserted separately by"
-            + " DistributedLockProviderTests.should_acquire_lock_when_resource_is_free_and_acquireTimeout_is_zero"
+        "uses TrackingLockProvider because the real DisposableDistributedLock handle does not expose"
+            + " RenewalCount, which this test must assert on; orthogonal to acquireTimeout semantics"
     )]
     public async Task should_renew_received_retry_lock_when_consume_task_spans_polling_ticks()
     {
-        // Arrange — use a always-granting provider so we can inspect RenewalCount on the returned handle.
-        // The real provider can't be used here because the processor passes acquireTimeout=Zero, which
-        // creates an immediately-cancelled CTS that causes the real provider to return null every time.
+        // Arrange — use TrackingLockProvider so we can inspect RenewalCount on the returned handle.
+        // DisposableDistributedLock (the real handle type) does not expose RenewalCount, making
+        // in-process tracking infeasible with the real provider for this specific assertion.
         //
         // The TCS is signalled from the storage call (which runs AFTER _receivedRetryHandle is
         // assigned by the processor), guaranteeing the renewal branch on tick 2 sees the handle.

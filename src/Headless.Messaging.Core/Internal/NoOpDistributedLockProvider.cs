@@ -35,11 +35,15 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.FromResult(true);
     }
 
     public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         return Task.CompletedTask;
     }
 

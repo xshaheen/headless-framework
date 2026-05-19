@@ -803,7 +803,7 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 - `messaging.publish-retry-{version}` — held while processing published-message retries.
 - `messaging.receive-retry-{version}` — held while processing received-message retries.
 
-Both names are built via `Headless.Messaging.Internal.MessagingKeys.PublishRetryResource(version)` and `ReceiveRetryResource(version)`.
+Both names follow the literal pattern shown above. They are constructed internally by `Headless.Messaging.Core`; downstream consumers must not depend on the internal helper that builds them — register a real provider exclusively via `MessagingBuilder.UseDistributedLock(...)` and let messaging resolve its own keyed-DI slot.
 
 `{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 

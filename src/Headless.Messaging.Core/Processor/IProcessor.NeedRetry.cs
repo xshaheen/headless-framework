@@ -23,6 +23,14 @@ namespace Headless.Messaging.Processor;
 [PublicAPI]
 public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMonitor
 {
+    // 10s above the polling interval. Tight under slow storage-pickup batches: if a tick's
+    // pickup phase eats most of the interval, the renewal window can close before the next
+    // tick fires, producing EventId 79 ownership-loss noise even when no infrastructure
+    // failed. Per-row LockedUntil still gates correctness — this is degraded observability,
+    // not degraded behavior. The whole manual-renewal block (this constant, _GetLockTtl(),
+    // and the ProcessAsync renewal tick) is replaced by LeaseMonitor + autoExtend once
+    // issues #289 (Phase 2) and #296 (messaging migration) land — bumping the margin now
+    // would churn code on the way out. Tracked by #300.
     private static readonly TimeSpan _LockSafetyMargin = TimeSpan.FromSeconds(10);
 
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;

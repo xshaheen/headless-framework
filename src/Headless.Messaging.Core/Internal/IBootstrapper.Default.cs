@@ -256,7 +256,21 @@ internal sealed class Bootstrapper(
         // from the "real provider registered but only un-keyed" case — the second case is a
         // common misconfiguration where the operator wired up Headless.DistributedLocks.Redis
         // (or similar) but did not flow it through MessagingBuilder.UseDistributedLock(...).
-        var unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
+        //
+        // Probe is purely informational; wrapping in try/catch ensures a misconfigured un-keyed
+        // factory (e.g., missing Redis connection string) cannot fail messaging bootstrap. On
+        // probe failure we fall through to the conservative "no provider" EventId 77 — the
+        // factory's real error will surface at first lock acquisition with a clearer message.
+        IDistributedLockProvider? unkeyedProvider = null;
+        try
+        {
+            unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
+        }
+        catch (Exception)
+        {
+            // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
+        }
+
         if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
         {
             logger.UseStorageLockWithNoOpProviderButRealUnkeyed();

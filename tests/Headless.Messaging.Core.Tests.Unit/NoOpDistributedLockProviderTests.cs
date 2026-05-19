@@ -94,6 +94,51 @@ public sealed class NoOpDistributedLockProviderTests
     }
 
     [Fact]
+    public async Task should_throw_OperationCanceledException_when_TryAcquireAsync_token_is_already_cancelled()
+    {
+        // given
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await sut.TryAcquireAsync("test.resource", cancellationToken: cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_throw_OperationCanceledException_when_provider_RenewAsync_token_is_already_cancelled()
+    {
+        // given
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await sut.RenewAsync("test.resource", "lock-id", cancellationToken: cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_throw_OperationCanceledException_when_provider_ReleaseAsync_token_is_already_cancelled()
+    {
+        // given
+        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await sut.ReleaseAsync("test.resource", "lock-id", cancellationToken: cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_return_empty_list_when_ListActiveLocksAsync_called()
     {
         // given
