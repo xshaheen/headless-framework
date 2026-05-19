@@ -4,9 +4,14 @@ using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
+using Headless.Api.Resources;
 using Headless.Caching;
 using Headless.Constants;
+using Headless.DistributedLocks;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -65,17 +70,27 @@ internal sealed partial class IdempotencyMiddleware(
 
         if (existing.HasValue)
         {
-            if (existing.Value!.Kind == RecordKind.Complete && existing.Value.Fingerprint != null && existing.Value.Fingerprint.SequenceEqual(fingerprint))
+            var rec = existing.Value!;
+
+            if (rec.Kind == RecordKind.Complete && rec.Fingerprint != null && rec.Fingerprint.SequenceEqual(fingerprint))
             {
-                await _ReplayAsync(context, existing.Value!, options, ct).ConfigureAwait(false);
+                await _ReplayAsync(context, rec, options, ct).ConfigureAwait(false);
                 return;
             }
 
-            // Mismatch and in-flight branches handled in U7; fall through for now
+            if (rec.Kind == RecordKind.Complete)
+            {
+                await _WriteMismatchAsync(context, options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            // InFlight
+            await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+            return;
         }
 
-        // Cache miss path (or race-loss re-check)
-        if (!existing.HasValue)
+        // Cache miss — bounded retry loop handles the race where the winner crashes between TryInsert and finalize
+        for (var attempt = 0; attempt < 2; attempt++)
         {
             var marker = new IdempotencyRecord
             {
@@ -86,21 +101,43 @@ internal sealed partial class IdempotencyMiddleware(
 
             var inserted = await cache.TryInsertAsync(cacheKey, marker, options.InFlightLockTimeout + TimeSpan.FromSeconds(5), ct).ConfigureAwait(false);
 
-            if (!inserted)
+            if (inserted)
             {
-                // Race-loss: re-read and try replay if Complete; otherwise U7 handles in-flight/mismatch
-                var afterRace = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
-                if (afterRace.HasValue && afterRace.Value!.Kind == RecordKind.Complete && afterRace.Value.Fingerprint != null && afterRace.Value.Fingerprint.SequenceEqual(fingerprint))
-                {
-                    await _ReplayAsync(context, afterRace.Value!, options, ct).ConfigureAwait(false);
-                }
-
-                // Other states (in-flight, mismatch) handled in U7
+                await _ExecuteAndFinalizeAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
                 return;
             }
 
-            await _ExecuteAndFinalizeAsync(context, next, cacheKey, fingerprint, options, ct).ConfigureAwait(false);
+            var racePeek = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+
+            if (!racePeek.HasValue)
+            {
+                // Winner crashed; TTL elapsed between their TryInsert and finalize — retry insertion
+                continue;
+            }
+
+            var raceRec = racePeek.Value!;
+
+            if (raceRec.Kind == RecordKind.Complete)
+            {
+                if (raceRec.Fingerprint != null && raceRec.Fingerprint.SequenceEqual(fingerprint))
+                {
+                    await _ReplayAsync(context, raceRec, options, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _WriteMismatchAsync(context, options, ct).ConfigureAwait(false);
+                }
+
+                return;
+            }
+
+            await _WriteInFlightResponseAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+            return;
         }
+
+        // Both attempts exhausted with NoValue — treat as in-flight (winner consistently crashing)
+        var loopPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+        await Results.Problem(loopPd).ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private async Task _ReplayAsync(HttpContext context, IdempotencyRecord record, IdempotencyOptions options, CancellationToken ct)
@@ -123,6 +160,73 @@ internal sealed partial class IdempotencyMiddleware(
         }
 
         LogReplayHit(cacheKey: "[redacted]");
+    }
+
+    private async Task _WriteMismatchAsync(HttpContext context, IdempotencyOptions options, CancellationToken ct)
+    {
+        LogFingerprintMismatch("[redacted]");
+        var descriptor = IdempotencyMessageDescriber.KeyReused();
+
+        ProblemDetails pd = options.MismatchStatusCode == 409
+            ? _problemDetailsCreator.Conflict(descriptor)
+            : _problemDetailsCreator.UnprocessableEntity(new Dictionary<string, List<ErrorDescriptor>>(StringComparer.Ordinal) { ["idempotency_key"] = [descriptor] });
+
+        await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private async Task _WriteInFlightResponseAsync(HttpContext context, IdempotencyOptions options, byte[] fingerprint, string cacheKey, CancellationToken ct)
+    {
+        if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
+        {
+            await _WaitAndReplayAsync(context, options, fingerprint, cacheKey, ct).ConfigureAwait(false);
+            return;
+        }
+
+        LogInFlightReject("[redacted]");
+        var pd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlight());
+        await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    private async Task _WaitAndReplayAsync(HttpContext context, IdempotencyOptions options, byte[] fingerprint, string cacheKey, CancellationToken ct)
+    {
+        var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
+        var lockKey = $"lock:{cacheKey}";
+
+        await using var dlock = await lockProvider.TryAcquireAsync(
+            lockKey,
+            timeUntilExpires: options.InFlightLockTimeout + TimeSpan.FromSeconds(5),
+            acquireTimeout: options.InFlightLockTimeout,
+            cancellationToken: ct
+        ).ConfigureAwait(false);
+
+        if (dlock is null)
+        {
+            LogInFlightTimeout("[redacted]");
+            var pd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
+            await Results.Problem(pd).ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
+
+        var postLock = await cache.GetAsync<IdempotencyRecord>(cacheKey, ct).ConfigureAwait(false);
+
+        if (postLock.HasValue && postLock.Value!.Kind == RecordKind.Complete)
+        {
+            var rec = postLock.Value!;
+
+            if (rec.Fingerprint != null && rec.Fingerprint.SequenceEqual(fingerprint))
+            {
+                await _ReplayAsync(context, rec, options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            await _WriteMismatchAsync(context, options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // InFlight or NoValue after holding the lock → winner timed out or is still stuck
+        LogInFlightTimeout("[redacted]");
+        var timeoutPd = _problemDetailsCreator.Conflict(IdempotencyMessageDescriber.InFlightTimeout());
+        await Results.Problem(timeoutPd).ExecuteAsync(context).ConfigureAwait(false);
     }
 
     private async Task _ExecuteAndFinalizeAsync(
@@ -266,4 +370,13 @@ internal sealed partial class IdempotencyMiddleware(
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency replay hit for key {CacheKey}")]
     private partial void LogReplayHit(string cacheKey);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Idempotency fingerprint mismatch for key {CacheKey}")]
+    private partial void LogFingerprintMismatch(string cacheKey);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency in-flight reject for key {CacheKey}")]
+    private partial void LogInFlightReject(string cacheKey);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Idempotency in-flight timeout for key {CacheKey}")]
+    private partial void LogInFlightTimeout(string cacheKey);
 }

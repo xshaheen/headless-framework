@@ -29,7 +29,7 @@ public sealed class CaptureStreamTests
         using var capture = new CaptureStream(inner, _Cap);
         byte[] data = [10, 20, 30];
 
-        await capture.WriteAsync(data, 0, data.Length);
+        await capture.WriteAsync(data.AsMemory());
 
         inner.ToArray().Should().Equal(data);
         capture.CapturedBytes.Should().Equal(data);
@@ -130,7 +130,7 @@ public sealed class CaptureStreamTests
     {
         var inner = new MemoryStream();
         using var capture = new CaptureStream(inner, _Cap);
-        capture.Write([3, 4], 0, 2);
+        await capture.WriteAsync(new byte[] { 3, 4 }.AsMemory());
 
         await capture.FlushAsync();
 
@@ -167,9 +167,9 @@ public sealed class CaptureStreamTests
     {
         var inner = new MemoryStream();
         var capture = new CaptureStream(inner, _Cap);
-        capture.Dispose();
+        await capture.DisposeAsync();
 
-        var act = async () => await capture.WriteAsync([1], 0, 1);
+        var act = async () => await capture.WriteAsync(new byte[] { 1 }.AsMemory());
 
         await act.Should().ThrowAsync<ObjectDisposedException>();
     }
