@@ -35,7 +35,6 @@ public sealed class ReCaptchaSiteVerifyV2(
 ) : IReCaptchaSiteVerifyV2
 {
     private readonly Uri _siteVerifyUri = new("recaptcha/api/siteverify", UriKind.Relative);
-
     private readonly HttpClient _client = clientFactory.CreateClient(ReCaptchaSetup.V2Name);
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V2Name);
 

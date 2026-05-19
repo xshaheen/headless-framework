@@ -1,5 +1,4 @@
 using Headless.Caching;
-using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 using Headless.Testing.Tests;
 
