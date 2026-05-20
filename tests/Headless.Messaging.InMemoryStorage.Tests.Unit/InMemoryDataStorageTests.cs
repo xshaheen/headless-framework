@@ -52,7 +52,6 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     protected override DataStorageCapabilities Capabilities =>
         new()
         {
-            SupportsLocking = true,
             SupportsExpiration = true,
             SupportsConcurrentOperations = true,
             SupportsDelayedScheduling = true,
@@ -146,11 +145,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     [Fact]
     public override Task should_initialize_schema() => base.should_initialize_schema();
 
-    // InMemoryStorageInitializer.GetLockTableName() returns string.Empty by design — InMemory has
-    // no lock table (locks live in InMemoryDataStorage.Locks). The base test asserts non-null/empty
-    // for all three table-name accessors, which is a SQL-storage assumption. Skipped here, not a
-    // contract violation.
-    [Fact(Skip = "InMemory has no lock table — GetLockTableName() returns string.Empty by design")]
+    [Fact]
     public override Task should_get_table_names() => base.should_get_table_names();
 
     [Fact]
@@ -182,19 +177,6 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     [Fact]
     public override Task should_get_received_messages_of_need_retry() =>
         base.should_get_received_messages_of_need_retry();
-
-    [Fact]
-    public override Task should_acquire_lock() => base.should_acquire_lock();
-
-    [Fact]
-    public override Task should_not_acquire_lock_when_already_held() =>
-        base.should_not_acquire_lock_when_already_held();
-
-    [Fact]
-    public override Task should_release_lock() => base.should_release_lock();
-
-    [Fact]
-    public override Task should_renew_lock() => base.should_renew_lock();
 
     [Fact]
     public override Task should_delete_expired_messages() => base.should_delete_expired_messages();

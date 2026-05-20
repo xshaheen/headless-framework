@@ -16,11 +16,6 @@ internal sealed class InMemoryStorageInitializer : IStorageInitializer
         return nameof(InMemoryDataStorage.ReceivedMessages);
     }
 
-    public string GetLockTableName()
-    {
-        return string.Empty;
-    }
-
     public Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         return Task.CompletedTask;

@@ -95,12 +95,10 @@ public abstract class DataStorageTestsBase : TestBase
         // when
         var publishedTable = initializer.GetPublishedTableName();
         var receivedTable = initializer.GetReceivedTableName();
-        var lockTable = initializer.GetLockTableName();
 
         // then
         publishedTable.Should().NotBeNullOrEmpty();
         receivedTable.Should().NotBeNullOrEmpty();
-        lockTable.Should().NotBeNullOrEmpty();
 
         return Task.CompletedTask;
     }
@@ -285,113 +283,6 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-    }
-
-    public virtual async Task should_acquire_lock()
-    {
-        // Skip if storage doesn't support locking
-        if (!Capabilities.SupportsLocking)
-        {
-            Assert.Skip("Storage does not support locking");
-        }
-
-        // given
-        var storage = GetStorage();
-        const string lockKey = "publish_retry_v1";
-        var instanceId = Guid.NewGuid().ToString();
-        var ttl = TimeSpan.FromSeconds(30);
-
-        // when
-        var result = await storage.AcquireLockAsync(lockKey, ttl, instanceId, AbortToken);
-
-        // then
-        result.Should().BeTrue();
-
-        // cleanup
-        await storage.ReleaseLockAsync(lockKey, instanceId, AbortToken);
-    }
-
-    public virtual async Task should_not_acquire_lock_when_already_held()
-    {
-        // Skip if storage doesn't support locking
-        if (!Capabilities.SupportsLocking)
-        {
-            Assert.Skip("Storage does not support locking");
-        }
-
-        // given
-        var storage = GetStorage();
-        const string lockKey = "publish_retry_v1";
-        var instanceId1 = Guid.NewGuid().ToString();
-        var instanceId2 = Guid.NewGuid().ToString();
-        var ttl = TimeSpan.FromSeconds(30);
-
-        // when
-        var firstLock = await storage.AcquireLockAsync(lockKey, ttl, instanceId1, AbortToken);
-        var secondLock = await storage.AcquireLockAsync(lockKey, ttl, instanceId2, AbortToken);
-
-        // then
-        firstLock.Should().BeTrue();
-        secondLock.Should().BeFalse();
-
-        // cleanup
-        await storage.ReleaseLockAsync(lockKey, instanceId1, AbortToken);
-    }
-
-    public virtual async Task should_release_lock()
-    {
-        // Skip if storage doesn't support locking
-        if (!Capabilities.SupportsLocking)
-        {
-            Assert.Skip("Storage does not support locking");
-        }
-
-        // given
-        var storage = GetStorage();
-        const string lockKey = "publish_retry_v1";
-        var instanceId = Guid.NewGuid().ToString();
-        var ttl = TimeSpan.FromSeconds(30);
-
-        await storage.AcquireLockAsync(lockKey, ttl, instanceId, AbortToken);
-
-        // when
-        var act = async () => await storage.ReleaseLockAsync(lockKey, instanceId, AbortToken);
-
-        // then
-        await act.Should().NotThrowAsync();
-
-        // Verify lock can be acquired again
-        var canAcquireAgain = await storage.AcquireLockAsync(lockKey, ttl, instanceId, AbortToken);
-        canAcquireAgain.Should().BeTrue();
-
-        // cleanup
-        await storage.ReleaseLockAsync(lockKey, instanceId, AbortToken);
-    }
-
-    public virtual async Task should_renew_lock()
-    {
-        // Skip if storage doesn't support locking
-        if (!Capabilities.SupportsLocking)
-        {
-            Assert.Skip("Storage does not support locking");
-        }
-
-        // given
-        var storage = GetStorage();
-        const string lockKey = "publish_retry_v1";
-        var instanceId = Guid.NewGuid().ToString();
-        var ttl = TimeSpan.FromSeconds(30);
-
-        await storage.AcquireLockAsync(lockKey, ttl, instanceId, AbortToken);
-
-        // when
-        var act = async () => await storage.RenewLockAsync(lockKey, ttl, instanceId, AbortToken);
-
-        // then
-        await act.Should().NotThrowAsync();
-
-        // cleanup
-        await storage.ReleaseLockAsync(lockKey, instanceId, AbortToken);
     }
 
     public virtual async Task should_delete_expired_messages()

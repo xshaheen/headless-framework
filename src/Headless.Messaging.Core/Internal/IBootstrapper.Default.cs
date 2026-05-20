@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
@@ -13,6 +15,7 @@ internal sealed class Bootstrapper(
     IEnumerable<IProcessingServer> processors,
     IStorageInitializer storageInitializer,
     IServiceProvider serviceProvider,
+    IOptions<MessagingOptions> options,
     ILogger<IBootstrapper> logger
 ) : BackgroundService, IBootstrapper
 {
@@ -89,6 +92,7 @@ internal sealed class Bootstrapper(
         try
         {
             _CheckRequirement();
+            _WarnIfNoOpProvider();
 
             try
             {
@@ -232,6 +236,50 @@ internal sealed class Bootstrapper(
         await stoppingRegistration.DisposeAsync().ConfigureAwait(false);
         runtimeCts?.Dispose();
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _WarnIfNoOpProvider()
+    {
+        if (!options.Value.UseStorageLock)
+        {
+            return;
+        }
+
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
+
+        if (lockProvider is not NoOpDistributedLockProvider)
+        {
+            return;
+        }
+
+        // Probe the un-keyed slot so the warning can distinguish the "no provider at all" case
+        // from the "real provider registered but only un-keyed" case — the second case is a
+        // common misconfiguration where the operator wired up Headless.DistributedLocks.Redis
+        // (or similar) but did not flow it through MessagingBuilder.UseDistributedLock(...).
+        //
+        // Probe is purely informational; wrapping in try/catch ensures a misconfigured un-keyed
+        // factory (e.g., missing Redis connection string) cannot fail messaging bootstrap. On
+        // probe failure we fall through to the conservative "no provider" EventId 77 — the
+        // factory's real error will surface at first lock acquisition with a clearer message.
+        IDistributedLockProvider? unkeyedProvider = null;
+        try
+        {
+            unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
+        }
+#pragma warning disable RCS1075, ERP022 // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
+        catch (Exception)
+        {
+            // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
+        }
+#pragma warning restore RCS1075, ERP022
+
+        if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
+        {
+            logger.UseStorageLockWithNoOpProviderButRealUnkeyed();
+            return;
+        }
+
+        logger.UseStorageLockWithNoOpProvider();
     }
 
     private void _CheckRequirement()

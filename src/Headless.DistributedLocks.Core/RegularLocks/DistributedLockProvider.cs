@@ -37,7 +37,26 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+
+    // Bounds the best-effort orphan-lock cleanup that runs when an acquire is cancelled
+    // after the storage may have accepted the write. Worst-case interaction with the
+    // Zero-path safety deadline below: if `_NonBlockingAcquireDeadline` fires AND cleanup
+    // also stalls, the caller waits at most `_NonBlockingAcquireDeadline + _OrphanLockCleanupTimeout`
+    // (currently 10s + 5s = 15s) before TryAcquireAsync returns. Kept smaller than the
+    // acquire deadline because cleanup runs against a known-orphan record and should
+    // succeed faster than a contended acquire.
     private static readonly TimeSpan _OrphanLockCleanupTimeout = TimeSpan.FromSeconds(5);
+
+    // Ceiling on a single storage round-trip when `acquireTimeout: TimeSpan.Zero` is
+    // requested (the "try once, no wait" semantic). Without this bound, a stalled
+    // lock-store call would hang the caller indefinitely whenever the caller's
+    // CancellationToken does not fire — for example, the messaging retry processor
+    // which passes `context.CancellationToken` that only fires on shutdown. 10s is
+    // 2× StackExchange.Redis's default AsyncTimeout, leaving headroom for transient
+    // reconnects without re-introducing the indefinite-hang surface. Issue #297; F#2
+    // from PR #284 review.
+    private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
+
     private const int _MaxReleaseRetryAttempts = 15;
 
     // Configurable limits from options
@@ -67,23 +86,48 @@ public sealed class DistributedLockProvider(
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
 
+        using var activity = _StartLockActivity(resource);
+        var timestamp = timeProvider.GetTimestamp();
+
+        // Fast path for the explicit "try once, no wait" semantic. Skips the
+        // unconditional `timeoutCts` + linked `cts` pair (which would be created
+        // already-cancelled for Zero) and the do-while retry loop (which would
+        // exit on the first iteration anyway). Issue #297. Adds an internal
+        // safety deadline (`_NonBlockingAcquireDeadline`) so the single storage
+        // attempt cannot hang indefinitely when the caller's token does not
+        // fire and the lock-store stalls — F#2 from PR #284 review.
+        if (acquireTimeout == TimeSpan.Zero)
+        {
+            return await _TryAcquireOnceAsync(resource, lockId, timeUntilExpires, timestamp, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
-        using var activity = _StartLockActivity(resource);
 
-        var timestamp = timeProvider.GetTimestamp();
         var gotLock = false;
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
+        var isFirstAttempt = true;
 
         try
         {
             do
             {
+                // Very tight non-zero `acquireTimeout` values (e.g., a few ms) can leave
+                // `timeoutCts` already cancelled by the time we reach the first attempt,
+                // which would preempt the storage call before it could complete. Fall back
+                // to the caller's bare token in that race so the operation has at least one
+                // real chance to acquire the lock. Subsequent retries always use the linked
+                // token so the user's overall budget governs the wait loop. Issue #282;
+                // tightened by review of #284.
+                var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
+                isFirstAttempt = false;
+
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, cts.Token);
+                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, attemptToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -162,6 +206,80 @@ public sealed class DistributedLockProvider(
                 logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
             }
 
+            return null;
+        }
+
+        if (timeWaitedForLock > _LongLockWarningThreshold)
+        {
+            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+        }
+        else
+        {
+            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+        }
+
+        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+    }
+
+    private async Task<IDistributedLock?> _TryAcquireOnceAsync(
+        string resource,
+        string lockId,
+        TimeSpan? timeUntilExpires,
+        long timestamp,
+        CancellationToken callerToken
+    )
+    {
+        // Bound the single storage attempt by `_NonBlockingAcquireDeadline`.
+        // When the caller cannot signal cancellation (CancellationToken.None /
+        // default) we skip the linked CTS entirely — saves one CTS allocation
+        // and the two registration nodes on messaging's hot path (the retry
+        // processor passes a cancellable token, so the cheap path applies to
+        // other consumers like Headless.Tus.DistributedLocks).
+        using var safetyCts = timeProvider.CreateCancellationTokenSource(_NonBlockingAcquireDeadline);
+        using var linkedCts = callerToken.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(safetyCts.Token, callerToken)
+            : null;
+
+        var attemptToken = linkedCts?.Token ?? safetyCts.Token;
+        bool gotLock;
+
+        try
+        {
+            gotLock = await _storage
+                .InsertAsync(resource, lockId, timeUntilExpires, attemptToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Best-effort orphan cleanup in case the storage accepted the
+            // write but the response was preempted by the safety deadline
+            // or caller cancellation.
+            await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+
+            if (callerToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            // Safety deadline fired (caller has not cancelled). Treat as
+            // "lock not acquired" — surface the same null shape as a normal
+            // contended try-once result. Distinguishing this from a normal
+            // contended result via a dedicated EventId is tracked by #320.
+            gotLock = false;
+        }
+        catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
+        {
+            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+            gotLock = false;
+        }
+
+        var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
+        DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
+
+        if (!gotLock)
+        {
+            DistributedLockMetrics.LockFailed.Add(1);
+            logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
             return null;
         }
 

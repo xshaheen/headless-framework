@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -241,6 +242,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // wire up the retry processor with the real state manager as monitor
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(
@@ -250,7 +252,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             ),
             logger,
             dispatcher,
-            dataStorage,
+            lockProvider,
             stateManager // real ICircuitBreakerMonitor
         );
 
@@ -298,6 +300,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
+        var lockProvider = Substitute.For<IDistributedLockProvider>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(
@@ -307,7 +310,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             ),
             logger,
             dispatcher,
-            dataStorage,
+            lockProvider,
             stateManager
         );
 

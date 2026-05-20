@@ -587,4 +587,76 @@ internal static partial class LoggerExtensions
         Exception exception,
         string loopName
     );
+
+    [LoggerMessage(
+        EventId = 77,
+        EventName = "UseStorageLockWithNoOpProvider",
+        Level = LogLevel.Warning,
+        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
+    )]
+    public static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 78,
+        EventName = "UseStorageLockWithNoOpProviderButRealUnkeyed",
+        Level = LogLevel.Warning,
+        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
+    )]
+    public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 79,
+        EventName = "ReceivedRetryLockOwnershipLost",
+        Level = LogLevel.Warning,
+        Message = "Received-retry lock renewal returned false; ownership has been lost. Clearing the cached handle so the next cycle re-acquires from scratch."
+    )]
+    public static partial void ReceivedRetryLockOwnershipLost(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 80,
+        EventName = "ReceivedRetryLockRenewalFailed",
+        Level = LogLevel.Warning,
+        Message = "Received-retry lock renewal threw an exception. Treating as transient; the in-flight consume task continues under per-row LockedUntil, the handle has been cleared, and the next cycle will re-acquire fresh."
+    )]
+    public static partial void ReceivedRetryLockRenewalFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        EventId = 81,
+        EventName = "PublishedRetryLockAcquireFailed",
+        Level = LogLevel.Warning,
+        Message = "Acquiring the published-retry lock from the lock store failed. Backing off polling and waiting for the next cycle."
+    )]
+    public static partial void PublishedRetryLockAcquireFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        EventId = 82,
+        EventName = "PublishedRetryLockAcquireFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Acquiring the published-retry lock from the lock store has failed for {ConsecutiveFailures} consecutive cycles. Investigate lock-store health (Redis, SQL, etc.)."
+    )]
+    public static partial void PublishedRetryLockAcquireFailureEscalated(
+        this ILogger logger,
+        Exception ex,
+        int consecutiveFailures
+    );
+
+    [LoggerMessage(
+        EventId = 83,
+        EventName = "ReceivedRetryLockAcquireFailed",
+        Level = LogLevel.Warning,
+        Message = "Acquiring the received-retry lock from the lock store failed. Backing off polling and waiting for the next cycle."
+    )]
+    public static partial void ReceivedRetryLockAcquireFailed(this ILogger logger, Exception ex);
+
+    [LoggerMessage(
+        EventId = 84,
+        EventName = "ReceivedRetryLockAcquireFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Acquiring the received-retry lock from the lock store has failed for {ConsecutiveFailures} consecutive cycles. Investigate lock-store health (Redis, SQL, etc.)."
+    )]
+    public static partial void ReceivedRetryLockAcquireFailureEscalated(
+        this ILogger logger,
+        Exception ex,
+        int consecutiveFailures
+    );
 }

@@ -34,6 +34,15 @@ public interface IDistributedLockProvider
     /// A task that represents the asynchronous operation.
     /// The task result contains the acquired lock or null if the lock could not be acquired.
     /// </returns>
+    /// <remarks>
+    /// When <paramref name="acquireTimeout"/> is <see cref="TimeSpan.Zero"/> the implementation runs a single
+    /// storage attempt with no retry loop (the "try once, no wait" semantic). The attempt is bounded by an
+    /// internal safety deadline so a stalled lock-store call cannot hang the caller indefinitely, even when
+    /// <paramref name="cancellationToken"/> is <see cref="CancellationToken.None"/>. The deadline is a ceiling
+    /// on the storage round-trip, not a wait budget — under healthy lock-store conditions the call completes
+    /// well within it. The caller's <paramref name="cancellationToken"/> still takes precedence if it fires
+    /// first. See issue #297 and the F#2 review finding from PR #284 for the rationale.
+    /// </remarks>
     Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,

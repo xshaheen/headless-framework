@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -91,6 +92,7 @@ public class MessageQueueMarkerService(string name)
 /// Initializes a new instance of the <see cref="MessagingBuilder"/> class with the specified service collection.
 /// </remarks>
 /// <param name="services">The <see cref="IServiceCollection"/> where messaging services are being configured.</param>
+[PublicAPI]
 public sealed class MessagingBuilder(IServiceCollection services, MessagingOptions? options = null)
 {
     /// <summary>
@@ -271,5 +273,66 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         }
 
         return contextType;
+    }
+
+    /// <summary>
+    /// Registers an <see cref="IDistributedLockProvider"/> instance for messaging's isolated lock scope
+    /// and enables <see cref="MessagingOptions.UseStorageLock"/>.
+    /// </summary>
+    /// <param name="provider">The lock provider instance to use for distributed retry coordination.</param>
+    /// <remarks>
+    /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
+    /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
+    /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// Last-wins: calling this method (or its factory overload) more than once replaces any prior
+    /// messaging lock provider registration.
+    /// </remarks>
+    public MessagingBuilder UseDistributedLock(IDistributedLockProvider provider)
+    {
+        Argument.IsNotNull(provider);
+
+        _RemoveExistingMessagingLockProvider();
+        Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
+        Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a factory-resolved <see cref="IDistributedLockProvider"/> for messaging's isolated lock scope
+    /// and enables <see cref="MessagingOptions.UseStorageLock"/>.
+    /// </summary>
+    /// <param name="factory">A factory delegate that receives the <see cref="IServiceProvider"/> and returns the lock provider.</param>
+    /// <remarks>
+    /// Use this overload when the provider itself depends on other DI-registered services.
+    /// Messaging keeps its lock provider under an internal keyed-DI key so it never conflicts with
+    /// any other <see cref="IDistributedLockProvider"/> registered at the application level.
+    /// Calling this method implicitly sets <c>UseStorageLock = true</c>.
+    /// Last-wins: calling this method (or its instance overload) more than once replaces any prior
+    /// messaging lock provider registration.
+    /// </remarks>
+    public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLockProvider> factory)
+    {
+        Argument.IsNotNull(factory);
+
+        _RemoveExistingMessagingLockProvider();
+        Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, (sp, _) => factory(sp));
+        Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
+        return this;
+    }
+
+    private void _RemoveExistingMessagingLockProvider()
+    {
+        for (var i = Services.Count - 1; i >= 0; i--)
+        {
+            var descriptor = Services[i];
+            if (
+                descriptor.ServiceType == typeof(IDistributedLockProvider)
+                && descriptor.IsKeyedService
+                && Equals(descriptor.ServiceKey, MessagingKeys.LockProvider)
+            )
+            {
+                Services.RemoveAt(i);
+            }
+        }
     }
 }

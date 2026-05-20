@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -20,6 +21,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// Provides extension methods for registering and configuring messaging services
 /// in a <see cref="IServiceCollection"/> dependency injection container.
 /// </summary>
+[PublicAPI]
 public static class SetupMessaging
 {
     /// <summary>
@@ -123,6 +125,11 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessageDispatcher, CompiledMessageDispatcher>();
 
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
+
+        // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
+        // IDistributedLockProvider so UseStorageLock always targets the provider wired via
+        // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
+        services.TryAddKeyedSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>(MessagingKeys.LockProvider);
 
         //Processors
         services.TryAddEnumerable(

@@ -120,6 +120,33 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_acquire_lock_when_resource_is_free_and_acquireTimeout_is_zero()
+    {
+        // Regression guard for issue #282: TimeSpan.Zero must mean "try once with no
+        // wait/retry budget", not "fail immediately". On a free resource, the first
+        // storage attempt must complete and return a handle. Empirical observation
+        // by the messaging integration test author was that the real provider returns
+        // null every time under this configuration; see RetryProcessorDistributedLockTests
+        // line 101 comment and tests/Headless.Messaging.PostgreSql.Tests.Integration.
+
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when - try to acquire on a FREE resource with zero acquire timeout
+        var result = await provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: AbortToken
+        );
+
+        // then - handle must be returned; Zero is "no wait", not "no attempt"
+        result.Should().NotBeNull();
+        result!.Resource.Should().Be(resource);
+        result.LockId.Should().NotBeNullOrEmpty();
+    }
+
+    [Fact]
     public async Task should_retry_with_exponential_backoff()
     {
         // given
@@ -374,6 +401,248 @@ public sealed class DistributedLockProviderTests : TestBase
             cts.Dispose();
         }
     }
+
+    #region TimeSpan.Zero Safety Deadline Regression Tests
+
+    // Coverage for the Zero-path bypass introduced for issue #297 and the F#2 review
+    // finding from PR #284: TryAcquireAsync(acquireTimeout: TimeSpan.Zero) must bound
+    // the single storage attempt by an internal safety deadline so that a stalled
+    // lock-store call cannot hang the caller indefinitely, even when the caller's
+    // CancellationToken does not fire.
+
+    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLockProvider.
+
+    private static Func<NSubstitute.Core.CallInfo, ValueTask<bool>> _HangForeverInsert =>
+        ci => new ValueTask<bool>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
+
+    private static async Task<bool> _HangUntilCancelledAsync(CancellationToken ct)
+    {
+        await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
+        return false; // Unreachable — Task.Delay throws OperationCanceledException on cancellation.
+    }
+
+    private async Task _DrainContinuationsAsync(Task acquireTask, int maxYields = 500)
+    {
+        for (var i = 0; i < maxYields && !acquireTask.IsCompleted; i++)
+        {
+            await Task.Yield();
+        }
+    }
+
+    [Fact]
+    public async Task should_return_null_when_storage_hangs_and_acquireTimeout_is_zero_and_caller_token_is_none()
+    {
+        // given — substitute storage that blocks forever on InsertAsync
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_HangForeverInsert);
+
+        var provider = _CreateProvider(storage: storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when — Zero acquireTimeout, CancellationToken.None (no caller-side bound)
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: CancellationToken.None
+        );
+
+        // Advance past the safety deadline — virtualised via FakeTimeProvider, no wall-clock wait.
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        await _DrainContinuationsAsync(acquireTask);
+
+        // then — the call must complete with null rather than hang forever
+        acquireTask.IsCompleted.Should().BeTrue("safety deadline must bound the storage call");
+        var result = await acquireTask;
+        result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_return_null_when_safety_deadline_fires_before_caller_cancellation()
+    {
+        // given — substitute storage that hangs; caller token has a long-but-finite deadline
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_HangForeverInsert);
+
+        var provider = _CreateProvider(storage: storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+        using var callerCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
+        // when
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: callerCts.Token
+        );
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        await _DrainContinuationsAsync(acquireTask);
+
+        // then — safety deadline wins, caller token is unaffected
+        var result = await acquireTask;
+        result.Should().BeNull();
+        callerCts.IsCancellationRequested.Should().BeFalse("safety deadline must fire before the caller's much-later deadline");
+    }
+
+    [Fact]
+    public async Task should_throw_OperationCanceledException_when_caller_already_cancelled_and_acquireTimeout_is_zero()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        using var callerCts = new CancellationTokenSource();
+        await callerCts.CancelAsync();
+
+        // when — caller token is already cancelled BEFORE the call enters the helper
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                acquireTimeout: TimeSpan.Zero,
+                cancellationToken: callerCts.Token
+            );
+
+        // then — the pre-call ThrowIfCancellationRequested guard fires (no storage call reached)
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_throw_OperationCanceledException_when_caller_cancels_mid_call_during_acquireTimeout_zero()
+    {
+        // given — substitute storage that cancels the caller token mid-call (mirrors the existing
+        // should_cleanup_orphan_lock_when_acquisition_is_cancelled idiom for the non-Zero path).
+        var resource = Faker.Random.AlphaNumeric(10);
+        var storage = Substitute.For<IDistributedLockStorage>();
+        var provider = _CreateProvider(storage: storage);
+
+        using var callerCts = new CancellationTokenSource();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+#pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
+                callerCts.Cancel();
+#pragma warning restore CA1849, VSTHRD103
+                return ValueTask.FromException<bool>(new OperationCanceledException(callerCts.Token));
+            });
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                acquireTimeout: TimeSpan.Zero,
+                cancellationToken: callerCts.Token
+            );
+
+        // then — OCE must propagate to caller, AND best-effort orphan cleanup must fire
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        await storage
+            .Received(1)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_call_storage_exactly_once_when_acquireTimeout_is_zero_and_resource_is_held()
+    {
+        // given — substitute storage that returns false (resource held) on every call
+        var callCount = 0;
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref callCount);
+                return ValueTask.FromResult(false);
+            });
+
+        var provider = _CreateProvider(storage: storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: AbortToken
+        );
+
+        // then — single attempt, no retry loop entered. Subsequent fake-time advances must not
+        // trigger additional storage calls (proves the do-while loop is bypassed).
+        result.Should().BeNull();
+        callCount.Should().Be(1);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(5));
+        for (var i = 0; i < 50; i++)
+        {
+            await Task.Yield();
+        }
+
+        callCount.Should().Be(1, "Zero-path must not enter the retry/backoff loop");
+    }
+
+    [Fact]
+    public async Task should_call_orphan_cleanup_when_safety_deadline_fires_during_acquireTimeout_zero()
+    {
+        // given — storage that hangs InsertAsync until the attempt token fires
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(_HangForeverInsert);
+
+        var provider = _CreateProvider(storage: storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: CancellationToken.None
+        );
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
+        await _DrainContinuationsAsync(acquireTask);
+        await acquireTask;
+
+        // then — orphan cleanup fires symmetrically with the non-Zero path
+        await storage
+            .Received(1)
+            .RemoveIfEqualAsync(
+                Arg.Is<string>(s => s.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_acquire_lock_when_acquireTimeout_is_zero_and_caller_token_is_cancellable()
+    {
+        // Regression guard: the CanBeCanceled short-circuit (skipping the linked CTS for
+        // CancellationToken.None) must not regress the cancellable-caller path. Both paths
+        // must succeed when the resource is free.
+
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        using var callerCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+
+        // when
+        var result = await provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.Zero,
+            cancellationToken: callerCts.Token
+        );
+
+        // then
+        result.Should().NotBeNull();
+        result!.Resource.Should().Be(resource);
+    }
+
+    #endregion
 
     #endregion
 

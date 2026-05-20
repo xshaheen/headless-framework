@@ -40,7 +40,6 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         services.Configure<MessagingOptions>(x =>
         {
             x.Version = "v1";
-            x.UseStorageLock = true;
         });
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
@@ -68,141 +67,10 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
         await connection.ExecuteAsync(
-            "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received; DELETE FROM messaging.Lock;"
+            "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;"
         );
         await base.DisposeAsyncCore();
     }
-
-    #region Lock Tests
-
-    [Fact]
-    public async Task should_acquire_lock_when_not_held()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance = "instance1";
-        var ttl = TimeSpan.FromMinutes(5);
-
-        // Insert the lock key first
-        await _InsertLockKey(key);
-
-        // when
-        var acquired = await _storage.AcquireLockAsync(key, ttl, instance, AbortToken);
-
-        // then
-        acquired.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_not_acquire_lock_when_already_held()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance1 = "instance1";
-        const string instance2 = "instance2";
-        var ttl = TimeSpan.FromMinutes(5);
-
-        await _InsertLockKey(key);
-
-        // First instance acquires lock
-        await _storage.AcquireLockAsync(key, ttl, instance1, AbortToken);
-
-        // when - second instance tries to acquire
-        var acquired = await _storage.AcquireLockAsync(key, ttl, instance2, AbortToken);
-
-        // then
-        acquired.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_acquire_lock_after_ttl_expires()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance1 = "instance1";
-        const string instance2 = "instance2";
-        var ttl = TimeSpan.FromSeconds(1);
-
-        await _InsertLockKey(key);
-
-        // First instance acquires lock
-        await _storage.AcquireLockAsync(key, ttl, instance1, AbortToken);
-
-        // Advance time past TTL
-        _timeProvider.Advance(TimeSpan.FromSeconds(2));
-
-        // when - second instance tries to acquire after TTL
-        var acquired = await _storage.AcquireLockAsync(key, ttl, instance2, AbortToken);
-
-        // then
-        acquired.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_release_lock()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance = "instance1";
-        var ttl = TimeSpan.FromMinutes(5);
-
-        await _InsertLockKey(key);
-        await _storage.AcquireLockAsync(key, ttl, instance, AbortToken);
-
-        // when
-        await _storage.ReleaseLockAsync(key, instance, AbortToken);
-
-        // then - another instance should now be able to acquire
-        var acquired = await _storage.AcquireLockAsync(key, ttl, "instance2", AbortToken);
-        acquired.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_not_release_lock_held_by_different_instance()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance1 = "instance1";
-        const string instance2 = "instance2";
-        var ttl = TimeSpan.FromMinutes(5);
-
-        await _InsertLockKey(key);
-        await _storage.AcquireLockAsync(key, ttl, instance1, AbortToken);
-
-        // when - different instance tries to release
-        await _storage.ReleaseLockAsync(key, instance2, AbortToken);
-
-        // then - lock should still be held
-        var acquired = await _storage.AcquireLockAsync(key, ttl, "instance3", AbortToken);
-        acquired.Should().BeFalse();
-    }
-
-    [Fact]
-    public async Task should_renew_lock()
-    {
-        // given
-        var key = "test_lock_" + Guid.NewGuid().ToString("N");
-        const string instance = "instance1";
-        var ttl = TimeSpan.FromSeconds(5);
-
-        await _InsertLockKey(key);
-        await _storage.AcquireLockAsync(key, ttl, instance, AbortToken);
-
-        // Advance time but within original TTL
-        _timeProvider.Advance(TimeSpan.FromSeconds(3));
-
-        // when - renew the lock
-        await _storage.RenewLockAsync(key, ttl, instance, AbortToken);
-
-        // Advance time past original TTL but within renewed TTL
-        _timeProvider.Advance(TimeSpan.FromSeconds(4));
-
-        // then - another instance should NOT be able to acquire (lock was renewed)
-        var acquired = await _storage.AcquireLockAsync(key, ttl, "instance2", AbortToken);
-        acquired.Should().BeFalse();
-    }
-
-    #endregion
 
     #region Message CRUD Tests
 
@@ -469,13 +337,4 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
     #endregion
 
-    private async Task _InsertLockKey(string key)
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
-        await connection.ExecuteAsync(
-            "INSERT INTO messaging.Lock ([Key], [Instance], [LastLockTime]) VALUES (@Key, '', @LastLockTime)",
-            new { Key = key, LastLockTime = new DateTime(1900, 1, 1, 0, 0, 0, DateTimeKind.Utc) }
-        );
-    }
 }

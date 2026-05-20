@@ -19,6 +19,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
+- **Distributed Lock Integration**: Optional `IDistributedLockProvider`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
 
 ## Installation
 
@@ -461,6 +462,31 @@ await retryMonitor.ResetBackpressureAsync(cancellationToken);
 
 The circuit breaker operates **per-process only**. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
 
+## Distributed Lock Integration
+
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
+
+Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider — calling this implicitly sets `UseStorageLock = true`:
+
+```csharp
+// Instance overload
+var lockProvider = new MyDistributedLockProvider(...);
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(lockProvider);
+
+// Factory overload (provider depends on other DI services)
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
+```
+
+Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+
+Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
+
+> **NoOp introspection contract:** when `NoOpDistributedLockProvider` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
+
+When `UseStorageLock = false` (default), `IDistributedLockProvider` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
+
 ## Dependencies
 
 - `Headless.Messaging.Abstractions`
@@ -475,3 +501,20 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 - Starts background hosted service for message processing
 - Creates database tables for outbox storage (via storage provider)
 - Establishes transport connections (via transport provider)
+
+## Distributed Lock EventIds
+
+Retry-processor EventIds emitted when `UseStorageLock = true`:
+
+| EventId | Name | Severity | Trigger | Remediation |
+| --- | --- | --- | --- | --- |
+| 77 | `UseStorageLockWithNoOpProvider` | Warning | No real provider registered under any key. | Wire `MessagingBuilder.UseDistributedLock(...)` or set `UseStorageLock = false`. |
+| 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | Real provider registered un-keyed but not flowed through `UseDistributedLock(...)`. | Re-register via `MessagingBuilder.UseDistributedLock(...)`. |
+| 79 | `ReceivedRetryLockOwnershipLost` | Warning | Renewal returned `false`; coarse lock lost. Per-row `LockedUntil` takes over. | Investigate lock-store TTLs / clock skew if frequent. |
+| 80 | `ReceivedRetryLockRenewalFailed` | Warning | Renewal threw a non-cancellation exception. | Investigate lock-store health if frequent. |
+| 81 | `PublishedRetryLockAcquireFailed` | Warning | Acquire threw on the published-retry path. | Investigate lock-store health if persistent. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+| 83 | `ReceivedRetryLockAcquireFailed` | Warning | Acquire threw on the received-retry path. | Investigate lock-store health if persistent. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+
+See [Distributed Lock Integration](../../docs/llms/messaging.md#distributed-lock-integration) for the two-layer correctness model and when to enable / skip.

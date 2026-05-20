@@ -12,6 +12,9 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryQueue\Headless.Messaging.InMemoryQueue.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Cache\Headless.DistributedLocks.Cache.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,8 @@
+using Headless.DistributedLocks;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -102,9 +105,129 @@ public sealed class BootstrapperTests : TestBase
         bootstrapper.IsStarted.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_log_warning_when_use_storage_lock_is_true_and_no_real_lock_provider_registered()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(captureLog: captured, configureOptions: o => o.UseStorageLock = true);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+            "UseStorageLockWithNoOpProvider warning must fire when only NoOpDistributedLockProvider is registered"
+        );
+    }
+
+    [Fact]
+    public async Task should_not_log_warning_when_use_storage_lock_is_false()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(captureLog: captured, configureOptions: o => o.UseStorageLock = false);
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().NotContain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+            "warning must be silent when UseStorageLock is false, even with NoOpDistributedLockProvider"
+        );
+    }
+
+    [Fact]
+    public async Task should_warn_with_eventid_78_when_unkeyed_real_provider_exists_but_use_distributed_lock_not_called()
+    {
+        // Misconfiguration repro: user wired up a real IDistributedLockProvider (e.g. via
+        // Headless.DistributedLocks.Redis) but forgot to call MessagingBuilder.UseDistributedLock(...).
+        // The bootstrapper must emit EventId 78 (UseStorageLockWithNoOpProviderButRealUnkeyed) so the
+        // operator can distinguish this case from EventId 77 (no provider at all).
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var unkeyedRealProvider = Substitute.For<IDistributedLockProvider>();
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = true,
+            extraSetup: services => services.AddSingleton(unkeyedRealProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 78,
+            "EventId 78 must fire when a real un-keyed IDistributedLockProvider exists but UseDistributedLock(...) was not called"
+        );
+        captured.Should().NotContain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+            "EventId 77 (the no-provider-at-all case) must NOT fire when an un-keyed real provider exists"
+        );
+    }
+
+    [Fact]
+    public async Task should_not_log_warning_when_real_lock_provider_is_registered()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var realProvider = Substitute.For<IDistributedLockProvider>();
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            builderAction: builder => builder.UseDistributedLock(realProvider)
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().NotContain(
+            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+            "warning must be silent when a real IDistributedLockProvider is registered"
+        );
+    }
+
+    [Fact]
+    public async Task should_isolate_messaging_lock_provider_from_unkeyed_app_level_provider()
+    {
+        // given — an app-level un-keyed provider AND a messaging-keyed provider
+        var appLevelProvider = Substitute.For<IDistributedLockProvider>();
+        var messagingProvider = Substitute.For<IDistributedLockProvider>();
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IDistributedLockProvider>(appLevelProvider);
+
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemoryMessageQueue();
+            setup.UseInMemoryStorage();
+        });
+        messagingBuilder.UseDistributedLock(messagingProvider);
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when — resolve the retry processor which injects the messaging-keyed provider via attribute
+        var processor = provider.GetRequiredService<MessageNeedToRetryProcessor>();
+
+        // then — un-keyed remains visible to app code, keyed remains messaging's
+        provider.GetRequiredService<IDistributedLockProvider>().Should().BeSameAs(appLevelProvider);
+        provider
+            .GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider)
+            .Should()
+            .BeSameAs(messagingProvider);
+
+        // The processor type itself is what we care about — it must hold the messaging-keyed one.
+        // Exposed via internal helper (InternalsVisibleTo) instead of reflection so the test stays
+        // resilient to private-field renames.
+        var injected = processor.LockProvider;
+        injected.Should().BeSameAs(messagingProvider, "the processor must receive the messaging-keyed provider, not the un-keyed app-level one");
+        injected.Should().NotBeSameAs(appLevelProvider);
+    }
+
     private ServiceProvider _CreateProvider(
         IProcessingServer? beforeMessaging = null,
-        IProcessingServer? afterMessaging = null
+        IProcessingServer? afterMessaging = null,
+        List<(LogLevel Level, EventId EventId)>? captureLog = null,
+        Action<MessagingOptions>? configureOptions = null,
+        Action<IServiceCollection>? extraSetup = null,
+        Action<MessagingBuilder>? builderAction = null
     )
     {
         var services = new ServiceCollection();
@@ -112,6 +235,11 @@ public sealed class BootstrapperTests : TestBase
         {
             builder.AddProvider(LoggerProvider);
             builder.SetMinimumLevel(LogLevel.Debug);
+
+            if (captureLog is not null)
+            {
+                builder.AddProvider(new CapturingLoggerProvider(captureLog));
+            }
         });
 
         if (beforeMessaging is not null)
@@ -119,7 +247,7 @@ public sealed class BootstrapperTests : TestBase
             services.AddSingleton(beforeMessaging);
         }
 
-        services.AddHeadlessMessaging(setup =>
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemoryMessageQueue();
             setup.UseInMemoryStorage();
@@ -129,6 +257,15 @@ public sealed class BootstrapperTests : TestBase
                 c.UseVersion("v1");
             });
         });
+
+        builderAction?.Invoke(messagingBuilder);
+
+        if (configureOptions is not null)
+        {
+            services.Configure<MessagingOptions>(configureOptions);
+        }
+
+        extraSetup?.Invoke(services);
 
         if (afterMessaging is not null)
         {
@@ -191,6 +328,34 @@ public sealed class BootstrapperTests : TestBase
         {
             Interlocked.Increment(ref _disposeCount);
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(log);
+
+        public void Dispose() { }
+
+        private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                lock (log)
+                {
+                    log.Add((logLevel, eventId));
+                }
+            }
         }
     }
 }

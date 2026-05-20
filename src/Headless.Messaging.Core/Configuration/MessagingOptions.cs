@@ -64,6 +64,24 @@ public sealed class MessagingOptions
     /// This allows multiple instances to coexist without message conflicts. Maximum length is 20 characters.
     /// Default is "v1".
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Version"/> also acts as the cross-process isolation key for the messaging
+    /// distributed-lock resources. The two retry-pickup loops acquire locks named
+    /// <c>messaging.publish-retry-{Version}</c> and <c>messaging.receive-retry-{Version}</c>
+    /// (see <see cref="Headless.Messaging.Internal.MessagingKeys.PublishRetryResource"/> and
+    /// <see cref="Headless.Messaging.Internal.MessagingKeys.ReceiveRetryResource"/>).
+    /// </para>
+    /// <para>
+    /// If two distinct messaging services share a single lock store (for example, two apps pointed
+    /// at the same Redis), they MUST set distinct <see cref="Version"/> values — otherwise their
+    /// retry processors will fight over the same lock resource and starve each other. The default
+    /// <c>"v1"</c> is only safe for a single-service deployment.
+    /// </para>
+    /// <para>
+    /// See also <c>docs/llms/messaging.md</c> for the deployment guidance.
+    /// </para>
+    /// </remarks>
     public string Version { get; set; } = "v1";
 
     /// <summary>

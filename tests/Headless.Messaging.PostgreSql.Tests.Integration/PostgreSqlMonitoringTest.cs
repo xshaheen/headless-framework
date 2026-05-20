@@ -360,36 +360,6 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
         page.TotalItems.Should().Be(0);
     }
 
-    [Fact]
-    public async Task should_renew_lock_and_advance_last_lock_time()
-    {
-        // given
-        var storage = _storage!;
-        const string key = "publish_retry_v1";
-        var instance = Guid.NewGuid().ToString();
-        var ttl = TimeSpan.FromSeconds(30);
-
-        await storage.AcquireLockAsync(key, ttl, instance, AbortToken);
-
-        // read LastLockTime before renewal
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        var before = await connection.QueryFirstAsync<DateTime>(
-            "SELECT \"LastLockTime\" FROM messaging.lock WHERE \"Key\" = @Key",
-            new { Key = key }
-        );
-
-        // when
-        await storage.RenewLockAsync(key, ttl, instance, AbortToken);
-
-        // then — LastLockTime should have advanced
-        var after = await connection.QueryFirstAsync<DateTime>(
-            "SELECT \"LastLockTime\" FROM messaging.lock WHERE \"Key\" = @Key",
-            new { Key = key }
-        );
-        after.Should().BeAfter(before);
-    }
-
     private static long _messageIdCounter = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() << 20;
 
     private static Message _CreateMessage()
