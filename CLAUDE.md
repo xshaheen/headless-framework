@@ -83,6 +83,13 @@ public static class SetupRedisCache
 
 Every `.cs` file starts with: `// Copyright (c) Mahmoud Shaheen. All rights reserved.`
 
+**Problem Details Error Codes:**
+
+- Error codes embedded in `ProblemDetails` responses use the `g:lower_snake_case` shape (the `g:` prefix marks "general" codes intended for the framework's shared descriptor space). Example: `g:tenant_required`, `g:idempotency_key_reused`, `g:concurrency_failure`.
+- Do not use kebab-case (`g:tenant-required`) or other separators — the existing framework codes are all snake_case and clients parsing `errors[].code` should see a single consistent shape.
+- New codes go in the relevant `MessageDescriber` class plus matching `Messages.resx` / `Messages.ar.resx` entries. The resx `<data name="...">` attribute uses the same `g:snake_case` form; the generated C# field (`Messages.g_snake_case`) collapses the `:` to `_`.
+- Expose externally-referenced codes as `public const string` on a `*ErrorCodes` static class (`[PublicAPI]`) so client code has a compile-time link.
+
 **Input Validation Responsibility:**
 
 This framework delegates certain input validation to consuming applications:

@@ -366,7 +366,7 @@ public sealed class PermissionGrantStore(
 
         var permissionGrantRecords = newDenials as PermissionGrantRecord[] ?? newDenials.ToArray();
 
-        if (permissionGrantRecords.Any())
+        if (permissionGrantRecords.Length > 0)
         {
             await repository.InsertManyAsync(permissionGrantRecords, cancellationToken);
         }

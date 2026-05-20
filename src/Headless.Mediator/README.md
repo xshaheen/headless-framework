@@ -88,6 +88,12 @@ builder.Services.AddMediatorValidationRequestBehavior(ServiceLifetime.Transient)
 builder.Services.AddMediatorLoggingBehaviors(ServiceLifetime.Transient);
 ```
 
+## Boundary doctrine
+
+Some cross-cuts look like Mediator behaviors but belong at the HTTP boundary instead. The framework rejects pipeline behaviors for **authentication/authorization**, **tenancy enforcement**, and **idempotency** — see [`docs/llms/mediator.md`](../../docs/llms/mediator.md) for the full reasoning.
+
+What belongs in the Mediator pipeline: FluentValidation pre-processors, request/response logging, slow-request alerts, response-shape transforms — concerns that have no HTTP semantics. What does NOT: anything requiring `HttpContext`, anything that should reject before model binding, anything that needs to cache HTTP status/headers/byte body rather than the typed CQRS response.
+
 ## Tenancy
 
 Tenant enforcement is an HTTP authorization concern in `Headless.Api.Core`. Use `.Authorization(auth => auth.RequireTenant())`, `TenantRequirement`, endpoint-level `[AllowMissingTenant]` / `.AllowMissingTenant()`, and `[RequireTenant]` / `.RequireTenant()` for tenant-aware ASP.NET Core hosts.

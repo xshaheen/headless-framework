@@ -22,20 +22,21 @@ public static class HeadlessProblemDetailsConstants
         public const string TooManyRequests = "https://datatracker.ietf.org/doc/html/rfc6585#section-4";
         public const string RequestTimeout = "https://tools.ietf.org/html/rfc9110#section-15.5.9";
         public const string NotImplemented = "https://tools.ietf.org/html/rfc9110#section-15.6.2";
+        public const string PayloadTooLarge = "https://tools.ietf.org/html/rfc9110#section-15.5.14";
     }
 
     public static class Errors
     {
         public static ErrorDescriptor TenantContextRequired { get; } =
             new(
-                code: "g:tenant-required",
+                code: "g:tenant_required",
                 description: Details.TenantContextRequired,
                 severity: ValidationSeverity.Error
             );
 
         public static ErrorDescriptor CrossTenantWrite { get; } =
             new(
-                code: "g:cross-tenant-write",
+                code: "g:cross_tenant_write",
                 description: Details.CrossTenantWrite,
                 severity: ValidationSeverity.Error
             );
@@ -54,6 +55,7 @@ public static class HeadlessProblemDetailsConstants
         public const string TooManyRequests = "too-many-requests";
         public const string RequestTimeout = "request-timeout";
         public const string NotImplemented = "not-implemented";
+        public const string PayloadTooLarge = "payload-too-large";
     }
 
     public static class Details
@@ -76,6 +78,7 @@ public static class HeadlessProblemDetailsConstants
         public const string TooManyRequests = "Too many requests - please try again later.";
         public const string RequestTimeout = "The request timed out.";
         public const string NotImplemented = "This functionality is not implemented.";
+        public const string PayloadTooLarge = "The request payload is too large to process.";
 
         public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
         public const string CrossTenantWrite = "Tenant-owned write does not match the current tenant context.";
