@@ -407,6 +407,22 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             return Task.FromResult<IDistributedLock?>(trackingLock);
         }
 
+        public Task<IDistributedLock?> TryAcquireAsync(
+            string resource,
+            TimeSpan? timeUntilExpires,
+            TimeSpan? acquireTimeout,
+            CancellationToken cancellationToken
+        )
+        {
+            return TryAcquireAsync(
+                resource,
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose: true,
+                cancellationToken: cancellationToken
+            );
+        }
+
         public Task<bool> RenewAsync(
             string resource,
             string lockId,

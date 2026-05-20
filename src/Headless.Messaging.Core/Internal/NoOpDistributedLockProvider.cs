@@ -16,7 +16,7 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
 
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-    public async Task<IDistributedLock> AcquireAsync(
+    public Task<IDistributedLock> AcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
@@ -24,9 +24,9 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
         CancellationToken cancellationToken = default
     )
     {
-        return await TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, releaseOnDispose, cancellationToken)
-                .ConfigureAwait(false)
-            ?? throw new LockAcquisitionTimeoutException(resource);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult<IDistributedLock>(new NoOpDistributedLock(resource, timeProvider));
     }
 
     public Task<IDistributedLock?> TryAcquireAsync(
@@ -40,6 +40,22 @@ internal sealed class NoOpDistributedLockProvider(TimeProvider timeProvider) : I
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult<IDistributedLock?>(new NoOpDistributedLock(resource, timeProvider));
+    }
+
+    public Task<IDistributedLock?> TryAcquireAsync(
+        string resource,
+        TimeSpan? timeUntilExpires,
+        TimeSpan? acquireTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        return TryAcquireAsync(
+            resource,
+            timeUntilExpires,
+            acquireTimeout,
+            releaseOnDispose: true,
+            cancellationToken: cancellationToken
+        );
     }
 
     public Task<bool> RenewAsync(

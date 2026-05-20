@@ -289,7 +289,7 @@ internal static class IdempotencyTestApp
 
     /// <summary>
     /// In-memory <see cref="IDistributedLockProvider"/> that models lease expiry. Each resource
-    /// tracks an owner lock-id and an absolute expiration timestamp; <see cref="TryAcquireAsync"/>
+    /// tracks an owner lock-id and an absolute expiration timestamp; <c>TryAcquireAsync</c>
     /// considers the slot free either when no owner is set OR when the current owner's lease has
     /// elapsed (lock stealing). Releasing a lock whose lease already expired is a silent no-op so
     /// the original holder cannot disturb a successor.
@@ -422,6 +422,22 @@ internal static class IdempotencyTestApp
                     return null;
                 }
             }
+        }
+
+        public Task<IDistributedLock?> TryAcquireAsync(
+            string resource,
+            TimeSpan? timeUntilExpires,
+            TimeSpan? acquireTimeout,
+            CancellationToken cancellationToken
+        )
+        {
+            return TryAcquireAsync(
+                resource,
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose: true,
+                cancellationToken: cancellationToken
+            );
         }
 
         public Task<bool> RenewAsync(

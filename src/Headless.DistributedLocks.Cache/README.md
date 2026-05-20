@@ -1,16 +1,16 @@
 # Headless.DistributedLocks.Cache
 
-Cache-based resource lock storage using ICache.
+Cache-backed storage for distributed locks.
 
 ## Problem Solved
 
-Provides resource lock storage using the headless's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
+Stores lock records through `ICache` so applications can reuse an existing cache provider.
 
 ## Key Features
 
-- `CacheDistributedLockStorage` - Lock storage via `ICache`
-- `CacheThrottlingDistributedLockStorage` - Throttling lock storage
-- Automatic expiration via cache TTL
+- `CacheDistributedLockStorage` implements `IDistributedLockStorage`.
+- Uses cache TTL for lock expiration.
+- Works with memory, Redis, hybrid, or custom cache providers through `ICache`.
 
 ## Installation
 
@@ -21,26 +21,23 @@ dotnet add package Headless.DistributedLocks.Cache
 ## Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddInMemoryCache();
 
-// Add cache (e.g., Redis cache)
-builder.Services.AddRedisCache(options => { /* ... */ });
-
-// Add resource locks with cache storage
-builder.Services.AddDistributedLock();
-builder.Services.AddSingleton<IDistributedLockStorage, CacheDistributedLockStorage>();
+builder.Services.AddDistributedLock<CacheDistributedLockStorage>(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+});
 ```
 
 ## Configuration
 
-No additional configuration required.
+No storage-specific configuration. Configure the selected `ICache` provider and `DistributedLockOptions`.
 
 ## Dependencies
 
-- `Headless.DistributedLocks.Core`
 - `Headless.Caching.Abstractions`
+- `Headless.DistributedLocks.Core`
 
 ## Side Effects
 
-- Registers `IDistributedLockStorage` as singleton
-- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+None. The package only provides storage; registration is done through `Headless.DistributedLocks.Core`.

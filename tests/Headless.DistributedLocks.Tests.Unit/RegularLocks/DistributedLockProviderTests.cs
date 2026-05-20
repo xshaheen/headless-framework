@@ -101,6 +101,21 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_positional_cancellation_token_argument()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await provider.TryAcquireAsync(resource, null, null, AbortToken);
+
+        // then
+        result.Should().NotBeNull();
+        result!.Resource.Should().Be(resource);
+    }
+
+    [Fact]
     public async Task should_return_null_when_already_locked()
     {
         // given
@@ -130,12 +145,17 @@ public sealed class DistributedLockProviderTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // when
-        await using var result = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        await using (var result = await provider.AcquireAsync(resource, cancellationToken: AbortToken))
+        {
+            // then
+            result.Resource.Should().Be(resource);
+            result.LockId.Should().NotBeNullOrEmpty();
+            result.RenewalCount.Should().Be(0);
+        }
 
-        // then
-        result.Resource.Should().Be(resource);
-        result.LockId.Should().NotBeNullOrEmpty();
-        result.RenewalCount.Should().Be(0);
+        // and default releaseOnDispose releases the resource
+        await using var reacquired = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+        reacquired.Should().NotBeNull();
     }
 
     [Fact]
@@ -168,6 +188,29 @@ public sealed class DistributedLockProviderTests : TestBase
         var act = async () => await provider.AcquireAsync(resource, cancellationToken: cts.Token);
 
         // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_throw_operation_canceled_when_acquire_async_wait_is_cancelled()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var acquireTask = provider.AcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.FromSeconds(30),
+            cancellationToken: cts.Token
+        );
+        await Task.Delay(50, AbortToken);
+        await cts.CancelAsync();
+
+        // then
+        var act = async () => await acquireTask;
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
@@ -561,7 +604,7 @@ public sealed class DistributedLockProviderTests : TestBase
 
         var provider = _CreateProvider(storage: storage);
         var resource = Faker.Random.AlphaNumeric(10);
-        using var callerCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        using var callerCts = new CancellationTokenSource();
 
         // when
         var acquireTask = provider.TryAcquireAsync(
@@ -714,7 +757,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        using var callerCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        using var callerCts = new CancellationTokenSource();
 
         // when
         var result = await provider.TryAcquireAsync(
@@ -860,6 +903,36 @@ public sealed class DistributedLockProviderTests : TestBase
         (await provider.IsLockedAsync(resource, AbortToken))
             .Should()
             .BeFalse();
+    }
+
+    [Fact]
+    public async Task should_acquire_waiting_lock_with_polling_when_outbox_publisher_is_absent()
+    {
+        // given
+        var provider = _CreateProvider(useNullOutboxPublisher: true);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when
+        var acquireTask = provider.TryAcquireAsync(
+            resource,
+            acquireTimeout: TimeSpan.FromSeconds(30),
+            cancellationToken: AbortToken
+        );
+        await Task.Delay(50, AbortToken);
+        await existing.ReleaseAsync();
+
+        for (var i = 0; i < 20 && !acquireTask.IsCompleted; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromMilliseconds(500));
+            await Task.Yield();
+        }
+
+        var acquiredLock = await acquireTask.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        acquiredLock.Should().NotBeNull();
+        acquiredLock!.Resource.Should().Be(resource);
     }
 
     [Fact]

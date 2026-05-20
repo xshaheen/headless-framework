@@ -268,6 +268,16 @@
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
     </Folder>
+    <Folder Name="/RateLimiting/">
+        <Project Path="src\Headless.RateLimiting.Abstractions\Headless.RateLimiting.Abstractions.csproj" />
+        <Project Path="src\Headless.RateLimiting.Cache\Headless.RateLimiting.Cache.csproj" />
+        <Project Path="src\Headless.RateLimiting.Core\Headless.RateLimiting.Core.csproj" />
+        <Project Path="src\Headless.RateLimiting.Redis\Headless.RateLimiting.Redis.csproj" />
+        <Project Path="tests\Headless.RateLimiting.Cache.Tests.Integration\Headless.RateLimiting.Cache.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.RateLimiting.Redis.Tests.Integration\Headless.RateLimiting.Redis.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.RateLimiting.Tests.Harness\Headless.RateLimiting.Tests.Harness.csproj" />
+        <Project Path="tests\Headless.RateLimiting.Tests.Unit\Headless.RateLimiting.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />
         <Project Path="src\Headless.Slugs\Headless.Slugs.csproj" />

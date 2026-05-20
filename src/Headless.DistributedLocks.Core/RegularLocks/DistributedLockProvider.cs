@@ -222,6 +222,8 @@ public sealed class DistributedLockProvider(
             if (cts.IsCancellationRequested)
             {
                 logger.LogCancellationRequestedAfter(resource, lockId, timeWaitedForLock);
+
+                cancellationToken.ThrowIfCancellationRequested();
             }
             else
             {
@@ -248,6 +250,22 @@ public sealed class DistributedLockProvider(
             releaseOnDispose,
             timeProvider,
             logger
+        );
+    }
+
+    public Task<IDistributedLock?> TryAcquireAsync(
+        string resource,
+        TimeSpan? timeUntilExpires,
+        TimeSpan? acquireTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        return TryAcquireAsync(
+            resource,
+            timeUntilExpires,
+            acquireTimeout,
+            releaseOnDispose: true,
+            cancellationToken: cancellationToken
         );
     }
 
@@ -407,7 +425,7 @@ public sealed class DistributedLockProvider(
     private static TimeSpan _GetBackoffDelay(int attempt)
     {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
-        var delayMs = _MinRetryDelay.TotalMilliseconds * Math.Pow(2, attempt);
+        var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));
         var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
 
         // Add jitter (±25%) to prevent thundering herd

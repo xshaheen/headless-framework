@@ -24,8 +24,8 @@ public sealed class SetupTests : TestBase
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
         provider.GetService<IOutboxPublisher>().Should().BeNull();
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
-        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(ConsumerMetadata));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ConsumerMetadata));
     }
 
     [Fact]

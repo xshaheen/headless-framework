@@ -1,0 +1,9 @@
+﻿<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.RateLimiting.Abstractions\Headless.RateLimiting.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

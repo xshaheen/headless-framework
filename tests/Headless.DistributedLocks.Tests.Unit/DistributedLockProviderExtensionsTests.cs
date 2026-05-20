@@ -109,6 +109,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         // then
         await provider
             .Received(1)
-            .TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken: cancellationToken);
+            .TryAcquireAsync(
+                resource,
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose: true,
+                cancellationToken: cancellationToken
+            );
     }
 }

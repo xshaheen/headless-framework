@@ -292,7 +292,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Published, context).ConfigureAwait(false);
+        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Published, context)
+            .ConfigureAwait(false);
         if (acquiredHandle is null)
         {
             return;
@@ -311,7 +312,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
-        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Received, context).ConfigureAwait(false);
+        await using var acquiredHandle = await _TryAcquireLockAsync(StoragePickupKind.Received, context)
+            .ConfigureAwait(false);
         if (acquiredHandle is null)
         {
             return;
@@ -330,7 +332,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     /// <summary>
     /// Attempts to acquire the published-retry or received-retry distributed lock, wrapping
-    /// <see cref="IDistributedLockProvider.TryAcquireAsync"/> in the per-kind escalation-counter pattern shared with
+    /// <c>IDistributedLockProvider.TryAcquireAsync</c> in the per-kind escalation-counter pattern shared with
     /// storage-pickup failures so adaptive polling backs off on lock-store outages rather than tight-looping.
     /// </summary>
     private async Task<IDistributedLock?> _TryAcquireLockAsync(StoragePickupKind kind, ProcessingContext context)

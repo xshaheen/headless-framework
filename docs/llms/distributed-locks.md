@@ -9,34 +9,35 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
-- [Safety Categories and Fencing Tokens](#safety-categories-and-fencing-tokens)
-    - [Efficiency locks](#efficiency-locks)
-    - [Correctness locks](#correctness-locks)
-    - [Why Redis-backed locks do not meet the correctness bar](#why-redis-backed-locks-do-not-meet-the-correctness-bar)
-    - [Using LockId as a weak fencing token](#using-lockid-as-a-weak-fencing-token)
-    - [Caveats](#caveats)
+- [Core Concepts](#core-concepts)
+    - [Efficiency Locks](#efficiency-locks)
+    - [Correctness Locks](#correctness-locks)
+    - [Weak Fencing With LockId](#weak-fencing-with-lockid)
+    - [Messaging Wake-ups](#messaging-wake-ups)
+- [Choosing a Provider](#choosing-a-provider)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
     - [Installation](#installation)
-    - [Usage](#usage)
+    - [Quick Start](#quick-start)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
 - [Headless.DistributedLocks.Core](#headlessdistributedlockscore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-1)
-    - [Quick Start](#quick-start)
+    - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
-        - [Options](#options)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
 - [Headless.DistributedLocks.Cache](#headlessdistributedlockscache)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Installation](#installation-2)
-    - [Quick Start](#quick-start-1)
+    - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
@@ -44,336 +45,285 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Problem Solved](#problem-solved-3)
     - [Key Features](#key-features-3)
     - [Installation](#installation-3)
-    - [Quick Start](#quick-start-2)
+    - [Quick Start](#quick-start-3)
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
 
-> Provider-agnostic distributed locking with automatic renewal, expiration, throttling, and pluggable storage backends (Redis, Cache).
+> Provider-agnostic distributed locking with automatic renewal, expiration, explicit release, and pluggable storage backends.
 
 ## Quick Orientation
 
-- Install `Headless.DistributedLocks.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
-- Install `Headless.DistributedLocks.Core` for the lock provider implementation. Register with `AddDistributedLock(options => ...)`.
-- Choose one storage backend:
-    - `Headless.DistributedLocks.Redis` — production multi-instance deployments (atomic Lua scripts, high performance).
-    - `Headless.DistributedLocks.Cache` — uses `ICache` abstraction; works if your cache is already distributed (e.g., Redis cache).
-- Use `IDistributedLockProvider.TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, ct)` to acquire locks. Returns `null` if acquisition fails.
-- For rate-limited locking, use `IThrottlingDistributedLockProvider` (requires throttling storage from the chosen backend).
+Use `IDistributedLockProvider` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is no longer part of this domain; use [rate-limiting.md](rate-limiting.md) and `Headless.RateLimiting.*` for sliding-window rate limits.
 
 ## Agent Instructions
 
-- Always code against `IDistributedLockProvider` from Abstractions. Never reference storage-specific types in application code.
-- Before choosing a backend, classify the use case as **efficiency** or **correctness** — see [Safety Categories and Fencing Tokens](#safety-categories-and-fencing-tokens). Picking the wrong backend silently corrupts data in the correctness case.
-- Use `DistributedLocks.Redis` for production multi-instance deployments of **efficiency** locks. It uses atomic Lua scripts for acquire/release. For correctness locks, use a transaction-coupled backend instead.
-- Use `DistributedLocks.Cache` when you already have a distributed `ICache` (e.g., Redis cache) and don't want a separate Redis connection for locks. Same safety category as `DistributedLocks.Redis` (efficiency-only).
-- Always check for `null` after `TryAcquireAsync` — a null return means the lock could not be acquired within the timeout.
-- Always `await using` the returned `IDistributedLock` to ensure proper release. Do not manually dispose without `await`.
-- Default timeouts: `DefaultTimeUntilExpires = 20 min`, `DefaultAcquireTimeout = 30s`. Override per-call or globally via options.
-- Lock resources are string keys (e.g., `"order:{orderId}"`). Use consistent naming conventions across your codebase.
-- Both `IDistributedLockProvider` and `IThrottlingDistributedLockProvider` are registered as **singletons**.
+- Code against `IDistributedLockProvider` from `Headless.DistributedLocks.Abstractions`; do not inject Redis or cache storage types into application services.
+- Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
+- Always `await using` the returned lock when `releaseOnDispose` is `true`; use `releaseOnDispose: false` only when ownership is deliberately transferred and the caller will release explicitly.
+- Do not use distributed locks as rate limiters. Use `IDistributedRateLimiter` from `Headless.RateLimiting.Abstractions`.
+- Before choosing a backend, classify the use case as efficiency or correctness. Redis and cache locks are efficiency locks, not transaction-coupled correctness locks.
+- Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per `AcquireAsync(...)` or `TryAcquireAsync(...)` call; `DistributedLockOptions` configures key prefix and waiter/resource limits.
+- If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxPublisher` is registered, the provider still works and falls back to polling backoff with a one-time warning.
+- `Headless.Messaging.Core` uses a keyed `IDistributedLockProvider` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
 
-## Safety Categories and Fencing Tokens
+## Core Concepts
 
-Distributed locks split into two safety categories per Martin Kleppmann's article ["How to do distributed locking"](https://martin.kleppmann.com/2016/02/08/how-to-do-distributed-locking.html). The category determines which backend is appropriate. Picking the wrong category corrupts data silently.
+Distributed locks coordinate ownership of a string resource such as `order:123`. The lock store owns acquisition and release; the protected resource still owns data integrity. Treat lock handles as leases that can expire.
 
-### Efficiency locks
+### Efficiency Locks
 
-- **Purpose:** avoid duplicate work — one node generates the daily report instead of three; one worker processes a queue item instead of two.
-- **Cost of violation:** wasted CPU, redundant HTTP calls, duplicate side effects. No data corruption.
-- **Required guarantee:** best-effort serialization. Occasional violations are tolerable.
-- **Appropriate backends:** any. `Headless.DistributedLocks.Redis`, `Headless.DistributedLocks.Cache`, and (when shipped) `Headless.DistributedLocks.Postgres` / `.SqlServer` / `.AzureBlob` all meet the bar.
+Efficiency locks avoid duplicate work, such as two nodes generating the same report. Occasional violations cost compute or duplicate side effects, not corrupted state. Redis and cache-backed locks fit this category.
 
-### Correctness locks
+### Correctness Locks
 
-- **Purpose:** preserve invariants on shared state — no two writers may modify the same row simultaneously; no two leaders may issue conflicting decisions.
-- **Cost of violation:** broken invariants, lost writes, corrupted state. Often irreversible.
-- **Required guarantee:** serialization that survives GC pauses, process suspensions, network partitions, and clock skew during failover. Standard TTL-based locks cannot give this without help from the protected resource.
-- **Appropriate backends:** only transaction-coupled locks, where the lock and the protected mutation succeed or fail atomically as one database operation. `PostgresDistributedLock.AcquireWithTransactionAsync` (planned, see GitHub issue #293) and the equivalent SQL Server static API (#294) provide this. Redis-backed locks DO NOT — see the next subsection.
+Correctness locks protect invariants where a stale owner could corrupt data. TTL-based Redis or cache locks cannot prove correctness through process pauses, partitions, or clock skew. For correctness, use a transaction-coupled backend when one exists, or make the protected resource reject stale writes.
 
-### Why Redis-backed locks do not meet the correctness bar
+### Weak Fencing With LockId
 
-The canonical failure mode (single-Redis, RedLock multi-instance, or any TTL-based scheme):
+`IDistributedLock.LockId` is a Snowflake-style `long` and can be passed to a protected write path as a weak fencing token. The target resource must store the last accepted fence and reject older values. This is consumer-enforced and does not turn Redis locks into transaction-coupled locks.
 
-1. Client A acquires the lock with TTL = 30s.
-2. Client A's process pauses — GC, kernel preemption, VM live-migration, or a network partition that keeps A's writes from reaching Redis.
-3. The 30s TTL expires. Redis releases the lock.
-4. Client B acquires the lock. B writes to the protected resource.
-5. Client A's pause ends. A still believes it holds the lock. A writes to the protected resource.
+### Messaging Wake-ups
 
-**Two writers, one resource, no detection.** No amount of lock-side cleverness fixes this — by the time A's write reaches the resource, the lock service no longer matters. The only fix is the protected resource itself rejecting A's write because it carries a stale fencing token.
+`DistributedLockProvider` can publish `DistributedLockReleased` through `IOutboxPublisher` so waiters wake quickly. Messaging is optional: when no publisher is registered, lock acquisition retries through polling backoff. This keeps distributed locks usable without forcing `Headless.Messaging`.
 
-This is why `Headless.DistributedLocks.Redis` is correct for efficiency use cases but unsafe for correctness use cases. The RedLock multi-instance algorithm does not help — see [docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md](../solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md) for the full rationale.
+## Choosing a Provider
 
-### Using LockId as a weak fencing token
+Choose based on the storage you already operate and the safety category.
 
-`IDistributedLock.LockId` is a Snowflake-style `long` from `ILongIdGenerator`. It is monotonic per generator instance and *approximately* monotonic across instances (bounded by NTP clock skew). Consumers willing to plumb a fence parameter through their write path can use `LockId` today as a clock-skew-bounded fencing token:
-
-```csharp
-// Caller — protect a SQL row mutation with a fence.
-await using var lockHandle = await _lockProvider.AcquireAsync("inventory:sku-123", ct)
-    ?? throw new ConcurrencyException("Could not acquire lock");
-
-var fence = lockHandle.LockId;
-
-var affected = await _db.ExecuteAsync(
-    """
-    UPDATE inventory_state
-    SET    quantity   = @quantity,
-           last_fence = @fence
-    WHERE  sku        = @sku
-      AND  (last_fence IS NULL OR last_fence < @fence)
-    """,
-    new { sku = "sku-123", quantity = 42, fence });
-
-if (affected == 0)
-{
-    // Either our fence is stale (we lost the lock during a pause) or someone
-    // else already wrote with a newer fence. Abort — do not retry blindly.
-    throw new StaleFenceException("Lock was likely lost during the operation");
-}
-```
-
-The pattern depends on three consumer-side disciplines:
-
-1. **Plumbing.** The fence parameter must reach the protected resource on every write. Forget it once, and that write is unfenced.
-2. **Storing the last accepted fence.** The protected resource (database row, file metadata, etc.) must track the last accepted fence value.
-3. **Rejecting stale fences.** Writes carrying a fence lower than the last accepted value must be rejected and the caller notified.
-
-The framework cannot enforce any of these — that is what makes this a "weak" fencing pattern rather than a first-class API.
-
-### Caveats
-
-- **NTP-bounded monotonicity.** `LockId` ordering across machines depends on clock-skew bounds. Two acquires within ~clock-skew-bound milliseconds can produce out-of-order tokens. Tighter clock sync (PTP, dedicated NTP servers) tightens this bound; commodity NTP gives roughly tens of milliseconds.
-- **No protection for external side effects.** Fencing protects state mutations on systems where you control the write path. For external side effects — sending an email, calling a payment API, kicking off a webhook — there is no resource to validate the fence against. Use idempotency keys instead.
-- **Validation is the consumer's responsibility.** A fence handed to a write path that doesn't validate it is dead weight; worse, it can create false confidence. Audit the write path before relying on the pattern.
-- **For unconditional correctness, use a transaction-coupled backend.** When the planned `PostgresDistributedLock.AcquireWithTransactionAsync` (issue #293) ships, prefer it over `LockId`-as-fence for correctness use cases. Atomicity by construction has no caveats.
-- **No first-class `FenceToken` API yet.** A strictly monotonic per-resource fence counter (Redisson-style `INCR`-based) is tracked in issue #287 but explicitly deferred until a consumer surfaces a use case fencing actually fits. The framework's current position: most use cases are efficiency, and the few real correctness consumers should reach for Postgres transactional locks rather than Redis-with-fencing.
+| Provider | Use when | Avoid when | Trade-off |
+| --- | --- | --- | --- |
+| `Headless.DistributedLocks.Cache` | You already use `ICache` and the cache is distributed for multi-instance apps. | The app cache is in-memory and you need cross-instance coordination. | Reuses cache infrastructure but inherits that cache provider's consistency and availability behavior. |
+| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks with atomic acquire/release scripts. | You need correctness locks for protected state mutations. | Requires `IConnectionMultiplexer` and Redis script loading, but avoids routing lock operations through a generic cache abstraction. |
 
 ---
 
-# Headless.DistributedLocks.Abstractions
+## Headless.DistributedLocks.Abstractions
 
-Defines the unified interface for distributed resource locking.
+Defines public distributed-lock contracts.
 
-## Problem Solved
+### Problem Solved
 
-Provides a provider-agnostic distributed locking API, enabling coordination across multiple instances with features like lock expiration, renewal, and throttling without changing application code.
+Lets application and domain code depend on lock interfaces without referencing a concrete storage backend.
 
-## Key Features
+### Key Features
 
-- `IDistributedLockProvider` - Regular locking with expiration
-- `IDistributedLock` - Acquired lock handle with release
-- `IThrottlingDistributedLockProvider` - Rate-limited locking
-- `IDistributedThrottlingLock` - Throttling lock handle
-- Configurable timeouts and expiration
+- `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
+- `IDistributedLock` handle with `LockId`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `LockAcquisitionTimeoutException` and `DistributedLockException` for lock-specific failures.
+- Lock inspection methods for expiration, active count, active list, and lock info.
 
-## Installation
+### Design Notes
+
+- `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
+- `releaseOnDispose: false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
+
+### Installation
 
 ```bash
 dotnet add package Headless.DistributedLocks.Abstractions
 ```
 
-## Usage
+### Quick Start
 
 ```csharp
-public sealed class OrderService(IDistributedLockProvider lockProvider)
+public sealed class OrderWorker(IDistributedLockProvider lockProvider)
 {
-    public async Task ProcessOrderAsync(Guid orderId, CancellationToken ct)
+    public async Task ProcessAsync(Guid orderId, CancellationToken ct)
     {
-        var lockResource = $"order:{orderId}";
-
-        await using var @lock = await lockProvider.TryAcquireAsync(
-            lockResource,
+        await using var lease = await lockProvider.AcquireAsync(
+            $"order:{orderId}",
             timeUntilExpires: TimeSpan.FromMinutes(5),
-            acquireTimeout: TimeSpan.FromSeconds(30),
-            ct
+            acquireTimeout: TimeSpan.FromSeconds(10),
+            cancellationToken: ct
         );
 
-        if (@lock is null)
-            throw new ConcurrencyException("Could not acquire lock");
-
-        // Process order safely...
+        // process the order while the lease is held
     }
 }
 ```
 
-## Configuration
-
-No configuration required. This is an abstractions-only package.
-
-## Dependencies
+### Configuration
 
 None.
 
-## Side Effects
+### Dependencies
 
-## None.
+- `Headless.Checks`
+- `Headless.Extensions`
 
-# Headless.DistributedLocks.Core
+### Side Effects
 
-Core implementation of distributed resource locking with storage abstraction.
+None.
 
-## Problem Solved
+---
 
-Provides the lock provider implementation with automatic renewal, expiration handling, and support for pluggable storage backends (cache, Redis).
+## Headless.DistributedLocks.Core
 
-## Key Features
+Provides the `DistributedLockProvider` implementation and setup extensions.
 
-- `DistributedLockProvider` - Full implementation of `IDistributedLockProvider`
-- `ThrottlingDistributedLockProvider` - Rate-limited lock provider
-- `DisposableDistributedLock` - Auto-releasing lock handle
-- Storage interfaces: `IDistributedLockStorage`, `IThrottlingDistributedLockStorage`
-- Configurable options for timeouts and expiration
+### Problem Solved
 
-## Installation
+Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over an `IDistributedLockStorage`.
+
+### Key Features
+
+- `DistributedLockProvider` implements `IDistributedLockProvider`.
+- `DisposableDistributedLock` releases on dispose by default.
+- `DistributedLockOptions` configures default expiration, acquire timeout, renewal interval, resource name length, and retry behavior.
+- `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
+
+### Design Notes
+
+- `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
+
+### Installation
 
 ```bash
 dotnet add package Headless.DistributedLocks.Core
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddDistributedLock(options =>
-{
-    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
-    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
-});
-
-// Add storage (cache or Redis)
-builder.Services.AddDistributedLockCacheStorage();
-// or
-builder.Services.AddDistributedLockRedisStorage();
+builder.Services.AddDistributedLock(
+    sp => sp.GetRequiredService<IDistributedLockStorage>(),
+    options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+        options.MaxResourceNameLength = 512;
+    }
+);
 ```
 
-## Configuration
-
-### Options
+### Configuration
 
 ```csharp
-services.AddDistributedLock(options =>
-{
-    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
-    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
-});
+options.KeyPrefix = "distributed-lock:";
+options.MaxResourceNameLength = 512;
+options.MaxConcurrentWaitingResources = 10_000;
+options.MaxWaitersPerResource = 1_000;
 ```
 
-## Dependencies
+Use method arguments to override per-call expiration and acquire timeout:
+
+```csharp
+await lockProvider.AcquireAsync(
+    "orders:123",
+    timeUntilExpires: TimeSpan.FromMinutes(5),
+    acquireTimeout: TimeSpan.FromSeconds(10),
+    cancellationToken: ct
+);
+```
+
+### Dependencies
 
 - `Headless.DistributedLocks.Abstractions`
+- `Headless.Core`
+- `Headless.Hosting`
+- `Headless.Messaging.Abstractions`
+- `Headless.Messaging.Core`
 
-## Side Effects
+### Side Effects
 
-- Registers `IDistributedLockProvider` as singleton
-- Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)
+- Registers `IDistributedLockProvider` as singleton.
+- Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
+- Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
 
 ---
 
-# Headless.DistributedLocks.Cache
+## Headless.DistributedLocks.Cache
 
-Cache-based resource lock storage using ICache.
+Cache-backed storage for distributed locks.
 
-## Problem Solved
+### Problem Solved
 
-Provides resource lock storage using the headless's `ICache` abstraction, suitable for single-instance deployments or when using a distributed cache like Redis.
+Stores lock records through `ICache` so applications can reuse an existing cache provider.
 
-## Key Features
+### Key Features
 
-- `CacheDistributedLockStorage` - Lock storage via `ICache`
-- `CacheThrottlingDistributedLockStorage` - Throttling lock storage
-- Automatic expiration via cache TTL
+- `CacheDistributedLockStorage` implements `IDistributedLockStorage`.
+- Uses cache TTL for lock expiration.
+- Works with memory, Redis, hybrid, or custom cache providers through `ICache`.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.DistributedLocks.Cache
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddInMemoryCache();
 
-// Add cache (e.g., Redis cache)
-builder.Services.AddRedisCache(options => { /* ... */ });
-
-// Add resource locks with cache storage
-builder.Services.AddDistributedLock();
-builder.Services.AddSingleton<IDistributedLockStorage, CacheDistributedLockStorage>();
+builder.Services.AddDistributedLock<CacheDistributedLockStorage>(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+});
 ```
 
-## Configuration
+### Configuration
 
-No additional configuration required.
+No storage-specific configuration. Configure the selected `ICache` provider and `DistributedLockOptions`.
 
-## Dependencies
+### Dependencies
 
-- `Headless.DistributedLocks.Core`
 - `Headless.Caching.Abstractions`
+- `Headless.DistributedLocks.Core`
 
-## Side Effects
+### Side Effects
 
-- Registers `IDistributedLockStorage` as singleton
-- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+None. The package only provides storage; registration is done through `Headless.DistributedLocks.Core`.
 
 ---
 
-# Headless.DistributedLocks.Redis
+## Headless.DistributedLocks.Redis
 
-Redis-based resource lock storage using StackExchange.Redis.
+Redis-backed storage and setup helpers for distributed locks.
 
-## Problem Solved
+### Problem Solved
 
-Provides high-performance distributed locking using Redis with atomic Lua scripts for lock acquisition and release, suitable for multi-instance production deployments.
+Stores lock records directly in Redis with atomic acquire, replace, and release operations.
 
-## Key Features
+### Key Features
 
-- `RedisDistributedLockStorage` - Atomic lock operations via Redis
-- `RedisThrottlingDistributedLockStorage` - Rate-limited locking
-- Lua scripts for atomic acquire/release
-- High performance and reliability
+- `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
+- `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
+- Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
-## Installation
+### Installation
 
 ```bash
 dotnet add package Headless.DistributedLocks.Redis
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    _ => ConnectionMultiplexer.Connect("localhost:6379")
+);
 
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
-builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
-
-// Add resource locks with Redis storage
-builder.Services.AddDistributedLock();
-builder.Services.AddSingleton<IDistributedLockStorage, RedisDistributedLockStorage>();
+builder.Services.AddRedisDistributedLock(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+    options.MaxResourceNameLength = 512;
+});
 ```
 
-## Configuration
+### Configuration
 
-No additional configuration beyond Redis connection.
+No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`.
 
-## Dependencies
+### Dependencies
 
 - `Headless.DistributedLocks.Core`
 - `Headless.Redis`
 - `StackExchange.Redis`
 
-## Side Effects
+### Side Effects
 
-- Registers `IDistributedLockStorage` as singleton
-- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
-
----
-
-# Messaging Integration
-
-`Headless.Messaging.Core` isolates its `IDistributedLockProvider` under the **keyed-DI key `"headless.messaging"`** — a plain un-keyed `IDistributedLockProvider` registration is NOT picked up by the retry processor. Wire the provider through `MessagingBuilder.UseDistributedLock(provider)` or the factory overload `UseDistributedLock(sp => ...)`. The bootstrapper logs Warning EventId 77 when `UseStorageLock = true` but only `NoOpDistributedLockProvider` is found under the messaging key, and Warning EventId 78 when a real provider is registered un-keyed but never flowed through `UseDistributedLock(...)`.
-
-For when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock), see [Distributed Lock Integration in messaging.md](messaging.md#distributed-lock-integration).
+- Registers `HeadlessRedisScriptsLoader`.
+- Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.
