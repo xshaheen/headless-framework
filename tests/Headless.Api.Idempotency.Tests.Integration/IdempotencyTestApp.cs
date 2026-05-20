@@ -295,9 +295,9 @@ internal static class IdempotencyTestApp
     /// Implements only TryAcquireAsync + IDistributedLock.DisposeAsync — the surface the
     /// idempotency middleware actually uses. Other interface methods throw NotSupportedException.
     /// </summary>
-    internal sealed class InMemoryDistributedLockProvider : IDistributedLockProvider
+    internal sealed class InMemoryDistributedLockProvider(TimeProvider timeProvider) : IDistributedLockProvider
     {
-        internal sealed class LockSlot
+        internal sealed class LockSlot(TimeProvider timeProvider)
         {
             private readonly Lock _sync = new();
             private string _ownerLockId = string.Empty;
@@ -307,7 +307,7 @@ internal static class IdempotencyTestApp
             {
                 lock (_sync)
                 {
-                    var now = DateTimeOffset.UtcNow;
+                    var now = timeProvider.GetUtcNow();
                     if (_ownerLockId.Length != 0 && now < _expiresAt)
                     {
                         return null;
@@ -362,8 +362,8 @@ internal static class IdempotencyTestApp
 
             var lease = timeUntilExpires ?? DefaultTimeUntilExpires;
             var acquireTimeoutEffective = acquireTimeout ?? DefaultAcquireTimeout;
-            var slot = _slots.GetOrAdd(resource, static _ => new LockSlot());
-            var deadline = DateTimeOffset.UtcNow + acquireTimeoutEffective;
+            var slot = _slots.GetOrAdd(resource, _ => new LockSlot(timeProvider));
+            var deadline = timeProvider.GetUtcNow() + acquireTimeoutEffective;
 
             while (true)
             {
@@ -375,17 +375,17 @@ internal static class IdempotencyTestApp
                 var acquiredLockId = slot.TryAcquireOrSteal(lease);
                 if (acquiredLockId is not null)
                 {
-                    return new InMemoryDistributedLock(resource, acquiredLockId, slot);
+                    return new InMemoryDistributedLock(resource, acquiredLockId, slot, timeProvider);
                 }
 
-                if (DateTimeOffset.UtcNow >= deadline)
+                if (timeProvider.GetUtcNow() >= deadline)
                 {
                     return null;
                 }
 
                 try
                 {
-                    await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+                    await timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
@@ -477,7 +477,8 @@ internal static class IdempotencyTestApp
     internal sealed class InMemoryDistributedLock(
         string resource,
         string lockId,
-        InMemoryDistributedLockProvider.LockSlot slot
+        InMemoryDistributedLockProvider.LockSlot slot,
+        TimeProvider timeProvider
     ) : IDistributedLock
     {
         private int _released;
@@ -488,7 +489,7 @@ internal static class IdempotencyTestApp
 
         public int RenewalCount => 0;
 
-        public DateTimeOffset DateAcquired { get; } = DateTimeOffset.UtcNow;
+        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 

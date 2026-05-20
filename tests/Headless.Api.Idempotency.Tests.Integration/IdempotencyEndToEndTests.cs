@@ -356,7 +356,7 @@ public sealed class IdempotencyEndToEndTests
         var firstZeroFired = 0;
         ICache? cacheRef = null;
 
-        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider(TimeProvider.System)
         {
             BeforeAcquireAsync = async (resource, _, acquireTimeout, ct) =>
             {
@@ -618,7 +618,7 @@ public sealed class IdempotencyEndToEndTests
         var configuredLease = TimeSpan.FromMinutes(10);
         var configuredAcquireTimeout = TimeSpan.FromSeconds(1);
 
-        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider(TimeProvider.System)
         {
             BeforeAcquireAsync = (_, timeUntilExpires, acquireTimeout, _) =>
             {
@@ -657,7 +657,7 @@ public sealed class IdempotencyEndToEndTests
         // Winner-path TryAcquireAsync throws. Because the fix acquires the lock BEFORE inserting
         // the sentinel marker, no orphan record is left behind — FailOpen just bypasses
         // idempotency for this request.
-        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider(TimeProvider.System)
         {
             BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
             {
@@ -686,7 +686,7 @@ public sealed class IdempotencyEndToEndTests
         // Loser-path TryAcquireAsync throws. We cannot wait for the winner and cannot call
         // next() (would re-invoke the handler). Return a recoverable 409 so the client retries.
         var gate = new IdempotencyTestApp.TestHandlerGate();
-        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider
+        var lockProvider = new IdempotencyTestApp.InMemoryDistributedLockProvider(TimeProvider.System)
         {
             BeforeAcquireAsync = (_, _, acquireTimeout, _) =>
             {
