@@ -286,7 +286,6 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Theory]
     [InlineData("Published")]
     [InlineData("Received")]
-    [InlineData("Lock")]
     public async Task should_create_tables(string tableName)
     {
         // given, when

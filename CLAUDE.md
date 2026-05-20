@@ -32,9 +32,22 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 ## Build & Test
 
-- Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format). Passes directly to `dotnet`; older tooling may need `.sln`.
+- Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format).
 - Local CLI tools pinned in [dotnet-tools.json](dotnet-tools.json) — `dotnet tool restore`, then `dotnet <tool>`.
 - Headless SDKs treat warnings as errors in CI.
+
+**Makefile (preferred entry point):**
+
+Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — they pin configuration, results directories, and parallelism consistently. `make help` lists everything; `make` alone prints it.
+
+- **Setup**: `make bootstrap` (restores tools + packages). `make tools`, `make restore` individually.
+- **Build**: `make build` (incremental, errors-only), `make rebuild` (no incremental), `make build-project PROJECT=src/.../X.csproj`.
+- **Format**: `make format` (CSharpier write), `make format-check` (verify only).
+- **Test**: `make test` (build + run all). `make test-fast` / `make test-project-fast` skip restore/build when outputs exist. Scope with `make test-project TEST_PROJECT=…`, `test-class CLASS='*ClockTests'`, `test-method METHOD=…`, `test-namespace`, `test-trait`, `test-query`. Group runs: `test-unit`, `test-integration` (needs Docker).
+- **Coverage**: `make coverage` (Cobertura), `coverage-html`, `coverage-json` (Summary.json), `coverage-open`.
+- **Package/release**: `make pack`, `pack-sbom`, `outdated`, `version`.
+- **Discovery**: `make list-projects`, `list-tests`, `clean`.
+- **Overrides**: pass vars on the command line, e.g. `make test CONFIGURATION=Debug`, `make test TEST_FILTER='--filter-class X'`, `make coverage TEST_MAX_PARALLEL=2`.
 
 ## Conventions
 
