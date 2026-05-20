@@ -10,6 +10,7 @@ ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 TEST_RESULTS_DIR ?= $(ARTIFACTS_DIR)/test-results
 COVERAGE_DIR ?= $(ARTIFACTS_DIR)/coverage
+COVERAGE_RUNSETTINGS ?= coverage.runsettings
 PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
@@ -83,12 +84,17 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)/integration" $(TEST_FILTER); \
 	done
 
+# coverage.runsettings duplicates Headless.NET.Sdk's default.runsettings excludes. It is a stopgap:
+# the SDK is meant to auto-wire `--coverage --coverage-settings <its runsettings>` via
+# EnableCodeCoverage, but that wiring is broken in the consumed SDK version. Once the SDK fix ships
+# and this repo upgrades, drop COVERAGE_RUNSETTINGS / coverage.runsettings and set
+# `-p:EnableCodeCoverage=true` here so the SDK supplies the (single-source) settings.
 .PHONY: coverage
 coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverage extension. TEST_MAX_PARALLEL caps concurrent modules (default 3).
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
 		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
-		--coverage --coverage-output-format cobertura
+		--coverage --coverage-output-format cobertura --coverage-settings "$(COVERAGE_RUNSETTINGS)"
 
 .PHONY: coverage-html
 coverage-html: coverage ## Generate an HTML coverage report.
