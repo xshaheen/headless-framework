@@ -37,6 +37,14 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
+
+    // Bounds the best-effort orphan-lock cleanup that runs when an acquire is cancelled
+    // after the storage may have accepted the write. Worst-case interaction with the
+    // Zero-path safety deadline below: if `_NonBlockingAcquireDeadline` fires AND cleanup
+    // also stalls, the caller waits at most `_NonBlockingAcquireDeadline + _OrphanLockCleanupTimeout`
+    // (currently 10s + 5s = 15s) before TryAcquireAsync returns. Kept smaller than the
+    // acquire deadline because cleanup runs against a known-orphan record and should
+    // succeed faster than a contended acquire.
     private static readonly TimeSpan _OrphanLockCleanupTimeout = TimeSpan.FromSeconds(5);
 
     // Ceiling on a single storage round-trip when `acquireTimeout: TimeSpan.Zero` is

@@ -276,6 +276,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
     {
+        // Asymmetry note: unlike _ProcessReceivedAsync, the published path does NOT stash the
+        // acquired handle into a cross-tick field. The published pickup is expected to complete
+        // within a single polling tick under normal load — the in-progress guard in ProcessAsync
+        // skips spawning a new task while the previous one is still running, but no cross-tick
+        // renewal is needed because the lock's TTL already covers the worst-case batch duration.
+        // Received pickup is different: its consume task can span polling ticks, which is why
+        // _receivedRetryHandle exists and ProcessAsync renews it. Both manual-renewal paths are
+        // replaced by LeaseMonitor in #296.
         context.ThrowIfStopping();
 
         if (!_options.Value.UseStorageLock)
