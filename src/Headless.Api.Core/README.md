@@ -71,7 +71,17 @@ publicGroup.MapGet("/status", () => Results.Ok());
 publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 ```
 
-Use `[SkipTenantResolution]` / `.SkipTenantResolution()` on an endpoint, route group, or MVC controller/action to bypass claim extraction entirely. The middleware marks the request as processed (`HeadlessTenancyResolutionApplied`) and passes through without calling `ICurrentTenant.Change(...)`. `ICurrentTenant.Id` remains null and `ICurrentTenant.IsAvailable` stays false.
+Use `[SkipTenantResolution]` / `.SkipTenantResolution()` on an endpoint, route group, or MVC controller/action to bypass claim extraction entirely. The middleware marks the request as processed (`HeadlessTenancyResolutionApplied`) and passes through without calling `ICurrentTenant.Change(...)` — if no other resolver runs, `ICurrentTenant.Id` stays unset and `ICurrentTenant.IsAvailable` stays false.
+
+This marker is HTTP-layer only — Mediator tenant guards, EF write guards, and messaging publish guards still enforce `ICurrentTenant.Id`. A handler running under this marker that calls a tenant-required downstream service will still throw `MissingTenantContextException`.
+
+When the endpoint also lives under a tenant-required authorization policy (`TenantRequirement` in `DefaultPolicy` / `FallbackPolicy`), compose with `.AllowMissingTenant()` so the requirement is satisfied:
+
+```csharp
+app.MapGet("/webhook", handler)
+   .SkipTenantResolution()
+   .AllowMissingTenant();
+```
 
 `TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant_required` ProblemDetails shape as the exception-handler fallback.
 
@@ -80,6 +90,7 @@ Use `[SkipTenantResolution]` / `.SkipTenantResolution()` on an endpoint, route g
 - **Place `TenantRequirement` in `DefaultPolicy` or `FallbackPolicy`** for framework-level enforcement. The startup validator does NOT inspect named policies (`options.AddPolicy("name", ...)`), and `[Authorize("NamedPolicy")]` endpoints bypass `DefaultPolicy` / `FallbackPolicy` per ASP.NET Core's combinator semantics. If you use named policies, composing `TenantRequirement` into each is your responsibility.
 - **Register custom `IAuthorizationMiddlewareResultHandler` instances BEFORE `.Authorization(auth => auth.RequireTenant())`.** ASP.NET Core resolves the last-registered handler; later registrations silently replace the framework's tenant mapper. Startup validation emits `HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED` when the resolved handler is not Headless's.
 - **`[AllowAnonymous]` endpoints bypass the authorization pipeline**, so `TenantRequirement` does not fire. If the handler reads `ICurrentTenant.Id` it throws `MissingTenantContextException`, which `HeadlessApiExceptionHandler` remaps to the same `g:tenant_required` 403. Prefer not reading `ICurrentTenant.Id` from anonymous endpoints; use `[AllowMissingTenant]` only when you want the authorization-pipeline opt-out specifically.
+- **`UseHeadlessTenancy()` / `UseTenantResolution()` must run after `UseRouting()`** so endpoint metadata is available when the middleware checks for `[SkipTenantResolution]`. Without that ordering, `HttpContext.GetEndpoint()` returns `null` and the skip marker silently has no effect — claim extraction runs as if the marker were absent.
 
 ## Exception Mapping
 

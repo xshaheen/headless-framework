@@ -400,19 +400,19 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
         // when - start with a cancellable token
         await sut.StartAsync(cts.Token);
-        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // Cancel the token
         await cts.CancelAsync();
 
         // Wait for cancellation to be observed
-        var cancelledTask = await Task.WhenAny(saveCancelled.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        var cancelledTask = await Task.WhenAny(saveCancelled.Task, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
 
         // then - the save operation should have been cancelled
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
 
         // Wait for task completion before dispose
-        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
     }
 
     #endregion
@@ -437,7 +437,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
         // then - should not throw on dispose (proper cleanup)
         // Calling dispose again should also not throw (idempotent)
-        var action = () => sut.Dispose();
+        var action = sut.Dispose;
         action.Should().NotThrow();
     }
 

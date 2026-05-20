@@ -51,7 +51,7 @@ public sealed class EnumerableExtensionsTests
     public void as_icollection_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsICollection();
@@ -79,7 +79,7 @@ public sealed class EnumerableExtensionsTests
     public void as_list_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsList();
@@ -107,7 +107,7 @@ public sealed class EnumerableExtensionsTests
     public void as_ilist_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsIList();
@@ -135,7 +135,7 @@ public sealed class EnumerableExtensionsTests
     public void as_array_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsArray();
@@ -232,7 +232,7 @@ public sealed class EnumerableExtensionsTests
     public void as_ireadonlycollection_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsIReadOnlyCollection();
@@ -260,7 +260,7 @@ public sealed class EnumerableExtensionsTests
     public void as_ireadonlylist_should_materialize_enumerable()
     {
         // given
-        IEnumerable<int> source = Enumerable.Range(1, 3);
+        var source = Enumerable.Range(1, 3);
 
         // when
         var result = source.AsIReadOnlyList();
@@ -471,7 +471,7 @@ public sealed class EnumerableExtensionsTests
     public async Task to_list_async_from_task_should_materialize_result()
     {
         // given
-        Task<IEnumerable<int>> task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
+        var task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
 
         // when
         var result = await task.ToListAsync();
@@ -487,7 +487,7 @@ public sealed class EnumerableExtensionsTests
     public async Task to_array_async_from_task_should_materialize_result()
     {
         // given
-        Task<IEnumerable<int>> task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
+        var task = Task.FromResult<IEnumerable<int>>([1, 2, 3]);
 
         // when
         var result = await task.ToArrayAsync();

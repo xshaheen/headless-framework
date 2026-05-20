@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Abstractions;
-using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Constants;
 using Headless.Primitives;
@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
 
 namespace Tests;
 
@@ -84,7 +85,8 @@ public abstract class IdempotencyMiddlewareTestBase : TestBase
             clock,
             cancellationTokenProvider,
             logger,
-            serviceProvider);
+            serviceProvider
+        );
     }
 
     protected static DefaultHttpContext CreateContext(

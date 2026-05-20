@@ -205,9 +205,7 @@ public sealed class TenantRequirementTests : TestBase
             .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
-    private async Task<WebApplication> _CreateAppAsync(
-        Action<Microsoft.AspNetCore.Http.ProblemDetailsOptions>? configureProblemDetails = null
-    )
+    private async Task<WebApplication> _CreateAppAsync(Action<ProblemDetailsOptions>? configureProblemDetails = null)
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }

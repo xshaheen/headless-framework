@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 /// <summary>
 /// Tee-style stream decorator: forwards all writes to the inner stream and simultaneously
@@ -65,7 +65,10 @@ internal sealed class CaptureStream : Stream
         await _inner.WriteAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
     }
 
-    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    public override async ValueTask WriteAsync(
+        ReadOnlyMemory<byte> buffer,
+        CancellationToken cancellationToken = default
+    )
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _AppendToBuffer(buffer.Span);

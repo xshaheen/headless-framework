@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Abstractions;
-using Headless.Api.Idempotency;
 using Headless.Caching;
 using Headless.Core;
 using Headless.DistributedLocks;
@@ -34,9 +34,7 @@ internal static class IdempotencyTestApp
         Action<IServiceCollection>? configureServices = null
     )
     {
-        var builder = WebApplication.CreateBuilder(
-            new WebApplicationOptions { EnvironmentName = "Test" }
-        );
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Test" });
 
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
@@ -45,7 +43,7 @@ internal static class IdempotencyTestApp
         builder.Services.AddProblemDetails();
 
         // Framework primitives required by IdempotencyMiddleware constructor
-        builder.Services.TryAddSingleton<TimeProvider>(TimeProvider.System);
+        builder.Services.TryAddSingleton(TimeProvider.System);
         builder.Services.TryAddSingleton<IClock, Clock>();
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IBuildInformationAccessor, NullBuildInformationAccessor>();
@@ -106,54 +104,62 @@ internal static class IdempotencyTestApp
         // Tenant resolution from a custom header BEFORE idempotency (so the cache-key sees the tenant)
         if (tenantHeaderName is not null)
         {
-            app.Use(async (ctx, next) =>
-            {
-                if (ctx.Request.Headers.TryGetValue(tenantHeaderName, out var t) && !string.IsNullOrWhiteSpace(t))
+            app.Use(
+                async (ctx, next) =>
                 {
-                    tenantState.SetForCurrentRequest(t.ToString());
-                }
-                else
-                {
-                    tenantState.SetForCurrentRequest(null);
-                }
+                    if (ctx.Request.Headers.TryGetValue(tenantHeaderName, out var t) && !string.IsNullOrWhiteSpace(t))
+                    {
+                        tenantState.SetForCurrentRequest(t.ToString());
+                    }
+                    else
+                    {
+                        tenantState.SetForCurrentRequest(null);
+                    }
 
-                await next();
-            });
+                    await next();
+                }
+            );
         }
 
         app.UseIdempotency();
 
         // Default endpoints used by most tests
-        app.MapPost("/echo", async (HttpContext ctx, [FromServices] TestHandlerGate? gate) =>
-        {
-            using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
-            var body = await reader.ReadToEndAsync();
-
-            // When a gate is registered, count this invocation and wait for the test to
-            // release. Tests use this to hold the winner mid-handler so a concurrent
-            // request observes the InFlight state.
-            if (gate is not null)
+        app.MapPost(
+            "/echo",
+            async (HttpContext ctx, [FromServices] TestHandlerGate? gate) =>
             {
-                gate.OnHandlerEntered();
-                await gate.WaitForReleaseAsync(ctx.RequestAborted).ConfigureAwait(false);
+                using var reader = new StreamReader(ctx.Request.Body, leaveOpen: true);
+                var body = await reader.ReadToEndAsync();
+
+                // When a gate is registered, count this invocation and wait for the test to
+                // release. Tests use this to hold the winner mid-handler so a concurrent
+                // request observes the InFlight state.
+                if (gate is not null)
+                {
+                    gate.OnHandlerEntered();
+                    await gate.WaitForReleaseAsync(ctx.RequestAborted).ConfigureAwait(false);
+                }
+
+                // Per-invocation GUID embedded in the body — replay returns the cached GUID,
+                // so byte-equality across two retries proves the handler ran exactly once.
+                var invocationId = Guid.NewGuid();
+                ctx.Response.StatusCode = StatusCodes.Status201Created;
+                ctx.Response.Headers.Location = "/echo/1";
+                ctx.Response.Headers.ContentType = "application/json";
+                ctx.Response.Headers.Append("Set-Cookie", "session=abc; HttpOnly");
+                ctx.Response.Headers.Append("traceparent", "00-deadbeef-1-00");
+                await ctx.Response.WriteAsync($"{{\"invocation\":\"{invocationId}\",\"echo\":\"{body}\"}}");
             }
+        );
 
-            // Per-invocation GUID embedded in the body — replay returns the cached GUID,
-            // so byte-equality across two retries proves the handler ran exactly once.
-            var invocationId = Guid.NewGuid();
-            ctx.Response.StatusCode = StatusCodes.Status201Created;
-            ctx.Response.Headers.Location = "/echo/1";
-            ctx.Response.Headers.ContentType = "application/json";
-            ctx.Response.Headers.Append("Set-Cookie", "session=abc; HttpOnly");
-            ctx.Response.Headers.Append("traceparent", "00-deadbeef-1-00");
-            await ctx.Response.WriteAsync($"{{\"invocation\":\"{invocationId}\",\"echo\":\"{body}\"}}");
-        });
-
-        app.MapPost("/status", (HttpContext ctx, [FromQuery] int code) =>
-        {
-            ctx.Response.StatusCode = code;
-            return Task.CompletedTask;
-        });
+        app.MapPost(
+            "/status",
+            (HttpContext ctx, [FromQuery] int code) =>
+            {
+                ctx.Response.StatusCode = code;
+                return Task.CompletedTask;
+            }
+        );
 
         mapAdditionalEndpoints?.Invoke(app);
 
@@ -207,7 +213,7 @@ internal static class IdempotencyTestApp
         public void SetAuthenticated() => _anonymous = false;
 
         public ICurrentUser CurrentForRequest() =>
-            _anonymous ? new Headless.Abstractions.NullCurrentUser() : new TestCurrentUser(_DefaultUserId);
+            _anonymous ? new NullCurrentUser() : new TestCurrentUser(_DefaultUserId);
     }
 
     private sealed class TestCurrentUser(UserId? userId) : ICurrentUser
@@ -222,7 +228,7 @@ internal static class IdempotencyTestApp
 
         public AccountId? AccountId => null;
 
-        public IReadOnlySet<string> Roles => System.Collections.Immutable.ImmutableHashSet<string>.Empty;
+        public IReadOnlySet<string> Roles => ImmutableHashSet<string>.Empty;
     }
 
     private sealed class NullBuildInformationAccessor : IBuildInformationAccessor
@@ -257,7 +263,10 @@ internal static class IdempotencyTestApp
 
         public async Task WaitForReleaseAsync(CancellationToken cancellationToken)
         {
-            using var registration = cancellationToken.Register(static state => ((TaskCompletionSource)state!).TrySetCanceled(), _release);
+            using var registration = cancellationToken.Register(
+                static state => ((TaskCompletionSource)state!).TrySetCanceled(),
+                _release
+            );
             await _release.Task.ConfigureAwait(false);
         }
 
@@ -357,7 +366,8 @@ internal static class IdempotencyTestApp
         {
             if (BeforeAcquireAsync is not null)
             {
-                await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken).ConfigureAwait(false);
+                await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var lease = timeUntilExpires ?? DefaultTimeUntilExpires;
@@ -394,19 +404,30 @@ internal static class IdempotencyTestApp
             }
         }
 
-        public Task<bool> RenewAsync(string resource, string lockId, TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> RenewAsync(
+            string resource,
+            string lockId,
+            TimeSpan? timeUntilExpires = null,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
-        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     /// <summary>
@@ -415,61 +436,156 @@ internal static class IdempotencyTestApp
     /// idempotency middleware should either fail open (default) or rethrow depending on
     /// <see cref="IdempotencyOptions.OnCacheError"/>.
     /// </summary>
-    internal sealed class ThrowingCache : Headless.Caching.ICache
+    internal sealed class ThrowingCache : ICache
     {
         private static InvalidOperationException _Boom() => new("simulated cache outage");
 
-        public ValueTask<Headless.Caching.CacheValue<T>> GetOrAddAsync<T>(string key, Func<CancellationToken, ValueTask<T?>> factory, TimeSpan expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CancellationToken, ValueTask<T?>> factory,
+            TimeSpan expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> UpsertAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<int> UpsertAllAsync<T>(
+            IDictionary<string, T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> TryInsertAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> TryReplaceAsync<T>(
+            string key,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> TryReplaceIfEqualAsync<T>(
+            string key,
+            T? expected,
+            T? value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<double> IncrementAsync(
+            string key,
+            double amount,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> IncrementAsync(
+            string key,
+            long amount,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<double> SetIfHigherAsync(
+            string key,
+            double value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> SetIfHigherAsync(
+            string key,
+            long value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<double> SetIfLowerAsync(
+            string key,
+            double value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> SetIfLowerAsync(
+            string key,
+            long value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> SetAddAsync<T>(
+            string key,
+            IEnumerable<T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<IDictionary<string, Headless.Caching.CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+            IEnumerable<string> cacheKeys,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<IDictionary<string, Headless.Caching.CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+            string prefix,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+            string prefix,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<Headless.Caching.CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+            throw _Boom();
 
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+            throw _Boom();
 
         public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
 
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+            throw _Boom();
 
-        public ValueTask<Headless.Caching.CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+            string key,
+            int? pageIndex = null,
+            int pageSize = 100,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) => throw _Boom();
 
-        public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<bool> RemoveIfEqualAsync<T>(
+            string key,
+            T? expected,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<int> RemoveAllAsync(
+            IEnumerable<string> cacheKeys,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+            throw _Boom();
 
-        public ValueTask<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken cancellationToken = default) => throw _Boom();
+        public ValueTask<long> SetRemoveAsync<T>(
+            string key,
+            IEnumerable<T> value,
+            TimeSpan? expiration,
+            CancellationToken cancellationToken = default
+        ) => throw _Boom();
 
         public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw _Boom();
     }
@@ -499,7 +615,10 @@ internal static class IdempotencyTestApp
             return Task.CompletedTask;
         }
 
-        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> RenewAsync(
+            TimeSpan? timeUntilExpires = null,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
         public ValueTask DisposeAsync()
         {

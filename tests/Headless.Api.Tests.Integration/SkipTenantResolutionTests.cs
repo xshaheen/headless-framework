@@ -3,9 +3,9 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Json;
-using System.Reflection;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Middlewares;
@@ -31,7 +31,6 @@ public sealed class SkipTenantResolutionTests : TestBase
     private const string _Scheme = "Test";
     private const string _UserHeader = "X-Test-User";
     private const string _TenantHeader = "X-Test-Tenant";
-    private const string _UnauthenticatedHeader = "X-Test-Unauthenticated";
 
     [Fact]
     public async Task should_not_mutate_current_tenant_when_endpoint_marked_skip_resolution_and_claim_present()
@@ -143,8 +142,9 @@ public sealed class SkipTenantResolutionTests : TestBase
         using var client = _CreateClient(app);
 
         // SkipTenantResolution bypasses claim extraction; AllowMissingTenant satisfies TenantRequirement.
-        // Authenticated user with no tenant claim must reach the endpoint and observe a null tenant.
-        using var response = await _SendAsync(client, "/skip-and-allow-missing", user: "alice");
+        // Send a tenant claim so the skip marker's claim-blocking is observable — the endpoint must reach the handler
+        // and observe a null tenant despite the principal carrying TENANT-1.
+        using var response = await _SendAsync(client, "/skip-and-allow-missing", user: "alice", tenantId: "TENANT-1");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var result = await response.Content.ReadFromJsonAsync<TenantResponse>(cancellationToken: AbortToken);
@@ -163,6 +163,48 @@ public sealed class SkipTenantResolutionTests : TestBase
         result.ResolutionApplied.Should().BeTrue();
         result.Id.Should().BeNull();
         result.IsAvailable.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_403_when_skip_resolution_without_allow_missing_tenant_under_tenant_required_policy()
+    {
+        // SkipTenantResolution alone bypasses claim extraction but does NOT satisfy TenantRequirement.
+        // Under a FallbackPolicy that requires a tenant, the request must fail authorization with 403.
+        await using var app = await _CreateAppWithAuthorizationAsync();
+        using var client = _CreateClient(app);
+
+        using var response = await _SendAsync(client, "/skip-only", user: "alice", tenantId: "TENANT-1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        using var doc = JsonDocument.Parse(json);
+        doc.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be("g:tenant_required");
+    }
+
+    [Fact]
+    public async Task should_mutate_current_tenant_for_derived_mvc_controller_when_base_has_skip_marker_and_claim_present()
+    {
+        // [AttributeUsage(Inherited = false)] — derived controllers must NOT inherit SkipTenantResolution.
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        var result = await _GetTenantAsync(client, "/derived-skip/action", user: "alice", tenantId: "TENANT-1");
+
+        result.Id.Should().Be("TENANT-1");
+        result.IsAvailable.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_mutate_current_tenant_for_unmarked_action_on_same_controller_when_claim_present()
+    {
+        // Method-level SkipTenantResolution must NOT bleed across sibling actions on the same controller.
+        await using var app = await _CreateAppAsync();
+        using var client = _CreateClient(app);
+
+        var result = await _GetTenantAsync(client, "/skip-mvc-action/no-skip", user: "alice", tenantId: "TENANT-1");
+
+        result.Id.Should().Be("TENANT-1");
+        result.IsAvailable.Should().BeTrue();
     }
 
     // --- app factories ---
@@ -295,6 +337,11 @@ public sealed class SkipTenantResolutionTests : TestBase
             .SkipTenantResolution()
             .AllowMissingTenant();
 
+        // Same shape as /skip-and-allow-missing but missing AllowMissingTenant — must hit TenantRequirement
+        // and produce 403 g:tenant_required when no tenant context is established.
+        app.MapGet("/skip-only", (ICurrentTenant t) => Results.Json(new TenantResponse(t.Id, t.IsAvailable)))
+            .SkipTenantResolution();
+
         await app.StartAsync(AbortToken);
         return app;
     }
@@ -354,12 +401,7 @@ public sealed class SkipTenantResolutionTests : TestBase
 
     private static void _ResetOrderingWarning()
     {
-        var field = typeof(TenantResolutionMiddleware).GetField(
-            "_orderingWarningEmitted",
-            BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly
-        );
-        field.Should().NotBeNull();
-        field!.SetValue(null, 0);
+        TenantResolutionMiddleware.ResetOrderingWarningForTesting();
     }
 
     private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
@@ -371,8 +413,6 @@ public sealed class SkipTenantResolutionTests : TestBase
             new KeyValuePair<string, string?>("Headless:StringHash:DefaultSalt", "TestSalt"),
         ]);
     }
-
-    private sealed record TenantResponse(string? Id, bool IsAvailable);
 
     private sealed record FeatureCheckResponse(string? Id, bool IsAvailable, bool ResolutionApplied);
 
@@ -430,7 +470,6 @@ public sealed class SkipTenantResolutionTests : TestBase
                 return Task.FromResult(AuthenticateResult.NoResult());
             }
 
-            var isUnauthenticated = Request.Headers.ContainsKey(_UnauthenticatedHeader);
             var claims = new List<Claim> { new(UserClaimTypes.Name, userValues.ToString()) };
 
             if (Request.Headers.TryGetValue(_TenantHeader, out var tenantValues))
@@ -438,7 +477,7 @@ public sealed class SkipTenantResolutionTests : TestBase
                 claims.Add(new Claim(UserClaimTypes.TenantId, tenantValues.ToString()));
             }
 
-            var identity = new ClaimsIdentity(claims, authenticationType: isUnauthenticated ? null : Scheme.Name);
+            var identity = new ClaimsIdentity(claims, authenticationType: Scheme.Name);
             var principal = new ClaimsPrincipal(identity);
             var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
@@ -446,6 +485,8 @@ public sealed class SkipTenantResolutionTests : TestBase
         }
     }
 }
+
+internal sealed record TenantResponse(string? Id, bool IsAvailable);
 
 [ApiController]
 [SkipTenantResolution]
@@ -455,7 +496,23 @@ public sealed class SkipResolutionClassController : ControllerBase
     [HttpGet("action")]
     public IActionResult GetTenant([FromServices] ICurrentTenant currentTenant)
     {
-        return Ok(new { currentTenant.Id, currentTenant.IsAvailable });
+        return Ok(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable));
+    }
+}
+
+[ApiController]
+[SkipTenantResolution]
+public abstract class SkipResolutionBaseController : ControllerBase;
+
+// Derived controller — [AttributeUsage(Inherited = false)] means the SkipTenantResolution attribute on
+// SkipResolutionBaseController must NOT propagate to this derived type.
+[Route("derived-skip")]
+public sealed class SkipResolutionDerivedController : SkipResolutionBaseController
+{
+    [HttpGet("action")]
+    public IActionResult GetTenant([FromServices] ICurrentTenant currentTenant)
+    {
+        return Ok(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable));
     }
 }
 
@@ -467,6 +524,14 @@ public sealed class SkipResolutionActionController : ControllerBase
     [SkipTenantResolution]
     public IActionResult Skip([FromServices] ICurrentTenant currentTenant)
     {
-        return Ok(new { currentTenant.Id, currentTenant.IsAvailable });
+        return Ok(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable));
+    }
+
+    // Sibling action (no SkipTenantResolution marker) — regression check that the [Method-level] marker
+    // does not bleed across actions on the same controller.
+    [HttpGet("no-skip")]
+    public IActionResult NoSkip([FromServices] ICurrentTenant currentTenant)
+    {
+        return Ok(new TenantResponse(currentTenant.Id, currentTenant.IsAvailable));
     }
 }

@@ -219,7 +219,7 @@ public sealed class RedisBlobStorageTests(RedisBlobStorageFixture fixture) : Blo
         await using var stream = new MemoryStream(data);
 
         // when & then
-        Func<Task> act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
+        var act = async () => await storage.UploadAsync(["test-container"], "small-blob.bin", stream);
         await act.Should().NotThrowAsync();
     }
 

@@ -33,7 +33,7 @@ public class MessageEventDataPubSend
 
     public string Operation { get; set; } = null!;
 
-    public TransportMessage TransportMessage { get; set; } = default!;
+    public TransportMessage TransportMessage { get; set; }
 
     public BrokerAddress BrokerAddress { get; set; }
 

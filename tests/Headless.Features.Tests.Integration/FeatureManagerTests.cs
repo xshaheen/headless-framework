@@ -35,7 +35,7 @@ public sealed class FeatureManagerTests(FeaturesTestFixture fixture) : FeaturesT
         const string editionId = "AnyEditionId";
 
         // when
-        Func<Task<FeatureValue>> act = () => featureManager.GetForEditionAsync(featureName, editionId);
+        var act = () => featureManager.GetForEditionAsync(featureName, editionId);
 
         // then
         await act.Should()

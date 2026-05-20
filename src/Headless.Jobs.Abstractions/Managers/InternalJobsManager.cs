@@ -37,8 +37,8 @@ internal class InternalJobsManager<TTimeJob, TCronJob>(
         }
 
         TimeSpan timeRemaining;
-        bool includeCron = false;
-        bool includeTimeJobs = false;
+        var includeCron = false;
+        var includeTimeJobs = false;
 
         if (cronTime is null)
         {

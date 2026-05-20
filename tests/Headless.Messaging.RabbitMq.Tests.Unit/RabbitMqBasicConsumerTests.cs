@@ -702,7 +702,7 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         consumer.Dispose();
 
         // then - should not throw on second dispose
-        var act = () => consumer.Dispose();
+        var act = consumer.Dispose;
         act.Should().NotThrow();
     }
 

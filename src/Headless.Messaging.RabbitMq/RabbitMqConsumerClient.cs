@@ -80,7 +80,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
         else
         {
-            ushort prefetch = _groupConcurrent > 0 ? _groupConcurrent : (ushort)1;
+            var prefetch = _groupConcurrent > 0 ? _groupConcurrent : (ushort)1;
             await _channel!.BasicQosAsync(prefetchSize: 0, prefetchCount: prefetch, global: false, cancellationToken);
         }
 

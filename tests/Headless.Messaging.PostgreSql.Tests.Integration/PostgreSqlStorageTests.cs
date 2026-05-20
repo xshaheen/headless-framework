@@ -98,10 +98,13 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             await using var connection = new NpgsqlConnection(fixture.ConnectionString);
             await connection.OpenAsync();
             await connection.ExecuteAsync(
-                """
-                TRUNCATE TABLE messaging.published;
-                TRUNCATE TABLE messaging.received;
-                """
+                new CommandDefinition(
+                    """
+                    TRUNCATE TABLE messaging.published;
+                    TRUNCATE TABLE messaging.received;
+                    """,
+                    cancellationToken: AbortToken
+                )
             );
         }
         catch (PostgresException)

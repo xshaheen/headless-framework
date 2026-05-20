@@ -85,7 +85,7 @@ public sealed class RedisThrottlingDistributedLockStorageTests(RedisTestFixture 
         await Parallel.ForEachAsync(
             Enumerable.Range(0, concurrentIncrements),
             new ParallelOptions { MaxDegreeOfParallelism = 50 },
-            async (_, _) => await fixture.ThrottlingLockStorage.IncrementAsync(resource, ttl)
+            async (_, _) => await fixture.ThrottlingLockStorage.IncrementAsync(resource, ttl, AbortToken)
         );
 
         // then

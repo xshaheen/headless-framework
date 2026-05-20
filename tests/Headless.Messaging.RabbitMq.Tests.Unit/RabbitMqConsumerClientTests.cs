@@ -492,22 +492,24 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         _channel.IsClosed.Returns(false);
 
         using var cts = new CancellationTokenSource();
-        await client.PauseAsync();
+        await client.PauseAsync(AbortToken);
 
         // when
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
         try
         {
             // then - startup remains gated while paused
-            await Task.Delay(100);
+            await Task.Delay(100, AbortToken);
+
             _channel
                 .ReceivedCalls()
                 .Should()
                 .NotContain(c => c.GetMethodInfo().Name == nameof(IChannel.BasicConsumeAsync));
 
-            await client.ResumeAsync();
+            await client.ResumeAsync(AbortToken);
 
-            await Task.Delay(100);
+            await Task.Delay(100, AbortToken);
+
             _channel
                 .ReceivedCalls()
                 .Should()

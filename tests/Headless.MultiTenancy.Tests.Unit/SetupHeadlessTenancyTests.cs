@@ -69,7 +69,7 @@ public sealed class SetupHeadlessTenancyTests
                 .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
         // when — validation runs in StartingAsync so it fires before any other hosted service's StartAsync.
-        Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
 
         // then
         await act.Should()
@@ -98,7 +98,7 @@ public sealed class SetupHeadlessTenancyTests
                 .Single(service => service.GetType().Name == "HeadlessTenancyStartupValidator");
 
         // when
-        Func<Task> act = () => hostedService.StartingAsync(CancellationToken.None);
+        var act = () => hostedService.StartingAsync(CancellationToken.None);
 
         // then
         await act.Should()

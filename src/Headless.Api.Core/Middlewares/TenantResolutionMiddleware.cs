@@ -71,6 +71,15 @@ public sealed partial class TenantResolutionMiddleware(
             : principal.FindFirst(claimType)?.Value;
     }
 
+    /// <summary>
+    /// Test seam: resets the once-per-process ordering warning flag so that tests asserting on the
+    /// HEADLESS_TENANCY_MIDDLEWARE_ORDERING log entry can run in any order.
+    /// </summary>
+    internal static void ResetOrderingWarningForTesting()
+    {
+        Volatile.Write(ref _orderingWarningEmitted, 0);
+    }
+
     private void _WarnIfMiddlewareLikelyMisordered(HttpContext context)
     {
         // If AuthenticationMiddleware has not run yet, the consumer almost certainly placed

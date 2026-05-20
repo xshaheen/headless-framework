@@ -10,17 +10,13 @@ using Microsoft.Extensions.Options;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class KafkaConsumerClientTests : TestBase
 {
     private readonly IOptions<MessagingKafkaOptions> _options = Options.Create(
         new MessagingKafkaOptions { Servers = "localhost:9092" }
     );
-    private readonly IServiceProvider _serviceProvider;
-
-    public KafkaConsumerClientTests()
-    {
-        _serviceProvider = new ServiceCollection().BuildServiceProvider();
-    }
+    private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     [Fact]
     public async Task should_have_correct_broker_address()
@@ -511,7 +507,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             // Observe the faulted task to prevent unobserved exception
             try
             {
-                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1));
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             }
             catch
             {

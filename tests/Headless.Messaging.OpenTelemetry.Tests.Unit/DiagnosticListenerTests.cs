@@ -54,7 +54,7 @@ public sealed class DiagnosticListenerTests : TestBase
         var listener = new DiagnosticListener([]);
 
         // when/then
-        var act = () => listener.OnCompleted();
+        var act = listener.OnCompleted;
         act.Should().NotThrow();
     }
 
@@ -338,9 +338,9 @@ public sealed class DiagnosticListenerTests : TestBase
             // fire-and-forget async-tail observer path. We cannot mark this method `async`
             // (the `in` parameter forbids it), so we wrap an async local in a Task and return
             // a non-completed ValueTask.
-            return new ValueTask(_ThrowAfterYieldAsync());
+            return new ValueTask(throwAfterYieldAsync());
 
-            static async Task _ThrowAfterYieldAsync()
+            static async Task throwAfterYieldAsync()
             {
                 await Task.Yield();
                 throw new InvalidOperationException("async enricher failure");
@@ -536,8 +536,9 @@ public sealed class DiagnosticListenerTests : TestBase
     {
         var listener = new ActivityListener
         {
-            ShouldListenTo = source => source.Name == DiagnosticListener.SourceName,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ShouldListenTo = source =>
+                string.Equals(source.Name, DiagnosticListener.SourceName, StringComparison.Ordinal),
+            Sample = (ref _) => ActivitySamplingResult.AllDataAndRecorded,
         };
         ActivitySource.AddActivityListener(listener);
         return listener;

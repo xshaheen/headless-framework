@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 /// <summary>
 /// Default predicate that decides whether a completed response should be cached for replay.
@@ -11,9 +11,23 @@ namespace Headless.Api.Idempotency;
 /// </summary>
 internal static class DefaultCachePredicate
 {
-    private static readonly HashSet<int> _Cacheable4xx =
+    private static readonly HashSet<int> _Cacheable4Xx =
     [
-        400, 401, 403, 404, 405, 409, 410, 411, 412, 413, 414, 415, 416, 422, 451,
+        400,
+        401,
+        403,
+        404,
+        405,
+        409,
+        410,
+        411,
+        412,
+        413,
+        414,
+        415,
+        416,
+        422,
+        451,
     ];
 
     public static readonly Func<HttpContext, bool> Instance = ctx =>
@@ -27,7 +41,7 @@ internal static class DefaultCachePredicate
 
         if (status is >= 400 and <= 499)
         {
-            return _Cacheable4xx.Contains(status);
+            return _Cacheable4Xx.Contains(status);
         }
 
         return false;

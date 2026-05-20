@@ -66,7 +66,7 @@ public sealed class SetupTests : TestBase
     public void should_accept_custom_enricher()
     {
         // given - register a custom enricher alongside the built-in defaults
-        var customEnricher = NSubstitute.Substitute.For<IActivityTagEnricher>();
+        var customEnricher = Substitute.For<IActivityTagEnricher>();
         var options = new MessagingInstrumentationOptions();
         options.AddEnricher(customEnricher);
 

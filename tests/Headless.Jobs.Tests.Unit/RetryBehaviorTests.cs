@@ -24,7 +24,7 @@ public sealed class RetryBehaviorTests
 
         // then - initial + 3 retries = 4 attempts
         attempts.Should().HaveCount(4);
-        for (int i = 0; i < 4; i++)
+        for (var i = 0; i < 4; i++)
             attempts[i].RetryCount.Should().Be(i);
 
         // Verify mapped retry intervals produced the expected spacing between attempts

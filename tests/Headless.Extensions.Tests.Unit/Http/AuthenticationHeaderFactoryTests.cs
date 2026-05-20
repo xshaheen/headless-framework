@@ -132,7 +132,7 @@ public sealed class AuthenticationHeaderFactoryTests
     public void CreateBasic_bytes_overload_should_return_basic_header()
     {
         // given
-        ReadOnlySpan<byte> value = "user:pass"u8;
+        var value = "user:pass"u8;
         var expectedParameter = Convert.ToBase64String("user:pass"u8);
 
         // when

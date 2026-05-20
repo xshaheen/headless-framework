@@ -168,7 +168,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
             start: false
         );
 
-        Func<Task> act = () => app.StartAsync(AbortToken);
+        var act = () => app.StartAsync(AbortToken);
 
         await act.Should()
             .ThrowAsync<InvalidOperationException>()

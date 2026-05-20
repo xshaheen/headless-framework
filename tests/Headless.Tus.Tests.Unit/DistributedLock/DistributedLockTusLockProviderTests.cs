@@ -34,7 +34,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
         var sut = new DistributedLockTusLockProvider(_distributedLockProvider);
 
         // when
-        ITusFileLock fileLock = await sut.AquireLock(fileId);
+        var fileLock = await sut.AquireLock(fileId);
         await fileLock.Lock();
 
         // then
@@ -66,7 +66,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
         var sut = new DistributedLockTusLockProvider(_distributedLockProvider);
 
         // when
-        ITusFileLock fileLock = await sut.AquireLock(fileId);
+        var fileLock = await sut.AquireLock(fileId);
         var lockResult = await fileLock.Lock();
 
         // then

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Headless.Api.Idempotency;
+using Headless.Api;
 
 namespace Tests;
 

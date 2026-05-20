@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Headless.Api;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class CaptureStreamTests
+// ReSharper disable AccessToDisposedClosure
+public sealed class CaptureStreamTests : TestBase
 {
     private const int _Cap = 100;
 
@@ -26,10 +28,10 @@ public sealed class CaptureStreamTests
     public async Task write_async_forwards_correctly()
     {
         var inner = new MemoryStream();
-        using var capture = new CaptureStream(inner, _Cap);
+        await using var capture = new CaptureStream(inner, _Cap);
         byte[] data = [10, 20, 30];
 
-        await capture.WriteAsync(data.AsMemory());
+        await capture.WriteAsync(data.AsMemory(), AbortToken);
 
         inner.ToArray().Should().Equal(data);
         capture.CapturedBytes.Should().Equal(data);
@@ -39,7 +41,7 @@ public sealed class CaptureStreamTests
     public async Task write_async_memory_forwards_correctly()
     {
         var inner = new MemoryStream();
-        using var capture = new CaptureStream(inner, _Cap);
+        await using var capture = new CaptureStream(inner, _Cap);
         byte[] data = [5, 6, 7];
 
         await capture.WriteAsync(data.AsMemory());
@@ -69,8 +71,8 @@ public sealed class CaptureStreamTests
 
         capture.WriteByte(0x42);
 
-        inner.ToArray().Should().Equal((byte)0x42);
-        capture.CapturedBytes.Should().Equal((byte)0x42);
+        inner.ToArray().Should().Equal("B"u8.ToArray());
+        capture.CapturedBytes.Should().Equal("B"u8.ToArray());
     }
 
     [Fact]
@@ -129,10 +131,10 @@ public sealed class CaptureStreamTests
     public async Task flush_async_forwards_to_inner()
     {
         var inner = new MemoryStream();
-        using var capture = new CaptureStream(inner, _Cap);
-        await capture.WriteAsync(new byte[] { 3, 4 }.AsMemory());
+        await using var capture = new CaptureStream(inner, _Cap);
+        await capture.WriteAsync(new byte[] { 3, 4 }.AsMemory(), AbortToken);
 
-        await capture.FlushAsync();
+        await capture.FlushAsync(AbortToken);
 
         capture.CapturedBytes.Should().Equal(3, 4);
     }
@@ -181,7 +183,7 @@ public sealed class CaptureStreamTests
         using var capture = new CaptureStream(inner, cap: 3);
 
         capture.Write([1, 2, 3, 4], 0, 4); // fills cap, triggers truncation
-        capture.Write([5, 6], 0, 2);        // beyond cap, inner still gets it
+        capture.Write([5, 6], 0, 2); // beyond cap, inner still gets it
 
         inner.ToArray().Should().Equal(1, 2, 3, 4, 5, 6);
         capture.CapturedBytes.Length.Should().Be(3);

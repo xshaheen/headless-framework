@@ -262,7 +262,7 @@ public static class MessagingDashboardEndpoints
     {
         const string cacheKey = "dashboard.metrics.history";
         var cache = sp.GetRequiredService<IMemoryCache>();
-        if (cache.TryGetValue(cacheKey, out object? ret))
+        if (cache.TryGetValue(cacheKey, out var ret))
         {
             return Results.Json(ret);
         }

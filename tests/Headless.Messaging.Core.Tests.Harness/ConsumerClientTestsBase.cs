@@ -162,26 +162,29 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // Start listening in background
         using var cts = new CancellationTokenSource();
-        var listeningTask = Task.Run(async () =>
-        {
-            try
+        var listeningTask = Task.Run(
+            async () =>
             {
-                await consumer.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-        });
+                try
+                {
+                    await consumer.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Expected
+                }
+            },
+            AbortToken
+        );
 
         // Allow some time for listening to start
-        await Task.Delay(100);
+        await Task.Delay(100, AbortToken);
 
         // when
         await cts.CancelAsync();
 
         // then - should complete without hanging
-        var completed = await Task.WhenAny(listeningTask, Task.Delay(TimeSpan.FromSeconds(5)));
+        var completed = await Task.WhenAny(listeningTask, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
         completed.Should().Be(listeningTask, "Consumer should shutdown gracefully within timeout");
     }
 

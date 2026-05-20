@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Headless.Api;
 using Microsoft.AspNetCore.Http;
 
 namespace Tests;

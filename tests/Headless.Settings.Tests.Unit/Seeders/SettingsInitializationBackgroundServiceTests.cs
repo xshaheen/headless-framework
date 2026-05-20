@@ -353,16 +353,16 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 
         // when - start with a cancellable token
         await sut.StartAsync(cts.Token);
-        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         await cts.CancelAsync();
 
-        var cancelledTask = await Task.WhenAny(saveCancelled.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+        var cancelledTask = await Task.WhenAny(saveCancelled.Task, Task.Delay(TimeSpan.FromSeconds(5), AbortToken));
 
         // then
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
 
-        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1)));
+        await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
     }
 
     #endregion
@@ -386,7 +386,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
         sut.Dispose();
 
         // then - should not throw on dispose (proper cleanup)
-        var action = () => sut.Dispose();
+        var action = sut.Dispose;
         action.Should().NotThrow();
     }
 

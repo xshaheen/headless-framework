@@ -292,7 +292,7 @@ public sealed class MessagingBuilder(IServiceCollection services, MessagingOptio
         Argument.IsNotNull(provider);
 
         _RemoveExistingMessagingLockProvider();
-        Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
+        Services.AddKeyedSingleton(MessagingKeys.LockProvider, provider);
         Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
         return this;
     }

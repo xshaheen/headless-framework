@@ -21,7 +21,9 @@ public sealed class RetryHelperTests : TestBase
 
         var decision = RetryHelper.RecordAttemptAndComputeDecision(
             message,
-            new ArgumentException("permanent", "param"),
+#pragma warning disable MA0015 // ReSharper disable once NotResolvedInText
+            new ArgumentException(@"permanent", "param"),
+#pragma warning restore MA0015
             new RetryPolicyOptions(),
             inlineRetries: 0
         );
@@ -457,11 +459,10 @@ public sealed class RetryHelperTests : TestBase
         // executor's gating logic). Loop until the helper returns a terminal decision.
         var message = _CreateMessage();
         var inlineInFlightObservations = new List<bool>();
-        RetryDecision lastDecision = RetryDecision.Stop;
 
         for (var pickup = 0; pickup <= maxPersistedRetries + 1; pickup++)
         {
-            lastDecision = RetryHelper.RecordAttemptAndComputeDecision(
+            var lastDecision = RetryHelper.RecordAttemptAndComputeDecision(
                 message,
                 new TimeoutException(),
                 policy,
@@ -663,7 +664,7 @@ public sealed class RetryHelperTests : TestBase
         );
 
         // The callback's CT should have been cancelled by the OCE branch's CancelAsync call.
-        var cancelled = await callbackCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var cancelled = await callbackCancelled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
         cancelled.Should().BeTrue();
         observedCallbackCt.IsCancellationRequested.Should().BeTrue();
     }

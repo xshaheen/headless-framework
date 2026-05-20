@@ -15,7 +15,7 @@ namespace Headless.Messaging.OpenTelemetry;
 /// enrichers that write header values to sensitive sinks must sanitize at their own call site.
 /// </remarks>
 [PublicAPI]
-[System.Diagnostics.CodeAnalysis.SuppressMessage(
+[SuppressMessage(
     "Performance",
     "CA1815:Override equals and operator equals on value types",
     Justification = "Transient parameter passed `in` to enrichers; never compared or stored."

@@ -42,7 +42,7 @@ public sealed class TypeListTests
     public void add_should_throw_exception_for_invalid_type()
     {
         // when
-        Action act = () => _shapeTypeList.Add(typeof(string));
+        var act = () => _shapeTypeList.Add(typeof(string));
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*should be instance of*IShape*");
