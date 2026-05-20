@@ -15,7 +15,7 @@ public sealed class IdempotencyOptions
     /// <summary>How long an idempotency record is retained after the first successful response. Defaults to 24 hours.</summary>
     public TimeSpan IdempotencyKeyExpiration { get; set; } = TimeSpan.FromHours(24);
 
-    /// <summary>Request header that carries the idempotency key. Defaults to <c>X-Idempotency-Key</c>.</summary>
+    /// <summary>Request header that carries the idempotency key. Defaults to <c>Idempotency-Key</c> (per IETF <c>draft-ietf-httpapi-idempotency-key-header</c>).</summary>
     public string HeaderName { get; set; } = HttpHeaderNames.IdempotencyKey;
 
     /// <summary>HTTP methods for which idempotency is enforced. GET is never valid.</summary>

@@ -9,7 +9,7 @@ public sealed class HttpHeaderNamesTests
     [Fact]
     public void idempotency_key_should_have_expected_value()
     {
-        HttpHeaderNames.IdempotencyKey.Should().Be("X-Idempotency-Key");
+        HttpHeaderNames.IdempotencyKey.Should().Be("Idempotency-Key");
     }
 
     [Fact]

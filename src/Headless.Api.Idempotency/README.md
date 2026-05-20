@@ -62,7 +62,7 @@ app.Run();
 | Property | Default | Purpose |
 | --- | --- | --- |
 | `IdempotencyKeyExpiration` | 24 hours | TTL for completed records. |
-| `HeaderName` | `X-Idempotency-Key` | Request header carrying the key. |
+| `HeaderName` | `Idempotency-Key` | Request header carrying the key (per IETF `draft-ietf-httpapi-idempotency-key-header`). |
 | `Methods` | POST, PUT, PATCH, DELETE | HTTP methods that participate in idempotency. |
 | `InFlightStrategy` | `Reject` | `Reject` returns 409 on concurrent same-key requests. `WaitAndReplay` blocks on a distributed lock and replays the winner. |
 | `InFlightLockTimeout` | 30s | Lock-acquisition timeout for `WaitAndReplay`. |
