@@ -26,7 +26,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         using var cache = _CreateCache();
         var count = 100_000;
 
-        for (int i = 0; i < count; i++)
+        for (var i = 0; i < count; i++)
         {
             await cache.UpsertAsync($"key{i}", "value", TimeSpan.FromHours(1), AbortToken);
         }
@@ -54,7 +54,7 @@ public sealed class InMemoryCachePerformanceTests : TestBase
         var timeWith100K = sw.ElapsedMilliseconds;
 
         // Add more items
-        for (int i = count; i < count * 2; i++)
+        for (var i = count; i < count * 2; i++)
         {
             await cache.UpsertAsync($"key{i}", "value", TimeSpan.FromHours(1), AbortToken);
         }

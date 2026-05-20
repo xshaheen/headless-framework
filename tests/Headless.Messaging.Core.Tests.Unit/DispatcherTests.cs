@@ -143,16 +143,14 @@ public sealed class DispatcherTests : TestBase
         // when
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTime.UtcNow.AddSeconds(1);
+
         await Parallel.ForEachAsync(
             messages,
-            CancellationToken.None,
-            async (m, _) =>
-            {
-                await dispatcher.EnqueueToScheduler(m, dateTime);
-            }
+            AbortToken,
+            async (m, ct) => await dispatcher.EnqueueToScheduler(m, dateTime, null, ct)
         );
 
-        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10));
+        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10), AbortToken);
 
         await cts.CancelAsync();
 
@@ -279,14 +277,11 @@ public sealed class DispatcherTests : TestBase
 
         await Parallel.ForEachAsync(
             messages,
-            CancellationToken.None,
-            async (m, _) =>
-            {
-                await dispatcher.EnqueueToScheduler(m, dateTime);
-            }
+            AbortToken,
+            async (m, ct) => await dispatcher.EnqueueToScheduler(m, dateTime, null, ct)
         );
 
-        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10));
+        await sender.WaitForCountAsync(10000, TimeSpan.FromSeconds(10), AbortToken);
 
         await cts.CancelAsync();
 
@@ -426,7 +421,7 @@ public sealed class DispatcherTests : TestBase
             await dispatcher.EnqueueToPublish(message, AbortToken);
         }
 
-        await sender.WaitForCountAsync(100, TimeSpan.FromSeconds(5));
+        await sender.WaitForCountAsync(100, TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then - verify all messages sent successfully
@@ -463,7 +458,7 @@ public sealed class DispatcherTests : TestBase
             await dispatcher.EnqueueToPublish(message, AbortToken);
         }
 
-        await sender.WaitForCountAsync(500, TimeSpan.FromSeconds(5));
+        await sender.WaitForCountAsync(500, TimeSpan.FromSeconds(5), AbortToken);
         await cts.CancelAsync();
 
         // then - verify all messages sent successfully

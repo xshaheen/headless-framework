@@ -270,7 +270,7 @@ public sealed class TusAzureMetadataTests : TestBase
         var metadata = TusAzureMetadata.FromAzure(dict);
 
         // when
-        Dictionary<string, Metadata> tus = metadata.ToTus();
+        var tus = metadata.ToTus();
 
         // then
         tus.Should().ContainKey("filename");

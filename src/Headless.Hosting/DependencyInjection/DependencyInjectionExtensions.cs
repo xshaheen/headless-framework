@@ -214,7 +214,7 @@ public static class DependencyInjectionExtensions
         return _TryDecorate(
             services,
             typeof(TService),
-            descriptor => _CreateDecoratedDescriptor<TService>(descriptor, decorator)
+            descriptor => _CreateDecoratedDescriptor(descriptor, decorator)
         );
     }
 

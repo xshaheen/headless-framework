@@ -650,11 +650,14 @@ public sealed class RedisBlobStorage : IBlobStorage
             pagingLimit++;
         }
 
-        _logger.LogTrace(
-            s => s.Property("Limit", pagingLimit).Property("Skip", skip),
-            "Getting files matching {Prefix} and {Pattern}...",
-            args: [criteria.Prefix, criteria.Pattern]
-        );
+        if (_logger.IsEnabled(LogLevel.Trace))
+        {
+            _logger.LogTrace(
+                s => s.Property("Limit", pagingLimit).Property("Skip", skip),
+                "Getting files matching {Prefix} and {Pattern}...",
+                args: [criteria.Prefix, criteria.Pattern]
+            );
+        }
 
         var list = await _ScanBlobInfoListAsync(container, criteria, skip, pagingLimit, cancellationToken);
 
@@ -693,11 +696,14 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         var pageSize = limit ?? int.MaxValue;
 
-        _logger.LogTrace(
-            s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
-            "Getting file list matching {Prefix} and {Pattern}...",
-            args: [criteria.Prefix, criteria.Pattern]
-        );
+        if (_logger.IsEnabled(LogLevel.Trace))
+        {
+            _logger.LogTrace(
+                s => s.Property("SearchPattern", searchPattern).Property("Limit", limit).Property("Skip", skip),
+                "Getting file list matching {Prefix} and {Pattern}...",
+                args: [criteria.Prefix, criteria.Pattern]
+            );
+        }
 
         var blobs = await _ScanBlobInfoListAsync(infoContainer, criteria, skip ?? 0, pageSize, cancellationToken);
 

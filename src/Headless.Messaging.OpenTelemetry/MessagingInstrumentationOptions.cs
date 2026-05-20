@@ -58,7 +58,6 @@ public sealed class MessagingInstrumentationOptions
     /// </summary>
     /// <param name="enricher">The enricher to add. Must not be <see langword="null"/>.</param>
     /// <returns>The same options instance for chaining.</returns>
-    [MustUseReturnValue]
     public MessagingInstrumentationOptions AddEnricher(IActivityTagEnricher enricher)
     {
         Argument.IsNotNull(enricher);

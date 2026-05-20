@@ -262,7 +262,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             options.UseHsts = false;
         });
 
-        Func<Task> act = () => app.StartAsync(AbortToken);
+        var act = () => app.StartAsync(AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*MapHeadlessEndpoints*");
     }

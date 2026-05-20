@@ -11,7 +11,7 @@ namespace Headless.Messaging;
 /// This base type is used by object-typed consume middleware that should apply to every message type.
 /// Use <see cref="ConsumeContext{TMessage}"/> when the middleware or consumer needs strongly-typed payload access.
 /// </remarks>
-public record class ConsumeContext
+public record ConsumeContext
 {
     private CancellationToken _cancellationToken;
     private bool _isCompleted;
@@ -250,7 +250,7 @@ public record class ConsumeContext
 /// </list>
 /// </para>
 /// </remarks>
-public record class ConsumeContext<TMessage> : ConsumeContext
+public record ConsumeContext<TMessage> : ConsumeContext
     where TMessage : class
 {
     /// <summary>

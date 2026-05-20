@@ -21,5 +21,10 @@ public static class EndpointConventionBuilderExtensions
         {
             return builder.WithMetadata(new RequireTenantAttribute());
         }
+
+        public TBuilder SkipTenantResolution()
+        {
+            return builder.WithMetadata(new SkipTenantResolutionAttribute());
+        }
     }
 }

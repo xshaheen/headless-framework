@@ -477,7 +477,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when — pause then send
-        await _client.PauseAsync();
+        await _client.PauseAsync(AbortToken);
         _queue.Send(_CreateTestMessage("paused-msg", "test-topic"));
         await Task.Delay(200, AbortToken);
 
@@ -485,7 +485,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         receivedCount.Should().Be(0);
 
         // cleanup — resume and cancel
-        await _client.ResumeAsync();
+        await _client.ResumeAsync(AbortToken);
         await Task.Delay(200, AbortToken);
         await cts.CancelAsync();
 

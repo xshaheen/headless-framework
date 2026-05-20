@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 /// <summary>How concurrent requests sharing the same idempotency key are resolved.</summary>
 [PublicAPI]

@@ -197,7 +197,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_half_with_positive_value_does_not_throw()
     {
         // given
-        Half value = (Half)5.5;
+        var value = (Half)5.5;
 
         // when & then
         Argument.IsPositive(value).Should().Be(value);
@@ -207,7 +207,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_half_with_negative_value_throws()
     {
         // given
-        Half argument = (Half)(-5.5);
+        var argument = (Half)(-5.5);
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -253,7 +253,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_uint128_with_zero_throws()
     {
         // given
-        UInt128 argument = UInt128.Zero;
+        var argument = UInt128.Zero;
 
         // when
         Action action = () => Argument.IsPositive(argument);
@@ -337,7 +337,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_half_with_negative_value_does_not_throw()
     {
         // given
-        Half value = (Half)(-5.5);
+        var value = (Half)(-5.5);
 
         // when & then
         Argument.IsNegative(value).Should().Be(value);
@@ -347,7 +347,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_half_with_positive_value_throws()
     {
         // given
-        Half argument = (Half)5.5;
+        var argument = (Half)5.5;
 
         // when
         Action action = () => Argument.IsNegative(argument);
@@ -418,7 +418,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_positive_or_zero_half_with_zero_does_not_throw()
     {
         // given
-        Half value = Half.Zero;
+        var value = Half.Zero;
 
         // when & then
         Argument.IsPositiveOrZero(value).Should().Be(value);
@@ -463,7 +463,7 @@ public sealed class NumericGenericOverloadsTests
     public void is_negative_or_zero_half_with_zero_does_not_throw()
     {
         // given
-        Half value = Half.Zero;
+        var value = Half.Zero;
 
         // when & then
         Argument.IsNegativeOrZero(value).Should().Be(value);

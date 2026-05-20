@@ -10,16 +10,13 @@ using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class NatsConsumerClientTests : TestBase
 {
-    private readonly MsOptions.IOptions<MessagingNatsOptions> _options;
-    private readonly IServiceProvider _serviceProvider;
-
-    public NatsConsumerClientTests()
-    {
-        _options = MsOptions.Options.Create(new MessagingNatsOptions { Servers = "nats://localhost:4222" });
-        _serviceProvider = new ServiceCollection().BuildServiceProvider();
-    }
+    private readonly MsOptions.IOptions<MessagingNatsOptions> _options = MsOptions.Options.Create(
+        new MessagingNatsOptions { Servers = "nats://localhost:4222" }
+    );
+    private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     [Fact]
     public async Task should_have_correct_broker_address()
@@ -498,8 +495,8 @@ public sealed class NatsConsumerClientTests : TestBase
             // then
             nextCallCount.Should().Be(0);
 
-            await client.ResumeAsync();
-            await WaitUntilAsync(() => Volatile.Read(ref nextCallCount) > 0, TimeSpan.FromSeconds(1));
+            await client.ResumeAsync(AbortToken);
+            await _WaitUntilAsync(() => Volatile.Read(ref nextCallCount) > 0, TimeSpan.FromSeconds(1));
         }
         finally
         {
@@ -553,7 +550,7 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             await nextStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await client.PauseAsync();
+            await client.PauseAsync(AbortToken);
 
             // then
             await fetchCanceled.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
@@ -634,12 +631,12 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await client.PauseAsync();
+            await client.PauseAsync(AbortToken);
             await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
-            await client.ResumeAsync();
+            await client.ResumeAsync(AbortToken);
             await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-            await client.PauseAsync();
+            await client.PauseAsync(AbortToken);
             await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
             // then
@@ -657,7 +654,7 @@ public sealed class NatsConsumerClientTests : TestBase
         return new NatsConsumerClient(groupName, groupConcurrent, _options, _serviceProvider);
     }
 
-    private async Task WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    private static async Task _WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         cts.CancelAfter(timeout);

@@ -34,7 +34,6 @@ dotnet add package Headless.Api.Idempotency
 ## Quick Start
 
 ```csharp
-using Headless.Api.Idempotency;
 using Microsoft.AspNetCore.Builder;
 
 var builder = WebApplication.CreateBuilder(args);

@@ -29,7 +29,7 @@ internal sealed class RecordingTransport(
             var messageTypeName = headers.TryGetValue(Headers.Type, out var typeName) ? typeName : null;
 
             object messageObj = message;
-            Type messageType = typeof(TransportMessage);
+            var messageType = typeof(TransportMessage);
 
             if (message.Body.Length > 0 && messageTypeName != null)
             {

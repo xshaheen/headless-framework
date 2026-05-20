@@ -5,23 +5,24 @@ using Headless.Abstractions;
 using Headless.Hosting.Initialization;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Helpers;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-public sealed class HeadlessTestServerTests : IAsyncLifetime
+public sealed class HeadlessTestServerTests : TestBase
 {
     private HeadlessTestServer<Program>? _server;
 
-    public ValueTask InitializeAsync() => ValueTask.CompletedTask;
-
-    public async ValueTask DisposeAsync()
+    protected override async ValueTask DisposeAsyncCore()
     {
         if (_server is not null)
         {
             await _server.DisposeAsync();
         }
+
+        await base.DisposeAsyncCore();
     }
 
     [Fact]
@@ -206,7 +207,7 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
         _server = new HeadlessTestServer<Program>();
         _server.WaitForReadiness(_ => Task.Delay(TimeSpan.FromSeconds(30)), timeout: TimeSpan.FromMilliseconds(50));
 
-        Func<Task> act = async () => await _server.InitializeAsync();
+        var act = async () => await _server.InitializeAsync();
 
         await act.Should().ThrowExactlyAsync<TimeoutException>();
     }
@@ -225,9 +226,13 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
     public async Task should_cleanup_factory_on_init_failure()
     {
         _server = new HeadlessTestServer<Program>();
-        _server.WaitForReadiness(_ => Task.Delay(TimeSpan.FromSeconds(30)), timeout: TimeSpan.FromMilliseconds(50));
 
-        Func<Task> act = async () => await _server.InitializeAsync();
+        _server.WaitForReadiness(
+            _ => Task.Delay(TimeSpan.FromSeconds(30), AbortToken),
+            timeout: TimeSpan.FromMilliseconds(50)
+        );
+
+        var act = async () => await _server.InitializeAsync();
         await act.Should().ThrowExactlyAsync<TimeoutException>();
 
         // After init failure, dispose should be safe (factory already cleaned up)
@@ -284,7 +289,7 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
             initializerTimeout: TimeSpan.FromMilliseconds(100)
         );
 
-        Func<Task> act = async () => await _server.InitializeAsync();
+        var act = async () => await _server.InitializeAsync();
 
         await act.Should().ThrowExactlyAsync<TimeoutException>().WithMessage("*NeverCompletesInitializer*");
     }
@@ -296,7 +301,7 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
             services.AddSingleton<IInitializer>(new FaultingInitializer())
         );
 
-        Func<Task> act = async () => await _server.InitializeAsync();
+        var act = async () => await _server.InitializeAsync();
 
         await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*FaultingInitializer*faulted*");
     }
@@ -307,15 +312,19 @@ public sealed class HeadlessTestServerTests : IAsyncLifetime
     {
         public bool IsInitialized => false;
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
-            Task.Delay(Timeout.Infinite, cancellationToken);
+        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.Delay(Timeout.Infinite, cancellationToken);
+        }
     }
 
     private sealed class FaultingInitializer : IInitializer
     {
         public bool IsInitialized => false;
 
-        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default) =>
-            Task.FromException(new InvalidOperationException("Initializer exploded"));
+        public Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromException(new InvalidOperationException("Initializer exploded"));
+        }
     }
 }

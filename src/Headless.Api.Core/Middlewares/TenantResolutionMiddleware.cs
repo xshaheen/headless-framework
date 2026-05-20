@@ -2,6 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
@@ -31,6 +32,12 @@ public sealed partial class TenantResolutionMiddleware(
         Argument.IsNotNull(currentTenant);
 
         context.Features.Set(HeadlessTenancyResolutionApplied.Instance);
+
+        if (context.GetEndpoint()?.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
+        {
+            await next(context);
+            return;
+        }
 
         if (context.User.Identity?.IsAuthenticated != true)
         {
@@ -62,6 +69,15 @@ public sealed partial class TenantResolutionMiddleware(
         return string.Equals(claimType, UserClaimTypes.TenantId, StringComparison.Ordinal)
             ? principal.GetTenantId()
             : principal.FindFirst(claimType)?.Value;
+    }
+
+    /// <summary>
+    /// Test seam: resets the once-per-process ordering warning flag so that tests asserting on the
+    /// HEADLESS_TENANCY_MIDDLEWARE_ORDERING log entry can run in any order.
+    /// </summary>
+    internal static void ResetOrderingWarningForTesting()
+    {
+        Volatile.Write(ref _orderingWarningEmitted, 0);
     }
 
     private void _WarnIfMiddlewareLikelyMisordered(HttpContext context)

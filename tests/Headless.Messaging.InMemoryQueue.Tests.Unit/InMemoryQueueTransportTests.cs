@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryQueueTransportTests : TestBase
 {
     private readonly InMemoryQueueTransport _transport;
@@ -72,7 +73,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var message = _CreateTestMessage("msg-1", "test-topic");
 
         // when
-        var result = await _transport.SendAsync(message);
+        var result = await _transport.SendAsync(message, AbortToken);
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -152,7 +153,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
 
         // when
-        await _transport.SendAsync(message);
+        await _transport.SendAsync(message, AbortToken);
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -177,7 +178,8 @@ public sealed class InMemoryQueueTransportTests : TestBase
         };
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(
+
+        _ = Task.Run(
             async () =>
             {
                 try
@@ -200,7 +202,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var message = new TransportMessage(headers, bodyContent);
 
         // when
-        await _transport.SendAsync(message);
+        await _transport.SendAsync(message, AbortToken);
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -271,7 +273,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // when - send messages concurrently via transport
         var sendTasks = Enumerable
             .Range(0, messageCount)
-            .Select(i => _transport.SendAsync(_CreateTestMessage($"msg-{i}", "concurrent-topic")));
+            .Select(i => _transport.SendAsync(_CreateTestMessage($"msg-{i}", "concurrent-topic"), AbortToken));
 
         var results = await Task.WhenAll(sendTasks);
 

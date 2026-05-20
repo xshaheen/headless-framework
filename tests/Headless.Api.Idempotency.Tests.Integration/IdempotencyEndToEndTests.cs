@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Api.Idempotency;
+using Headless.Api;
 using Headless.Caching;
 using Headless.Constants;
+using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +16,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class IdempotencyEndToEndTests
+public sealed class IdempotencyEndToEndTests : TestBase
 {
     // ── AE1: replay on identical retry ────────────────────────────────────────
 
@@ -31,8 +32,8 @@ public sealed class IdempotencyEndToEndTests
         first.StatusCode.Should().Be(HttpStatusCode.Created);
         second.StatusCode.Should().Be(HttpStatusCode.Created);
 
-        var firstBody = await first.Content.ReadAsStringAsync();
-        var secondBody = await second.Content.ReadAsStringAsync();
+        var firstBody = await first.Content.ReadAsStringAsync(AbortToken);
+        var secondBody = await second.Content.ReadAsStringAsync(AbortToken);
 
         secondBody.Should().Be(firstBody);
         first.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
@@ -200,11 +201,10 @@ public sealed class IdempotencyEndToEndTests
         await using var app = await IdempotencyTestApp.CreateAsync();
         using var client = IdempotencyTestApp.CreateClient(app);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, "/echo")
-        {
-            Content = new StringContent("hello"),
-        };
-        using var response = await client.SendAsync(request);
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/echo");
+
+        request.Content = new StringContent("hello");
+        using var response = await client.SendAsync(request, cancellationToken: AbortToken);
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
@@ -219,8 +219,17 @@ public sealed class IdempotencyEndToEndTests
         await using var app = await IdempotencyTestApp.CreateAsync(tenantHeaderName: tenantHeader);
         using var client = IdempotencyTestApp.CreateClient(app);
 
-        async Task<HttpResponseMessage> postForTenant(string tenant) =>
-            await _Post(client, "/echo", key: "k1", body: "same-body", extraHeaders: new(StringComparer.Ordinal) { [tenantHeader] = tenant });
+        async Task<HttpResponseMessage> postForTenant(string tenant)
+        {
+            // ReSharper disable once AccessToDisposedClosure
+            return await _Post(
+                client,
+                "/echo",
+                key: "k1",
+                body: "same-body",
+                extraHeaders: new(StringComparer.Ordinal) { [tenantHeader] = tenant }
+            );
+        }
 
         var tenantA = await postForTenant("TENANT-A");
         var tenantB = await postForTenant("TENANT-B");
@@ -232,8 +241,8 @@ public sealed class IdempotencyEndToEndTests
         tenantB.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse();
 
         // Per-invocation GUID in body proves each tenant ran the handler independently
-        var bodyA = await tenantA.Content.ReadAsStringAsync();
-        var bodyB = await tenantB.Content.ReadAsStringAsync();
+        var bodyA = await tenantA.Content.ReadAsStringAsync(AbortToken);
+        var bodyB = await tenantB.Content.ReadAsStringAsync(AbortToken);
         bodyA.Should().NotBe(bodyB);
     }
 
@@ -242,15 +251,19 @@ public sealed class IdempotencyEndToEndTests
     [Fact]
     public async Task per_endpoint_with_idempotency_metadata_should_apply_overrides()
     {
-        await using var app = await IdempotencyTestApp.CreateAsync(
-            mapAdditionalEndpoints: a =>
-            {
-                a.MapPost("/strict", (HttpContext ctx) =>
-                {
-                    ctx.Response.StatusCode = StatusCodes.Status201Created;
-                    return Task.CompletedTask;
-                }).WithIdempotency(o => o.MismatchStatusCode = StatusCodes.Status409Conflict);
-            });
+        await using var app = await IdempotencyTestApp.CreateAsync(mapAdditionalEndpoints: a =>
+        {
+            a.MapPost(
+                    "/strict",
+                    ctx =>
+                    {
+                        ctx.Response.StatusCode = StatusCodes.Status201Created;
+                        return Task.CompletedTask;
+                    }
+                )
+                .WithIdempotency(o => o.MismatchStatusCode = StatusCodes.Status409Conflict);
+        });
+
         using var client = IdempotencyTestApp.CreateClient(app);
 
         await _Post(client, "/strict", key: "k1", body: "one");
@@ -277,9 +290,14 @@ public sealed class IdempotencyEndToEndTests
         // The loser should reject immediately on the in-flight marker without invoking the handler.
         var loser = await loserTask;
         loser.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        var loserBody = await loser.Content.ReadAsStringAsync();
+        var loserBody = await loser.Content.ReadAsStringAsync(AbortToken);
         loserBody.Should().Contain("g:idempotency_in_flight");
-        loserBody.Should().NotContain("g:idempotency_in_flight_timeout", "Reject must surface g:idempotency_in_flight, not the WaitAndReplay timeout code");
+        loserBody
+            .Should()
+            .NotContain(
+                "g:idempotency_in_flight_timeout",
+                "Reject must surface g:idempotency_in_flight, not the WaitAndReplay timeout code"
+            );
 
         // Now release the winner and verify it completed normally.
         gate.Release();
@@ -297,9 +315,14 @@ public sealed class IdempotencyEndToEndTests
     {
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(
-            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromSeconds(10); },
+            o =>
+            {
+                o.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                o.InFlightLockTimeout = TimeSpan.FromSeconds(10);
+            },
             withLockProvider: true,
-            handlerGate: gate);
+            handlerGate: gate
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var winnerTask = _Post(client, "/echo", key: "k1", body: "hello");
@@ -323,8 +346,8 @@ public sealed class IdempotencyEndToEndTests
         winner.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("winner ran the handler");
         loser.Headers.Should().Contain(h => h.Key == HttpHeaderNames.IdempotentReplayed, "loser observed the replay");
 
-        var winnerBody = await winner.Content.ReadAsStringAsync();
-        var loserBody = await loser.Content.ReadAsStringAsync();
+        var winnerBody = await winner.Content.ReadAsStringAsync(AbortToken);
+        var loserBody = await loser.Content.ReadAsStringAsync(AbortToken);
         loserBody.Should().Be(winnerBody, "replay must be byte-equivalent to the original");
 
         gate.InvocationCount.Should().Be(1, "WaitAndReplay never invokes the handler twice for the same key");
@@ -370,6 +393,7 @@ public sealed class IdempotencyEndToEndTests
                     return;
                 }
 
+                // ReSharper disable once AccessToModifiedClosure
                 var cache = cacheRef;
                 if (cache is null)
                 {
@@ -384,14 +408,19 @@ public sealed class IdempotencyEndToEndTests
                     winnerInRaceWindow.TrySetResult();
                     await releaseRaceWindow.Task.WaitAsync(ct).ConfigureAwait(false);
                 }
-            }
+            },
         };
 
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(
-            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromSeconds(5); },
+            o =>
+            {
+                o.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                o.InFlightLockTimeout = TimeSpan.FromSeconds(5);
+            },
             handlerGate: gate,
-            lockProvider: lockProvider);
+            lockProvider: lockProvider
+        );
         cacheRef = app.Services.GetRequiredService<ICache>();
 
         using var client = IdempotencyTestApp.CreateClient(app);
@@ -400,10 +429,7 @@ public sealed class IdempotencyEndToEndTests
 
         // Winner advances to one of two states: gated inside the race window (pre-fix) or
         // gated inside the handler (post-fix). Whichever fires first is enough to send the loser.
-        await Task.WhenAny(
-            winnerInRaceWindow.Task,
-            gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5))
-        );
+        await Task.WhenAny(winnerInRaceWindow.Task, gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5)));
 
         var loserTask = _Post(client, "/echo", key: "race-k", body: "hello");
 
@@ -418,10 +444,12 @@ public sealed class IdempotencyEndToEndTests
         var loser = await loserTask;
 
         winner.StatusCode.Should().Be(HttpStatusCode.Created);
-        loser.StatusCode.Should().Be(
-            HttpStatusCode.Created,
-            "loser must replay the winner's response — not return 409 InFlightTimeout — when the winner is healthy"
-        );
+        loser
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.Created,
+                "loser must replay the winner's response — not return 409 InFlightTimeout — when the winner is healthy"
+            );
 
         gate.InvocationCount.Should().Be(1, "WaitAndReplay never invokes the handler twice for the same key");
     }
@@ -431,9 +459,14 @@ public sealed class IdempotencyEndToEndTests
     {
         var gate = new IdempotencyTestApp.TestHandlerGate();
         await using var app = await IdempotencyTestApp.CreateAsync(
-            o => { o.InFlightStrategy = InFlightStrategy.WaitAndReplay; o.InFlightLockTimeout = TimeSpan.FromMilliseconds(250); },
+            o =>
+            {
+                o.InFlightStrategy = InFlightStrategy.WaitAndReplay;
+                o.InFlightLockTimeout = TimeSpan.FromMilliseconds(250);
+            },
             withLockProvider: true,
-            handlerGate: gate);
+            handlerGate: gate
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var winnerTask = _Post(client, "/echo", key: "k1", body: "hello");
@@ -505,7 +538,12 @@ public sealed class IdempotencyEndToEndTests
 
         var firstBody = await first.Content.ReadAsStringAsync();
         var secondBody = await second.Content.ReadAsStringAsync();
-        firstBody.Should().NotBe(secondBody, "tenant-anon pass-through under default RequireUserIdentity must not share a cache slot");
+        firstBody
+            .Should()
+            .NotBe(
+                secondBody,
+                "tenant-anon pass-through under default RequireUserIdentity must not share a cache slot"
+            );
     }
 
     [Fact]
@@ -515,7 +553,8 @@ public sealed class IdempotencyEndToEndTests
         // idempotency. Two retries sharing tenant + key + body replay byte-equivalently.
         await using var app = await IdempotencyTestApp.CreateAsync(
             o => o.RequireUserIdentity = false,
-            tenantHeaderName: "X-Tenant");
+            tenantHeaderName: "X-Tenant"
+        );
         var userState = app.Services.GetRequiredService<IdempotencyTestApp.TestCurrentUserState>();
         userState.SetAnonymous();
 
@@ -527,7 +566,12 @@ public sealed class IdempotencyEndToEndTests
 
         first.StatusCode.Should().Be(HttpStatusCode.Created);
         second.StatusCode.Should().Be(HttpStatusCode.Created);
-        second.Headers.GetValues(HttpHeaderNames.IdempotentReplayed).Should().ContainSingle().Which.Should().Be("true", "opt-in tenant-anon idempotency replays the original response");
+        second
+            .Headers.GetValues(HttpHeaderNames.IdempotentReplayed)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("true", "opt-in tenant-anon idempotency replays the original response");
 
         var firstBody = await first.Content.ReadAsStringAsync();
         var secondBody = await second.Content.ReadAsStringAsync();
@@ -544,19 +588,24 @@ public sealed class IdempotencyEndToEndTests
         // warning and bypasses idempotency for this request, letting the handler run unguarded.
         // The trade-off — a single retry may execute its handler twice if the outage straddles
         // attempts — is the explicit Stripe/AWS default.
-        await using var app = await IdempotencyTestApp.CreateAsync(
-            configureServices: services =>
+        await using var app = await IdempotencyTestApp.CreateAsync(configureServices: services =>
+        {
+            var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ICache));
+            if (descriptor is not null)
             {
-                var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Headless.Caching.ICache));
-                if (descriptor is not null) { services.Remove(descriptor); }
-                services.AddSingleton<Headless.Caching.ICache, IdempotencyTestApp.ThrowingCache>();
-            });
+                services.Remove(descriptor);
+            }
+            services.AddSingleton<ICache, IdempotencyTestApp.ThrowingCache>();
+        });
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var response = await _Post(client, "/echo", key: "cache-fail-open", body: "hello");
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, "FailOpen bypasses idempotency and runs the handler");
-        response.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("no replay attempted under cache outage");
+        response
+            .Headers.Contains(HttpHeaderNames.IdempotentReplayed)
+            .Should()
+            .BeFalse("no replay attempted under cache outage");
     }
 
     [Fact]
@@ -568,15 +617,21 @@ public sealed class IdempotencyEndToEndTests
             o => o.OnCacheError = OnCacheErrorBehavior.Throw,
             configureServices: services =>
             {
-                var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(Headless.Caching.ICache));
-                if (descriptor is not null) { services.Remove(descriptor); }
-                services.AddSingleton<Headless.Caching.ICache, IdempotencyTestApp.ThrowingCache>();
-            });
+                var descriptor = services.FirstOrDefault(d => d.ServiceType == typeof(ICache));
+                if (descriptor is not null)
+                {
+                    services.Remove(descriptor);
+                }
+                services.AddSingleton<ICache, IdempotencyTestApp.ThrowingCache>();
+            }
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var response = await _Post(client, "/echo", key: "cache-throw", body: "hello");
 
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
+        response
+            .StatusCode.Should()
+            .Be(HttpStatusCode.InternalServerError, "Throw mode rethrows cache exceptions to the host pipeline");
     }
 
     // ── Default cache key includes query string ──────────────────────────────
@@ -600,8 +655,16 @@ public sealed class IdempotencyEndToEndTests
         var firstBody = await first.Content.ReadAsStringAsync();
         var secondBody = await second.Content.ReadAsStringAsync();
 
-        secondBody.Should().NotBe(firstBody, "different query strings yield distinct cache slots; each invocation produces its own response");
-        second.Headers.Contains(HttpHeaderNames.IdempotentReplayed).Should().BeFalse("the second request must execute the handler, not replay the first");
+        secondBody
+            .Should()
+            .NotBe(
+                firstBody,
+                "different query strings yield distinct cache slots; each invocation produces its own response"
+            );
+        second
+            .Headers.Contains(HttpHeaderNames.IdempotentReplayed)
+            .Should()
+            .BeFalse("the second request must execute the handler, not replay the first");
     }
 
     // ── Winner lock lease decoupled from InFlightLockTimeout ─────────────────
@@ -628,7 +691,7 @@ public sealed class IdempotencyEndToEndTests
                     winnerLeaseSeen = timeUntilExpires;
                 }
                 return Task.CompletedTask;
-            }
+            },
         };
 
         await using var app = await IdempotencyTestApp.CreateAsync(
@@ -638,13 +701,19 @@ public sealed class IdempotencyEndToEndTests
                 o.InFlightLockTimeout = configuredAcquireTimeout;
                 o.WinnerLockLease = configuredLease;
             },
-            lockProvider: lockProvider);
+            lockProvider: lockProvider
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var response = await _Post(client, "/echo", key: "lease-1", body: "hello");
 
         response.StatusCode.Should().Be(HttpStatusCode.Created);
-        winnerLeaseSeen.Should().Be(configuredLease, "the winner's lock lease must come from WinnerLockLease, not InFlightLockTimeout + 5s");
+        winnerLeaseSeen
+            .Should()
+            .Be(
+                configuredLease,
+                "the winner's lock lease must come from WinnerLockLease, not InFlightLockTimeout + 5s"
+            );
         // Sanity: old formula would have produced 6 seconds, which is observably different.
         winnerLeaseSeen.Should().NotBe(configuredAcquireTimeout + TimeSpan.FromSeconds(5));
     }
@@ -667,17 +736,23 @@ public sealed class IdempotencyEndToEndTests
                     throw new InvalidOperationException("simulated lock-provider outage");
                 }
                 return Task.CompletedTask;
-            }
+            },
         };
 
         await using var app = await IdempotencyTestApp.CreateAsync(
             o => o.InFlightStrategy = InFlightStrategy.WaitAndReplay,
-            lockProvider: lockProvider);
+            lockProvider: lockProvider
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         var response = await _Post(client, "/echo", key: "lock-fail-open", body: "hello");
 
-        response.StatusCode.Should().Be(HttpStatusCode.Created, "FailOpen bypasses idempotency and runs the handler when the lock provider is down");
+        response
+            .StatusCode.Should()
+            .Be(
+                HttpStatusCode.Created,
+                "FailOpen bypasses idempotency and runs the handler when the lock provider is down"
+            );
     }
 
     [Fact]
@@ -696,7 +771,7 @@ public sealed class IdempotencyEndToEndTests
                     throw new InvalidOperationException("simulated lock-provider outage");
                 }
                 return Task.CompletedTask;
-            }
+            },
         };
 
         await using var app = await IdempotencyTestApp.CreateAsync(
@@ -706,7 +781,8 @@ public sealed class IdempotencyEndToEndTests
                 o.InFlightLockTimeout = TimeSpan.FromSeconds(5);
             },
             handlerGate: gate,
-            lockProvider: lockProvider);
+            lockProvider: lockProvider
+        );
         using var client = IdempotencyTestApp.CreateClient(app);
 
         // Winner enters the handler (gated) holding the lock.
@@ -733,10 +809,9 @@ public sealed class IdempotencyEndToEndTests
         Dictionary<string, string>? extraHeaders = null
     )
     {
-        using var request = new HttpRequestMessage(HttpMethod.Post, path)
-        {
-            Content = new StringContent(body),
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, path);
+
+        request.Content = new StringContent(body);
         request.Headers.Add(HttpHeaderNames.IdempotencyKey, key);
 
         if (extraHeaders is not null)
@@ -748,6 +823,6 @@ public sealed class IdempotencyEndToEndTests
         }
 
         // Disposed by caller via using
-        return await client.SendAsync(request);
+        return await client.SendAsync(request, cancellationToken: AbortToken);
     }
 }

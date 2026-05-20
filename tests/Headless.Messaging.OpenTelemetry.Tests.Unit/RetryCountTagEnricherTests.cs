@@ -71,6 +71,9 @@ public sealed class RetryCountTagEnricherTests : TestBase
     private static Activity _CreateActivity()
     {
         using var source = new ActivitySource("test");
+#pragma warning disable CA2000  // Dispose objects before losing scope
+        // ReSharper disable once ExplicitCallerInfoArgument
         return source.StartActivity("test") ?? new Activity("test").Start();
+#pragma warning restore CA2000
     }
 }

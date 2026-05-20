@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Headless.Api;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
@@ -53,7 +53,11 @@ public sealed class WithIdempotencyEndpointMetadataTests
         private sealed class StubEndpointBuilder : EndpointBuilder
         {
             public override Endpoint Build() =>
-                new(RequestDelegate ?? (_ => Task.CompletedTask), new EndpointMetadataCollection(Metadata), DisplayName);
+                new(
+                    RequestDelegate ?? (_ => Task.CompletedTask),
+                    new EndpointMetadataCollection(Metadata),
+                    DisplayName
+                );
         }
     }
 }

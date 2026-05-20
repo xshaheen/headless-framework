@@ -442,18 +442,18 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             ?? new CronOccurrenceJobGraphData { Date = today, Results = [] };
         var futureData = grouped.Where(d => d.Date > today).OrderBy(d => d.Date).ToList();
 
-        int pastDaysWithData = pastData.Count;
-        int futureDaysWithData = futureData.Count;
+        var pastDaysWithData = pastData.Count;
+        var futureDaysWithData = futureData.Count;
 
-        int remainingSlots = maxTotalDays - 1; // Exclude today
-        int emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
-        int emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
+        var remainingSlots = maxTotalDays - 1; // Exclude today
+        var emptyPastSlots = Math.Max(0, (remainingSlots - futureDaysWithData) / 2);
+        var emptyFutureSlots = Math.Max(0, remainingSlots - pastDaysWithData - emptyPastSlots);
 
         List<CronOccurrenceJobGraphData> emptyPastDays = [];
         if (emptyPastSlots > 0)
         {
             var firstPastDate = pastData.FirstOrDefault()?.Date ?? today.AddDays(-1);
-            for (int i = 1; i <= emptyPastSlots; i++)
+            for (var i = 1; i <= emptyPastSlots; i++)
             {
                 emptyPastDays.Add(new CronOccurrenceJobGraphData { Date = firstPastDate.AddDays(-i), Results = [] });
             }
@@ -463,7 +463,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         if (emptyFutureSlots > 0)
         {
             var lastFutureDate = futureData.LastOrDefault()?.Date ?? today.AddDays(1);
-            for (int i = 1; i <= emptyFutureSlots; i++)
+            for (var i = 1; i <= emptyFutureSlots; i++)
             {
                 emptyFutureDays.Add(new CronOccurrenceJobGraphData { Date = lastFutureDate.AddDays(i), Results = [] });
             }

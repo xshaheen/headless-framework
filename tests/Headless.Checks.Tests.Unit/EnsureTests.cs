@@ -80,7 +80,7 @@ public sealed class EnsureTests
         object? obj = null;
 
         // when
-        Action action = () => Ensure.NotDisposed(disposed, obj);
+        var action = () => Ensure.NotDisposed(disposed, obj);
 
         // then
         action.Should().ThrowExactly<ObjectDisposedException>().WithMessage("Cannot access a disposed object.*");
@@ -94,7 +94,7 @@ public sealed class EnsureTests
         object obj = "test string";
 
         // when
-        Action action = () => Ensure.NotDisposed(disposed, obj);
+        var action = () => Ensure.NotDisposed(disposed, obj);
 
         // then
         action
@@ -112,7 +112,7 @@ public sealed class EnsureTests
         const string customMessage = "Custom disposal message";
 
         // when
-        Action action = () => Ensure.NotDisposed(disposed, obj, customMessage);
+        var action = () => Ensure.NotDisposed(disposed, obj, customMessage);
 
         // then
         action.Should().ThrowExactly<ObjectDisposedException>().WithMessage($"*{customMessage}*");
@@ -126,7 +126,7 @@ public sealed class EnsureTests
         var obj = new TestDisposableObject();
 
         // when
-        Action action = () => Ensure.NotDisposed(disposed, obj);
+        var action = () => Ensure.NotDisposed(disposed, obj);
 
         // then
         action

@@ -171,17 +171,20 @@ internal sealed class ConsumerRegister(
     /// </summary>
     private void _OnCancellationRequested()
     {
-        _ = Task.Run(async () =>
-        {
-            try
+        _ = Task.Run(
+            async () =>
             {
-                await DisposeAsync();
-            }
+                try
+                {
+                    await DisposeAsync();
+                }
 #pragma warning disable ERP022 // Best-effort teardown — nothing useful to do with the exception
-            // ReSharper disable once EmptyGeneralCatchClause
-            catch { }
+                // ReSharper disable once EmptyGeneralCatchClause
+                catch { }
 #pragma warning restore ERP022
-        });
+            },
+            CancellationToken.None
+        );
     }
 
     public async ValueTask DisposeAsync()
@@ -241,7 +244,7 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-                await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2));
+                await Task.WhenAll(allTasks).WaitAsync(TimeSpan.FromSeconds(2), _timeProvider, CancellationToken.None);
             }
 #pragma warning disable ERP022, RCS1075 // Intentional: timeout or cancellation — proceed with cleanup
             // ReSharper disable once EmptyGeneralCatchClause
@@ -484,7 +487,7 @@ internal sealed class ConsumerRegister(
             {
                 try
                 {
-                    await client.PauseAsync();
+                    await client.PauseAsync(CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -509,7 +512,7 @@ internal sealed class ConsumerRegister(
             {
                 try
                 {
-                    await client.ResumeAsync();
+                    await client.ResumeAsync(CancellationToken.None);
                 }
                 catch (Exception ex)
                 {
@@ -642,7 +645,7 @@ internal sealed class ConsumerRegister(
                     if (dispatchBypassException is not null && _circuitBreakerStateManager is not null)
                     {
                         await _circuitBreakerStateManager
-                            .ReportFailureAsync(group, dispatchBypassException)
+                            .ReportFailureAsync(group, dispatchBypassException, CancellationToken.None)
                             .ConfigureAwait(false);
                         probeOutcomeTransferred = true;
                     }
@@ -717,12 +720,17 @@ internal sealed class ConsumerRegister(
                 }
                 else
                 {
-                    var mediumMessage = await _storage.StoreReceivedMessageAsync(name, group, message);
+                    var mediumMessage = await _storage.StoreReceivedMessageAsync(
+                        name,
+                        group,
+                        message,
+                        CancellationToken.None
+                    );
                     mediumMessage.Origin = message;
 
                     _TracingAfter(tracingTimestamp, transportMessage, _serverAddress, hostShutdownToken);
 
-                    await _dispatcher.EnqueueToExecute(mediumMessage, executor!);
+                    await _dispatcher.EnqueueToExecute(mediumMessage, executor, CancellationToken.None);
                     probeOutcomeTransferred = true;
 
                     await client.CommitAsync(sender);

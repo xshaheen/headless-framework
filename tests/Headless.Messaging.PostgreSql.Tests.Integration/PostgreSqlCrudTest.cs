@@ -178,18 +178,22 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var expiredTime = DateTime.UtcNow.AddDays(-1);
         var id = _longIdGenerator.Create();
         var messageId = $"msg-{id}";
+
         await connection.ExecuteAsync(
-            """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic','{}',0,@Added,@ExpiresAt,'Succeeded',@MessageId)
-            """,
-            new
-            {
-                Id = id,
-                Added = expiredTime,
-                ExpiresAt = expiredTime,
-                MessageId = messageId,
-            }
+            new CommandDefinition(
+                """
+                INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic','{}',0,@Added,@ExpiresAt,'Succeeded',@MessageId)
+                """,
+                new
+                {
+                    Id = id,
+                    Added = expiredTime,
+                    ExpiresAt = expiredTime,
+                    MessageId = messageId,
+                },
+                cancellationToken: AbortToken
+            )
         );
 
         // when
@@ -242,23 +246,27 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var id = _longIdGenerator.Create();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
+
         await connection.ExecuteAsync(
-            """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
-            """,
-            new
-            {
-                Id = id,
-                Content = content,
-                Added = addedTime,
-                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
-                MessageId = messageId,
-            }
+            new CommandDefinition(
+                """
+                INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Added = addedTime,
+                    NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
+                    MessageId = messageId,
+                },
+                cancellationToken: AbortToken
+            )
         );
 
         // when
-        var messages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var messages = (await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then
         messages.Should().NotBeEmpty();
@@ -277,22 +285,25 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
-            """
-            INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic','test.group',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
-            """,
-            new
-            {
-                Id = id,
-                Content = content,
-                Added = addedTime,
-                NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
-                MessageId = msgId,
-            }
+            new CommandDefinition(
+                """
+                INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic','test.group',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                """,
+                new
+                {
+                    Id = id,
+                    Content = content,
+                    Added = addedTime,
+                    NextRetryAt = DateTime.UtcNow.AddSeconds(-1),
+                    MessageId = msgId,
+                },
+                cancellationToken: AbortToken
+            )
         );
 
         // when
-        var messages = await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var messages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then
         messages.Should().NotBeEmpty();
@@ -350,10 +361,15 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         // then
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
+
         var status = await connection.QueryFirstOrDefaultAsync<string>(
-            "SELECT \"StatusName\" FROM messaging.received WHERE \"MessageId\"=@MessageId",
-            new { MessageId = msgId }
+            new CommandDefinition(
+                "SELECT \"StatusName\" FROM messaging.received WHERE \"MessageId\"=@MessageId",
+                new { MessageId = msgId },
+                cancellationToken: AbortToken
+            )
         );
+
         status.Should().Be(nameof(StatusName.Failed));
     }
 

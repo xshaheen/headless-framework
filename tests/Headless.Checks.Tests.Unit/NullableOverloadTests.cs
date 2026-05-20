@@ -326,7 +326,7 @@ public sealed class NullableOverloadTests
     public void is_positive_with_datetime_creates_message_with_invariant_string()
     {
         // given
-        DateTime argument = DateTime.MinValue;
+        var argument = DateTime.MinValue;
 
         // when
         Action action = () => Argument.IsPositive(argument.Ticks);
@@ -339,7 +339,7 @@ public sealed class NullableOverloadTests
     public void is_positive_with_datetimeoffset_creates_message_with_invariant_string()
     {
         // given
-        DateTimeOffset argument = DateTimeOffset.MinValue;
+        var argument = DateTimeOffset.MinValue;
 
         // when
         Action action = () => Argument.IsPositive(argument.Ticks);

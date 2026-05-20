@@ -320,7 +320,7 @@ public sealed class NestedStreamTests : TestBase
     {
         var buffer = new byte[_underlyingStream.Length];
 
-        int bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length, TimeoutToken).WithCancellation(TimeoutToken);
+        var bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length, TimeoutToken).WithCancellation(TimeoutToken);
 
         Assert.Equal(_DefaultNestedLength, bytesRead);
 

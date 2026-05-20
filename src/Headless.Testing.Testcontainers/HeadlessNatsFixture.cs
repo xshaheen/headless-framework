@@ -18,6 +18,10 @@ public class HeadlessNatsFixture() : ContainerFixture<NatsBuilder, NatsContainer
         return base.Configure()
             .WithImage(TestImages.Nats)
             .WithReuse(true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"));
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .UntilMessageIsLogged("Server is ready")
+                    .UntilExternalTcpPortIsAvailable(NatsBuilder.NatsClientPort)
+            );
     }
 }

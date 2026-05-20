@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Idempotency;
+using Headless.Api;
 using Headless.DistributedLocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
 
 namespace Tests;
 
@@ -31,10 +32,13 @@ public sealed class SetupIdempotencyTests
 
         services.AddIdempotency(_ => { });
 
-        services.Any(s =>
-            s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
-            && s.ImplementationType == typeof(IdempotencyOptionsDIValidator)
-        ).Should().BeTrue();
+        services
+            .Any(s =>
+                s.ServiceType == typeof(IValidateOptions<IdempotencyOptions>)
+                && s.ImplementationType == typeof(IdempotencyOptionsDIValidator)
+            )
+            .Should()
+            .BeTrue();
     }
 
     [Fact]
@@ -55,13 +59,15 @@ public sealed class SetupIdempotencyTests
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<ConfigSource>(new ConfigSource(TimeSpan.FromHours(9)));
+        services.AddSingleton(new ConfigSource(TimeSpan.FromHours(9)));
 
-        services.AddIdempotency((o, sp) =>
-        {
-            var src = sp.GetRequiredService<ConfigSource>();
-            o.IdempotencyKeyExpiration = src.Expiration;
-        });
+        services.AddIdempotency(
+            (o, sp) =>
+            {
+                var src = sp.GetRequiredService<ConfigSource>();
+                o.IdempotencyKeyExpiration = src.Expiration;
+            }
+        );
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         resolved.IdempotencyKeyExpiration.Should().Be(TimeSpan.FromHours(9));
@@ -118,7 +124,10 @@ public sealed class SetupIdempotencyTests
         var sp = new ServiceCollection().BuildServiceProvider();
         var validator = new IdempotencyOptionsDIValidator(sp);
 
-        var result = validator.Validate(name: null, new IdempotencyOptions { InFlightStrategy = InFlightStrategy.Reject });
+        var result = validator.Validate(
+            name: null,
+            new IdempotencyOptions { InFlightStrategy = InFlightStrategy.Reject }
+        );
 
         result.Succeeded.Should().BeTrue();
     }
@@ -131,7 +140,10 @@ public sealed class SetupIdempotencyTests
         var sp = services.BuildServiceProvider();
         var validator = new IdempotencyOptionsDIValidator(sp);
 
-        var result = validator.Validate(name: null, new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay });
+        var result = validator.Validate(
+            name: null,
+            new IdempotencyOptions { InFlightStrategy = InFlightStrategy.WaitAndReplay }
+        );
 
         result.Succeeded.Should().BeTrue();
     }

@@ -67,7 +67,7 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
         app.MapGet(
             "/redirect-mismatch",
             (IProblemDetailsCreator problemDetailsCreator) =>
-                Microsoft.AspNetCore.Builder.EndpointsExtensions.BuildRedirectResultOrBadRequest(
+                EndpointsExtensions.BuildRedirectResultOrBadRequest(
                     synthesizedRedirectUri,
                     mainHost,
                     problemDetailsCreator

@@ -1428,7 +1428,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                    long localRemoved = updatedDict.Remove(stringValue) ? 1L : 0L;
+                    var localRemoved = updatedDict.Remove(stringValue) ? 1L : 0L;
                     removed = localRemoved;
 
                     var newExpiresAt = _ExpireAndGetMaxExpiration(updatedDict);

@@ -220,7 +220,7 @@ public sealed class DefaultSqlCurrentConnectionTests
         connection.State.Returns(ConnectionState.Closed);
 
         // when/then - should not throw
-        Func<Task> act = async () => await sut.DisposeAsync();
+        var act = async () => await sut.DisposeAsync();
         await act.Should().NotThrowAsync();
         await connection.DidNotReceive().DisposeAsync();
     }
@@ -244,7 +244,7 @@ public sealed class DefaultSqlCurrentConnectionTests
         // Connection state is now effectively null after first dispose
         connection.State.Returns(ConnectionState.Closed);
 
-        Func<Task> act = async () => await sut.DisposeAsync();
+        var act = async () => await sut.DisposeAsync();
 
         // then - should not throw
         await act.Should().NotThrowAsync();

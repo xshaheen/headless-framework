@@ -19,6 +19,6 @@ public sealed class NatsConnectionTest(NatsFixture fixture)
         await using var conn = new NatsConnection(opts);
         var rtt = await conn.PingAsync();
 
-        rtt.TotalMilliseconds.Should().BeGreaterThan(0);
+        rtt.TotalMilliseconds.Should().BePositive();
     }
 }

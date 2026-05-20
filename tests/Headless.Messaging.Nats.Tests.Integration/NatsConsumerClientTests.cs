@@ -3,6 +3,7 @@
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Nats;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
@@ -13,7 +14,7 @@ using MessagingHeaders = Headless.Messaging.Headers;
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsConsumerClientTests(NatsFixture fixture)
+public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
 {
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
@@ -48,7 +49,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500);
+            await Task.Delay(500, AbortToken);
 
             var body = "hello-commit"u8.ToArray();
             await _PublishAsync(subject, body);
@@ -97,7 +98,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500);
+            await Task.Delay(500, AbortToken);
             await _PublishAsync(subject, "hello-reject"u8.ToArray());
 
             var natsMsg = await received.Task.WaitAsync(cts.Token);
@@ -195,7 +196,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500);
+            await Task.Delay(500, AbortToken);
 
             var conn = await fixture.GetConnectionAsync();
             var js = new NatsJSContext(conn);
@@ -204,7 +205,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
                 subject,
                 "body"u8.ToArray(),
                 serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                headers: headers
+                headers: headers,
+                cancellationToken: AbortToken
             );
 
             var transportMsg = await received.Task.WaitAsync(cts.Token);
@@ -269,23 +271,23 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture)
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500); // let consumer start and create durable consumer
+            await Task.Delay(500, AbortToken); // let consumer start and create durable consumer
 
-            await client.PauseAsync();
+            await client.PauseAsync(AbortToken);
             await _PublishAsync(subject, "paused-msg"u8.ToArray());
-            await Task.Delay(1000);
+            await Task.Delay(1000, AbortToken);
 
             var countWhilePaused = Volatile.Read(ref messageCount);
 
             // resume and wait for delivery via signal
-            await client.ResumeAsync();
-            await messageReceived.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await client.ResumeAsync(AbortToken);
+            await messageReceived.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
             var countAfterResume = Volatile.Read(ref messageCount);
 
             // then
             countWhilePaused.Should().Be(0);
-            countAfterResume.Should().BeGreaterThan(0);
+            countAfterResume.Should().BePositive();
         }
         finally
         {

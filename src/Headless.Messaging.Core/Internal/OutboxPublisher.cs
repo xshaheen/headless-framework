@@ -85,10 +85,11 @@ internal sealed class OutboxPublisher(
             tracingTimestamp = _TracingBefore(publishRequest.Message, cancellationToken);
 
             var currentTransaction = transactionAccessor.Current;
+
             if (currentTransaction?.DbTransaction == null)
             {
                 var mediumMessage = await storage
-                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message)
+                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, null, CancellationToken.None)
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, cancellationToken);
@@ -115,7 +116,12 @@ internal sealed class OutboxPublisher(
                 }
 
                 var mediumMessage = await storage
-                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, currentTransaction.DbTransaction)
+                    .StoreMessageAsync(
+                        publishRequest.Topic,
+                        publishRequest.Message,
+                        currentTransaction.DbTransaction,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, cancellationToken);
@@ -136,7 +142,7 @@ internal sealed class OutboxPublisher(
         }
     }
 
-    #region tracing
+    #region Tracing
 
     private long? _TracingBefore(Message message, CancellationToken cancellationToken)
     {

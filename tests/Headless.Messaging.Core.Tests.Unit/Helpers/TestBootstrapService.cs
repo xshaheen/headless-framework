@@ -7,7 +7,7 @@ public sealed class TestBootstrapService(IBootstrapper bootstrapper) : IHostedSe
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await bootstrapper.BootstrapAsync();
+        await bootstrapper.BootstrapAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

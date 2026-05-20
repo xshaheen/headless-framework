@@ -23,7 +23,7 @@ public sealed class ConsumerRegisterTests : TestBase
         using var hostCts = new CancellationTokenSource();
 
         await register.StartAsync(hostCts.Token);
-        await register.ReStartAsync(force: true);
+        await register.ReStartAsync(force: true, AbortToken);
 
         await hostCts.CancelAsync();
 
@@ -123,7 +123,7 @@ public sealed class ConsumerRegisterTests : TestBase
             .SetValue(register, factorySub);
 
         // Act — ReStartAsync should propagate the exception from ExecuteAsync.
-        var act = async () => await register.ReStartAsync(force: true);
+        var act = async () => await register.ReStartAsync(force: true, AbortToken);
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("boom");
 

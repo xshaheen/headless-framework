@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 /// <summary>Endpoint metadata that carries per-endpoint idempotency option overrides.</summary>
 /// <remarks>

@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 [PublicAPI]
 public sealed class IdempotencyOptions
@@ -25,9 +25,8 @@ public sealed class IdempotencyOptions
     /// middleware clones the set per request before invoking the delegate, so consumer mutation
     /// is safe and does not leak to other requests.
     /// </remarks>
-    public ISet<string> Methods { get; set; } = new HashSet<string>(
-        ["POST", "PUT", "PATCH", "DELETE"],
-        StringComparer.OrdinalIgnoreCase);
+    public ISet<string> Methods { get; set; } =
+        new HashSet<string>(["POST", "PUT", "PATCH", "DELETE"], StringComparer.OrdinalIgnoreCase);
 
     /// <summary>How concurrent in-flight requests with the same key are handled.</summary>
     public InFlightStrategy InFlightStrategy { get; set; } = InFlightStrategy.Reject;
@@ -96,9 +95,22 @@ public sealed class IdempotencyOptions
     /// Exposed as <see cref="ISet{T}"/> so per-endpoint overrides can extend or trim the allowlist
     /// in place. The middleware clones the set per request before delegate invocation.
     /// </remarks>
-    public ISet<string> ReplayHeaderAllowlist { get; set; } = new HashSet<string>(
-        ["Content-Type", "Content-Language", "Content-Encoding", "Content-Disposition", "Location", "Link", "ETag", "Last-Modified", "Cache-Control", "Vary"],
-        StringComparer.OrdinalIgnoreCase);
+    public ISet<string> ReplayHeaderAllowlist { get; set; } =
+        new HashSet<string>(
+            [
+                "Content-Type",
+                "Content-Language",
+                "Content-Encoding",
+                "Content-Disposition",
+                "Location",
+                "Link",
+                "ETag",
+                "Last-Modified",
+                "Cache-Control",
+                "Vary",
+            ],
+            StringComparer.OrdinalIgnoreCase
+        );
 
     /// <summary>
     /// Determines whether a completed response should be cached for replay.
@@ -139,25 +151,26 @@ public sealed class IdempotencyOptions
     /// <see cref="ReplayHeaderAllowlist"/> without affecting the application-level options.
     /// </summary>
     [Pure]
-    internal IdempotencyOptions Clone() => new()
-    {
-        IdempotencyKeyExpiration = IdempotencyKeyExpiration,
-        HeaderName = HeaderName,
-        Methods = new HashSet<string>(Methods, StringComparer.OrdinalIgnoreCase),
-        InFlightStrategy = InFlightStrategy,
-        InFlightLockTimeout = InFlightLockTimeout,
-        WinnerLockLease = WinnerLockLease,
-        MaxBodySizeForHashing = MaxBodySizeForHashing,
-        OversizeBehavior = OversizeBehavior,
-        OnCacheError = OnCacheError,
-        RequireUserIdentity = RequireUserIdentity,
-        MismatchStatusCode = MismatchStatusCode,
-        ReplayHeaderAllowlist = new HashSet<string>(ReplayHeaderAllowlist, StringComparer.OrdinalIgnoreCase),
-        ShouldCacheResponse = ShouldCacheResponse,
-        ShouldApply = ShouldApply,
-        KeyDeriver = KeyDeriver,
-        RequestFingerprint = RequestFingerprint,
-    };
+    internal IdempotencyOptions Clone() =>
+        new()
+        {
+            IdempotencyKeyExpiration = IdempotencyKeyExpiration,
+            HeaderName = HeaderName,
+            Methods = new HashSet<string>(Methods, StringComparer.OrdinalIgnoreCase),
+            InFlightStrategy = InFlightStrategy,
+            InFlightLockTimeout = InFlightLockTimeout,
+            WinnerLockLease = WinnerLockLease,
+            MaxBodySizeForHashing = MaxBodySizeForHashing,
+            OversizeBehavior = OversizeBehavior,
+            OnCacheError = OnCacheError,
+            RequireUserIdentity = RequireUserIdentity,
+            MismatchStatusCode = MismatchStatusCode,
+            ReplayHeaderAllowlist = new HashSet<string>(ReplayHeaderAllowlist, StringComparer.OrdinalIgnoreCase),
+            ShouldCacheResponse = ShouldCacheResponse,
+            ShouldApply = ShouldApply,
+            KeyDeriver = KeyDeriver,
+            RequestFingerprint = RequestFingerprint,
+        };
 }
 
 internal sealed class IdempotencyOptionsValidator : AbstractValidator<IdempotencyOptions>
@@ -166,7 +179,14 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
 
     private static readonly HashSet<string> _ValidMethods = new(StringComparer.OrdinalIgnoreCase)
     {
-        "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", "CONNECT", "TRACE",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "HEAD",
+        "OPTIONS",
+        "CONNECT",
+        "TRACE",
     };
 
     public IdempotencyOptionsValidator()
@@ -189,21 +209,26 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
             .Must(c => c is StatusCodes.Status409Conflict or StatusCodes.Status422UnprocessableEntity)
             .WithMessage("MismatchStatusCode must be 409 or 422.");
         RuleFor(x => x.OnCacheError).IsInEnum();
-        When(x => x.InFlightStrategy == InFlightStrategy.WaitAndReplay, () =>
-        {
-            // Cap at 1 minute: each loser holds an ASP.NET worker thread for up to this duration.
-            // High retry concurrency × long timeout → thread-pool exhaustion. Operators with
-            // legitimate long-handler workloads should prefer Reject + client-side backoff
-            // (the pattern used by Stripe, AWS, Square, PayPal).
-            RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(1));
-            RuleFor(x => x.WinnerLockLease)
-                .GreaterThan(TimeSpan.Zero)
-                .LessThanOrEqualTo(TimeSpan.FromHours(1))
-                .WithMessage("WinnerLockLease must be <= 1 hour.");
-            RuleFor(x => x.WinnerLockLease)
-                .GreaterThanOrEqualTo(x => x.InFlightLockTimeout)
-                .WithMessage("WinnerLockLease must be >= InFlightLockTimeout (otherwise the lock can expire before the loser's acquire deadline).");
-        });
+        When(
+            x => x.InFlightStrategy == InFlightStrategy.WaitAndReplay,
+            () =>
+            {
+                // Cap at 1 minute: each loser holds an ASP.NET worker thread for up to this duration.
+                // High retry concurrency × long timeout → thread-pool exhaustion. Operators with
+                // legitimate long-handler workloads should prefer Reject + client-side backoff
+                // (the pattern used by Stripe, AWS, Square, PayPal).
+                RuleFor(x => x.InFlightLockTimeout).LessThanOrEqualTo(TimeSpan.FromMinutes(1));
+                RuleFor(x => x.WinnerLockLease)
+                    .GreaterThan(TimeSpan.Zero)
+                    .LessThanOrEqualTo(TimeSpan.FromHours(1))
+                    .WithMessage("WinnerLockLease must be <= 1 hour.");
+                RuleFor(x => x.WinnerLockLease)
+                    .GreaterThanOrEqualTo(x => x.InFlightLockTimeout)
+                    .WithMessage(
+                        "WinnerLockLease must be >= InFlightLockTimeout (otherwise the lock can expire before the loser's acquire deadline)."
+                    );
+            }
+        );
     }
 }
 
@@ -232,8 +257,8 @@ internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProv
 
         return ValidateOptionsResult.Fail(
             $"{nameof(IdempotencyOptions)}.{nameof(IdempotencyOptions.InFlightStrategy)} = "
-            + $"{nameof(InFlightStrategy.WaitAndReplay)} requires {nameof(IDistributedLockProvider)} "
-            + "to be registered. Either switch InFlightStrategy to Reject or register a distributed-lock provider."
+                + $"{nameof(InFlightStrategy.WaitAndReplay)} requires {nameof(IDistributedLockProvider)} "
+                + "to be registered. Either switch InFlightStrategy to Reject or register a distributed-lock provider."
         );
     }
 }

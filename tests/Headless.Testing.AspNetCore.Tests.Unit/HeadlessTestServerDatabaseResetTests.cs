@@ -26,7 +26,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : IAsyncLifetime
         _server = new HeadlessTestServer<Program>();
         await _server.InitializeAsync();
 
-        Func<Task> act = async () => await _server.ResetDatabaseAsync();
+        var act = async () => await _server.ResetDatabaseAsync();
 
         await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*not configured*");
     }
@@ -38,7 +38,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : IAsyncLifetime
         _server.ConfigureDatabaseReset(_ => { });
         await _server.InitializeAsync();
 
-        Func<Task> act = async () => await _server.ResetDatabaseAsync();
+        var act = async () => await _server.ResetDatabaseAsync();
 
         await act.Should()
             .ThrowExactlyAsync<InvalidOperationException>()
@@ -53,7 +53,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : IAsyncLifetime
         await _server.InitializeAsync();
         await _server.DisposeAsync();
 
-        Func<Task> act = async () => await _server.ResetDatabaseAsync();
+        var act = async () => await _server.ResetDatabaseAsync();
 
         await act.Should().ThrowExactlyAsync<ObjectDisposedException>();
     }

@@ -73,7 +73,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
 
         // then
         context.Should().BeAssignableTo<ConsumeContext<OrderPlaced>>();
-        ((ConsumeContext)context).MessageType.Should().Be<OrderPlaced>();
+        context.MessageType.Should().Be<OrderPlaced>();
     }
 
     private static ConsumeContext<OrderPlaced> _CreateContext(OrderPlaced message)

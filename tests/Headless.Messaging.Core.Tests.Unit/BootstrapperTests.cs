@@ -109,30 +109,40 @@ public sealed class BootstrapperTests : TestBase
     public async Task should_log_warning_when_use_storage_lock_is_true_and_no_real_lock_provider_registered()
     {
         var captured = new List<(LogLevel Level, EventId EventId)>();
-        await using var provider = _CreateProvider(captureLog: captured, configureOptions: o => o.UseStorageLock = true);
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = true
+        );
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().Contain(
-            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-            "UseStorageLockWithNoOpProvider warning must fire when only NoOpDistributedLockProvider is registered"
-        );
+        captured
+            .Should()
+            .Contain(
+                e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+                "UseStorageLockWithNoOpProvider warning must fire when only NoOpDistributedLockProvider is registered"
+            );
     }
 
     [Fact]
     public async Task should_not_log_warning_when_use_storage_lock_is_false()
     {
         var captured = new List<(LogLevel Level, EventId EventId)>();
-        await using var provider = _CreateProvider(captureLog: captured, configureOptions: o => o.UseStorageLock = false);
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = false
+        );
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().NotContain(
-            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-            "warning must be silent when UseStorageLock is false, even with NoOpDistributedLockProvider"
-        );
+        captured
+            .Should()
+            .NotContain(
+                e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+                "warning must be silent when UseStorageLock is false, even with NoOpDistributedLockProvider"
+            );
     }
 
     [Fact]
@@ -154,14 +164,18 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().Contain(
-            e => e.Level == LogLevel.Warning && e.EventId.Id == 78,
-            "EventId 78 must fire when a real un-keyed IDistributedLockProvider exists but UseDistributedLock(...) was not called"
-        );
-        captured.Should().NotContain(
-            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-            "EventId 77 (the no-provider-at-all case) must NOT fire when an un-keyed real provider exists"
-        );
+        captured
+            .Should()
+            .Contain(
+                e => e.Level == LogLevel.Warning && e.EventId.Id == 78,
+                "EventId 78 must fire when a real un-keyed IDistributedLockProvider exists but UseDistributedLock(...) was not called"
+            );
+        captured
+            .Should()
+            .NotContain(
+                e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+                "EventId 77 (the no-provider-at-all case) must NOT fire when an un-keyed real provider exists"
+            );
     }
 
     [Fact]
@@ -177,10 +191,12 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().NotContain(
-            e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-            "warning must be silent when a real IDistributedLockProvider is registered"
-        );
+        captured
+            .Should()
+            .NotContain(
+                e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
+                "warning must be silent when a real IDistributedLockProvider is registered"
+            );
     }
 
     [Fact]
@@ -192,7 +208,7 @@ public sealed class BootstrapperTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton<IDistributedLockProvider>(appLevelProvider);
+        services.AddSingleton(appLevelProvider);
 
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
@@ -217,7 +233,12 @@ public sealed class BootstrapperTests : TestBase
         // Exposed via internal helper (InternalsVisibleTo) instead of reflection so the test stays
         // resilient to private-field renames.
         var injected = processor.LockProvider;
-        injected.Should().BeSameAs(messagingProvider, "the processor must receive the messaging-keyed provider, not the un-keyed app-level one");
+        injected
+            .Should()
+            .BeSameAs(
+                messagingProvider,
+                "the processor must receive the messaging-keyed provider, not the un-keyed app-level one"
+            );
         injected.Should().NotBeSameAs(appLevelProvider);
     }
 
@@ -262,7 +283,7 @@ public sealed class BootstrapperTests : TestBase
 
         if (configureOptions is not null)
         {
-            services.Configure<MessagingOptions>(configureOptions);
+            services.Configure(configureOptions);
         }
 
         extraSetup?.Invoke(services);
@@ -339,7 +360,8 @@ public sealed class BootstrapperTests : TestBase
 
         private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
         {
-            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
 
             public bool IsEnabled(LogLevel logLevel) => true;
 

@@ -26,7 +26,7 @@ public class FluentChainJobBuilder<TTimeJob>
         };
 
         // Initialize grandchildren tracking
-        for (int i = 0; i < 5; i++)
+        for (var i = 0; i < 5; i++)
         {
             _grandChildrenUsed[i] = new bool[5];
         }

@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
-using System.Text.Json.Serialization;
-
-namespace Headless.Api.Idempotency;
+namespace Headless.Api;
 
 internal enum RecordKind
 {
@@ -60,14 +57,8 @@ internal sealed class IdempotencyRecord : IEquatable<IdempotencyRecord>
 
     public override bool Equals(object? obj) => obj is IdempotencyRecord other && Equals(other);
 
-    public override int GetHashCode() => HashCode.Combine(
-        Kind,
-        StatusCode,
-        CreatedAt,
-        Body.Length,
-        Fingerprint?.Length ?? -1,
-        Headers.Count
-    );
+    public override int GetHashCode() =>
+        HashCode.Combine(Kind, StatusCode, CreatedAt, Body.Length, Fingerprint?.Length ?? -1, Headers.Count);
 
     private static bool _BytesEqual(byte[]? a, byte[]? b)
     {
@@ -156,11 +147,7 @@ internal sealed class OrdinalIgnoreCaseHeadersJsonConverter : JsonConverter<Dict
         throw new JsonException("Unexpected end of JSON while reading headers dictionary.");
     }
 
-    public override void Write(
-        Utf8JsonWriter writer,
-        Dictionary<string, string[]> value,
-        JsonSerializerOptions options
-    )
+    public override void Write(Utf8JsonWriter writer, Dictionary<string, string[]> value, JsonSerializerOptions options)
     {
         writer.WriteStartObject();
         foreach (var (key, values) in value)

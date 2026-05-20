@@ -15,6 +15,7 @@ using SqsMessage = Amazon.SQS.Model.Message;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class AmazonSqsConsumerClientTests : TestBase
 {
     private static IOptions<AmazonSqsOptions> _CreateOptions() =>
@@ -938,24 +939,27 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         await client.PauseAsync();
 
         using var cts = new CancellationTokenSource();
-        var listenTask = Task.Run(async () =>
-        {
-            try
+        var listenTask = Task.Run(
+            async () =>
             {
-                await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
-            }
-            catch (OperationCanceledException) { }
-        });
+                try
+                {
+                    await client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
 
-        await Task.Delay(300);
+        await Task.Delay(300, AbortToken);
         var countWhilePaused = receiveCount;
 
         // then — no messages polled while paused
         countWhilePaused.Should().Be(0);
 
         // cleanup
-        await client.ResumeAsync();
-        await Task.Delay(300);
+        await client.ResumeAsync(AbortToken);
+        await Task.Delay(300, AbortToken);
         await cts.CancelAsync();
         await listenTask;
 

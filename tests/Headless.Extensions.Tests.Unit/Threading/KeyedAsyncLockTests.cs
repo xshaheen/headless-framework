@@ -360,7 +360,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         var holdingTask = Task.Run(
             async () =>
             {
-                using (await keyedLock.LockAsync("cancel-cleanup-key"))
+                using (await keyedLock.LockAsync("cancel-cleanup-key", AbortToken))
                 {
                     lockAcquired.SetResult();
                     await canRelease.Task;
@@ -431,7 +431,7 @@ public sealed class KeyedAsyncLockTests : TestBase
 
         // when - dispose twice
         releaser.Dispose();
-        var act = () => releaser.Dispose();
+        var act = releaser.Dispose;
 
         // then - should not throw
         act.Should().NotThrow();
@@ -520,16 +520,17 @@ public sealed class KeyedAsyncLockTests : TestBase
         releaser2.Dispose();
 
         // Acquire more and don't release - these will be cleaned up by Dispose
+        // ReSharper disable once NotDisposedResource
         var releaser3 = await keyedLock.LockAsync("key3", AbortToken);
 
         // when
-        var act = () => keyedLock.Dispose();
+        var act = keyedLock.Dispose;
 
         // then - should not throw
         act.Should().NotThrow();
 
         // Clean up the releaser (should be safe even after parent disposed)
-        var act2 = () => releaser3.Dispose();
+        var act2 = releaser3.Dispose;
         act2.Should().NotThrow();
     }
 }

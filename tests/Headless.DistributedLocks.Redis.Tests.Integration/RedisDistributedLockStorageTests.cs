@@ -69,7 +69,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
             new ParallelOptions { MaxDegreeOfParallelism = 50 },
             async (lockId, _) =>
             {
-                var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5));
+                var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5), AbortToken);
                 if (result)
                 {
                     Interlocked.Increment(ref successCount);
@@ -230,7 +230,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
             new ParallelOptions { MaxDegreeOfParallelism = 20 },
             async (_, _) =>
             {
-                var result = await fixture.LockStorage.RemoveIfEqualAsync(key, lockId);
+                var result = await fixture.LockStorage.RemoveIfEqualAsync(key, lockId, AbortToken);
                 if (result)
                 {
                     Interlocked.Increment(ref removeCount);

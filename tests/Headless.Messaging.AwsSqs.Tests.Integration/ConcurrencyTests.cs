@@ -43,7 +43,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                     Encoding.UTF8.GetBytes($"{{\"id\":{messageId}}}")
                 );
 
-                results[messageId] = await transport.SendAsync(message);
+                results[messageId] = await transport.SendAsync(message, AbortToken);
             }
         );
 
@@ -77,7 +77,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                     "{\"data\":\"init-test\"}"u8.ToArray()
                 );
 
-                results[messageId] = await transport.SendAsync(message);
+                results[messageId] = await transport.SendAsync(message, AbortToken);
             }
         );
 
@@ -116,7 +116,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                     Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{messageId}}}")
                 );
 
-                results[messageId] = await transport.SendAsync(message);
+                results[messageId] = await transport.SendAsync(message, AbortToken);
             }
         );
 
@@ -149,7 +149,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
                     Encoding.UTF8.GetBytes($"{{\"index\":{messageId}}}")
                 );
 
-                results[messageId] = await transport.SendAsync(message);
+                results[messageId] = await transport.SendAsync(message, AbortToken);
             }
         );
 

@@ -25,16 +25,24 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
+
         var schemaExists = await connection.QueryFirstOrDefaultAsync<int>(
-            "SELECT 1 FROM sys.schemas WHERE name = @Schema",
-            new { Schema = customSchema }
+            new CommandDefinition(
+                "SELECT 1 FROM sys.schemas WHERE name = @Schema",
+                new { Schema = customSchema },
+                cancellationToken: AbortToken
+            )
         );
+
         schemaExists.Should().Be(1);
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP SCHEMA IF EXISTS [{customSchema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{customSchema}].Published; DROP TABLE IF EXISTS [{customSchema}].Received; DROP SCHEMA IF EXISTS [{customSchema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
@@ -66,7 +74,10 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
@@ -109,7 +120,10 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
@@ -172,25 +186,28 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         var keyColumns = (
             await connection.QueryAsync<string>(
-                """
-                SELECT c.name
-                FROM sys.indexes i
-                INNER JOIN sys.tables t ON i.object_id = t.object_id
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
-                INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-                WHERE s.name = @Schema
-                  AND t.name = @Table
-                  AND i.name = @IndexName
-                  AND ic.is_included_column = 0
-                ORDER BY ic.key_ordinal
-                """,
-                new
-                {
-                    Schema = schema,
-                    Table = table,
-                    IndexName = indexName,
-                }
+                new CommandDefinition(
+                    """
+                    SELECT c.name
+                    FROM sys.indexes i
+                    INNER JOIN sys.tables t ON i.object_id = t.object_id
+                    INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                    INNER JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                    INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+                    WHERE s.name = @Schema
+                      AND t.name = @Table
+                      AND i.name = @IndexName
+                      AND ic.is_included_column = 0
+                    ORDER BY ic.key_ordinal
+                    """,
+                    new
+                    {
+                        Schema = schema,
+                        Table = table,
+                        IndexName = indexName,
+                    },
+                    cancellationToken: AbortToken
+                )
             )
         ).ToList();
 
@@ -199,25 +216,32 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         // Filtered predicate must be `[NextRetryAt] IS NOT NULL` so terminal rows are physically
         // excluded — keeps the index small even under high failed-message volume.
         var filter = await connection.QueryFirstOrDefaultAsync<string>(
-            """
-            SELECT i.filter_definition
-            FROM sys.indexes i
-            INNER JOIN sys.tables t ON i.object_id = t.object_id
-            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-            WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName
-            """,
-            new
-            {
-                Schema = schema,
-                Table = table,
-                IndexName = indexName,
-            }
+            new CommandDefinition(
+                """
+                SELECT i.filter_definition
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = @Schema AND t.name = @Table AND i.name = @IndexName
+                """,
+                new
+                {
+                    Schema = schema,
+                    Table = table,
+                    IndexName = indexName,
+                },
+                cancellationToken: AbortToken
+            )
         );
+
         filter.Should().NotBeNull().And.Contain("NextRetryAt").And.Contain("IS NOT NULL");
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
@@ -278,11 +302,14 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // then - should return early without error
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync();
+        await connection.OpenAsync(AbortToken);
 
         var schemaExists = await connection.QueryFirstOrDefaultAsync<int?>(
-            "SELECT 1 FROM sys.schemas WHERE name = @Schema",
-            new { Schema = schema }
+            new CommandDefinition(
+                "SELECT 1 FROM sys.schemas WHERE name = @Schema",
+                new { Schema = schema },
+                cancellationToken: AbortToken
+            )
         );
 
         schemaExists.Should().BeNull();
