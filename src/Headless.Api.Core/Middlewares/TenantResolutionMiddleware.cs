@@ -2,6 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
+using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
@@ -31,6 +32,12 @@ public sealed partial class TenantResolutionMiddleware(
         Argument.IsNotNull(currentTenant);
 
         context.Features.Set(HeadlessTenancyResolutionApplied.Instance);
+
+        if (context.GetEndpoint()?.Metadata.GetMetadata<SkipTenantResolutionAttribute>() is not null)
+        {
+            await next(context);
+            return;
+        }
 
         if (context.User.Identity?.IsAuthenticated != true)
         {

@@ -29,6 +29,7 @@ dotnet add package Headless.Api.Core
 - Request cancellation handling
 - Diagnostic listeners for debugging (`AddHeadlessApiDiagnosticListeners`)
 - Status codes rewriter (`AddStatusCodesRewriterMiddleware()`)
+- HTTP tenant resolution opt-out (`[SkipTenantResolution]`, `.SkipTenantResolution()`) — skips claim extraction for an endpoint or controller while still marking the request as processed
 - HTTP tenant authorization (`TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`)
 - Kestrel limits and default API conventions via `ConfigureHeadlessDefaultApi()`
 
@@ -69,6 +70,8 @@ var publicGroup = app.MapGroup("/public").AllowMissingTenant();
 publicGroup.MapGet("/status", () => Results.Ok());
 publicGroup.MapGet("/tenant-data", () => Results.Ok()).RequireTenant();
 ```
+
+Use `[SkipTenantResolution]` / `.SkipTenantResolution()` on an endpoint, route group, or MVC controller/action to bypass claim extraction entirely. The middleware marks the request as processed (`HeadlessTenancyResolutionApplied`) and passes through without calling `ICurrentTenant.Change(...)`. `ICurrentTenant.Id` remains null and `ICurrentTenant.IsAvailable` stays false.
 
 `TenantRequirement` succeeds when `ICurrentTenant.Id` is present or the latest tenant metadata marker is `[AllowMissingTenant]` / `.AllowMissingTenant()`. Use `[RequireTenant]` / `.RequireTenant()` to opt an action or endpoint back into tenant enforcement under broader allow-missing metadata. Tenant failures return the same structured 403 `g:tenant_required` ProblemDetails shape as the exception-handler fallback.
 

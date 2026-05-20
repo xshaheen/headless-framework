@@ -10,6 +10,7 @@ packages: MultiTenancy, Api.Core, Api.ServiceDefaults, Core, Messaging.Core, Orm
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [HTTP Setup](#http-setup)
+- [Skipping Tenant Resolution](#skipping-tenant-resolution)
 - [HTTP Failure Mapping](#http-failure-mapping)
 - [HTTP Authorization Requirement](#http-authorization-requirement)
 - [Tenant Semantics](#tenant-semantics)
@@ -64,6 +65,7 @@ app.UseAuthorization();
 - In tenant-aware hosts, prefer `builder.AddHeadlessTenancy(...)` so HTTP, Authorization, Messaging, and EF posture is visible in one block.
 - In HTTP apps, use `.Http(http => http.ResolveFromClaims())` and `app.UseHeadlessTenancy()` in the middleware pipeline.
 - For HTTP request boundaries, use `.Authorization(auth => auth.RequireTenant())`, add `TenantRequirement` to the app's `FallbackPolicy` or `DefaultPolicy`, mark intentional host-level endpoints with `[AllowMissingTenant]` or `.AllowMissingTenant()`, and use `[RequireTenant]` / `.RequireTenant()` to opt back in under broader allow-missing metadata.
+- Use `[SkipTenantResolution]` / `.SkipTenantResolution()` to opt an endpoint out of claim extraction entirely (not just authorization enforcement). The middleware skips `ICurrentTenant.Change(...)` and leaves `ICurrentTenant.IsAvailable` false. Combine with `.AllowMissingTenant()` when the endpoint also sits under a tenant-required policy.
 - The default claim type is `tenant_id`. Override it with `ResolveFromClaims(options => options.ClaimType = "...")` only when your identity system uses a different claim name.
 - Mint the tenant claim only on principals that are actually scoped to a tenant. Host-level, admin, service-account, or cross-tenant principal types should not carry the claim — `ICurrentTenant.IsAvailable` stays false for them by design.
 - When no tenant claim is present, the middleware intentionally skips `Change(null)`. This preserves the distinction between "never set" and "explicitly null".
@@ -122,6 +124,49 @@ app.UseAuthorization();
 - Uses `MultiTenancyOptions.ClaimType` when configured
 - Calls `currentTenant.Change(tenantId)` only when the principal is authenticated and the tenant claim is not blank
 - Restores the previous tenant automatically when the request finishes
+
+## Skipping Tenant Resolution
+
+Apply `[SkipTenantResolution]` or `.SkipTenantResolution()` to opt an endpoint, route group, or MVC controller/action out of HTTP claim extraction. `TenantResolutionMiddleware` still marks the request as processed (`HeadlessTenancyResolutionApplied`) but returns immediately without calling `ICurrentTenant.Change(...)`. `ICurrentTenant.Id` remains null and `IsAvailable` stays false for the entire request.
+
+```csharp
+// Minimal API — single endpoint
+app.MapGet("/health", () => Results.Ok()).SkipTenantResolution();
+
+// Minimal API — route group
+var publicGroup = app.MapGroup("/public").SkipTenantResolution();
+publicGroup.MapGet("/status", () => Results.Ok());
+
+// MVC — controller (applies to all actions)
+[SkipTenantResolution]
+[Route("admin")]
+public sealed class AdminController : ControllerBase { ... }
+
+// MVC — individual action
+[Route("users")]
+public sealed class UsersController : ControllerBase
+{
+    [HttpGet("me")]
+    [SkipTenantResolution]
+    public IActionResult Profile() => Ok();
+}
+```
+
+When the endpoint also lives under a tenant-required authorization policy, compose `.SkipTenantResolution()` with `.AllowMissingTenant()` so the authorization requirement is satisfied:
+
+```csharp
+app.MapGet("/webhook", (ICurrentTenant t) => Results.Ok())
+    .SkipTenantResolution()
+    .AllowMissingTenant();
+```
+
+**When to use** — prefer `[SkipTenantResolution]` over `[AllowMissingTenant]` when the endpoint must not even attempt claim extraction, for example:
+
+- The authenticated principal type can never carry a tenant claim (service-account, monitoring agent, webhook receiver).
+- Claim extraction itself has measurable overhead on a hot path and the request is guaranteed to not need tenant context.
+- The endpoint is unauthenticated and you want to suppress the middleware ordering warning.
+
+For endpoints that may or may not carry a tenant claim depending on the caller, `[AllowMissingTenant]` is the right choice — it runs extraction and simply permits the authorization requirement to pass when no claim is found.
 
 ## HTTP Failure Mapping
 
