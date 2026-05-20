@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Caching;
 using Headless.RateLimiting;
 using Headless.RateLimiting.Cache;

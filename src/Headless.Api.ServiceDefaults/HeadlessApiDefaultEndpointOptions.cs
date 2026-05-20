@@ -41,5 +41,4 @@ public sealed class HeadlessApiDefaultEndpointOptions
 
     /// <summary>The response writer used by the aggregate health endpoint.</summary>
     public Func<HttpContext, HealthReport, Task> HealthResponseWriter { get; set; } = ApiSetup.WriteHealthReportAsync;
-
 }

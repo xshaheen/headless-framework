@@ -178,4 +178,17 @@ public static partial class RegularLockLoggerExtensions
         Message = "No IOutboxPublisher registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
     )]
     public static partial void LogOutboxPublisherAbsent(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "LockReleasePublishFailed",
+        Level = LogLevel.Warning,
+        Message = "Lock released but outbox publish failed; waiters will fall back to polling: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogLockReleasePublishFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId
+    );
 }

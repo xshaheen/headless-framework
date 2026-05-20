@@ -5,6 +5,7 @@ using Headless.RateLimiting;
 
 namespace Headless.RateLimiting.Cache;
 
+[PublicAPI]
 public sealed class CacheDistributedRateLimiterStorage(ICache cache) : IDistributedRateLimiterStorage
 {
     public async Task<long> GetHitCountsAsync(string resource, CancellationToken cancellationToken = default)

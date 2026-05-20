@@ -20,7 +20,7 @@ public sealed class DistributedLockProvider(
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLockProvider> logger
-) : IDistributedLockProvider, IHaveLogger, IHaveTimeProvider
+) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
     private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
@@ -79,9 +79,16 @@ public sealed class DistributedLockProvider(
         CancellationToken cancellationToken = default
     )
     {
+        _ValidateAcquireTimeout(acquireTimeout);
+
         return await TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, releaseOnDispose, cancellationToken)
                 .ConfigureAwait(false)
-            ?? throw new LockAcquisitionTimeoutException(resource);
+            ?? throw new LockAcquisitionTimeoutException(
+                resource,
+                acquireTimeout == TimeSpan.Zero
+                    ? $"Failed to acquire distributed lock on '{resource}' on the first attempt (try-once contention)."
+                    : $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed."
+            );
     }
 
     public async Task<IDistributedLock?> TryAcquireAsync(
@@ -94,6 +101,7 @@ public sealed class DistributedLockProvider(
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
+        _ValidateAcquireTimeout(acquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
@@ -464,9 +472,18 @@ public sealed class DistributedLockProvider(
         if (removed && _outboxPublisher is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
-            await _outboxPublisher
-                .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+
+            try
+            {
+                await _outboxPublisher
+                    .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Release already succeeded — do not rethrow. Waiters will fall back to polling backoff.
+                logger.LogLockReleasePublishFailed(ex, resource, lockId);
+            }
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -610,6 +627,18 @@ public sealed class DistributedLockProvider(
             : Argument.IsPositive(timeUntilExpires.Value);
     }
 
+    private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
+    {
+        // Allow null (use default) and Timeout.InfiniteTimeSpan as the explicit "wait forever" sentinel;
+        // reject other negatives.
+        if (acquireTimeout is null || acquireTimeout == Timeout.InfiniteTimeSpan)
+        {
+            return;
+        }
+
+        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
+    }
+
     private static Activity? _StartLockActivity(string resource)
     {
         var activity = DistributedLocksDiagnostics.Start("lock.acquire");
@@ -654,7 +683,7 @@ public sealed class DistributedLockProvider(
 
     #region Message Consumer
 
-    internal void _OnLockReleased(DistributedLockReleased message)
+    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
     {
         logger.LogGotLockReleasedMessage(message.Resource, message.LockId);
 
@@ -668,7 +697,7 @@ public sealed class DistributedLockProvider(
         }
     }
 
-    internal sealed class LockReleasedConsumer(IDistributedLockProvider provider, ILogger<LockReleasedConsumer> logger)
+    internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
         : IConsume<DistributedLockReleased>
     {
         public ValueTask Consume(ConsumeContext<DistributedLockReleased> context, CancellationToken cancellationToken)
@@ -680,10 +709,10 @@ public sealed class DistributedLockProvider(
 
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
-            if (provider is DistributedLockProvider impl)
-            {
-                impl._OnLockReleased(context.Message);
-            }
+            // Routed through ICanReceiveLockReleased so an IDistributedLockProvider decorator
+            // doesn't break the wake-up signal (the registered DistributedLockProvider instance
+            // implements the marker directly).
+            receiver.OnLockReleased(context.Message);
 
             return ValueTask.CompletedTask;
         }

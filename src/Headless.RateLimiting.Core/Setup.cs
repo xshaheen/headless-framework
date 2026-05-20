@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.RateLimiting;
 
 [PublicAPI]
-public static class AddRateLimitingExtensions
+public static class SetupRateLimiter
 {
     extension(IServiceCollection services)
     {
@@ -101,12 +101,19 @@ public static class AddRateLimitingExtensions
         )
         {
             services.AddLogging();
-            services.AddSingletonOptionValue<SlidingWindowRateLimiterOptions>();
             services.TryAddSingleton(TimeProvider.System);
 
-            services.AddSingleton<IDistributedRateLimiter>(provider => new SlidingWindowDistributedRateLimiter(
-                storageFactory(provider),
-                provider.GetRequiredService<SlidingWindowRateLimiterOptions>(),
+            // Register storage as a separate singleton so the container owns its lifetime and
+            // honours IAsyncDisposable on shutdown (Redis multiplexer disposal, etc.). Without
+            // this the storage instance is captured inside the rate-limiter factory lambda and
+            // never disposed.
+            services.TryAddSingleton<IDistributedRateLimiterStorage>(storageFactory);
+
+            services.TryAddSingleton<IDistributedRateLimiter>(provider => new SlidingWindowDistributedRateLimiter(
+                provider.GetRequiredService<IDistributedRateLimiterStorage>(),
+                provider
+                    .GetRequiredService<IOptionsMonitor<SlidingWindowRateLimiterOptions>>()
+                    .Get(Options.DefaultName),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<SlidingWindowDistributedRateLimiter>>()
             ));
@@ -235,11 +242,19 @@ public static class AddRateLimitingExtensions
             services.AddLogging();
             services.TryAddSingleton(TimeProvider.System);
 
+            // Register storage as a keyed singleton so the container owns its lifetime and
+            // honours IAsyncDisposable on shutdown. Capturing it inside the rate-limiter
+            // factory lambda would leak the instance.
+            services.TryAddKeyedSingleton<IDistributedRateLimiterStorage>(
+                key,
+                (provider, _) => storageFactory(provider)
+            );
+
             services.AddKeyedSingleton<IDistributedRateLimiter>(
                 key,
-                (provider, _) =>
+                (provider, k) =>
                     new SlidingWindowDistributedRateLimiter(
-                        storageFactory(provider),
+                        provider.GetRequiredKeyedService<IDistributedRateLimiterStorage>(k),
                         provider.GetRequiredService<IOptionsMonitor<SlidingWindowRateLimiterOptions>>().Get(key),
                         provider.GetRequiredService<TimeProvider>(),
                         provider.GetRequiredService<ILogger<SlidingWindowDistributedRateLimiter>>()

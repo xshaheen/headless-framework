@@ -245,9 +245,11 @@ internal sealed class Bootstrapper(
             return;
         }
 
-        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(
+            MessagingKeys.LockProvider
+        );
 
-        if (lockProvider is not NoOpDistributedLockProvider)
+        if (lockProvider is not NullDistributedLockProvider)
         {
             return;
         }
@@ -273,7 +275,7 @@ internal sealed class Bootstrapper(
         }
 #pragma warning restore RCS1075, ERP022
 
-        if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
+        if (unkeyedProvider is not null and not NullDistributedLockProvider)
         {
             logger.UseStorageLockWithNoOpProviderButRealUnkeyed();
             return;

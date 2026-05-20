@@ -66,9 +66,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync(
-            "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;"
-        );
+        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
         await base.DisposeAsyncCore();
     }
 
@@ -336,5 +334,4 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     }
 
     #endregion
-
 }

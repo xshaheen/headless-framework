@@ -96,7 +96,7 @@ public static class AddDistributedLockExtensions
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
-            services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
+            services.AddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
                 provider.GetService<IOutboxPublisher>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
@@ -105,11 +105,25 @@ public static class AddDistributedLockExtensions
                 provider.GetRequiredService<ILogger<DistributedLockProvider>>()
             ));
 
-            services
-                .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                    "headless.locks.released"
-                )
-                .Concurrency(1);
+            services.AddSingleton<IDistributedLockProvider>(sp => sp.GetRequiredService<DistributedLockProvider>());
+
+            // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
+            // decorator wrapped around IDistributedLockProvider does not break the lock-release
+            // wake-up signal (the consumer always receives the real DistributedLockProvider).
+            services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
+
+            // Only register the lock-released consumer when an IOutboxPublisher is available; the
+            // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
+            // which themselves only get published via the outbox path. Without IOutboxPublisher no
+            // such messages ever flow, so the consumer registration is dead weight.
+            if (services.Any(d => d.ServiceType == typeof(IOutboxPublisher)))
+            {
+                services
+                    .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                        "headless.locks.released"
+                    )
+                    .Concurrency(1);
+            }
 
             return services;
         }

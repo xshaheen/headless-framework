@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Diagnostics;
 using Headless.RateLimiting;
 using Headless.Testing.Tests;

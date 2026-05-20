@@ -9,8 +9,7 @@ using Microsoft.Extensions.Logging;
 // ReSharper disable once CheckNamespace
 namespace Headless.RateLimiting;
 
-[PublicAPI]
-public sealed class SlidingWindowDistributedRateLimiter(
+internal sealed class SlidingWindowDistributedRateLimiter(
     IDistributedRateLimiterStorage storage,
     SlidingWindowRateLimiterOptions options,
     TimeProvider timeProvider,
@@ -37,10 +36,15 @@ public sealed class SlidingWindowDistributedRateLimiter(
 
         acquireTimeout = _NormalizeAcquireTimeout(acquireTimeout);
         var timestamp = timeProvider.GetTimestamp();
-        var shouldWait = !cancellationToken.IsCancellationRequested;
-        using CancellationTokenSource? acquireTimeoutCts =
-            acquireTimeout == TimeSpan.Zero ? null : acquireTimeout.Value.ToCancellationTokenSource(cancellationToken);
-        var acquireToken = acquireTimeoutCts?.Token ?? cancellationToken;
+
+        // Use the injected TimeProvider so FakeTimeProvider-driven tests are deterministic.
+        // Mirrors DistributedLockProvider's acquire-timeout CTS construction.
+        using var timeoutCts =
+            acquireTimeout == TimeSpan.Zero ? null : timeProvider.CreateCancellationTokenSource(acquireTimeout.Value);
+        using var linkedCts = timeoutCts is null
+            ? null
+            : CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
+        var acquireToken = linkedCts?.Token ?? cancellationToken;
 
         var allowLease = false;
         byte errors = 0;
@@ -142,7 +146,9 @@ public sealed class SlidingWindowDistributedRateLimiter(
 
         if (!allowLease)
         {
-            if (shouldWait && cancellationToken.IsCancellationRequested)
+            // Route purely on the caller's cancellation token so that callers who cancel mid-wait
+            // see a Cancelled log, while timeouts (only the linked CTS firing) see a Timeout log.
+            if (cancellationToken.IsCancellationRequested)
             {
                 logger.LogRateLimiterCancelled(resource, elapsed);
             }
@@ -197,18 +203,21 @@ public sealed class SlidingWindowDistributedRateLimiter(
 
     private TimeSpan _NormalizeAcquireTimeout(TimeSpan? acquireTimeout)
     {
-        var timeout = acquireTimeout ?? DefaultAcquireTimeout;
-
-        if (timeout < TimeSpan.Zero && timeout != Timeout.InfiniteTimeSpan)
+        // Allow null (use default) and Timeout.InfiniteTimeSpan as the explicit "wait forever" sentinel;
+        // reject other negatives. Mirrors DistributedLockProvider._ValidateAcquireTimeout.
+        if (acquireTimeout is null)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(acquireTimeout),
-                acquireTimeout,
-                "Acquire timeout must be null, Timeout.InfiniteTimeSpan, TimeSpan.Zero, or a positive value."
-            );
+            return DefaultAcquireTimeout;
         }
 
-        return timeout;
+        if (acquireTimeout == Timeout.InfiniteTimeSpan)
+        {
+            return Timeout.InfiniteTimeSpan;
+        }
+
+        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
+
+        return acquireTimeout.Value;
     }
 
     private async Task _WaitUntilPeriodRotatesAsync(
@@ -236,4 +245,118 @@ public sealed class SlidingWindowDistributedRateLimiter(
     }
 
     #endregion
+}
+
+internal static partial class RateLimiterLoggerExtensions
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "RateLimiterTryingToAcquireLease",
+        Level = LogLevel.Trace,
+        Message = "Trying to acquire rate-limiter lease for {Resource}"
+    )]
+    public static partial void LogRateLimiterTryingToAcquireLease(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "RateLimiterInfo",
+        Level = LogLevel.Trace,
+        Message = "Current time: {CurrentTime:mm:ss.fff} rate-limiting period: {RateLimitingPeriod:mm:ss.fff} key: {Key}"
+    )]
+    public static partial void LogRateLimiterInfo(
+        this ILogger logger,
+        DateTime currentTime,
+        DateTime rateLimitingPeriod,
+        string key
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "RateLimiterHitCount",
+        Level = LogLevel.Trace,
+        Message = "Hit count for Resource={Resource} HitCount={HitCount} max={MaxHitsPerPeriod}"
+    )]
+    public static partial void LogRateLimiterHitCount(
+        this ILogger logger,
+        string resource,
+        long? hitCount,
+        long maxHitsPerPeriod
+    );
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "RateLimiterMaxHitsExceeded",
+        Level = LogLevel.Trace,
+        Message = "Max hits exceeded for {Resource}"
+    )]
+    public static partial void LogRateLimiterMaxHitsExceeded(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "RateLimiterMaxHitsExceededAfterCurrent",
+        Level = LogLevel.Trace,
+        Message = "Max hits exceeded after increment for {Resource}"
+    )]
+    public static partial void LogRateLimiterMaxHitsExceededAfterCurrent(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "RateLimiterDefaultSleep",
+        Level = LogLevel.Trace,
+        Message = "Sleeping for default time for {Resource}"
+    )]
+    public static partial void LogRateLimiterDefaultSleep(this ILogger logger, string resource);
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "RateLimiterSleepUntil",
+        Level = LogLevel.Trace,
+        Message = "Sleeping until key expires for {Resource}: {SleepTime}"
+    )]
+    public static partial void LogRateLimiterSleepUntil(this ILogger logger, string resource, TimeSpan sleepTime);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "RateLimiterTimeout",
+        Level = LogLevel.Trace,
+        Message = "Timeout for {Resource} after {Elapsed}"
+    )]
+    public static partial void LogRateLimiterTimeout(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "RateLimiterCancelled",
+        Level = LogLevel.Trace,
+        Message = "Cancellation requested for {Resource} after {Elapsed}"
+    )]
+    public static partial void LogRateLimiterCancelled(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "RateLimiterLeaseAcquired",
+        Level = LogLevel.Trace,
+        Message = "Lease allowed for {Resource} in {Elapsed}"
+    )]
+    public static partial void LogRateLimiterLeaseAcquired(this ILogger logger, string resource, TimeSpan elapsed);
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "RateLimiterError",
+        Level = LogLevel.Error,
+        Message = "Error acquiring rate-limiter lease ({Resource}): {Message}"
+    )]
+    public static partial void LogRateLimiterError(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string message
+    );
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "RateLimiterClockFrozen",
+        Level = LogLevel.Warning,
+        Message = "Rate-limiting period did not rotate after spin cap for {Resource}"
+    )]
+    public static partial void LogRateLimiterClockFrozen(this ILogger logger, string resource);
 }

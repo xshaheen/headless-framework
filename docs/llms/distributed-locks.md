@@ -110,8 +110,9 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
 - `IDistributedLock` handle with `LockId`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException` and `DistributedLockException` for lock-specific failures.
-- Lock inspection methods for expiration, active count, active list, and lock info.
+- `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring.
 
 ### Design Notes
 

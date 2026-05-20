@@ -4,6 +4,11 @@
     <RootNamespace>Headless.RateLimiting</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.RateLimiting.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.RateLimiting.Tests.Harness" />
+    <InternalsVisibleTo Include="Headless.RateLimiting.Redis.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.RateLimiting.Abstractions\Headless.RateLimiting.Abstractions.csproj" />

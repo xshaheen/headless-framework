@@ -14,7 +14,7 @@ namespace Headless.RateLimiting.Redis;
 /// </summary>
 /// <remarks>Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.</remarks>
 [PublicAPI]
-public static class RedisRateLimitingSetup
+public static class SetupRedisRateLimiter
 {
     extension(IServiceCollection services)
     {

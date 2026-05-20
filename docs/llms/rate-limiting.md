@@ -62,6 +62,8 @@ Use `IDistributedRateLimiter` when a resource may acquire only N leases per conf
 - Use `Headless.RateLimiting.Redis` when rate-limiter counters should use direct Redis storage and setup helpers.
 - The period-boundary spin guard is intentional. Do not remove the post-delay 1ms spin without replacing the FakeTimeProvider regression test.
 - A `null` result from `TryAcquireAsync(...)` means the lease was not acquired before timeout or cancellation.
+- Use `IsLockedAsync(resource, ct)` when you only need to check rate-limit status without consuming a slot.
+- Default acquire timeout is 30 seconds. Pass `acquireTimeout: Timeout.InfiniteTimeSpan` only when the caller must wait indefinitely; pass `TimeSpan.Zero` for a single no-wait attempt.
 
 ## Core Concepts
 
@@ -99,6 +101,7 @@ Lets application code depend on rate-limiting interfaces without referencing a c
 - `IDistributedRateLimiter` for acquiring leases.
 - `IDistributedRateLimiterLease` with resource, acquisition time, and wait duration.
 - `IDistributedRateLimiterStorage` as the public storage extension seam.
+- `IsLockedAsync(resource)` to check if the resource is currently at its period limit without acquiring a lease.
 
 ### Installation
 
@@ -173,6 +176,29 @@ builder.Services.AddRateLimiter<MyRateLimiterStorage>(
         options.RateLimitingPeriod = TimeSpan.FromMinutes(1);
     }
 );
+```
+
+### Keyed Quick Start
+
+Register multiple named limiter configurations and resolve them via `[FromKeyedServices(...)]`:
+
+```csharp
+builder.Services.AddKeyedRateLimiter<MyRateLimiterStorage>(
+    "api",
+    options =>
+    {
+        options.MaxHitsPerPeriod = 100;
+        options.RateLimitingPeriod = TimeSpan.FromMinutes(1);
+    }
+);
+
+public sealed class ApiThrottle(
+    [FromKeyedServices("api")] IDistributedRateLimiter limiter
+)
+{
+    public Task<IDistributedRateLimiterLease?> TryAcquireAsync(string resource, CancellationToken ct)
+        => limiter.TryAcquireAsync(resource, cancellationToken: ct);
+}
 ```
 
 ### Configuration

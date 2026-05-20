@@ -7,6 +7,7 @@ using StackExchange.Redis;
 
 namespace Headless.RateLimiting.Redis;
 
+[PublicAPI]
 public sealed class RedisDistributedRateLimiterStorage(
     IConnectionMultiplexer multiplexer,
     HeadlessRedisScriptsLoader scriptsLoader
