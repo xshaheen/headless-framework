@@ -100,18 +100,21 @@ public static class AddDistributedLockExtensions
 
             services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
-                provider.GetRequiredService<IOutboxPublisher>(),
+                provider.GetService<IOutboxPublisher>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<DistributedLockProvider>>()
             ));
 
-            services
-                .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                    "headless.locks.released"
-                )
-                .Concurrency(1);
+            if (services.Any(descriptor => descriptor.ServiceType == typeof(IOutboxPublisher)))
+            {
+                services
+                    .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                        "headless.locks.released"
+                    )
+                    .Concurrency(1);
+            }
 
             return services;
         }

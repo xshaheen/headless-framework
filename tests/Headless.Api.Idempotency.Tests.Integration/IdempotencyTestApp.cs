@@ -357,10 +357,30 @@ internal static class IdempotencyTestApp
 
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
+        public async Task<IDistributedLock> AcquireAsync(
+            string resource,
+            TimeSpan? timeUntilExpires = null,
+            TimeSpan? acquireTimeout = null,
+            bool releaseOnDispose = true,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return await TryAcquireAsync(
+                        resource,
+                        timeUntilExpires,
+                        acquireTimeout,
+                        releaseOnDispose,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+                ?? throw new LockAcquisitionTimeoutException(resource);
+        }
+
         public async Task<IDistributedLock?> TryAcquireAsync(
             string resource,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
+            bool releaseOnDispose = true,
             CancellationToken cancellationToken = default
         )
         {

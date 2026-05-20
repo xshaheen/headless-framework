@@ -13,6 +13,37 @@ public interface IDistributedLockProvider
     TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>
+    /// Acquires a resource lock for a specified resource and throws
+    /// <see cref="LockAcquisitionTimeoutException"/> if the lock is not acquired before
+    /// <paramref name="acquireTimeout"/> is reached.
+    /// </summary>
+    /// <param name="resource">The resource to acquire the lock for.</param>
+    /// <param name="timeUntilExpires">
+    /// The amount of time until the lock expires. The allowed values are:<br/>
+    /// * <see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).<br/>
+    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.<br/>
+    /// * Value greater than 0.<br/>
+    /// </param>
+    /// <param name="acquireTimeout">
+    /// The amount of time to wait for the lock to be acquired. The allowed values are:<br/>
+    /// * <see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).<br/>
+    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire<br/>
+    /// * Value greater than or equal to 0.<br/>
+    /// </param>
+    /// <param name="releaseOnDispose">
+    /// <see langword="true"/> to release the lock when the returned handle is disposed;
+    /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
+    /// </param>
+    /// <param name="cancellationToken"></param>
+    Task<IDistributedLock> AcquireAsync(
+        string resource,
+        TimeSpan? timeUntilExpires = null,
+        TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Acquires a resource lock for a specified resource this method will block
     /// until the lock is acquired or the <paramref name="acquireTimeout"/> is reached.
     /// </summary>
@@ -28,6 +59,10 @@ public interface IDistributedLockProvider
     /// * <see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).<br/>
     /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire<br/>
     /// * Value greater than or equal to 0.<br/>
+    /// </param>
+    /// <param name="releaseOnDispose">
+    /// <see langword="true"/> to release the lock when the returned handle is disposed;
+    /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>
@@ -47,6 +82,7 @@ public interface IDistributedLockProvider
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
         CancellationToken cancellationToken = default
     );
 

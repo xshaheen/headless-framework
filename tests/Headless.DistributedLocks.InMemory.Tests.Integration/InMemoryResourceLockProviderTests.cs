@@ -34,13 +34,28 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
     public override Task should_lock_with_try_acquire() => base.should_lock_with_try_acquire();
 
     [Fact]
+    public override Task should_lock_with_acquire() => base.should_lock_with_acquire();
+
+    [Fact]
     public override Task should_not_acquire_when_already_locked() => base.should_not_acquire_when_already_locked();
+
+    [Fact]
+    public override Task should_throw_timeout_with_acquire_when_already_locked() =>
+        base.should_throw_timeout_with_acquire_when_already_locked();
 
     [Fact]
     public override Task should_obtain_multiple_locks() => base.should_obtain_multiple_locks();
 
     [Fact]
     public override Task should_release_lock_multiple_times() => base.should_release_lock_multiple_times();
+
+    [Fact]
+    public override Task should_keep_lock_when_disposed_with_release_on_dispose_false() =>
+        base.should_keep_lock_when_disposed_with_release_on_dispose_false();
+
+    [Fact]
+    public override Task should_release_explicitly_when_release_on_dispose_false() =>
+        base.should_release_explicitly_when_release_on_dispose_false();
 
     [Fact]
     public override Task should_timeout_when_try_to_lock_acquired_resource() =>

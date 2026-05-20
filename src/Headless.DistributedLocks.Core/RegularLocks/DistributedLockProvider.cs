@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher outboxPublisher,
+    IOutboxPublisher? outboxPublisher,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
@@ -23,6 +23,7 @@ public sealed class DistributedLockProvider(
 ) : IDistributedLockProvider, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
+    private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
 
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
         StringComparer.Ordinal
@@ -70,10 +71,24 @@ public sealed class DistributedLockProvider(
 
     #region Acquire
 
+    public async Task<IDistributedLock> AcquireAsync(
+        string resource,
+        TimeSpan? timeUntilExpires = null,
+        TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, releaseOnDispose, cancellationToken)
+                .ConfigureAwait(false)
+            ?? throw new LockAcquisitionTimeoutException(resource);
+    }
+
     public async Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
         CancellationToken cancellationToken = default
     )
     {
@@ -98,7 +113,14 @@ public sealed class DistributedLockProvider(
         // fire and the lock-store stalls — F#2 from PR #284 review.
         if (acquireTimeout == TimeSpan.Zero)
         {
-            return await _TryAcquireOnceAsync(resource, lockId, timeUntilExpires, timestamp, cancellationToken)
+            return await _TryAcquireOnceAsync(
+                    resource,
+                    lockId,
+                    timeUntilExpires,
+                    timestamp,
+                    releaseOnDispose,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -218,7 +240,15 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+        return new DisposableDistributedLock(
+            resource,
+            lockId,
+            timeWaitedForLock,
+            this,
+            releaseOnDispose,
+            timeProvider,
+            logger
+        );
     }
 
     private async Task<IDistributedLock?> _TryAcquireOnceAsync(
@@ -226,6 +256,7 @@ public sealed class DistributedLockProvider(
         string lockId,
         TimeSpan? timeUntilExpires,
         long timestamp,
+        bool releaseOnDispose,
         CancellationToken callerToken
     )
     {
@@ -292,7 +323,15 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+        return new DisposableDistributedLock(
+            resource,
+            lockId,
+            timeWaitedForLock,
+            this,
+            releaseOnDispose,
+            timeProvider,
+            logger
+        );
     }
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
@@ -404,10 +443,10 @@ public sealed class DistributedLockProvider(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed)
+        if (removed && _outboxPublisher is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
-            await outboxPublisher
+            await _outboxPublisher
                 .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -566,6 +605,19 @@ public sealed class DistributedLockProvider(
         activity.DisplayName = $"Lock: {resource}";
 
         return activity;
+    }
+
+    private static IOutboxPublisher? _ConfigureOutboxPublisher(
+        IOutboxPublisher? outboxPublisher,
+        ILogger<DistributedLockProvider> logger
+    )
+    {
+        if (outboxPublisher is null)
+        {
+            logger.LogOutboxPublisherAbsent();
+        }
+
+        return outboxPublisher;
     }
 
     private sealed class ResetEventWithRefCount

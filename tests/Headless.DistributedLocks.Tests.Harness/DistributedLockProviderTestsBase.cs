@@ -30,6 +30,19 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         handle.TimeWaitedForLock.Should().BePositive();
     }
 
+    public virtual async Task should_lock_with_acquire()
+    {
+        var lockProvider = GetLockProvider();
+        var resource = Faker.Random.String2(3, 20);
+        await using var handle = await lockProvider.AcquireAsync(resource);
+
+        handle.Resource.Should().Be(resource);
+        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
+        handle.RenewalCount.Should().Be(0);
+        handle.TimeWaitedForLock.Should().BePositive();
+    }
+
     public virtual async Task should_not_acquire_when_already_locked()
     {
         var lockProvider = GetLockProvider();
@@ -54,6 +67,19 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
             handle.Should().NotBeNull();
         });
+    }
+
+    public virtual async Task should_throw_timeout_with_acquire_when_already_locked()
+    {
+        var lockProvider = GetLockProvider();
+        var resource = Faker.Random.String2(3, 20);
+
+        await using var handle = await lockProvider.AcquireAsync(resource, acquireTimeout: TimeSpan.FromSeconds(1));
+
+        var act = async () => await lockProvider.AcquireAsync(resource, acquireTimeout: TimeSpan.Zero);
+
+        var assertion = await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+        assertion.Which.Resource.Should().Be(resource);
     }
 
     public virtual async Task should_obtain_multiple_locks()
@@ -106,6 +132,44 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         (await locker.IsLockedAsync(resource)).Should().BeTrue();
 
         await lock2.ReleaseAsync();
+        (await locker.IsLockedAsync(resource)).Should().BeFalse();
+    }
+
+    public virtual async Task should_keep_lock_when_disposed_with_release_on_dispose_false()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        var handle = await locker.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(30),
+            acquireTimeout: TimeSpan.FromMilliseconds(100),
+            releaseOnDispose: false
+        );
+
+        handle.Should().NotBeNull();
+
+        await handle.DisposeAsync();
+
+        (await locker.IsLockedAsync(resource)).Should().BeTrue();
+        await locker.ReleaseAsync(resource, handle.LockId);
+    }
+
+    public virtual async Task should_release_explicitly_when_release_on_dispose_false()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(30),
+            acquireTimeout: TimeSpan.FromMilliseconds(100),
+            releaseOnDispose: false
+        );
+
+        await handle.ReleaseAsync();
+        await handle.DisposeAsync();
+
         (await locker.IsLockedAsync(resource)).Should().BeFalse();
     }
 

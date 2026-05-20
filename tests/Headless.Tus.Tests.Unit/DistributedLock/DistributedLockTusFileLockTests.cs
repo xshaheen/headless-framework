@@ -24,6 +24,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -47,6 +48,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);
@@ -77,6 +79,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 "tus-file-lock-my-upload-id",
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -98,6 +101,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 Arg.Any<string>(),
                 Timeout.InfiniteTimeSpan,
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -115,7 +119,13 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         // then
         await _distributedLockProvider
             .Received(1)
-            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<TimeSpan?>(), TimeSpan.Zero, Arg.Any<CancellationToken>());
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                TimeSpan.Zero,
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     #endregion
@@ -137,6 +147,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -163,6 +174,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);

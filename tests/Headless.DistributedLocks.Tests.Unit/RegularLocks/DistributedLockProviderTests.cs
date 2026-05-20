@@ -22,7 +22,10 @@ public sealed class DistributedLockProviderTests : TestBase
 
     private DistributedLockProvider _CreateProvider(
         DistributedLockOptions? options = null,
-        IDistributedLockStorage? storage = null
+        IDistributedLockStorage? storage = null,
+        IOutboxPublisher? outboxPublisher = null,
+        ILogger<DistributedLockProvider>? logger = null,
+        bool useNullOutboxPublisher = false
     )
     {
         options ??= new DistributedLockOptions();
@@ -30,11 +33,11 @@ public sealed class DistributedLockProviderTests : TestBase
 
         return new DistributedLockProvider(
             storage ?? _storage,
-            _outboxPublisher,
+            useNullOutboxPublisher ? null : outboxPublisher ?? _outboxPublisher,
             options,
             _longIdGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedLockProvider>()
+            logger ?? LoggerFactory.CreateLogger<DistributedLockProvider>()
         );
     }
 
@@ -117,6 +120,95 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // then
         result.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_acquire_lock_with_acquire_async_when_not_held()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await using var result = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then
+        result.Resource.Should().Be(resource);
+        result.LockId.Should().NotBeNullOrEmpty();
+        result.RenewalCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_lock_acquisition_timeout_when_acquire_async_times_out()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when
+        var act = async () =>
+            await provider.AcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: AbortToken);
+
+        // then
+        var assertion = await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+        assertion.Which.Resource.Should().Be(resource);
+    }
+
+    [Fact]
+    public async Task should_throw_operation_canceled_when_acquire_async_caller_token_is_cancelled()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await provider.AcquireAsync(resource, cancellationToken: cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_keep_lock_when_disposed_with_release_on_dispose_false()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await provider.AcquireAsync(resource, releaseOnDispose: false, cancellationToken: AbortToken);
+
+        // when
+        await handle.DisposeAsync();
+
+        // then
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeTrue();
+        await provider.ReleaseAsync(resource, handle.LockId, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_release_explicitly_when_release_on_dispose_false()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.AcquireAsync(
+            resource,
+            releaseOnDispose: false,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await handle.ReleaseAsync();
+        await handle.DisposeAsync();
+
+        // then
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeFalse();
     }
 
     [Fact]
@@ -484,7 +576,9 @@ public sealed class DistributedLockProviderTests : TestBase
         // then — safety deadline wins, caller token is unaffected
         var result = await acquireTask;
         result.Should().BeNull();
-        callerCts.IsCancellationRequested.Should().BeFalse("safety deadline must fire before the caller's much-later deadline");
+        callerCts
+            .IsCancellationRequested.Should()
+            .BeFalse("safety deadline must fire before the caller's much-later deadline");
     }
 
     [Fact]
@@ -498,11 +592,7 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // when — caller token is already cancelled BEFORE the call enters the helper
         var act = async () =>
-            await provider.TryAcquireAsync(
-                resource,
-                acquireTimeout: TimeSpan.Zero,
-                cancellationToken: callerCts.Token
-            );
+            await provider.TryAcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: callerCts.Token);
 
         // then — the pre-call ThrowIfCancellationRequested guard fires (no storage call reached)
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -530,11 +620,7 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // when
         var act = async () =>
-            await provider.TryAcquireAsync(
-                resource,
-                acquireTimeout: TimeSpan.Zero,
-                cancellationToken: callerCts.Token
-            );
+            await provider.TryAcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: callerCts.Token);
 
         // then — OCE must propagate to caller, AND best-effort orphan cleanup must fire
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -757,6 +843,75 @@ public sealed class DistributedLockProviderTests : TestBase
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task should_release_without_publishing_when_outbox_publisher_is_absent()
+    {
+        // given
+        var provider = _CreateProvider(useNullOutboxPublisher: true);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when
+        await provider.ReleaseAsync(resource, acquiredLock!.LockId, AbortToken);
+
+        // then
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_log_warning_when_outbox_publisher_is_absent()
+    {
+        // given
+        var logger = Substitute.For<ILogger<DistributedLockProvider>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var captured = new List<(LogLevel Level, int Id)>();
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(call => captured.Add((call.Arg<LogLevel>(), call.Arg<EventId>().Id)));
+
+        // when
+        _ = _CreateProvider(logger: logger, useNullOutboxPublisher: true);
+
+        // then
+        captured.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Id == 16);
+    }
+
+    [Fact]
+    public void should_not_log_warning_when_outbox_publisher_is_present()
+    {
+        // given
+        var logger = Substitute.For<ILogger<DistributedLockProvider>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var captured = new List<int>();
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(call => captured.Add(call.Arg<EventId>().Id));
+
+        // when
+        _ = _CreateProvider(logger: logger);
+
+        // then
+        captured.Should().NotContain(16);
     }
 
     #endregion
