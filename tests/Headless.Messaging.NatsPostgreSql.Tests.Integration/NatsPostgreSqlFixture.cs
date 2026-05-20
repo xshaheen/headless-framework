@@ -140,7 +140,6 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
                 command.CommandText = """
                     TRUNCATE TABLE messaging.published;
                     TRUNCATE TABLE messaging.received;
-                    UPDATE messaging.lock SET "Instance" = '', "LastLockTime" = '0001-01-01 00:00:00';
                     """;
 
                 await command.ExecuteNonQueryAsync();

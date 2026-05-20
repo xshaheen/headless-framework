@@ -92,9 +92,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
         // Clean up tables after tests
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync(
-            "TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received; DELETE FROM messaging.Lock;"
-        );
+        await connection.ExecuteAsync("TRUNCATE TABLE messaging.Published; TRUNCATE TABLE messaging.Received;");
 
         await base.DisposeAsyncCore();
     }

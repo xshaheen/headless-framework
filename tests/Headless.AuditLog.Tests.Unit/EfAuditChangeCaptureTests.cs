@@ -143,10 +143,12 @@ public sealed class EfAuditChangeCaptureTests : TestBase
     {
         var opts = new AuditLogOptions();
         configure?.Invoke(opts);
-        return new EfAuditChangeCapture(
-            Options.Create(opts),
-            logger ?? Substitute.For<ILogger<EfAuditChangeCapture>>()
-        );
+        logger ??= Substitute.For<ILogger<EfAuditChangeCapture>>();
+        // LoggerMessage source-generated wrappers short-circuit on IsEnabled,
+        // which an unconfigured substitute returns false for. Force-enable so
+        // tests asserting ReceivedCalls() actually see the underlying Log call.
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        return new EfAuditChangeCapture(Options.Create(opts), logger);
     }
 
     private static IReadOnlyList<AuditLogEntryData> _Capture(EfAuditChangeCapture sut, TestDbContext db)

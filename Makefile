@@ -10,11 +10,18 @@ ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 TEST_RESULTS_DIR ?= $(ARTIFACTS_DIR)/test-results
 COVERAGE_DIR ?= $(ARTIFACTS_DIR)/coverage
+COVERAGE_REPORT_DIR ?= $(COVERAGE_DIR)/report
+COVERAGE_REPORT_TYPES ?= Html;JsonSummary
 PROJECT ?=
 TEST_PROJECT ?=
 TEST_FILTER ?=
+TEST_ARGS ?= --no-progress
+TEST_MODULES ?= tests/**/bin/$(CONFIGURATION)/**/*.Tests.*.dll
 MSBUILD_ARGS ?=
 TEST_MAX_PARALLEL ?= 3
+TEST_TIMEOUT ?= 15m
+
+COVERAGE_ARGS ?= -p:EnableCodeCoverage=true --coverage-output-format cobertura
 
 .PHONY: help
 help: ## Show available commands.
@@ -22,6 +29,8 @@ help: ## Show available commands.
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj\n"
+	@printf "  make test-class CLASS='*ClockTests'\n"
+	@printf "  make coverage-json\n"
 	@printf "  make pack CONFIGURATION=Release\n\n"
 
 .PHONY: bootstrap
@@ -57,22 +66,67 @@ format-check: tools ## Check C# formatting without writing changes.
 	$(DOTNET) csharpier check .
 
 .PHONY: test
-test: build ## Run all tests. Use TEST_FILTER='--filter-class X' (MTP syntax) for filters. TEST_MAX_PARALLEL caps concurrent modules (default 2).
+test: build ## Build, then run all tests. Use TEST_FILTER='--filter-class X' for MTP filters.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_FILTER)
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: test-fast
+test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURATION) build outputs.
+	@mkdir -p "$(TEST_RESULTS_DIR)"
+	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: test-modules
+test-modules: build ## Run prebuilt test DLLs via MTP --test-modules. Override TEST_MODULES if needed.
+	@mkdir -p "$(TEST_RESULTS_DIR)"
+	$(DOTNET) test --test-modules "$(TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-project
 test-project: ## Run one test project: make test-project TEST_PROJECT=tests/.../*.csproj
 	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
-	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)" $(TEST_FILTER)
+	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: test-project-fast
+test-project-fast: ## Run one prebuilt test project without restore/build.
+	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Tests.Unit/Headless.Api.Tests.Unit.csproj" && exit 2)
+	@mkdir -p "$(TEST_RESULTS_DIR)"
+	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
+
+.PHONY: test-class
+test-class: ## Run tests matching CLASS with MTP --filter-class.
+	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*ClockTests'" && exit 2)
+	$(MAKE) test TEST_FILTER='--filter-class "$(CLASS)"'
+
+.PHONY: test-method
+test-method: ## Run tests matching METHOD with MTP --filter-method.
+	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
+	$(MAKE) test TEST_FILTER='--filter-method "$(METHOD)"'
+
+.PHONY: test-namespace
+test-namespace: ## Run tests matching NAMESPACE with MTP --filter-namespace.
+	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
+	$(MAKE) test TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+
+.PHONY: test-trait
+test-trait: ## Run tests matching TRAIT with MTP --filter-trait.
+	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
+	$(MAKE) test TEST_FILTER='--filter-trait "$(TRAIT)"'
+
+.PHONY: test-query
+test-query: ## Run tests matching QUERY with MTP --filter-query.
+	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Core.Tests.Unit/Tests.Abstractions/ClockTests/*'" && exit 2)
+	$(MAKE) test TEST_FILTER='--filter-query "$(QUERY)"'
+
+.PHONY: test-timeout
+test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still provide TRX and dumps.
+	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
 
 .PHONY: test-unit
 test-unit: build ## Run every *.Tests.Unit project.
 	@mkdir -p "$(TEST_RESULTS_DIR)/unit"
 	@find tests -name '*.Tests.Unit.csproj' -print0 | while IFS= read -r -d '' project; do \
 		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)/unit" $(TEST_FILTER); \
+		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/unit" $(TEST_ARGS) $(TEST_FILTER); \
 	done
 
 .PHONY: test-integration
@@ -80,7 +134,7 @@ test-integration: build ## Run every *.Tests.Integration project. Requires Docke
 	@mkdir -p "$(TEST_RESULTS_DIR)/integration"
 	@find tests -name '*.Tests.Integration.csproj' -print0 | while IFS= read -r -d '' project; do \
 		echo "Testing $$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --results-directory "$(TEST_RESULTS_DIR)/integration" $(TEST_FILTER); \
+		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)/integration" $(TEST_ARGS) $(TEST_FILTER); \
 	done
 
 .PHONY: coverage
@@ -88,15 +142,19 @@ coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverag
 	@mkdir -p "$(COVERAGE_DIR)" "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build \
 		--results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) \
-		-p:EnableCodeCoverage=true --coverage-output-format cobertura
+		$(TEST_ARGS) $(TEST_FILTER) $(COVERAGE_ARGS)
 
 .PHONY: coverage-html
-coverage-html: coverage ## Generate an HTML coverage report.
-	$(DOTNET) reportgenerator -reports:"$(TEST_RESULTS_DIR)/**/*.cobertura.xml" -targetdir:"$(COVERAGE_DIR)/report" -reporttypes:Html
+coverage-html: coverage ## Generate HTML coverage report plus Summary.json.
+	$(DOTNET) reportgenerator -reports:"$(TEST_RESULTS_DIR)/**/*.cobertura.xml" -targetdir:"$(COVERAGE_REPORT_DIR)" -reporttypes:"$(COVERAGE_REPORT_TYPES)"
+
+.PHONY: coverage-json
+coverage-json: coverage-html ## Generate JSON coverage summary at artifacts/coverage/report/Summary.json.
+	@test -f "$(COVERAGE_REPORT_DIR)/Summary.json" || (echo "Coverage JSON summary was not generated: $(COVERAGE_REPORT_DIR)/Summary.json" && exit 1)
 
 .PHONY: coverage-open
 coverage-open: coverage-html ## Generate report and open in browser.
-	open "$(COVERAGE_DIR)/report/index.html"
+	open "$(COVERAGE_REPORT_DIR)/index.html"
 
 .PHONY: pack
 pack: restore ## Pack NuGet packages with symbols.

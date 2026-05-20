@@ -69,9 +69,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync();
-        await connection.ExecuteAsync(
-            "TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received; DELETE FROM messaging.Lock;"
-        );
+        await connection.ExecuteAsync("TRUNCATE TABLE messaging.published; TRUNCATE TABLE messaging.received;");
         await base.DisposeAsyncCore();
     }
 
