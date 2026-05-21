@@ -709,13 +709,47 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        const string value = "test-value";
 
         // when
-        var result = await cache.SetAddAsync(key, value, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.SetAddAsync(key, new[] { "test-value" }, TimeSpan.FromMinutes(5), AbortToken);
 
         // then
         result.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_roundtrip_string_set_through_get_set()
+    {
+        // Regression: SetAddAsync<string> previously stored Dictionary<object, DateTime?>
+        // while GetSetAsync<string> read Dictionary<string, DateTime?>, causing InvalidCastException.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.SetAddAsync(key, new[] { "a", "b" }, expiration: null, AbortToken);
+        var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(["a", "b"]);
+    }
+
+    [Fact]
+    public async Task should_merge_strings_into_existing_set()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        await cache.SetAddAsync(key, new[] { "c", "d" }, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(["a", "b", "c", "d"]);
     }
 
     [Fact]
@@ -811,14 +845,33 @@ public sealed class InMemoryCacheTests : TestBase
         // given
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
-        await cache.SetAddAsync(key, "item1", TimeSpan.FromMinutes(5), AbortToken);
-        await cache.SetAddAsync(key, "item2", TimeSpan.FromMinutes(5), AbortToken);
+        await cache.SetAddAsync(key, new[] { "item1", "item2" }, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await cache.SetRemoveAsync(key, "item1", null, AbortToken);
+        var result = await cache.SetRemoveAsync(key, new[] { "item1" }, null, AbortToken);
 
         // then
         result.Should().Be(1);
+        var remaining = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+        remaining.Value.Should().BeEquivalentTo(["item2"]);
+    }
+
+    [Fact]
+    public async Task should_roundtrip_guid_set_through_get_set()
+    {
+        // Regression: non-string T must still use the object-keyed branch end-to-end.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+
+        // when
+        await cache.SetAddAsync(key, ids, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetSetAsync<Guid>(key, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().BeEquivalentTo(ids);
     }
 
     [Fact]
@@ -833,6 +886,90 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         result.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_return_zero_when_removing_strings_from_nonexistent_set()
+    {
+        // Regression: string-branch must hit the TryUpdate no-op path without throwing.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var result = await cache.SetRemoveAsync(key, new[] { "missing" }, null, AbortToken);
+
+        // then
+        result.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_roundtrip_add_then_remove_for_string_set()
+    {
+        // Regression: explicit add->remove->get path for T=string from the bug report.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b", "c" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var removed = await cache.SetRemoveAsync(key, new[] { "a", "c" }, null, AbortToken);
+        var remaining = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        // then
+        removed.Should().Be(2);
+        remaining.HasValue.Should().BeTrue();
+        remaining.Value.Should().BeEquivalentTo(["b"]);
+    }
+
+    [Fact]
+    public async Task should_return_zero_when_adding_only_null_strings_to_set()
+    {
+        // Regression: previously the buggy string branch would silently count nulls as 1.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var items = new string?[] { null, null };
+
+        // when
+        var result = await cache.SetAddAsync(key, items!, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_deduplicate_string_set_case_insensitively()
+    {
+        // The string branch uses StringComparer.OrdinalIgnoreCase; the last value wins for the key bucket.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.SetAddAsync(key, new[] { "Hello", "HELLO", "world" }, TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.GetSetAsync<string>(key, cancellationToken: AbortToken);
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task should_page_string_set_items()
+    {
+        // The string-keyed read branch must honor pageIndex/pageSize like the object-keyed branch.
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.SetAddAsync(key, new[] { "a", "b", "c", "d", "e" }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var page = await cache.GetSetAsync<string>(key, pageIndex: 1, pageSize: 2, cancellationToken: AbortToken);
+
+        // then
+        page.HasValue.Should().BeTrue();
+        page.Value.Should().HaveCount(2);
     }
 
     #endregion

@@ -943,12 +943,23 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         var utcNow = _timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = expiration.HasValue ? utcNow.Add(expiration.Value) : (DateTime?)null;
 
-        if (value is string stringValue)
+        if (typeof(T) == typeof(string))
         {
-            var newItems = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase)
+            var newItems = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var v in value)
             {
-                { stringValue, expiresAt },
-            };
+                if (v is not null)
+                {
+                    newItems[(string)(object)v] = expiresAt;
+                }
+            }
+
+            if (newItems.Count is 0)
+            {
+                return 0;
+            }
+
             var entrySize = _CalculateEntrySize(newItems);
             var entry = new CacheEntry(
                 newItems,
@@ -978,7 +989,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
                     var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
                     var currentMax = _ExpireAndGetMaxExpiration(updatedDict);
-                    updatedDict[stringValue] = expiresAt;
+
+                    foreach (var kvp in newItems)
+                    {
+                        updatedDict[kvp.Key] = kvp.Value;
+                    }
 
                     var newExpiresAt =
                         (expiresAt is null || currentMax is null) ? (DateTime?)null
@@ -1412,8 +1427,15 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         key = _GetKey(key);
 
-        if (value is string stringValue)
+        if (typeof(T) == typeof(string))
         {
+            var stringsToRemove = value.Where(v => v is not null).Select(v => (string)(object)v!).ToList();
+
+            if (stringsToRemove.Count is 0)
+            {
+                return new ValueTask<long>(0L);
+            }
+
             long removed = 0;
             long sizeDelta = 0;
 
@@ -1428,7 +1450,16 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                     }
 
                     var updatedDict = new Dictionary<string, DateTime?>(dictionary, StringComparer.OrdinalIgnoreCase);
-                    var localRemoved = updatedDict.Remove(stringValue) ? 1L : 0L;
+                    long localRemoved = 0;
+
+                    foreach (var v in stringsToRemove)
+                    {
+                        if (updatedDict.Remove(v))
+                        {
+                            localRemoved++;
+                        }
+                    }
+
                     removed = localRemoved;
 
                     var newExpiresAt = _ExpireAndGetMaxExpiration(updatedDict);
