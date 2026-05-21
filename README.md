@@ -281,7 +281,7 @@ Send push notifications through Firebase Cloud Messaging with a clean abstractio
 
 ### Distributed Locking
 
-Coordinate access to shared resources across distributed services. Use rate-limiting packages for sliding-window admission control.
+Coordinate access to shared resources across distributed services.
 
 | Package | Description |
 |---------|-------------|
@@ -289,17 +289,6 @@ Coordinate access to shared resources across distributed services. Use rate-limi
 | [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
 | [Headless.DistributedLocks.Cache](src/Headless.DistributedLocks.Cache/README.md) | Cache-based locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
-
-### Rate Limiting
-
-Limit distributed resource admissions with sliding-window counters backed by cache or Redis.
-
-| Package | Description |
-|---------|-------------|
-| [Headless.RateLimiting.Abstractions](src/Headless.RateLimiting.Abstractions/README.md) | Distributed rate-limiting interfaces |
-| [Headless.RateLimiting.Core](src/Headless.RateLimiting.Core/README.md) | Sliding-window rate-limiter implementation |
-| [Headless.RateLimiting.Cache](src/Headless.RateLimiting.Cache/README.md) | Cache-based rate-limiter storage |
-| [Headless.RateLimiting.Redis](src/Headless.RateLimiting.Redis/README.md) | Redis-based rate-limiter storage |
 
 ### Serialization
 

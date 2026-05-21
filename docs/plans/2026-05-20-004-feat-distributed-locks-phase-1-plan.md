@@ -1,12 +1,29 @@
 ---
 title: "feat(distributed-locks): Phase 1 — ergonomics + throttling extraction"
 type: feat
-status: completed
+status: partially-reverted
 created: 2026-05-20
 depth: deep
 origin: https://github.com/xshaheen/headless-framework/issues/288
 tracking: https://github.com/xshaheen/headless-framework/issues/287
 ---
+
+> **2026-05-21 — Rate-limiting requirements reverted.** R1.4 (extraction to
+> `Headless.RateLimiting.*`) and R1.5 (period-boundary spin-fix landing in the
+> extracted package) have been dropped from the framework. After a post-merge
+> architecture review against `Microsoft.AspNetCore.RateLimiting`,
+> `System.Threading.RateLimiting`, `Polly.RateLimiting`, and community
+> `RedisRateLimiting`, the conclusion was that a framework-shipped distributed
+> sliding-window rate limiter has no defensible niche against the existing
+> .NET stack: the ecosystem has converged on "BCL primitive + edge / community
+> distributed backend", and Headless Framework's breadth-first thesis does not
+> include filling narrow distributed-rate-limiting gaps. The `Headless.RateLimiting.*`
+> package family and `docs/llms/rate-limiting.md` have been deleted. Lock
+> ergonomics (R1.1–R1.3, R1.6) remain shipped. The old throttling code that
+> lived under `Headless.DistributedLocks.Core/ThrottlingLocks/*` does not
+> return — consumers needing rate limiting should use `Microsoft.AspNetCore.RateLimiting`
+> (in-process) or `Polly.RateLimiting` + a community Redis-backed `RateLimiter`
+> (distributed).
 
 # feat(distributed-locks): Phase 1 — ergonomics + throttling extraction
 

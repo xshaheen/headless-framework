@@ -14,7 +14,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - **Background jobs.** Use `Headless.Jobs` — mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`. Do not use Hangfire or Quartz.
 - **Feature flags.** Use `Headless.Features`. Do not use `Microsoft.FeatureManagement`.
 - **Distributed locks.** Use `IDistributedLock` from `Headless.DistributedLocks.Abstractions`, not ad-hoc Redis `SET NX` or database row locks.
-- **Rate limiting.** Use `IDistributedRateLimiter` from `Headless.RateLimiting.Abstractions`, not distributed-lock APIs.
+- **Rate limiting.** The framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` for in-process limits; for distributed scenarios, use `Polly.RateLimiting` composed with a community Redis-backed `RateLimiter` such as `RedisRateLimiting`.
 - **Dev packages.** Use `*.Dev` packages (`Headless.Emails.Dev`, `Headless.Sms.Dev`, `Headless.PushNotifications.Dev`) in development so no real messages are sent.
 
 ### Argument validation and guard clauses
@@ -114,7 +114,6 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [permissions.md](permissions.md) — Permission management with caching, authorization, EF Core storage.
 - [push-notifications.md](push-notifications.md) — Push notifications (Firebase FCM, dev no-op).
 - [distributed-locks.md](distributed-locks.md) — Distributed locking (Redis, cache-based, in-memory).
-- [rate-limiting.md](rate-limiting.md) — Distributed sliding-window rate limiting (cache and Redis).
 - [serialization.md](serialization.md) — Serialization (System.Text.Json, MessagePack).
 - [settings.md](settings.md) — Dynamic runtime settings with hierarchical providers and EF Core storage.
 - [sms.md](sms.md) — SMS sending (Twilio, AWS SNS, Infobip, regional providers).
@@ -238,12 +237,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
 - `Headless.DistributedLocks.Cache` — Cache-based lock storage (uses `ICache`).
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
-
-### Rate Limiting
-- `Headless.RateLimiting.Abstractions` — Distributed rate-limiting interfaces.
-- `Headless.RateLimiting.Core` — Sliding-window rate-limiter implementation and setup.
-- `Headless.RateLimiting.Cache` — Cache-based rate-limiter storage.
-- `Headless.RateLimiting.Redis` — Redis-based rate-limiter storage and setup.
 
 ### Serialization
 - `Headless.Serializer.Abstractions` — `ISerializer` interface.
