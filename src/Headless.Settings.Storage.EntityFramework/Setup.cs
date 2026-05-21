@@ -2,6 +2,7 @@
 
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Settings.Storage.EntityFramework;
@@ -16,7 +17,11 @@ public static class EntityFrameworkSettingsSetup
             Action<SettingsStorageOptions>? configureStorage = null
         )
         {
-            services.AddPooledDbContextFactory<SettingsDbContext>(setupAction);
+            services.AddPooledDbContextFactory<SettingsDbContext>(options =>
+            {
+                setupAction(options);
+                options.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
+            });
             services.AddSettingsManagementDbContextStorage<SettingsDbContext>(configureStorage);
 
             return services;
@@ -27,7 +32,11 @@ public static class EntityFrameworkSettingsSetup
             Action<SettingsStorageOptions>? configureStorage = null
         )
         {
-            services.AddPooledDbContextFactory<SettingsDbContext>(setupAction);
+            services.AddPooledDbContextFactory<SettingsDbContext>((provider, options) =>
+            {
+                setupAction(provider, options);
+                options.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
+            });
             services.AddSettingsManagementDbContextStorage<SettingsDbContext>(configureStorage);
 
             return services;

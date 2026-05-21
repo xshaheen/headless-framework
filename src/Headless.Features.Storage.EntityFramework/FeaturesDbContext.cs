@@ -24,3 +24,25 @@ public class FeaturesDbContext(DbContextOptions options) : DbContext(options), I
         modelBuilder.AddFeaturesConfiguration(storageOptions);
     }
 }
+
+internal sealed class FeaturesStorageModelCacheKeyFactory : IModelCacheKeyFactory
+{
+    public object Create(DbContext context, bool designTime)
+    {
+        if (context is not FeaturesDbContext)
+        {
+            return (context.GetType(), designTime);
+        }
+
+        var options = context.GetService<IOptions<FeaturesStorageOptions>>().Value;
+
+        return (
+            context.GetType(),
+            designTime,
+            options.Schema,
+            options.FeatureValuesTableName,
+            options.FeatureDefinitionsTableName,
+            options.FeatureGroupDefinitionsTableName
+        );
+    }
+}
