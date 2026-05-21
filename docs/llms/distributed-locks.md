@@ -87,7 +87,11 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 ### Lease Lifecycle Monitoring
 
-Lock monitoring is opt-in per acquire call. `monitorLease: true` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. Without monitoring, `HandleLostToken` is `CancellationToken.None`.
+Lock monitoring is opt-in per acquire call. `monitorLease: true` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. Without monitoring, `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
+
+Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 1`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
+
+Combining `monitorLease: true` or `autoExtend: true` with `Timeout.InfiniteTimeSpan` for `timeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
 `autoExtend: true` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. Monitoring without auto-extension validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `LockId` when stale owners can corrupt state.
 
@@ -117,7 +121,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 ### Key Features
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
-- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - `GetLockIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring.

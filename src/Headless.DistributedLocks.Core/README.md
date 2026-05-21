@@ -17,8 +17,9 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 - `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
 - `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
-- Lease monitors are opt-in per acquire call through `monitorLease: true`; `autoExtend: true` implies monitoring and renews the lease in the background.
-- Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence.
+- Lease monitors are opt-in per acquire call through `monitorLease: true`; `autoExtend: true` implies monitoring and renews the lease in the background. Both require a finite `timeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
+- Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
+- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 1`) for programmatic log filtering. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
 ## Installation
 

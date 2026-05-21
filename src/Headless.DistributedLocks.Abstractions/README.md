@@ -9,7 +9,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 ## Key Features
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
-- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - Lock inspection methods for current lock id, expiration, active count, active list, and lock info.
 
@@ -17,7 +17,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
 - `releaseOnDispose: false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
-- `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring. It is an observability signal; fence protected writes with `LockId` when correctness matters.
+- `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `IsMonitored` to disambiguate). It is an observability signal; fence protected writes with `LockId` when correctness matters. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
 
 ## Installation
 

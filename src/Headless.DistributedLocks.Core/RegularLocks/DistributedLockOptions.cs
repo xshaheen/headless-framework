@@ -20,9 +20,17 @@ public sealed class DistributedLockOptions
     public int? MaxWaitersPerResource { get; set; } = 1_000;
 
     /// <summary>Fraction of the lease TTL used as the polling cadence when validating without renewal.</summary>
+    /// <remarks>
+    /// Capped at 0.5 so at least two probes occur per lease window — keeps the safety net
+    /// effective under cadence jitter.
+    /// </remarks>
     public double PollingCadenceFraction { get; set; } = 0.5;
 
     /// <summary>Fraction of the lease TTL used as the polling cadence when auto-extending leases.</summary>
+    /// <remarks>
+    /// Capped at 0.5 so at least two extensions occur per lease window — keeps the safety net
+    /// effective under cadence jitter.
+    /// </remarks>
     public double AutoExtensionCadenceFraction { get; set; } = 1.0 / 3.0;
 }
 
