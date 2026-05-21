@@ -54,6 +54,43 @@ public static class MessagingServiceCollectionExtensions
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
+        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Bus);
+    }
+
+    /// <summary>
+    /// Registers a broadcast (publish/subscribe) message consumer with the specified topic.
+    /// </summary>
+    public static IConsumerBuilder<TConsumer> AddBusConsumer<TConsumer, TMessage>(
+        this IServiceCollection services,
+        string topic
+    )
+        where TConsumer : class, IConsume<TMessage>
+        where TMessage : class
+    {
+        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Bus);
+    }
+
+    /// <summary>
+    /// Registers a point-to-point (work-queue) message consumer with the specified topic.
+    /// </summary>
+    public static IConsumerBuilder<TConsumer> AddQueueConsumer<TConsumer, TMessage>(
+        this IServiceCollection services,
+        string topic
+    )
+        where TConsumer : class, IConsume<TMessage>
+        where TMessage : class
+    {
+        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Queue);
+    }
+
+    private static IConsumerBuilder<TConsumer> _AddConsumer<TConsumer, TMessage>(
+        IServiceCollection services,
+        string topic,
+        IntentType intentType
+    )
+        where TConsumer : class, IConsume<TMessage>
+        where TMessage : class
+    {
         Argument.IsNotNull(services);
         Argument.IsNotNullOrWhiteSpace(topic);
 
@@ -68,7 +105,8 @@ public static class MessagingServiceCollectionExtensions
             Topic: topic,
             Group: null,
             Concurrency: 1,
-            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage))
+            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage)),
+            IntentType: intentType
         );
 
         // Register metadata as singleton for discovery

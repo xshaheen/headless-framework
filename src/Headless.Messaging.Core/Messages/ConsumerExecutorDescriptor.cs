@@ -38,6 +38,11 @@ public sealed class ConsumerExecutorDescriptor
     /// Deterministic handler identity used for diagnostics and runtime subscription matching.
     /// </summary>
     public string? HandlerId { get; init; }
+
+    /// <summary>
+    /// Delivery intent used to subscribe this consumer.
+    /// </summary>
+    public IntentType IntentType { get; init; } = IntentType.Bus;
 }
 
 public sealed class ParameterDescriptor

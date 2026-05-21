@@ -197,6 +197,7 @@
         <Project Path="src/Headless.Messaging.Abstractions/Headless.Messaging.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.AwsSqs/Headless.Messaging.AwsSqs.csproj" />
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
+        <Project Path="src/Headless.Messaging.Bus.Abstractions/Headless.Messaging.Bus.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.Core/Headless.Messaging.Core.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
@@ -207,6 +208,7 @@
         <Project Path="src/Headless.Messaging.OpenTelemetry/Headless.Messaging.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Messaging.PostgreSql/Headless.Messaging.PostgreSql.csproj" />
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
+        <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
         <Project Path="src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj" />
         <Project Path="src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj" />

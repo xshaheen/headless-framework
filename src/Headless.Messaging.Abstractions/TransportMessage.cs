@@ -11,7 +11,7 @@ namespace Headless.Messaging.Messages;
 /// </summary>
 /// <remarks>
 /// This is a value type optimized for performance when passing messages through the message processing pipeline.
-/// Unlike <see cref="Message"/>, this struct works with raw byte data rather than deserialized objects,
+/// Unlike the storage message model, this struct works with raw byte data rather than deserialized objects,
 /// making it suitable for transport-level operations.
 /// </remarks>
 /// <remarks>

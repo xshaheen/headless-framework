@@ -138,6 +138,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
                 TopicNamePrefix = _messagingOptions.TopicNamePrefix,
                 Concurrency = consumer.Concurrency,
                 HandlerId = consumer.ResolvedHandlerId,
+                IntentType = consumer.IntentType,
             };
 
             results.Add(descriptor);

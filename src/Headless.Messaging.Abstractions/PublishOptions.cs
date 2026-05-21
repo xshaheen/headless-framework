@@ -3,7 +3,8 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a publish operation with explicit topic, correlation, and custom header overrides.
+/// Configures a broadcast (bus) publish operation with explicit topic, correlation, custom header,
+/// and (for outbox-backed publishes) delivery-delay overrides.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,74 +20,15 @@ namespace Headless.Messaging;
 /// that the synthesized record equality would otherwise introduce on the dictionary-typed property.
 /// </para>
 /// </remarks>
-public sealed record PublishOptions
+public sealed record PublishOptions : MessagePublishOptionsBase
 {
     /// <summary>
-    /// Maximum supported length for <see cref="MessageId"/> when publishing messages that may be stored durably.
-    /// </summary>
-    public const int MessageIdMaxLength = 200;
-
-    /// <summary>
-    /// Maximum supported length for <see cref="TenantId"/> when publishing messages that may be stored durably.
-    /// </summary>
-    public const int TenantIdMaxLength = 200;
-
-    /// <summary>
-    /// Gets the explicit topic override. When <see langword="null"/>, the topic is resolved from mappings or conventions.
-    /// </summary>
-    public string? Topic { get; init; }
-
-    /// <summary>
-    /// Gets custom application headers. Reserved messaging headers are rejected.
-    /// </summary>
-    public IDictionary<string, string?>? Headers { get; init; }
-
-    /// <summary>
-    /// Gets the explicit logical message identifier override.
+    /// Gets the delay applied before the persisted message is dispatched.
     /// </summary>
     /// <remarks>
-    /// Durable outbox providers store this value in 200-character columns, so values longer than
-    /// <see cref="MessageIdMaxLength"/> are rejected before persistence.
+    /// Honored only by outbox-backed bus publishers. Ignored by fire-and-forget publishers.
     /// </remarks>
-    public string? MessageId { get; init; }
-
-    /// <summary>
-    /// Gets the explicit correlation identifier override.
-    /// </summary>
-    public string? CorrelationId { get; init; }
-
-    /// <summary>
-    /// Gets the explicit correlation sequence override.
-    /// </summary>
-    public int? CorrelationSequence { get; init; }
-
-    /// <summary>
-    /// Gets the callback topic override used for response messages.
-    /// </summary>
-    public string? CallbackName { get; init; }
-
-    /// <summary>
-    /// Gets the explicit multi-tenancy identifier for this message.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// When set, the publish pipeline stamps the value into the <c>Headers.TenantId</c> wire header.
-    /// When <see langword="null"/>, no header is written and consumers observe a <see langword="null"/>
-    /// <c>ConsumeContext&lt;TMessage&gt;.TenantId</c>.
-    /// </para>
-    /// <para>
-    /// The publish pipeline enforces a strict 4-case integrity policy. A raw write to
-    /// <c>Headers.TenantId</c> through <see cref="Headers"/> without setting this typed property
-    /// is rejected with <see cref="InvalidOperationException"/>. If the typed property and a matching
-    /// raw header are both set, the publish is accepted as a no-op reconciliation; if they disagree,
-    /// the publish is rejected.
-    /// </para>
-    /// <para>
-    /// Values longer than <see cref="TenantIdMaxLength"/> or whitespace-only values are rejected at publish time.
-    /// Charset sanitization (URL/SQL/log safety) is the consumer application's responsibility.
-    /// </para>
-    /// </remarks>
-    public string? TenantId { get; init; }
+    public TimeSpan? Delay { get; init; }
 
     /// <summary>
     /// Determines whether the specified <see cref="PublishOptions"/> equals this instance using
@@ -104,68 +46,12 @@ public sealed record PublishOptions
             return true;
         }
 
-        return string.Equals(Topic, other.Topic, StringComparison.Ordinal)
-            && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
-            && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
-            && CorrelationSequence == other.CorrelationSequence
-            && string.Equals(CallbackName, other.CallbackName, StringComparison.Ordinal)
-            && string.Equals(TenantId, other.TenantId, StringComparison.Ordinal)
-            && _HeadersEqual(Headers, other.Headers);
+        return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
     }
 
     /// <summary>Returns the hash code for this instance using structural <see cref="Headers"/> hashing.</summary>
     public override int GetHashCode()
     {
-        var hash = new HashCode();
-        hash.Add(Topic, StringComparer.Ordinal);
-        hash.Add(MessageId, StringComparer.Ordinal);
-        hash.Add(CorrelationId, StringComparer.Ordinal);
-        hash.Add(CorrelationSequence);
-        hash.Add(CallbackName, StringComparer.Ordinal);
-        hash.Add(TenantId, StringComparer.Ordinal);
-
-        if (Headers is not null)
-        {
-            foreach (var kvp in Headers.OrderBy(p => p.Key, StringComparer.Ordinal))
-            {
-                hash.Add(kvp.Key, StringComparer.Ordinal);
-                hash.Add(kvp.Value, StringComparer.Ordinal);
-            }
-        }
-
-        return hash.ToHashCode();
-    }
-
-    private static bool _HeadersEqual(IDictionary<string, string?>? left, IDictionary<string, string?>? right)
-    {
-        if (ReferenceEquals(left, right))
-        {
-            return true;
-        }
-
-        if (left is null || right is null)
-        {
-            return false;
-        }
-
-        if (left.Count != right.Count)
-        {
-            return false;
-        }
-
-        foreach (var kvp in left)
-        {
-            if (!right.TryGetValue(kvp.Key, out var rightValue))
-            {
-                return false;
-            }
-
-            if (!string.Equals(kvp.Value, rightValue, StringComparison.Ordinal))
-            {
-                return false;
-            }
-        }
-
-        return true;
+        return HashCode.Combine(base.GetHashCode(), Delay);
     }
 }
