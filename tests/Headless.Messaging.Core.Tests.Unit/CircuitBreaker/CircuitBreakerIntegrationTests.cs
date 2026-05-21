@@ -31,6 +31,8 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
+    private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
+
     private static CircuitBreakerStateManager _CreateStateManager(
         int failureThreshold = 3,
         TimeSpan? openDuration = null,
@@ -221,24 +223,26 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // given — use real CircuitBreakerStateManager as the ICircuitBreakerMonitor
         const string openGroup = "integration.group.open";
         const string healthyGroup = "integration.group.healthy";
+        var openCircuitGroup = _CircuitKey(openGroup);
+        var healthyCircuitGroup = _CircuitKey(healthyGroup);
 
         await using var stateManager = _CreateStateManager(failureThreshold: 1);
 
         stateManager.RegisterGroupCallbacks(
-            openGroup,
+            openCircuitGroup,
             onPause: () => ValueTask.CompletedTask,
             onResume: () => ValueTask.CompletedTask
         );
         stateManager.RegisterGroupCallbacks(
-            healthyGroup,
+            healthyCircuitGroup,
             onPause: () => ValueTask.CompletedTask,
             onResume: () => ValueTask.CompletedTask
         );
 
         // trip circuit for openGroup
-        await stateManager.ReportFailureAsync(openGroup, new TimeoutException("infra down"));
-        stateManager.IsOpen(openGroup).Should().BeTrue();
-        stateManager.IsOpen(healthyGroup).Should().BeFalse();
+        await stateManager.ReportFailureAsync(openCircuitGroup, new TimeoutException("infra down"));
+        stateManager.IsOpen(openCircuitGroup).Should().BeTrue();
+        stateManager.IsOpen(healthyCircuitGroup).Should().BeFalse();
 
         // wire up the retry processor with the real state manager as monitor
         var dispatcher = Substitute.For<IDispatcher>();
@@ -282,6 +286,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     {
         // given — a circuit breaker and a retry processor sharing the same state manager
         const string group = "integration.group.lifecycle";
+        var circuitGroup = _CircuitKey(group);
         var halfOpenTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         await using var stateManager = _CreateStateManager(
@@ -290,7 +295,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         stateManager.RegisterGroupCallbacks(
-            group,
+            circuitGroup,
             onPause: () => ValueTask.CompletedTask,
             onResume: () =>
             {
@@ -316,9 +321,9 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         );
 
         // --- Phase 1: Trip the circuit ---
-        await stateManager.ReportFailureAsync(group, new TimeoutException("fail-1"));
-        await stateManager.ReportFailureAsync(group, new TimeoutException("fail-2"));
-        stateManager.IsOpen(group).Should().BeTrue("circuit should be open after threshold failures");
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-1"));
+        await stateManager.ReportFailureAsync(circuitGroup, new TimeoutException("fail-2"));
+        stateManager.IsOpen(circuitGroup).Should().BeTrue("circuit should be open after threshold failures");
 
         // --- Phase 2: Retry processor should skip messages while circuit is open ---
         var msg1 = _CreateMessage(group);
@@ -331,12 +336,12 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         // --- Phase 3: Wait for HalfOpen transition ---
         await halfOpenTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
-        stateManager.GetState(group).Should().Be(CircuitBreakerState.HalfOpen);
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.HalfOpen);
 
         // --- Phase 4: Probe succeeds, circuit closes ---
-        await _ReportProbeSuccess(stateManager, group);
-        stateManager.IsOpen(group).Should().BeFalse("circuit should be closed after successful probe");
-        stateManager.GetState(group).Should().Be(CircuitBreakerState.Closed);
+        await _ReportProbeSuccess(stateManager, circuitGroup);
+        stateManager.IsOpen(circuitGroup).Should().BeFalse("circuit should be closed after successful probe");
+        stateManager.GetState(circuitGroup).Should().Be(CircuitBreakerState.Closed);
 
         // --- Phase 5: Retry processor should now enqueue messages again ---
         dispatcher.ClearReceivedCalls();

@@ -79,7 +79,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         services
             .AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.UseConventions(c =>
                 {

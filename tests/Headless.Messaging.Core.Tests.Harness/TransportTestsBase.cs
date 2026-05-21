@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -15,6 +16,12 @@ public abstract class TransportTestsBase : TestBase
 {
     /// <summary>Gets the transport instance for testing.</summary>
     protected abstract ITransport GetTransport();
+
+    /// <summary>Gets the bus transport instance for testing.</summary>
+    protected virtual IBusTransport GetBusTransport() => new BusTransportAdapter(GetTransport());
+
+    /// <summary>Gets the queue transport instance for testing.</summary>
+    protected virtual IQueueTransport GetQueueTransport() => new QueueTransportAdapter(GetTransport());
 
     /// <summary>Gets the transport capabilities for conditional test execution.</summary>
     protected virtual TransportCapabilities Capabilities => TransportCapabilities.Default;
@@ -48,6 +55,42 @@ public abstract class TransportTestsBase : TestBase
     {
         // given
         await using var transport = GetTransport();
+        var message = CreateMessage();
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+    }
+
+    public virtual async Task should_send_bus_message_successfully()
+    {
+        if (!Capabilities.SupportsBusTransport)
+        {
+            Assert.Skip("Transport does not support bus intent");
+        }
+
+        // given
+        await using var transport = GetBusTransport();
+        var message = CreateMessage();
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+    }
+
+    public virtual async Task should_send_queue_message_successfully()
+    {
+        if (!Capabilities.SupportsQueueTransport)
+        {
+            Assert.Skip("Transport does not support queue intent");
+        }
+
+        // given
+        await using var transport = GetQueueTransport();
         var message = CreateMessage();
 
         // when
@@ -265,5 +308,25 @@ public abstract class TransportTestsBase : TestBase
         // then
         result.Succeeded.Should().BeTrue();
         message.GetCorrelationId().Should().Be(correlationId);
+    }
+
+    private sealed class BusTransportAdapter(ITransport transport) : IBusTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
+    }
+
+    private sealed class QueueTransportAdapter(ITransport transport) : IQueueTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
     }
 }

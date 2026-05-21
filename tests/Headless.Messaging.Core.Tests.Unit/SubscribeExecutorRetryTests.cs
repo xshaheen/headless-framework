@@ -83,7 +83,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic").Group("test-group");
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 

@@ -1,13 +1,17 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.InMemoryQueue;
+namespace Headless.Messaging.InMemory;
 
 /// <summary>
-/// Transport implementation for in-memory message queue.
+/// Transport implementation for in-memory message bus fan-out.
 /// </summary>
-internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemoryQueueTransport> logger) : ITransport
+internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBusTransport> logger)
+    : IBusTransport, ITransport
 {
     private readonly ILogger _logger = logger;
 
@@ -28,9 +32,9 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            queue.Send(message);
+            queue.SendBus(message);
             var messageName = message.GetName();
-            _logger.MessagePublished(messageName);
+            _logger.BusMessagePublished(messageName);
             return Task.FromResult(OperateResult.Success);
         }
         catch (OperationCanceledException)
@@ -47,12 +51,12 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-internal static partial class InMemoryQueueTransportLog
+internal static partial class InMemoryBusTransportLog
 {
     [LoggerMessage(
-        EventId = 3000,
+        EventId = 3002,
         Level = LogLevel.Debug,
-        Message = "Event message [{MessageName}] has been published."
+        Message = "Bus message [{MessageName}] has been published."
     )]
-    public static partial void MessagePublished(this ILogger logger, string messageName);
+    public static partial void BusMessagePublished(this ILogger logger, string messageName);
 }

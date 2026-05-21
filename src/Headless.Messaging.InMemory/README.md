@@ -1,4 +1,4 @@
-# Headless.Messaging.InMemoryQueue
+# Headless.Messaging.InMemory
 
 In-memory message queue transport for testing and development.
 
@@ -17,7 +17,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemory
 ```
 
 ## Quick Start
@@ -26,8 +26,7 @@ dotnet add package Headless.Messaging.InMemoryQueue
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
-    options.UseInMemoryMessageQueue();
-    // Use overload UseInMemoryMessageQueue() — there is no UseInMemoryQueue() extension.
+    options.UseInMemory();
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
@@ -35,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-No configuration required. Just call `UseInMemoryMessageQueue()`.
+No configuration required. Just call `UseInMemory()`.
 
 ## Messaging Semantics
 
@@ -45,7 +44,7 @@ No configuration required. Just call `UseInMemoryMessageQueue()`.
 - Commit is a no-op.
 - Reject is a no-op. There is no durable redelivery or dead-letter queue.
 - `SubscribeAsync(...)` only registers in-memory topic bindings for the current process.
-- Publishing to an unbound topic still fails fast. `InMemoryQueue` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
+- Publishing to an unbound topic still fails fast. `InMemory` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
 - Single-threaded consumption preserves queue order. Higher `ConsumerThreadCount` can reorder concurrent handlers.
 - Payload size is limited by process memory.
 

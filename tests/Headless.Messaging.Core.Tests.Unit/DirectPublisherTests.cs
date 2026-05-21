@@ -518,7 +518,7 @@ public sealed class DirectPublisherTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
@@ -539,7 +539,7 @@ public sealed class DirectPublisherTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 

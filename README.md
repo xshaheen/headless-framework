@@ -206,7 +206,7 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS with JetStream |
 | [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
 | [Headless.Messaging.RedisStreams](src/Headless.Messaging.RedisStreams/README.md) | Redis Streams |
-| [Headless.Messaging.InMemoryQueue](src/Headless.Messaging.InMemoryQueue/README.md) | In-memory (dev/testing) |
+| [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (dev/testing) |
 
 **Storage backends:**
 

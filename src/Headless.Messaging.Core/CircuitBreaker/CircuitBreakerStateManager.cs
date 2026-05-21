@@ -344,6 +344,9 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public bool IsOpen(IntentType intentType, string groupName) => IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
+
+    /// <inheritdoc />
     public async ValueTask RemoveGroupAsync(string groupName)
     {
         if (!_groups.TryRemove(groupName, out var state))
@@ -440,6 +443,10 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public CircuitBreakerState? GetState(IntentType intentType, string groupName) =>
+        GetState(CircuitBreakerGroupKeys.For(intentType, groupName));
+
+    /// <inheritdoc />
     public IReadOnlySet<string> KnownGroups => Volatile.Read(ref _knownGroups);
 
     /// <inheritdoc />
@@ -509,6 +516,10 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
+    public CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName) =>
+        GetSnapshot(CircuitBreakerGroupKeys.For(intentType, groupName));
+
+    /// <inheritdoc />
     public async ValueTask<bool> ResetAsync(string groupName)
     {
         Argument.IsNotNull(groupName);
@@ -560,6 +571,10 @@ internal sealed class CircuitBreakerStateManager(
 
         return true;
     }
+
+    /// <inheritdoc />
+    public ValueTask<bool> ResetAsync(IntentType intentType, string groupName) =>
+        ResetAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
 
     /// <inheritdoc />
     public async ValueTask<bool> ForceOpenAsync(string groupName)
@@ -631,6 +646,10 @@ internal sealed class CircuitBreakerStateManager(
 
         return true;
     }
+
+    /// <inheritdoc />
+    public ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName) =>
+        ForceOpenAsync(CircuitBreakerGroupKeys.For(intentType, groupName));
 
     /// <summary>
     /// Asynchronously disposes all per-group <see cref="Timer"/> instances and cancels

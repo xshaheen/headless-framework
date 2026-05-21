@@ -401,7 +401,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             context.ThrowIfStopping();
 
             var group = message.Origin.GetGroup();
-            if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
+            if (group is not null && _IsCircuitOpen(message.IntentType, group, circuitOpenCache))
             {
                 skippedCircuitOpen++;
                 var safeGroup = LogSanitizer.Sanitize(group);
@@ -624,15 +624,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _logger.AdaptivePollingIntervalDecreased(decreasedInterval);
     }
 
-    private bool _IsCircuitOpen(string group, Dictionary<string, bool> cache)
+    private bool _IsCircuitOpen(IntentType intentType, string group, Dictionary<string, bool> cache)
     {
-        if (cache.TryGetValue(group, out var isOpen))
+        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(intentType, group);
+
+        if (cache.TryGetValue(circuitBreakerGroup, out var isOpen))
         {
             return isOpen;
         }
 
-        isOpen = _circuitBreakerMonitor?.IsOpen(group) == true;
-        cache[group] = isOpen;
+        isOpen = _circuitBreakerMonitor?.IsOpen(circuitBreakerGroup) == true;
+        cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
 

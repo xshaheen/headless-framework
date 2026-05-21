@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging;
 
 namespace Headless.Messaging.Testing;
 
@@ -16,9 +17,13 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
     private readonly ConcurrentQueue<RecordedMessage> _exhausted = new();
     private readonly ConcurrentDictionary<
-        (Type, MessageObservationType),
+        (Type, MessageObservationType, IntentType),
         ConcurrentQueue<RecordedMessage>
     > _typeIndex = [];
+    private readonly ConcurrentDictionary<
+        (Type, MessageObservationType),
+        ConcurrentQueue<RecordedMessage>
+    > _typeOnlyIndex = [];
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
 
@@ -39,7 +44,8 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     {
         var queue = _GetQueue(type);
         queue.Enqueue(message);
-        _typeIndex.GetOrAdd((message.MessageType, type), static _ => new()).Enqueue(message);
+        _typeIndex.GetOrAdd((message.MessageType, type, message.IntentType), static _ => new()).Enqueue(message);
+        _typeOnlyIndex.GetOrAdd((message.MessageType, type), static _ => new()).Enqueue(message);
 
         // Snapshot candidates under lock, evaluate predicates outside to avoid
         // holding the lock during potentially expensive user predicates.
@@ -59,6 +65,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         {
             if (
                 waiter.Type == type
+                && (waiter.IntentType is null || waiter.IntentType == message.IntentType)
                 && waiter.MessageType.IsAssignableFrom(message.MessageType)
                 && (waiter.Predicate == null || waiter.Predicate(message.Message))
             )
@@ -88,6 +95,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     public async Task<RecordedMessage> WaitForAsync(
         Type messageType,
         MessageObservationType type,
+        IntentType? intentType,
         Func<object, bool>? predicate,
         TimeSpan timeout,
         CancellationToken cancellationToken = default
@@ -96,13 +104,13 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         var tcs = new TaskCompletionSource<RecordedMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // Check existing messages first before registering a waiter (fast path)
-        var existing = _FindExisting(messageType, type, predicate);
+        var existing = _FindExisting(messageType, type, intentType, predicate);
         if (existing != null)
         {
             return existing;
         }
 
-        var entry = new WaiterEntry(messageType, type, predicate, tcs);
+        var entry = new WaiterEntry(messageType, type, intentType, predicate, tcs);
 
         // Create CTS before registering waiter to ensure timeout is armed before Record() can signal.
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -111,7 +119,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         lock (_waitersLock)
         {
             // Double-check after acquiring lock to avoid a race with Record()
-            existing = _FindExisting(messageType, type, predicate);
+            existing = _FindExisting(messageType, type, intentType, predicate);
             if (existing != null)
             {
                 return existing;
@@ -139,7 +147,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
                 type,
                 elapsed,
                 observed,
-                hasPredicate: predicate is not null
+                hasPredicate: predicate is not null || intentType is not null
             );
         }
         finally
@@ -163,6 +171,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         while (_exhausted.TryDequeue(out _)) { }
 
         _typeIndex.Clear();
+        _typeOnlyIndex.Clear();
 
         lock (_waitersLock)
         {
@@ -179,12 +188,28 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         }
     }
 
-    private RecordedMessage? _FindExisting(Type messageType, MessageObservationType type, Func<object, bool>? predicate)
+    private RecordedMessage? _FindExisting(
+        Type messageType,
+        MessageObservationType type,
+        IntentType? intentType,
+        Func<object, bool>? predicate
+    )
     {
         // Fast path: exact type match avoids scanning all messages
-        if (_typeIndex.TryGetValue((messageType, type), out var indexed))
+        if (
+            intentType is { } concreteIntentType
+            && _typeIndex.TryGetValue((messageType, type, concreteIntentType), out var indexed)
+        )
         {
             var match = indexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+        else if (_typeOnlyIndex.TryGetValue((messageType, type), out var typeIndexed))
+        {
+            var match = typeIndexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
             if (match != null)
             {
                 return match;
@@ -194,7 +219,9 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
         // Assignability scan for polymorphic queries and index-race fallback
         return _GetQueue(type)
             .FirstOrDefault(m =>
-                messageType.IsAssignableFrom(m.MessageType) && (predicate == null || predicate(m.Message))
+                (intentType is null || intentType == m.IntentType)
+                && messageType.IsAssignableFrom(m.MessageType)
+                && (predicate == null || predicate(m.Message))
             );
     }
 
@@ -213,6 +240,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private sealed record WaiterEntry(
         Type MessageType,
         MessageObservationType Type,
+        IntentType? IntentType,
         Func<object, bool>? Predicate,
         TaskCompletionSource<RecordedMessage> Tcs
     );

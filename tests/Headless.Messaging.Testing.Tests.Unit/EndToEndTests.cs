@@ -2,9 +2,13 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Testing;
+using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using System.Collections.Concurrent;
+using System.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -43,6 +47,33 @@ public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<
     }
 }
 
+public sealed class IntentRecorder
+{
+    private readonly ConcurrentQueue<IntentType> _intents = [];
+
+    public IReadOnlyCollection<IntentType> Intents => _intents.ToArray();
+
+    public void Record(IntentType intentType) => _intents.Enqueue(intentType);
+}
+
+public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
+{
+    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    {
+        recorder.Record(context.IntentType);
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class QueueIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
+{
+    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    {
+        recorder.Record(context.IntentType);
+        return ValueTask.CompletedTask;
+    }
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 public sealed class EndToEndTests : TestBase
@@ -53,7 +84,7 @@ public sealed class EndToEndTests : TestBase
         {
             services.AddHeadlessMessaging(setup =>
             {
-                setup.UseInMemoryMessageQueue();
+                setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 configure?.Invoke(setup);
             });
@@ -120,7 +151,7 @@ public sealed class EndToEndTests : TestBase
             services.AddSingleton<TestConsumer<OrderCreatedEvent>>();
             services.AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.Subscribe<TestConsumer<OrderCreatedEvent>>("order-created");
             });
@@ -203,7 +234,7 @@ public sealed class EndToEndTests : TestBase
             services.AddSingleton(notifier);
             services.AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.Subscribe<NotifyingConsumer>("order-created");
             });
@@ -217,6 +248,179 @@ public sealed class EndToEndTests : TestBase
         notifier.Received(1).Notify("ORD-INJ");
     }
 
+    [Fact]
+    public async Task Bus_and_queue_observations_are_distinguished_by_intent()
+    {
+        // given
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddSingleton<IntentRecorder>();
+            services.AddBusConsumer<BusIntentConsumer, OrderCreatedEvent>("order-created").Group("bus-workers");
+            services.AddQueueConsumer<QueueIntentConsumer, OrderCreatedEvent>("order-created").Group("queue-workers");
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemory();
+                options.UseInMemoryStorage();
+            });
+        });
+
+        var bus = harness.GetRequiredService<IBus>();
+        var queue = harness.GetRequiredService<IQueue>();
+        var recorder = harness.GetRequiredService<IntentRecorder>();
+        var registeredConsumers = harness.GetRequiredService<IConsumerRegistry>().GetAll();
+
+        registeredConsumers.Should().Contain(c => c.ConsumerType == typeof(BusIntentConsumer) && c.IntentType == IntentType.Bus);
+        registeredConsumers.Should().Contain(c =>
+            c.ConsumerType == typeof(QueueIntentConsumer) && c.IntentType == IntentType.Queue
+        );
+        _GetInnerTransportName(harness.GetRequiredService<IQueueTransport>()).Should().Be("InMemoryQueueTransport");
+
+        // when
+        await bus.PublishAsync(
+            new OrderCreatedEvent("same-payload", 10m),
+            new PublishOptions { Topic = "order-created" },
+            AbortToken
+        );
+        await queue.EnqueueAsync(
+            new OrderCreatedEvent("same-payload", 10m),
+            new EnqueueOptions { Topic = "order-created" },
+            AbortToken
+        );
+
+        var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(IntentType.Bus, TimeSpan.FromSeconds(5), AbortToken);
+        var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(IntentType.Queue, TimeSpan.FromSeconds(5), AbortToken);
+        var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(IntentType.Bus, TimeSpan.FromSeconds(5), AbortToken);
+        var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+            IntentType.Queue,
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
+
+        // then
+        busPublished.IntentType.Should().Be(IntentType.Bus);
+        queuePublished.IntentType.Should().Be(IntentType.Queue);
+        busConsumed.IntentType.Should().Be(IntentType.Bus);
+        queueConsumed.IntentType.Should().Be(IntentType.Queue);
+        recorder.Intents.Should().BeEquivalentTo([IntentType.Bus, IntentType.Queue]);
+    }
+
+    [Fact]
+    public async Task Outbox_bus_and_queue_flow_through_inmemory_transport_with_intent()
+    {
+        // given
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddSingleton<IntentRecorder>();
+            services.AddBusConsumer<BusIntentConsumer, OrderCreatedEvent>("outbox-order-created").Group("outbox-bus");
+            services.AddQueueConsumer<QueueIntentConsumer, OrderCreatedEvent>("outbox-order-created").Group("outbox-queue");
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemory();
+                options.UseInMemoryStorage();
+            });
+        });
+
+        var outboxBus = harness.GetRequiredService<IOutboxBus>();
+        var outboxQueue = harness.GetRequiredService<IOutboxQueue>();
+        var recorder = harness.GetRequiredService<IntentRecorder>();
+
+        // when
+        await outboxBus.PublishAsync(
+            new OrderCreatedEvent("outbox-bus", 10m),
+            new PublishOptions { Topic = "outbox-order-created" },
+            AbortToken
+        );
+        await outboxQueue.EnqueueAsync(
+            new OrderCreatedEvent("outbox-queue", 20m),
+            new EnqueueOptions { Topic = "outbox-order-created" },
+            AbortToken
+        );
+
+        var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(IntentType.Bus, TimeSpan.FromSeconds(5), AbortToken);
+        var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(IntentType.Queue, TimeSpan.FromSeconds(5), AbortToken);
+        var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+            message => message.OrderId == "outbox-bus",
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
+        var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+            message => message.OrderId == "outbox-queue",
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
+
+        // then
+        busPublished.IntentType.Should().Be(IntentType.Bus);
+        queuePublished.IntentType.Should().Be(IntentType.Queue);
+        busConsumed.IntentType.Should().Be(IntentType.Bus);
+        queueConsumed.IntentType.Should().Be(IntentType.Queue);
+        recorder.Intents.Should().Contain([IntentType.Bus, IntentType.Queue]);
+    }
+
+    [Fact]
+    public async Task Queue_observation_is_not_double_recorded_as_bus_for_legacy_transport_adapter()
+    {
+        // given
+        await using var harness = await MessagingTestHarness.CreateAsync(services =>
+        {
+            services.AddHeadlessMessaging(options =>
+            {
+                options.UseInMemoryStorage();
+                options.RegisterExtension(new LegacyTransportExtension());
+            });
+        });
+
+        var queue = harness.GetRequiredService<IQueue>();
+
+        // when
+        await queue.EnqueueAsync(
+            new OrderCreatedEvent("legacy-queue", 10m),
+            new EnqueueOptions { Topic = "legacy-order-created" },
+            AbortToken
+        );
+
+        // then
+        var published = await harness.WaitForPublished<OrderCreatedEvent>(IntentType.Queue, TimeSpan.FromSeconds(5), AbortToken);
+        published.IntentType.Should().Be(IntentType.Queue);
+        harness.Published.Should().ContainSingle();
+        harness.Published.Should().NotContain(message => message.IntentType == IntentType.Bus);
+    }
+
+    private static string? _GetInnerTransportName(object transport)
+    {
+        return transport
+            .GetType()
+            .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+            .Select(field => field.GetValue(transport)?.GetType().Name)
+            .FirstOrDefault(name => name is not null && name.Contains("Transport", StringComparison.Ordinal));
+    }
+
+    private sealed class LegacyTransportExtension : IMessagesOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton(new MessageQueueMarkerService("Legacy"));
+            services.AddSingleton<ITransport, SuccessfulLegacyTransport>();
+            services.AddSingleton<IConsumerClientFactory, UnusedConsumerClientFactory>();
+        }
+    }
+
+    private sealed class SuccessfulLegacyTransport : ITransport
+    {
+        public BrokerAddress BrokerAddress => new("Legacy", "localhost");
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            Task.FromResult(OperateResult.Success);
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class UnusedConsumerClientFactory : IConsumerClientFactory
+    {
+        public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent) =>
+            throw new InvalidOperationException("The legacy transport harness test registers no consumers.");
+    }
+
     // ─── Test 7: AddMessagingTestHarness registers into existing container ───
 
     [Fact]
@@ -227,7 +431,7 @@ public sealed class EndToEndTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
             options.UseInMemoryStorage();
             options.Subscribe<OrderCreatedConsumer>("order-created");
         });

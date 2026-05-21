@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -149,7 +149,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-11)
     - [Dependencies](#dependencies-11)
     - [Side Effects](#side-effects-11)
-- [Headless.Messaging.InMemoryQueue](#headlessmessaginginmemoryqueue)
+- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
     - [Problem Solved](#problem-solved-12)
     - [Key Features](#key-features-12)
     - [Installation](#installation-12)
@@ -210,7 +210,7 @@ Always install four packages together: **Abstractions + Core + one transport + o
 - `Headless.Messaging.Nats` -- lightweight cloud-native, JetStream persistence
 - `Headless.Messaging.Pulsar` -- multi-tenant, geo-replicated streaming
 - `Headless.Messaging.RedisStreams` -- sub-millisecond latency, consumer groups
-- `Headless.Messaging.InMemoryQueue` -- dev/testing only, zero infrastructure
+- `Headless.Messaging.InMemory` -- dev/testing only, zero infrastructure
 
 **Storage** (pick one):
 
@@ -239,7 +239,7 @@ dotnet add package Headless.Messaging.PostgreSql
 ```
 dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
-dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemory
 dotnet add package Headless.Messaging.InMemoryStorage
 ```
 
@@ -248,7 +248,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 ## Agent Instructions
 
 - **Install pattern**: Always install `Messaging.Abstractions` + `Messaging.Core` + exactly one transport + exactly one storage. Missing any of these causes runtime failures.
-- **Use `InMemoryQueue` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
+- **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
@@ -290,7 +290,7 @@ The matrices intentionally do not include columns for Phase 2 concepts (`Deliver
 | `Kafka`           | yes            | yes     | no                            | per-partition with partition key  | yes                      | seek to offset (re-read partition)  | auto-create concrete topics                |
 | `Pulsar`          | yes            | yes     | no (`DeliverAfter` not wired) | per-key when partition key set    | yes                      | `NegativeAcknowledge`               | passthrough (broker auto-creates)          |
 | `RedisStreams`    | yes            | yes     | no                            | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)    | passthrough (`XADD` creates on publish)    |
-| `InMemoryQueue`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
+| `InMemory`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
 
 How to read each column:
 
@@ -962,7 +962,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
 - **Pulsar**: Ordered within partitions when using partition key
-- **InMemoryQueue**: FIFO ordering with single consumer thread
+- **InMemory**: FIFO ordering with single consumer thread
 
 ### Configuration Impact on Ordering
 
@@ -1044,18 +1044,18 @@ IReadOnlySet<string> groups = monitor.KnownGroups;
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen("payments");
-var state = monitor.GetState("payments"); // Closed, Open, HalfOpen, or null if unregistered
+var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
+var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, HalfOpen, or null if unregistered
 
 // Rich snapshot with escalation and timing details
-CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot("payments");
+CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(IntentType.Bus, "payments");
 // snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
 // snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
 // snapshot.EffectiveOpenDuration
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
-var wasOpened = await monitor.ForceOpenAsync("payments"); // true if force-opened
+var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
+var wasOpened = await monitor.ForceOpenAsync(IntentType.Bus, "payments"); // true if force-opened
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
@@ -2006,7 +2006,7 @@ options.UseRedisStreams(redis =>
 
 ---
 
-# Headless.Messaging.InMemoryQueue
+# Headless.Messaging.InMemory
 
 In-memory message queue transport for testing and development.
 
@@ -2025,7 +2025,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemory
 ```
 
 ## Quick Start
@@ -2034,7 +2034,7 @@ dotnet add package Headless.Messaging.InMemoryQueue
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
-    options.UseInMemoryQueue();
+    options.UseInMemory();
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
@@ -2042,7 +2042,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-No configuration required. Just call `UseInMemoryQueue()`.
+No configuration required. Just call `UseInMemory()`.
 
 ## Dependencies
 
@@ -2266,7 +2266,7 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
-        options.UseInMemoryMessageQueue();
+        options.UseInMemory();
         options.UseInMemoryStorage();
         options.Subscribe<OrderCreatedConsumer>("orders.created");
     });
@@ -2304,7 +2304,7 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 // With WebApplication (no factory)
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.UseInMemoryMessageQueue();
+    options.UseInMemory();
     options.UseInMemoryStorage();
     options.Subscribe<OrderCreatedConsumer>("orders.created");
 });
@@ -2366,12 +2366,12 @@ consumer.Clear(); // thread-safe reset between tests
 
 - `AddMessagingTestHarness()` must be called **after** `AddHeadlessMessaging()` so transport and pipeline registrations exist to be decorated.
 - Both modes disable parallel dispatch (`EnablePublishParallelSend = false`, `EnableSubscriberParallelExecute = false`) for deterministic test execution.
-- The harness validates that `UseInMemoryMessageQueue()` and `UseInMemoryStorage()` were configured -- throws `InvalidOperationException` if missing.
+- The harness validates that `UseInMemory()` and `UseInMemoryStorage()` were configured -- throws `InvalidOperationException` if missing.
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `Headless.Messaging.InMemoryQueue`
+- `Headless.Messaging.InMemory`
 - `Headless.Messaging.InMemoryStorage`
 
 ## Side Effects

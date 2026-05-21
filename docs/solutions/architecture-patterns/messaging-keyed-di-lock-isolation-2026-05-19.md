@@ -114,7 +114,7 @@ var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvi
 ```csharp
 services.AddHeadlessMessaging(setup =>
 {
-    setup.UseInMemoryMessageQueue();
+    setup.UseInMemory();
     setup.UseInMemoryStorage();
     setup.UseConventions(c => { ... });
 }).UseDistributedLock(myRedisLockProvider); // replaces NoOp; sets UseStorageLock = true

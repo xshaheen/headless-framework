@@ -1,9 +1,12 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Collections.Concurrent;
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 
-namespace Headless.Messaging.InMemoryQueue;
+namespace Headless.Messaging.InMemory;
 
 /// <summary>
 /// Consumer client for in-memory message queue.
@@ -12,6 +15,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
 {
     private readonly MemoryQueue _queue;
     private readonly string _groupId;
+    private readonly IntentType _intentType;
     private readonly byte _groupConcurrent;
     private readonly BlockingCollection<TransportMessage> _messageQueue = new();
     private readonly SemaphoreSlim _semaphore;
@@ -25,13 +29,19 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <param name="queue">The in-memory queue instance</param>
     /// <param name="groupId">The consumer group ID</param>
     /// <param name="groupConcurrent">The concurrency level for the group</param>
-    public InMemoryConsumerClient(MemoryQueue queue, string groupId, byte groupConcurrent)
+    public InMemoryConsumerClient(
+        MemoryQueue queue,
+        string groupId,
+        byte groupConcurrent,
+        IntentType intentType = IntentType.Bus
+    )
     {
         _queue = queue;
         _groupId = groupId;
+        _intentType = intentType;
         _groupConcurrent = groupConcurrent;
         _semaphore = new SemaphoreSlim(groupConcurrent);
-        _queue.RegisterConsumerClient(groupId, this);
+        _queue.RegisterConsumerClient(intentType, groupId, this);
     }
 
     /// <summary>
@@ -58,7 +68,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
     {
         Argument.IsNotNull(topics);
-        _queue.Subscribe(_groupId, topics);
+        _queue.Subscribe(_intentType, _groupId, topics);
         _ready.TrySetResult();
 
         return ValueTask.CompletedTask;
@@ -244,7 +254,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
         _ready.TrySetCanceled();
         _semaphore.Dispose();
         _messageQueue.Dispose();
-        _queue.Unsubscribe(_groupId);
+        _queue.Unsubscribe(_intentType, _groupId, this);
         return ValueTask.CompletedTask;
     }
 }

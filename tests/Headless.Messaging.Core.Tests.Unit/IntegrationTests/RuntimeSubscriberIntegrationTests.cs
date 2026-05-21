@@ -132,7 +132,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         services
             .AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.UseConventions(c =>
                 {

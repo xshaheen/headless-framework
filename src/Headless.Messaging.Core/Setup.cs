@@ -106,8 +106,6 @@ public static class SetupMessaging
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
-        services.TryAddSingleton<IBusTransport>(sp => new LegacyBusTransportAdapter(sp.GetRequiredService<ITransport>()));
-        services.TryAddSingleton<IQueueTransport>(sp => new LegacyQueueTransportAdapter(sp.GetRequiredService<ITransport>()));
         services.TryAddSingleton<IBus, Bus>();
         services.TryAddSingleton<IQueue, Queue>();
         services.TryAddSingleton<OutboxPublisher>();
@@ -178,6 +176,8 @@ public static class SetupMessaging
             serviceExtension.AddServices(services);
         }
 
+        _AddLegacyTransportAdapters(services);
+
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
@@ -202,6 +202,26 @@ public static class SetupMessaging
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
         return new MessagingBuilder(services, options);
+    }
+
+    private static void _AddLegacyTransportAdapters(IServiceCollection services)
+    {
+        if (!services.Any(d => d.ServiceType == typeof(ITransport)))
+        {
+            return;
+        }
+
+        if (!services.Any(d => d.ServiceType == typeof(IBusTransport)))
+        {
+            services.TryAddSingleton<IBusTransport>(sp => new LegacyBusTransportAdapter(sp.GetRequiredService<ITransport>()));
+        }
+
+        if (!services.Any(d => d.ServiceType == typeof(IQueueTransport)))
+        {
+            services.TryAddSingleton<IQueueTransport>(sp =>
+                new LegacyQueueTransportAdapter(sp.GetRequiredService<ITransport>())
+            );
+        }
     }
 
     /// <summary>
@@ -232,7 +252,10 @@ public static class SetupMessaging
             // Apply per-consumer circuit breaker overrides inline
             if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
             {
-                setup.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
+                setup.CircuitBreakerRegistry.Register(
+                    CircuitBreakerGroupKeys.For(resolved),
+                    resolved.CircuitBreakerOverride
+                );
             }
         }
     }

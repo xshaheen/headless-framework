@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -92,7 +92,7 @@ public sealed class MemoryQueueTests : TestBase
 
         // when
         await Task.Delay(50, AbortToken); // Let listener start
-        _queue.Send(message);
+        _queue.SendBus(message);
 
         // Wait for message to be delivered
         _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
@@ -111,7 +111,7 @@ public sealed class MemoryQueueTests : TestBase
         var message = _CreateTestMessage("msg-1", "unsubscribed-topic");
 
         // when
-        var action = () => _queue.Send(message);
+        var action = () => _queue.SendBus(message);
 
         // then
         action
@@ -166,8 +166,8 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when - send to both topics
-        _queue.Send(_CreateTestMessage("msg-a", "topic-a"));
-        _queue.Send(_CreateTestMessage("msg-b", "topic-b"));
+        _queue.SendBus(_CreateTestMessage("msg-a", "topic-a"));
+        _queue.SendBus(_CreateTestMessage("msg-b", "topic-b"));
 
         _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
         await cts.CancelAsync();
@@ -226,7 +226,7 @@ public sealed class MemoryQueueTests : TestBase
         // when - send messages concurrently
         var sendTasks = Enumerable
             .Range(0, messageCount)
-            .Select(i => Task.Run(() => _queue.Send(_CreateTestMessage($"msg-{i}", "concurrent-topic")), AbortToken));
+            .Select(i => Task.Run(() => _queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-topic")), AbortToken));
 
         await Task.WhenAll(sendTasks);
         _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
@@ -294,7 +294,7 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        queue.Send(_CreateTestMessage("msg-1", "shared-topic"));
+        queue.SendBus(_CreateTestMessage("msg-1", "shared-topic"));
 
         await Task.WhenAll(
             Task.WhenAny(tcs1.Task, Task.Delay(5000, AbortToken)),
@@ -339,10 +339,11 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when - unsubscribe the consumer
-        _queue.Unsubscribe("test-group");
+        _queue.Unsubscribe(IntentType.Bus, "test-group", _consumerClient);
 
-        // then - the message should be silently dropped since consumer is removed
-        _queue.Send(_CreateTestMessage("msg-1", "test-topic"));
+        // then - the topic binding is removed with the final client
+        var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Cannot find the corresponding group*");
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
 
@@ -385,7 +386,7 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // Send one message
-        _queue.Send(_CreateTestMessage("msg-1", "topic-1"));
+        _queue.SendBus(_CreateTestMessage("msg-1", "topic-1"));
 
         _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
         await cts.CancelAsync();
@@ -412,8 +413,8 @@ public sealed class MemoryQueueTests : TestBase
         await client2.SubscribeAsync(["drain-topic"]);
 
         // Enqueue messages (goes to both groups via Send)
-        queue.Send(_CreateTestMessage("d1", "drain-topic"));
-        queue.Send(_CreateTestMessage("d2", "drain-topic"));
+        queue.SendBus(_CreateTestMessage("d1", "drain-topic"));
+        queue.SendBus(_CreateTestMessage("d2", "drain-topic"));
 
         // when
         queue.DrainAllPendingMessages();
