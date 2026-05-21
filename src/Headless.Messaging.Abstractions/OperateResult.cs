@@ -20,6 +20,7 @@ namespace Headless.Messaging.Messages;
 /// <param name="succeeded">A value indicating whether the operation succeeded.</param>
 /// <param name="exception">The exception that occurred during the operation, or null if successful.</param>
 /// <param name="error">Additional error details, or null if no structured error information is available.</param>
+[PublicAPI]
 public readonly struct OperateResult(bool succeeded, Exception? exception = null, OperateError? error = null)
     : IEqualityComparer<OperateResult>,
         IEquatable<OperateResult>
@@ -91,6 +92,7 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
 /// Encapsulates structured error information from a failed operation.
 /// This record provides a standardized way to report operation errors with code and description.
 /// </summary>
+[PublicAPI]
 public record struct OperateError
 {
     /// <summary>

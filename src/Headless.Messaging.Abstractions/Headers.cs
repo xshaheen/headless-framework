@@ -6,6 +6,7 @@ namespace Headless.Messaging;
 /// Defines the standard header names used in messaging.
 /// These headers carry metadata and system information that controls message routing, tracking, and processing.
 /// </summary>
+[PublicAPI]
 public static class Headers
 {
     /// <summary>

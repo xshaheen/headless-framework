@@ -154,7 +154,7 @@ public interface IConsumerBuilder<TConsumer>
     /// <para>
     /// Each consumer group may only have one circuit breaker registration. Registering the same
     /// group via both <c>Subscribe&lt;T&gt;().WithCircuitBreaker()</c> and
-    /// <c>AddConsumer&lt;T,M&gt;().WithCircuitBreaker()</c> will throw at startup.
+    /// <c>AddBusConsumer&lt;T,M&gt;().WithCircuitBreaker()</c> will throw at startup.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>

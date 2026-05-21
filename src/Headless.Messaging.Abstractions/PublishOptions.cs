@@ -20,6 +20,7 @@ namespace Headless.Messaging;
 /// that the synthesized record equality would otherwise introduce on the dictionary-typed property.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public sealed record PublishOptions : MessagePublishOptionsBase
 {
     /// <summary>

@@ -136,7 +136,7 @@ public static class AddDistributedLockExtensions
             if (services.Any(d => d.ServiceType == typeof(IOutboxPublisher)))
             {
                 services
-                    .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                    .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
                         "headless.locks.released"
                     )
                     .Concurrency(1);

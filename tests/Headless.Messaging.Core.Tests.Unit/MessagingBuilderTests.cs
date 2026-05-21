@@ -220,8 +220,8 @@ public sealed class MessagingBuilderTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
-        services.AddConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
 
         // when
         var act = () =>
@@ -253,7 +253,7 @@ public sealed class MessagingBuilderTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
 
         // when
         services.AddHeadlessMessaging(messaging =>

@@ -36,7 +36,7 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// Per-consumer circuit breaker overrides registered via
-    /// <c>AddConsumer().WithCircuitBreaker()</c>. Applied to the
+    /// <c>AddBusConsumer().WithCircuitBreaker()</c>. Applied to the
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }

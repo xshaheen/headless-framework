@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -104,6 +106,74 @@ public sealed class MessagingIntentSplitTests : TestBase
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*no IQueueTransport is available*");
+    }
+
+    [Fact]
+    public void descriptor_comparer_should_treat_bus_and_queue_with_same_topic_group_as_distinct()
+    {
+        var comparer = new ConsumerExecutorDescriptorComparer(
+            NullLogger<ConsumerExecutorDescriptorComparer>.Instance
+        );
+        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
+        var methodInfo = typeof(TestBusConsumer).GetMethod(
+            nameof(TestBusConsumer.Consume),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
+        )!;
+
+        var busDescriptor = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = methodInfo,
+            ImplTypeInfo = implTypeInfo,
+            TopicName = "orders.created",
+            GroupName = "workers",
+            IntentType = IntentType.Bus,
+        };
+        var queueDescriptor = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = methodInfo,
+            ImplTypeInfo = implTypeInfo,
+            TopicName = "orders.created",
+            GroupName = "workers",
+            IntentType = IntentType.Queue,
+        };
+
+        comparer.Equals(busDescriptor, queueDescriptor).Should().BeFalse();
+        comparer.GetHashCode(busDescriptor).Should().NotBe(comparer.GetHashCode(queueDescriptor));
+    }
+
+    [Fact]
+    public void descriptor_comparer_should_treat_same_topic_group_and_intent_as_equal()
+    {
+        var comparer = new ConsumerExecutorDescriptorComparer(
+            NullLogger<ConsumerExecutorDescriptorComparer>.Instance
+        );
+        var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
+        var methodInfo = typeof(TestBusConsumer).GetMethod(
+            nameof(TestBusConsumer.Consume),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
+        )!;
+
+        var first = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = methodInfo,
+            ImplTypeInfo = implTypeInfo,
+            TopicName = "orders.created",
+            GroupName = "workers",
+            IntentType = IntentType.Bus,
+        };
+        var second = new ConsumerExecutorDescriptor
+        {
+            MethodInfo = methodInfo,
+            ImplTypeInfo = implTypeInfo,
+            TopicName = "orders.created",
+            GroupName = "workers",
+            IntentType = IntentType.Bus,
+        };
+
+        comparer.Equals(first, second).Should().BeTrue();
+        comparer.GetHashCode(first).Should().Be(comparer.GetHashCode(second));
     }
 
     private sealed record TestMessage;

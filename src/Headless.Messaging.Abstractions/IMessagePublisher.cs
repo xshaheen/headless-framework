@@ -5,6 +5,7 @@ namespace Headless.Messaging;
 /// <summary>
 /// Publishes messages using deterministic topic resolution, shared metadata defaults, and fail-fast validation.
 /// </summary>
+[PublicAPI]
 public interface IMessagePublisher
 {
     /// <summary>
