@@ -234,6 +234,25 @@ public record ConsumeContext
     /// </list>
     /// </remarks>
     public required string Topic { get; init; }
+
+    /// <summary>
+    /// Gets the delivery intent that produced this consume call: <see cref="IntentType.Bus"/> for
+    /// broadcast (publish/subscribe) dispatch, <see cref="IntentType.Queue"/> for point-to-point
+    /// (work-queue) dispatch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The intent is registration-derived, not envelope-derived: the framework stamps this value
+    /// from the consumer registration (<c>AddBusConsumer&lt;T,H&gt;()</c> vs
+    /// <c>AddQueueConsumer&lt;T,H&gt;()</c>) that delivered the message. No on-wire header carries
+    /// intent; the receiving runtime knows the dispatch path because it owns it.
+    /// </para>
+    /// <para>
+    /// A handler type registered under both intents (one bus, one queue) is invoked once per
+    /// dispatch path, and each call observes the matching <see cref="IntentType"/> value.
+    /// </para>
+    /// </remarks>
+    public IntentType IntentType { get; init; } = IntentType.Bus;
 }
 
 /// <summary>
