@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Features.Storage.EntityFramework;
+namespace Headless.Features;
 
 [PublicAPI]
 public sealed class FeaturesDbContext(DbContextOptions options) : DbContext(options), IFeaturesDbContext

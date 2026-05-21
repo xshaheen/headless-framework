@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 [PublicAPI]
 public static class SettingsModelBuilderExtensions

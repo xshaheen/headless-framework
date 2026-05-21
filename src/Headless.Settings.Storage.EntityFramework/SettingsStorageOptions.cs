@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 [PublicAPI]
 public sealed class SettingsStorageOptions

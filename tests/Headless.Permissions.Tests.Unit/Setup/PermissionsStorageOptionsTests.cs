@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Storage.EntityFramework;
+using Headless.Permissions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 

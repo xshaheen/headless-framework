@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 [PublicAPI]
 public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(options), IPermissionsDbContext

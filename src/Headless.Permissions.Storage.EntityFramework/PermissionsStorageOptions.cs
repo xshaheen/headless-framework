@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 [PublicAPI]
 public sealed class PermissionsStorageOptions

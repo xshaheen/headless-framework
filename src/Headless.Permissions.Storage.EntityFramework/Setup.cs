@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 [PublicAPI]
 public static class EntityFrameworkPermissionsSetup
@@ -32,11 +32,13 @@ public static class EntityFrameworkPermissionsSetup
             Action<PermissionsStorageOptions>? configureStorage = null
         )
         {
-            services.AddPooledDbContextFactory<PermissionsDbContext>((provider, options) =>
-            {
-                setupAction(provider, options);
-                options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
-            });
+            services.AddPooledDbContextFactory<PermissionsDbContext>(
+                (provider, options) =>
+                {
+                    setupAction(provider, options);
+                    options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+                }
+            );
             services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
             return services;

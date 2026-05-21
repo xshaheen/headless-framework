@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 [PublicAPI]
 public sealed class SettingsDbContext(DbContextOptions options) : DbContext(options), ISettingsDbContext

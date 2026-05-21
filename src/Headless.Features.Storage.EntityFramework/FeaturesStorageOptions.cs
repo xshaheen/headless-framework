@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Features.Storage.EntityFramework;
+namespace Headless.Features;
 
 [PublicAPI]
 public sealed class FeaturesStorageOptions

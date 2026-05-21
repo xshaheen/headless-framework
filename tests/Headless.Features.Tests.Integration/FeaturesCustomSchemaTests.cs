@@ -4,7 +4,6 @@ using Headless.Features;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Models;
-using Headless.Features.Storage.EntityFramework;
 using Headless.Features.Values;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -73,8 +72,8 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     public async Task should_round_trip_feature_value_under_custom_schema()
     {
         // given
-        using var host = await _CreateHostWithCustomTablesAsync(
-            b => b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>()
+        using var host = await _CreateHostWithCustomTablesAsync(b =>
+            b.Services.AddFeatureDefinitionProvider<FeaturesDefinitionProvider>()
         );
         await using var scope = host.Services.CreateAsyncScope();
         var featureManager = scope.ServiceProvider.GetRequiredService<IFeatureManager>();
@@ -96,7 +95,9 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     {
         // given
         var services = new ServiceCollection();
-        services.AddDbContextFactory<SharedFeaturesDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddDbContextFactory<SharedFeaturesDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
         services.AddFeaturesManagementDbContextStorage<SharedFeaturesDbContext>(ConfigureFeaturesStorage);
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
@@ -125,20 +126,24 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     {
         // given
         var factory = new FeaturesStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(new FeaturesStorageOptions
-        {
-            Schema = "features_a",
-            FeatureValuesTableName = "FeatureValues",
-            FeatureDefinitionsTableName = "FeatureDefinitions",
-            FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
-        });
-        var contextB = _BuildContextWithOptions(new FeaturesStorageOptions
-        {
-            Schema = "features_b",
-            FeatureValuesTableName = "FeatureValues",
-            FeatureDefinitionsTableName = "FeatureDefinitions",
-            FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
-        });
+        var contextA = _BuildContextWithOptions(
+            new FeaturesStorageOptions
+            {
+                Schema = "features_a",
+                FeatureValuesTableName = "FeatureValues",
+                FeatureDefinitionsTableName = "FeatureDefinitions",
+                FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
+            }
+        );
+        var contextB = _BuildContextWithOptions(
+            new FeaturesStorageOptions
+            {
+                Schema = "features_b",
+                FeatureValuesTableName = "FeatureValues",
+                FeatureDefinitionsTableName = "FeatureDefinitions",
+                FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -162,13 +167,15 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
             FeatureGroupDefinitionsTableName = "Groups",
         };
         var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(new FeaturesStorageOptions
-        {
-            Schema = optionsValues.Schema,
-            FeatureValuesTableName = optionsValues.FeatureValuesTableName,
-            FeatureDefinitionsTableName = optionsValues.FeatureDefinitionsTableName,
-            FeatureGroupDefinitionsTableName = optionsValues.FeatureGroupDefinitionsTableName,
-        });
+        var contextB = _BuildContextWithOptions(
+            new FeaturesStorageOptions
+            {
+                Schema = optionsValues.Schema,
+                FeatureValuesTableName = optionsValues.FeatureValuesTableName,
+                FeatureDefinitionsTableName = optionsValues.FeatureDefinitionsTableName,
+                FeatureGroupDefinitionsTableName = optionsValues.FeatureGroupDefinitionsTableName,
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -196,7 +203,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     private static FeaturesDbContext _BuildContextWithOptions(FeaturesStorageOptions storageOptions)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IOptions<FeaturesStorageOptions>>(Options.Create(storageOptions));
+        services.AddSingleton(Options.Create(storageOptions));
         var sp = services.BuildServiceProvider();
 
         var dbOptions = new DbContextOptionsBuilder<FeaturesDbContext>()
@@ -267,7 +274,8 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     }
 
     private sealed class SharedFeaturesDbContext(DbContextOptions<SharedFeaturesDbContext> options)
-        : DbContext(options), IFeaturesDbContext
+        : DbContext(options),
+            IFeaturesDbContext
     {
         public DbSet<FeatureValueRecord> FeatureValues => Set<FeatureValueRecord>();
 

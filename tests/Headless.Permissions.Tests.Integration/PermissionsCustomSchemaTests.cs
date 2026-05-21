@@ -5,7 +5,6 @@ using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
-using Headless.Permissions.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -73,8 +72,8 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     public async Task should_round_trip_permission_grant_under_custom_schema()
     {
         // given
-        using var host = await _CreateHostWithCustomTablesAsync(
-            b => b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>()
+        using var host = await _CreateHostWithCustomTablesAsync(b =>
+            b.Services.AddPermissionDefinitionProvider<PermissionsDefinitionProvider>()
         );
         await using var scope = host.Services.CreateAsyncScope();
         var permissionManager = scope.ServiceProvider.GetRequiredService<IPermissionManager>();
@@ -84,7 +83,9 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         await permissionManager.GrantToUserAsync(_PermissionName, userId, AbortToken);
 
         // then
-        (await _TableHasRowsAsync(_Schema, _GrantsTableName)).Should().BeTrue();
+        (await _TableHasRowsAsync(_Schema, _GrantsTableName))
+            .Should()
+            .BeTrue();
         (await _TableHasRowsAsync("permissions", "PermissionGrants")).Should().BeFalse();
     }
 
@@ -93,7 +94,9 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     {
         // given
         var services = new ServiceCollection();
-        services.AddDbContextFactory<SharedPermissionsDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddDbContextFactory<SharedPermissionsDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
         services.AddPermissionsManagementDbContextStorage<SharedPermissionsDbContext>(ConfigurePermissionsStorage);
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
@@ -122,20 +125,24 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     {
         // given
         var factory = new PermissionsStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(new PermissionsStorageOptions
-        {
-            Schema = "permissions_a",
-            PermissionGrantsTableName = "PermissionGrants",
-            PermissionDefinitionsTableName = "PermissionDefinitions",
-            PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
-        });
-        var contextB = _BuildContextWithOptions(new PermissionsStorageOptions
-        {
-            Schema = "permissions_b",
-            PermissionGrantsTableName = "PermissionGrants",
-            PermissionDefinitionsTableName = "PermissionDefinitions",
-            PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
-        });
+        var contextA = _BuildContextWithOptions(
+            new PermissionsStorageOptions
+            {
+                Schema = "permissions_a",
+                PermissionGrantsTableName = "PermissionGrants",
+                PermissionDefinitionsTableName = "PermissionDefinitions",
+                PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
+            }
+        );
+        var contextB = _BuildContextWithOptions(
+            new PermissionsStorageOptions
+            {
+                Schema = "permissions_b",
+                PermissionGrantsTableName = "PermissionGrants",
+                PermissionDefinitionsTableName = "PermissionDefinitions",
+                PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -159,13 +166,15 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
             PermissionGroupDefinitionsTableName = "Groups",
         };
         var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(new PermissionsStorageOptions
-        {
-            Schema = optionsValues.Schema,
-            PermissionGrantsTableName = optionsValues.PermissionGrantsTableName,
-            PermissionDefinitionsTableName = optionsValues.PermissionDefinitionsTableName,
-            PermissionGroupDefinitionsTableName = optionsValues.PermissionGroupDefinitionsTableName,
-        });
+        var contextB = _BuildContextWithOptions(
+            new PermissionsStorageOptions
+            {
+                Schema = optionsValues.Schema,
+                PermissionGrantsTableName = optionsValues.PermissionGrantsTableName,
+                PermissionDefinitionsTableName = optionsValues.PermissionDefinitionsTableName,
+                PermissionGroupDefinitionsTableName = optionsValues.PermissionGroupDefinitionsTableName,
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -193,7 +202,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     private static PermissionsDbContext _BuildContextWithOptions(PermissionsStorageOptions storageOptions)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IOptions<PermissionsStorageOptions>>(Options.Create(storageOptions));
+        services.AddSingleton(Options.Create(storageOptions));
         var sp = services.BuildServiceProvider();
 
         var dbOptions = new DbContextOptionsBuilder<PermissionsDbContext>()
@@ -264,13 +273,15 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     }
 
     private sealed class SharedPermissionsDbContext(DbContextOptions<SharedPermissionsDbContext> options)
-        : DbContext(options), IPermissionsDbContext
+        : DbContext(options),
+            IPermissionsDbContext
     {
         public DbSet<PermissionGrantRecord> PermissionGrants => Set<PermissionGrantRecord>();
 
         public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
 
-        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
+        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions =>
+            Set<PermissionGroupDefinitionRecord>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

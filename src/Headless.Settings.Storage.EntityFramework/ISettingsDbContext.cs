@@ -3,7 +3,7 @@
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 public interface ISettingsDbContext
 {

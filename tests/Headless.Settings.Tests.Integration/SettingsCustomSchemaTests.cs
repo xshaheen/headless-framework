@@ -4,7 +4,6 @@ using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
 using Headless.Settings.Models;
-using Headless.Settings.Storage.EntityFramework;
 using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Microsoft.EntityFrameworkCore;
@@ -68,8 +67,8 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     public async Task should_round_trip_setting_value_under_custom_schema()
     {
         // given
-        using var host = await _CreateHostWithCustomTablesAsync(
-            b => b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>()
+        using var host = await _CreateHostWithCustomTablesAsync(b =>
+            b.Services.AddSettingDefinitionProvider<SettingsDefinitionProvider>()
         );
         await using var scope = host.Services.CreateAsyncScope();
         var settingManager = scope.ServiceProvider.GetRequiredService<ISettingManager>();
@@ -78,7 +77,11 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
 
         // when
         await settingManager.SetForUserAsync(providerKey, _SettingName, value, cancellationToken: AbortToken);
-        var storedValue = await settingManager.FindForUserAsync(providerKey, _SettingName, cancellationToken: AbortToken);
+        var storedValue = await settingManager.FindForUserAsync(
+            providerKey,
+            _SettingName,
+            cancellationToken: AbortToken
+        );
 
         // then
         storedValue.Should().Be(value);
@@ -91,7 +94,9 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         // given
         var services = new ServiceCollection();
-        services.AddDbContextFactory<SharedSettingsDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddDbContextFactory<SharedSettingsDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
         services.AddSettingsManagementDbContextStorage<SharedSettingsDbContext>(ConfigureSettingsStorage);
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
@@ -116,18 +121,22 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         // given
         var factory = new SettingsStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(new SettingsStorageOptions
-        {
-            Schema = "settings_a",
-            SettingValuesTableName = "SettingValues",
-            SettingDefinitionsTableName = "SettingDefinitions",
-        });
-        var contextB = _BuildContextWithOptions(new SettingsStorageOptions
-        {
-            Schema = "settings_b",
-            SettingValuesTableName = "SettingValues",
-            SettingDefinitionsTableName = "SettingDefinitions",
-        });
+        var contextA = _BuildContextWithOptions(
+            new SettingsStorageOptions
+            {
+                Schema = "settings_a",
+                SettingValuesTableName = "SettingValues",
+                SettingDefinitionsTableName = "SettingDefinitions",
+            }
+        );
+        var contextB = _BuildContextWithOptions(
+            new SettingsStorageOptions
+            {
+                Schema = "settings_b",
+                SettingValuesTableName = "SettingValues",
+                SettingDefinitionsTableName = "SettingDefinitions",
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -150,12 +159,14 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
             SettingDefinitionsTableName = "Definitions",
         };
         var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(new SettingsStorageOptions
-        {
-            Schema = optionsValues.Schema,
-            SettingValuesTableName = optionsValues.SettingValuesTableName,
-            SettingDefinitionsTableName = optionsValues.SettingDefinitionsTableName,
-        });
+        var contextB = _BuildContextWithOptions(
+            new SettingsStorageOptions
+            {
+                Schema = optionsValues.Schema,
+                SettingValuesTableName = optionsValues.SettingValuesTableName,
+                SettingDefinitionsTableName = optionsValues.SettingDefinitionsTableName,
+            }
+        );
 
         // when
         var keyA = factory.Create(contextA, designTime: false);
@@ -183,7 +194,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     private static SettingsDbContext _BuildContextWithOptions(SettingsStorageOptions storageOptions)
     {
         var services = new ServiceCollection();
-        services.AddSingleton<IOptions<SettingsStorageOptions>>(Options.Create(storageOptions));
+        services.AddSingleton(Options.Create(storageOptions));
         var sp = services.BuildServiceProvider();
 
         var dbOptions = new DbContextOptionsBuilder<SettingsDbContext>()
@@ -191,11 +202,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
             .UseApplicationServiceProvider(sp)
             .Options;
 
-        return new SettingsDbContext(dbOptions)
-        {
-            SettingValues = null!,
-            SettingDefinitions = null!,
-        };
+        return new SettingsDbContext(dbOptions) { SettingValues = null!, SettingDefinitions = null! };
     }
 
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
@@ -253,7 +260,8 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     }
 
     private sealed class SharedSettingsDbContext(DbContextOptions<SharedSettingsDbContext> options)
-        : DbContext(options), ISettingsDbContext
+        : DbContext(options),
+            ISettingsDbContext
     {
         public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
 

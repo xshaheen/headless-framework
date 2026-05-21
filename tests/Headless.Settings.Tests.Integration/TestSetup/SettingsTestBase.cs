@@ -6,7 +6,6 @@ using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Redis;
 using Headless.Settings;
-using Headless.Settings.Storage.EntityFramework;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;

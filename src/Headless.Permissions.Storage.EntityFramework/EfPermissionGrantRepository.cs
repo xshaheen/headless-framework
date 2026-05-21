@@ -5,7 +5,7 @@ using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 public sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
