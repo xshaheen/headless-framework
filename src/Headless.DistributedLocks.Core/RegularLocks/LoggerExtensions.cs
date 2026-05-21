@@ -199,4 +199,17 @@ public static partial class RegularLockLoggerExtensions
         Message = "IOutboxPublisher is registered but the DistributedLockReleased consumer is not — AddDistributedLock(...) was called before AddMessages(...). Push wake-ups for lock release are silently disabled; waiters will fall back to polling. Reorder registration so messaging is added first, or re-register AddDistributedLock after AddMessages."
     )]
     public static partial void LogLockReleasedConsumerMissing(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 19,
+        EventName = "LockStorageRetry",
+        Level = LogLevel.Warning,
+        Message = "Retrying lock storage operation (attempt {Attempt}) after {Delay:g}"
+    )]
+    public static partial void LogLockStorageRetry(
+        this ILogger logger,
+        int attempt,
+        TimeSpan delay,
+        Exception? exception
+    );
 }

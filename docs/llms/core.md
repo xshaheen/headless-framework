@@ -85,7 +85,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
 - `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api.Core` or other host packages — do not register them manually.
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddSettingsManagementCore(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
-- Use `Run.WithRetriesAsync()` from `Headless.Core` for retry logic with exponential backoff instead of manual retry loops.
+- Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
 
 ---
@@ -221,7 +221,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
     - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
-    - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
+    - `Run.DelayedAsync` - Deferred async invocation honoring `TimeProvider` and cancellation
     - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
     - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
 
@@ -260,13 +260,35 @@ logger.LogInformation(
 );
 ```
 
-### Retry with Backoff
+### Deferred Execution
 
 ```csharp
-var result = await Run.WithRetriesAsync(
-    async ct => await httpClient.GetAsync(url, ct),
-    maxAttempts: 3,
-    logger: logger
+await Run.DelayedAsync(
+    TimeSpan.FromSeconds(5),
+    async ct => await PublishHeartbeatAsync(ct),
+    timeProvider: TimeProvider.System,
+    cancellationToken: cancellationToken
+);
+```
+
+For retries, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
+
+```csharp
+private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
+    .AddRetry(new RetryStrategyOptions
+    {
+        ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
+        MaxRetryAttempts = 3,
+        BackoffType = DelayBackoffType.Exponential,
+        Delay = TimeSpan.FromMilliseconds(100),
+        MaxDelay = TimeSpan.FromSeconds(1),
+        UseJitter = true,
+    })
+    .Build();
+
+var result = await _RetryPipeline.ExecuteAsync(
+    async ct => await httpClient.GetAsync(url, ct).ConfigureAwait(false),
+    cancellationToken
 );
 ```
 
