@@ -296,6 +296,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 StorageId = 10,
                 Origin = new Message(headers, new MigratedConsumeMessage("stored")),
                 Content = "{}",
+            IntentType = IntentType.Bus,
                 Added = DateTime.UtcNow,
             }
         );

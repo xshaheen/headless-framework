@@ -43,6 +43,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, null),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
     }
 

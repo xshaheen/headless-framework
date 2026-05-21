@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;
@@ -168,6 +169,7 @@ public sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
+                "IntentType" SMALLINT NOT NULL,
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
@@ -190,7 +192,11 @@ public sealed class PostgreSqlStorageInitializer(
             -- on a violation is non-deterministic. The plain index would fire first for non-null
             -- groups and produce a raw 23505 that bypasses the ON CONFLICT target, breaking
             -- concurrent-insert convergence under load.
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_MessageId_GroupCoalesced" ON {GetReceivedTableName()} ("MessageId", (COALESCE("Group", '')));
+            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "IntentType" SMALLINT;
+            UPDATE {GetReceivedTableName()} SET "IntentType" = {(short)IntentType.Bus} WHERE "IntentType" IS NULL;
+            ALTER TABLE {GetReceivedTableName()} ALTER COLUMN "IntentType" SET NOT NULL;
+            DROP INDEX IF EXISTS "{schema}"."uq_received_MessageId_GroupCoalesced";
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_Version_MessageId_GroupCoalesced_IntentType" ON {GetReceivedTableName()} ("Version", "MessageId", (COALESCE("Group", '')), "IntentType");
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
             -- #8 — The partial retry-pickup index (idx_received_Version_NextRetryAt) is created
@@ -205,6 +211,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "Version" VARCHAR(20) NOT NULL,
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
+                "IntentType" SMALLINT NOT NULL,
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
@@ -220,6 +227,10 @@ public sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+
+            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "IntentType" SMALLINT;
+            UPDATE {GetPublishedTableName()} SET "IntentType" = {(short)IntentType.Bus} WHERE "IntentType" IS NULL;
+            ALTER TABLE {GetPublishedTableName()} ALTER COLUMN "IntentType" SET NOT NULL;
             """;
 
         return batchSql;

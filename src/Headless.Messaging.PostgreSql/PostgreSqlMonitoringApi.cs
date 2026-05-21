@@ -111,8 +111,8 @@ public sealed class PostgreSqlMonitoringApi(
         var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
         var selectColumns =
             query.MessageType == MessageType.Publish
-                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
-                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
+                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
+                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
         var where = string.Empty;
 
         if (!string.IsNullOrEmpty(query.StatusName))
@@ -135,6 +135,11 @@ public sealed class PostgreSqlMonitoringApi(
             where += " AND \"Content\" ILike @Content";
         }
 
+        if (query.IntentType is { })
+        {
+            where += " AND \"IntentType\" = @IntentType";
+        }
+
         // Keep the total count in a separate query: COUNT(*) OVER() returns no count row when OFFSET/LIMIT yields
         // an empty later page, which breaks pagination metadata even though matching rows still exist.
         var countQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE 1=1 {where}";
@@ -150,6 +155,7 @@ public sealed class PostgreSqlMonitoringApi(
             new NpgsqlParameter("@Group", query.Group ?? string.Empty),
             new NpgsqlParameter("@Name", query.Name ?? string.Empty),
             new NpgsqlParameter("@Content", $"%{query.Content}%"),
+            new NpgsqlParameter("@IntentType", (short?)query.IntentType ?? 0),
             new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
             new NpgsqlParameter("@Limit", query.PageSize),
         ];
@@ -191,6 +197,7 @@ public sealed class PostgreSqlMonitoringApi(
                                 Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
                                     ? null
                                     : reader.GetString(index - 1),
+                                IntentType = (IntentType)reader.GetInt16(index++),
                                 Retries = reader.GetInt32(index++),
                                 Added = reader.GetDateTime(index++),
                                 ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
@@ -372,7 +379,7 @@ public sealed class PostgreSqlMonitoringApi(
             ? @"""ExceptionInfo"""
             : "NULL AS \"ExceptionInfo\"";
         var sql =
-            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
 
         await using var connection = _options.CreateConnection();
 
@@ -390,20 +397,21 @@ public sealed class PostgreSqlMonitoringApi(
                             StorageId = reader.GetInt64(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
-                            Added = reader.GetDateTime(2),
-                            ExpiresAt = await reader.IsDBNullAsync(3, token).ConfigureAwait(false)
+                            IntentType = (IntentType)reader.GetInt16(2),
+                            Added = reader.GetDateTime(3),
+                            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
                                 ? null
-                                : reader.GetDateTime(3),
-                            Retries = reader.GetInt32(4),
-                            ExceptionInfo = await reader.IsDBNullAsync(5, token).ConfigureAwait(false)
+                                : reader.GetDateTime(4),
+                            Retries = reader.GetInt32(5),
+                            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
                                 ? null
-                                : reader.GetString(5),
-                            NextRetryAt = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
-                                ? null
-                                : reader.GetDateTime(6),
-                            LockedUntil = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                : reader.GetString(6),
+                            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
                                 ? null
                                 : reader.GetDateTime(7),
+                            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(8),
                         };
                     }
 

@@ -659,4 +659,17 @@ internal static partial class LoggerExtensions
         Exception ex,
         int consecutiveFailures
     );
+
+    [LoggerMessage(
+        EventId = 85,
+        EventName = "StoredMessageUnsupportedIntent",
+        Level = LogLevel.Error,
+        Message = "Stored published message {StorageId} cannot be dispatched because its intent '{IntentType}' has no supported transport. Marked terminal Failed."
+    )]
+    public static partial void StoredMessageUnsupportedIntent(
+        this ILogger logger,
+        Exception exception,
+        long storageId,
+        string intentType
+    );
 }

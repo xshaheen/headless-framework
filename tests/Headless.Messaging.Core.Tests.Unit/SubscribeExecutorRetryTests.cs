@@ -34,6 +34,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }

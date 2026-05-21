@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
@@ -92,6 +93,7 @@ public sealed class SqlServerStorageInitializer(
                         [Name] [nvarchar](200) NOT NULL,
                         [Group] [nvarchar](200) NULL,
                         [Content] [nvarchar](max) NULL,
+                        [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
@@ -103,7 +105,7 @@ public sealed class SqlServerStorageInitializer(
                         CONSTRAINT [PK_{receivedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
 
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()} ([MessageId] ASC, [Group] ASC);
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_Group_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [Group] ASC, [IntentType] ASC);
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([Version] ASC,[ExpiresAt] ASC,[StatusName] ASC);
                     CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_ExpiresAt_StatusName] ON {GetReceivedTableName()} ([ExpiresAt] ASC,[StatusName] ASC);
                     -- Filtered index for retry pickup. Keyed on (Version, NextRetryAt) so Version
@@ -125,6 +127,7 @@ public sealed class SqlServerStorageInitializer(
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
                         [Content] [nvarchar](max) NULL,
+                        [IntentType] [smallint] NOT NULL,
                         [Retries] [int] NOT NULL,
                         [Added] [datetime2](7) NOT NULL,
                         [ExpiresAt] [datetime2](7) NULL,
@@ -175,6 +178,31 @@ public sealed class SqlServerStorageInitializer(
             --   3701 — index does not exist (idempotency under TOCTOU race)
             DECLARE @engineEdition INT = CAST(SERVERPROPERTY('EngineEdition') AS INT);
             DECLARE @supportsOnline BIT = CASE WHEN @engineEdition IN (3, 5, 8) THEN 1 ELSE 0 END;
+
+            BEGIN TRY
+                IF COL_LENGTH(N'{GetReceivedTableName()}', N'IntentType') IS NULL
+                BEGIN
+                    ALTER TABLE {GetReceivedTableName()} ADD [IntentType] [smallint] NULL;
+                    UPDATE {GetReceivedTableName()} SET [IntentType] = {(short)IntentType.Bus} WHERE [IntentType] IS NULL;
+                    ALTER TABLE {GetReceivedTableName()} ALTER COLUMN [IntentType] [smallint] NOT NULL;
+                END;
+
+                IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_MessageId_Group' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    DROP INDEX [IX_{receivedPrefix}_MessageId_Group] ON {GetReceivedTableName()};
+
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_MessageId_Group_IntentType' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{receivedPrefix}_Version_MessageId_Group_IntentType] ON {GetReceivedTableName()} ([Version] ASC, [MessageId] ASC, [Group] ASC, [IntentType] ASC);
+
+                IF COL_LENGTH(N'{GetPublishedTableName()}', N'IntentType') IS NULL
+                BEGIN
+                    ALTER TABLE {GetPublishedTableName()} ADD [IntentType] [smallint] NULL;
+                    UPDATE {GetPublishedTableName()} SET [IntentType] = {(short)IntentType.Bus} WHERE [IntentType] IS NULL;
+                    ALTER TABLE {GetPublishedTableName()} ALTER COLUMN [IntentType] [smallint] NOT NULL;
+                END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 1913 THROW;
+            END CATCH;
 
             BEGIN TRY
                 IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))

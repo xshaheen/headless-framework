@@ -113,6 +113,7 @@ public sealed class ConsumerContextTests : TestBase
             StorageId = 1L,
             Origin = message,
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }

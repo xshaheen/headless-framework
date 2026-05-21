@@ -37,6 +37,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }

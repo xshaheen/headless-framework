@@ -32,6 +32,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         {
             StorageId = messageId,
             Content = "{\"key\":\"value\"}",
+            IntentType = IntentType.Bus,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {

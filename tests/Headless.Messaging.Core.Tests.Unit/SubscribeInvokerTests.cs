@@ -126,6 +126,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 null
             ), // null value
             Content = string.Empty,
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
 
@@ -434,6 +435,7 @@ public sealed class SubscribeInvokerTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, json),
             Content = json,
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }

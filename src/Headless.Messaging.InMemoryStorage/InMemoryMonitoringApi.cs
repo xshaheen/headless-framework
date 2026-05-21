@@ -89,6 +89,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
+            if (query.IntentType is { } intentType)
+            {
+                expression = expression.Where(x => x.IntentType == intentType);
+            }
+
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
@@ -100,6 +105,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
+                    IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
@@ -146,6 +152,11 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
+            if (query.IntentType is { } intentType)
+            {
+                expression = expression.Where(x => x.IntentType == intentType);
+            }
+
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
@@ -158,6 +169,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
+                    IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
