@@ -41,4 +41,13 @@ public sealed class LockAcquisitionTimeoutException : DistributedLockException
 
     /// <summary>The resource whose lock acquisition timed out.</summary>
     public string Resource { get; }
+
+    /// <summary>Throw shape for the <c>acquireTimeout: TimeSpan.Zero</c> fast-path (try-once contention).</summary>
+    public static LockAcquisitionTimeoutException ForFirstAttempt(string resource)
+    {
+        return new LockAcquisitionTimeoutException(
+            Argument.IsNotNullOrWhiteSpace(resource),
+            $"Failed to acquire distributed lock on '{resource}' on the first attempt (try-once contention)."
+        );
+    }
 }

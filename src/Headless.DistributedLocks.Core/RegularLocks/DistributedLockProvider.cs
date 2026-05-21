@@ -81,14 +81,23 @@ public sealed class DistributedLockProvider(
     {
         _ValidateAcquireTimeout(acquireTimeout);
 
-        return await TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, releaseOnDispose, cancellationToken)
-                .ConfigureAwait(false)
-            ?? throw new LockAcquisitionTimeoutException(
+        var acquired = await TryAcquireAsync(
                 resource,
-                acquireTimeout == TimeSpan.Zero
-                    ? $"Failed to acquire distributed lock on '{resource}' on the first attempt (try-once contention)."
-                    : $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed."
-            );
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (acquired is not null)
+        {
+            return acquired;
+        }
+
+        throw acquireTimeout == TimeSpan.Zero
+            ? LockAcquisitionTimeoutException.ForFirstAttempt(resource)
+            : new LockAcquisitionTimeoutException(resource);
     }
 
     public async Task<IDistributedLock?> TryAcquireAsync(

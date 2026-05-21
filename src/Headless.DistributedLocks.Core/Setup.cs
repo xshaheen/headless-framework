@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks;
 
@@ -96,7 +97,11 @@ public static class AddDistributedLockExtensions
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
-            services.AddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
+            // TryAddSingleton on the concrete + the public interface keeps repeated
+            // AddDistributedLock(...) calls idempotent (matching the ICanReceiveLockReleased
+            // registration below). Two AddSingleton calls would accumulate descriptors and
+            // register two distinct lambdas resolving against the same concrete type.
+            services.TryAddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
                 provider.GetService<IOutboxPublisher>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
@@ -105,12 +110,24 @@ public static class AddDistributedLockExtensions
                 provider.GetRequiredService<ILogger<DistributedLockProvider>>()
             ));
 
-            services.AddSingleton<IDistributedLockProvider>(sp => sp.GetRequiredService<DistributedLockProvider>());
+            services.TryAddSingleton<IDistributedLockProvider>(sp => sp.GetRequiredService<DistributedLockProvider>());
 
             // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
             // decorator wrapped around IDistributedLockProvider does not break the lock-release
             // wake-up signal (the consumer always receives the real DistributedLockProvider).
             services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
+
+            // Startup-time hook that warns when IOutboxPublisher is registered AFTER
+            // AddDistributedLock(...). The consumer registration block below only runs at
+            // registration time; a later AddMessages(...) call silently skips push wake-ups
+            // and the existing LogOutboxPublisherAbsent warning would NOT fire (publisher is
+            // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<
+                    IValidateOptions<DistributedLockOptions>,
+                    DistributedLockMessagingValidator
+                >()
+            );
 
             // Only register the lock-released consumer when an IOutboxPublisher is available; the
             // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
