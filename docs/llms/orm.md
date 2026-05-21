@@ -17,6 +17,7 @@ packages: Orm.EntityFramework, Orm.Couchbase, MultiTenancy
     - [Key Features](#key-features)
     - [Installation](#installation)
     - [Quick Start](#quick-start)
+    - [Pooling](#pooling)
     - [Transaction Pattern](#transaction-pattern)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
@@ -126,6 +127,19 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 // otherwise SaveChanges will throw via ThrowHeadlessMessageDispatcher.
 builder.Services.AddHeadlessMessageDispatcher<AppHeadlessMessageDispatcher>();
 ```
+
+## Pooling
+
+`HeadlessDbContext` is intentionally **not poolable**. Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`.
+
+Why:
+
+- The context holds a private `HeadlessDbContextRuntime` field that captures the request-scoped outbox dispatcher (`IHeadlessMessageDispatcher`) and audit persistence (`IHeadlessAuditPersistence`). Pooled instances would reuse a prior request's unit of work — EF only resets state it knows about, and the save pipeline is opaque to EF.
+- The constructor signature is `(HeadlessDbContextServices services, DbContextOptions options)`. `AddDbContextPool` only supports a single-`DbContextOptions` constructor.
+
+`ICurrentTenant` (AsyncLocal-backed) and `IClock` (singleton) are **not** the blocker — they resolve fresh per request even from a long-lived instance.
+
+For read-heavy hot paths that don't need the Headless write machinery, use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`. Writes don't benefit from pooling, so the split (heavy scoped write context + plain poolable storage contexts) is deliberate.
 
 ## Transaction Pattern
 

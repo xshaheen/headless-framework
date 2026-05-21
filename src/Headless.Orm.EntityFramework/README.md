@@ -53,6 +53,17 @@ builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
 );
 ```
 
+## Pooling
+
+`HeadlessDbContext` is intentionally **not poolable**. Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. Two independent reasons:
+
+1. **Private per-instance state holds a scoped save pipeline.** The constructor builds a private `HeadlessDbContextRuntime` field that captures the request-scoped outbox dispatcher (`IHeadlessMessageDispatcher`, enlisted in the EF transaction) and audit persistence (`IHeadlessAuditPersistence`, capturing this request's entries). EF's own guidance is to avoid pooling when the context maintains private state — EF only resets the state it knows about, so a pooled instance would reuse a prior request's outbox / audit unit of work. That is a captive-dependency correctness bug, not a perf trade-off.
+2. **Two-argument constructor.** Pooling resolves contexts through a single-`DbContextOptions` constructor; the second `HeadlessDbContextServices` parameter is not supported by `AddDbContextPool`. EF's "managing state in pooled contexts" guidance exists precisely because per-request state cannot be constructor-injected into pooled contexts — it requires a custom lease-time factory.
+
+`ICurrentTenant` (AsyncLocal-backed singleton) and `IClock` (singleton) are **not** the problem — both resolve fresh per request even from a long-lived instance. Only the save / outbox / audit pipeline is request-bound.
+
+For read-heavy hot paths that don't need the Headless write machinery (settings, features, permissions, lookup tables), use a plain `DbContext` with `AddDbContextPool` alongside the write-side `HeadlessDbContext`. Writes don't benefit from pooling, so the current split — heavy scoped write context + plain poolable storage contexts — is deliberate.
+
 ## Configuration
 
 ### Value Converters
