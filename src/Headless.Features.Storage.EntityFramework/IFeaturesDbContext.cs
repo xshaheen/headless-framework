@@ -3,7 +3,7 @@
 using Headless.Features.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Features;
+namespace Headless.Features.Storage.EntityFramework;
 
 public interface IFeaturesDbContext
 {

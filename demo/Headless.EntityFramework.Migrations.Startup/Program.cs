@@ -6,6 +6,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 using Headless.Features;
+using Headless.Features.Storage.EntityFramework;
 using Headless.Permissions;
 using Headless.Permissions.Storage.EntityFramework;
 using Headless.Settings;

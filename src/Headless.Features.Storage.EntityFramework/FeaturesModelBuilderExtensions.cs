@@ -1,24 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Features.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Features;
+namespace Headless.Features.Storage.EntityFramework;
 
 [PublicAPI]
 public static class FeaturesModelBuilderExtensions
 {
-    public static string DefaultFeatureValuesTableName { get; set; } = "FeatureValues";
-
-    public static string DefaultFeatureDefinitionTableName { get; set; } = "FeatureDefinitions";
-
-    public static string DefaultFeatureGroupDefinitionTableName { get; set; } = "FeatureGroupDefinitions";
-
-    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder, string schema = "features")
+    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder, FeaturesStorageOptions options)
     {
+        Argument.IsNotNull(options);
+
         modelBuilder.Entity<FeatureValueRecord>(b =>
         {
-            b.ToTable(DefaultFeatureValuesTableName, schema);
+            b.ToTable(options.FeatureValuesTableName, options.Schema);
             b.Property(x => x.Name).HasMaxLength(FeatureValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(FeatureValueRecordConstants.ValueMaxLength).IsRequired();
 
@@ -43,7 +40,7 @@ public static class FeaturesModelBuilderExtensions
 
         modelBuilder.Entity<FeatureGroupDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultFeatureGroupDefinitionTableName, schema);
+            b.ToTable(options.FeatureGroupDefinitionsTableName, options.Schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.Name).HasMaxLength(FeatureGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
@@ -57,7 +54,7 @@ public static class FeaturesModelBuilderExtensions
 
         modelBuilder.Entity<FeatureDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultFeatureDefinitionTableName, schema);
+            b.ToTable(options.FeatureDefinitionsTableName, options.Schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.GroupName).HasMaxLength(FeatureDefinitionRecordConstants.NameMaxLength).IsRequired();

@@ -2,8 +2,10 @@
 
 using Headless.Features.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
-namespace Headless.Features;
+namespace Headless.Features.Storage.EntityFramework;
 
 [PublicAPI]
 public class FeaturesDbContext(DbContextOptions options) : DbContext(options), IFeaturesDbContext
@@ -17,6 +19,8 @@ public class FeaturesDbContext(DbContextOptions options) : DbContext(options), I
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddFeaturesConfiguration();
+
+        var storageOptions = this.GetService<IOptions<FeaturesStorageOptions>>().Value;
+        modelBuilder.AddFeaturesConfiguration(storageOptions);
     }
 }

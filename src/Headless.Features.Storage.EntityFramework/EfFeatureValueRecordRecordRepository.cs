@@ -5,7 +5,7 @@ using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Features;
+namespace Headless.Features.Storage.EntityFramework;
 
 public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
