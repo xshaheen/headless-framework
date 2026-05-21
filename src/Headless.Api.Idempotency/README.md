@@ -140,14 +140,14 @@ Without the `AllowPrivate` resolver, MessagePack rejects `IdempotencyRecord` at 
 
 ## Security & Quotas
 
-This middleware enforces **response replay correctness**, not cache quota. Without an upstream rate limiter, an authenticated client can exhaust the cache backend by spraying random `Idempotency-Key` values with maximum-allowed bodies — at the default 1 MiB body cap and 24-hour TTL, a sustained burst of 100 req/s for 60 seconds allocates ~6 GiB of cache, surviving 24 hours. Legitimate records get evicted; the idempotency guarantee silently breaks for other tenants sharing the cache.
+This middleware enforces **response replay correctness**, not cache quota. Without proper cache sizing and TTL bounds, an authenticated client can exhaust the cache backend by spraying random `Idempotency-Key` values with maximum-allowed bodies — at the default 1 MiB body cap and 24-hour TTL, a sustained burst of 100 req/s for 60 seconds allocates ~6 GiB of cache, surviving 24 hours. Legitimate records get evicted; the idempotency guarantee silently breaks for other tenants sharing the cache.
 
-Mitigations are the operator's responsibility:
+Mitigations are the operator's responsibility, ordered by how much of the threat each one actually absorbs:
 
-1. **Layer a rate limiter ahead of `UseIdempotency()`** — `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` composed with a community Redis backend such as `RedisRateLimiting` (distributed), capped by tenant/user/IP. The rate limiter must run **before** `UseIdempotency()` so rejected requests do not allocate cache slots.
-2. **Size the cache backend with eviction.** Redis: configure `maxmemory` with `maxmemory-policy allkeys-lru` so abuse causes cold-key eviction rather than write-rejection. The idempotency `Complete` records are recoverable on eviction (replay simply re-executes the handler).
-3. **Tighten `IdempotencyKeyExpiration`** if your workload doesn't need 24-hour replay windows. Stripe defaults to 24 hours; many internal services are fine with 1–4 hours.
-4. **Tighten `MaxBodySizeForHashing`** so each cached record is smaller. The default 1 MiB is generous; pick a value matched to the actual p99 of your mutation payloads.
+1. **Size the cache backend with eviction (load-bearing).** Redis: configure `maxmemory` with `maxmemory-policy allkeys-lru` so abuse causes cold-key eviction rather than write-rejection. The idempotency `Complete` records are recoverable on eviction (replay simply re-executes the handler). Without LRU eviction, every other mitigation below is at best a delaying tactic.
+2. **Tighten `IdempotencyKeyExpiration`** if your workload doesn't need 24-hour replay windows. Stripe defaults to 24 hours; many internal services are fine with 1–4 hours. Halving the TTL halves the worst-case cache footprint per attacker.
+3. **Tighten `MaxBodySizeForHashing`** so each cached record is smaller. The default 1 MiB is generous; match it to the actual p99 of your mutation payloads. A 50 KiB cap shrinks the per-record cost by 20×.
+4. **Layer a rate limiter ahead of `UseIdempotency()` as a multiplier, not as a defense.** In multi-instance deployments, the most pragmatic shape is **consistent-hash routing by tenant/user at the load balancer** (Envoy, nginx `ip_hash`, AWS ALB target stickiness) **plus `Microsoft.AspNetCore.RateLimiting` per pod** — no distributed state required, and per-tenant limits stay exact despite multi-pod fan-out. Fall back to `Polly.RateLimiting` composed with a community Redis backend such as `RedisRateLimiting` only when LB-level sticky routing is unavailable or pod churn invalidates per-pod state too often. Either approach must run **before** `UseIdempotency()` so rejected requests do not allocate cache slots.
 
 ## Choosing an `InFlightStrategy`
 
