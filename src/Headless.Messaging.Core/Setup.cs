@@ -81,7 +81,7 @@ public static class SetupMessaging
 
         configure(setup);
 
-        // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
+        // Discover consumers registered via AddBusConsumer/AddQueueConsumer.
         _DiscoverConsumersFromDI(services, setup, registry);
 
         return _RegisterCoreMessagingServices(services, setup);
@@ -204,7 +204,7 @@ public static class SetupMessaging
     }
 
     /// <summary>
-    /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
+    /// Discovers and registers consumer metadata instances added via AddBusConsumer/AddQueueConsumer extension methods.
     /// Also applies any per-consumer circuit breaker overrides carried on the metadata.
     /// </summary>
     private static void _DiscoverConsumersFromDI(

@@ -9,6 +9,7 @@ namespace Headless.Messaging.Transport;
 /// This struct encapsulates the broker identification and connection information.
 /// The <c>ToString()</c> method formats the address as "Name$Endpoint", which can be parsed back using the string constructor.
 /// </remarks>
+[PublicAPI]
 public struct BrokerAddress : IEquatable<BrokerAddress>
 {
     /// <summary>

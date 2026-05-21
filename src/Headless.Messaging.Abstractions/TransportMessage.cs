@@ -24,6 +24,7 @@ namespace Headless.Messaging.Messages;
 /// The raw message body as bytes. This is typically a UTF-8 encoded JSON string.
 /// </param>
 /// <exception cref="ArgumentNullException">Thrown if <paramref name="headers"/> is null.</exception>
+[PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly struct TransportMessage(IDictionary<string, string?> headers, ReadOnlyMemory<byte> body)
     : IEquatable<TransportMessage>

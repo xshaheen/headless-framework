@@ -108,7 +108,7 @@ public static class AddDistributedLockExtensions
             ));
 
             services
-                .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
                     "headless.locks.released"
                 )
                 .Concurrency(1);

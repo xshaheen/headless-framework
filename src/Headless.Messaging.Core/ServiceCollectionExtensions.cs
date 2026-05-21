@@ -13,7 +13,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers a message consumer with the specified topic.
+    /// Registers a broadcast (publish/subscribe) message consumer with the specified topic.
     /// </summary>
     /// <typeparam name="TConsumer">The consumer type implementing <see cref="IConsume{TMessage}"/>.</typeparam>
     /// <typeparam name="TMessage">The message type to consume. Must be a reference type.</typeparam>
@@ -23,43 +23,20 @@ public static class MessagingServiceCollectionExtensions
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="services"/> or <paramref name="topic"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// This method provides a unified registration pattern for both library authors and application developers.
-    /// It registers the consumer with DI and creates a <see cref="ConsumerMetadata"/> instance
-    /// for discovery during messaging startup.
+    /// Use this for publish/subscribe (broadcast) delivery: every subscriber receives its own copy
+    /// of the message. For point-to-point work-queue delivery use
+    /// <see cref="AddQueueConsumer{TConsumer,TMessage}"/> instead.
     /// </para>
     /// <para>
-    /// <strong>Example (Library Author):</strong>
+    /// <strong>Example:</strong>
     /// <code>
-    /// public static IServiceCollection AddMyLibrary(this IServiceCollection services)
-    /// {
-    ///     services.AddConsumer&lt;MyEventHandler, MyEvent&gt;("my-library.events")
-    ///         .Concurrency(5);
-    ///     return services;
-    /// }
-    /// </code>
-    /// </para>
-    /// <para>
-    /// <strong>Example (Application Developer):</strong>
-    /// <code>
-    /// services.AddConsumer&lt;OrderPlacedHandler, OrderPlaced&gt;("orders.placed")
+    /// services.AddBusConsumer&lt;OrderPlacedHandler, OrderPlaced&gt;("orders.placed")
     ///     .Concurrency(10)
     ///     .WithTimeout(TimeSpan.FromSeconds(30));
     /// </code>
     /// </para>
     /// </remarks>
-    public static IConsumerBuilder<TConsumer> AddConsumer<TConsumer, TMessage>(
-        this IServiceCollection services,
-        string topic
-    )
-        where TConsumer : class, IConsume<TMessage>
-        where TMessage : class
-    {
-        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Bus);
-    }
-
-    /// <summary>
-    /// Registers a broadcast (publish/subscribe) message consumer with the specified topic.
-    /// </summary>
+    [PublicAPI]
     public static IConsumerBuilder<TConsumer> AddBusConsumer<TConsumer, TMessage>(
         this IServiceCollection services,
         string topic
@@ -73,6 +50,12 @@ public static class MessagingServiceCollectionExtensions
     /// <summary>
     /// Registers a point-to-point (work-queue) message consumer with the specified topic.
     /// </summary>
+    /// <remarks>
+    /// Use this for competing-consumer delivery: exactly one worker in the group receives each
+    /// message. For publish/subscribe (broadcast) delivery use
+    /// <see cref="AddBusConsumer{TConsumer,TMessage}"/> instead.
+    /// </remarks>
+    [PublicAPI]
     public static IConsumerBuilder<TConsumer> AddQueueConsumer<TConsumer, TMessage>(
         this IServiceCollection services,
         string topic
