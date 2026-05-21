@@ -35,11 +35,14 @@ public interface IDistributedLockProvider
     /// </param>
     /// <param name="monitorLease">
     /// <see langword="true"/> to enable background lease monitoring and a live
-    /// <see cref="IDistributedLock.HandleLostToken"/> signal.
+    /// <see cref="IDistributedLock.HandleLostToken"/> signal. Requires a finite
+    /// <paramref name="timeUntilExpires"/>; combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>
+    /// throws <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="autoExtend">
     /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
-    /// <paramref name="monitorLease"/>.
+    /// <paramref name="monitorLease"/>. Requires a finite <paramref name="timeUntilExpires"/>;
+    /// combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     Task<IDistributedLock> AcquireAsync(
@@ -75,11 +78,14 @@ public interface IDistributedLockProvider
     /// </param>
     /// <param name="monitorLease">
     /// <see langword="true"/> to enable background lease monitoring and a live
-    /// <see cref="IDistributedLock.HandleLostToken"/> signal.
+    /// <see cref="IDistributedLock.HandleLostToken"/> signal. Requires a finite
+    /// <paramref name="timeUntilExpires"/>; combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>
+    /// throws <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="autoExtend">
     /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
-    /// <paramref name="monitorLease"/>.
+    /// <paramref name="monitorLease"/>. Requires a finite <paramref name="timeUntilExpires"/>;
+    /// combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>

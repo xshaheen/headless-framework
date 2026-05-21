@@ -113,6 +113,8 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
         public CancellationToken HandleLostToken => CancellationToken.None;
 
+        public bool IsMonitored => false;
+
         public Task ReleaseAsync()
         {
             return Task.CompletedTask;

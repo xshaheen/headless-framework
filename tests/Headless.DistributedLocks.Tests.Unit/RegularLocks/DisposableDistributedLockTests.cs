@@ -147,7 +147,67 @@ public sealed class DisposableDistributedLockTests : TestBase
 
         // then
         result.Should().Be(LeaseMonitor.LeaseState.Renewed);
-        await _lockProvider.Received(1).RenewAsync(resource, lockId, TimeSpan.FromSeconds(10), AbortToken);
+        await _lockProvider
+            .Received(1)
+            .RenewAsync(resource, lockId, TimeSpan.FromSeconds(10), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_treat_renew_false_with_matching_lock_id_as_unknown_under_auto_extend()
+    {
+        // given - autoExtend handle whose RenewAsync returns false (transient retry-exhaustion),
+        // but ownership probe via GetLockIdAsync still shows our LockId — i.e., we still own it.
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider
+            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
+        var sut = _CreateLock(resource, lockId, autoExtend: true);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then - we still own the lock; classify as Unknown so the safety net governs.
+        result.Should().Be(LeaseMonitor.LeaseState.Unknown);
+    }
+
+    [Fact]
+    public async Task should_treat_renew_false_with_differing_lock_id_as_lost_under_auto_extend()
+    {
+        // given - autoExtend handle whose RenewAsync returns false and probe shows a different owner.
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider
+            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
+        var sut = _CreateLock(resource, lockId, autoExtend: true);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then - genuine loss: a different owner holds the lock.
+        result.Should().Be(LeaseMonitor.LeaseState.Lost);
+    }
+
+    [Fact]
+    public async Task should_treat_renew_false_with_null_probe_as_lost_under_auto_extend()
+    {
+        // given - autoExtend handle whose RenewAsync returns false and probe shows nothing.
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider
+            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
+        var sut = _CreateLock(resource, lockId, autoExtend: true);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then - storage no longer has the row; genuine loss.
+        result.Should().Be(LeaseMonitor.LeaseState.Lost);
     }
 
     [Fact]
@@ -156,7 +216,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.GetLockIdAsync(resource, AbortToken).Returns(lockId);
+        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
         var sut = _CreateLock(resource, lockId);
 
         // when
@@ -164,7 +224,66 @@ public sealed class DisposableDistributedLockTests : TestBase
 
         // then
         result.Should().Be(LeaseMonitor.LeaseState.Held);
-        await _lockProvider.Received(1).GetLockIdAsync(resource, AbortToken);
+        await _lockProvider.Received(1).GetLockIdAsync(resource, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_not_throw_when_handle_lost_token_is_read_after_dispose()
+    {
+        // given - acquire a monitor-backed handle and dispose it (which disposes the inner CTS).
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
+        var sut = _CreateLock(resource, lockId);
+        var monitor = new LeaseMonitor(
+            (LeaseMonitor.ILeaseHandle)sut,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
+        sut.AttachMonitor(monitor);
+
+        // when - dispose (which disposes the monitor's _handleLostSource CTS).
+        await sut.DisposeAsync();
+
+        // then - reading HandleLostToken after dispose must not throw ObjectDisposedException.
+        var act = () =>
+        {
+            var token = sut.HandleLostToken;
+            _ = token.IsCancellationRequested;
+        };
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public async Task should_apply_per_iteration_deadline_when_storage_blocks_indefinitely()
+    {
+        // given - storage that respects only the token passed in (not the caller's CT). The
+        // per-iteration deadline created inside RenewOrValidateLeaseAsync must link the
+        // caller's token with a TimeProvider-backed deadline; when the deadline fires the
+        // storage call is cancelled, RenewOrValidateLeaseAsync catches and classifies as
+        // Unknown so DisposeAsync does not wedge waiting on a stuck storage round-trip.
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider
+            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var ct = ci.Arg<CancellationToken>();
+                var tcs = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+                ct.Register(() => tcs.TrySetCanceled(ct));
+                return tcs.Task;
+            });
+        var sut = _CreateLock(resource, lockId);
+
+        // when - call the iteration with an uncancellable caller token, then advance fake time
+        // past the per-iteration deadline.
+        var task = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        await Task.Yield();
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        // then - completes within a bounded real time and classifies as Unknown.
+        var result = await task.WaitAsync(TimeSpan.FromSeconds(5));
+        result.Should().Be(LeaseMonitor.LeaseState.Unknown);
     }
 
     [Fact]

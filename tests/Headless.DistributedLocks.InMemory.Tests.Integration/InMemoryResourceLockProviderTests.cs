@@ -102,10 +102,6 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
         base.should_expose_none_handle_lost_token_without_monitoring();
 
     [Fact]
-    public override Task should_cancel_handle_lost_token_after_ttl_without_auto_extend() =>
-        base.should_cancel_handle_lost_token_after_ttl_without_auto_extend();
-
-    [Fact]
-    public override Task should_keep_lock_past_ttl_when_auto_extend_is_enabled() =>
-        base.should_keep_lock_past_ttl_when_auto_extend_is_enabled();
+    public override Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke() =>
+        base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
 }

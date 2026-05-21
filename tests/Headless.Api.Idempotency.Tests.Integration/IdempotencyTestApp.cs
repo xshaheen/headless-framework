@@ -658,6 +658,8 @@ internal static class IdempotencyTestApp
 
         public CancellationToken HandleLostToken => CancellationToken.None;
 
+        public bool IsMonitored => false;
+
         public Task ReleaseAsync()
         {
             _ReleaseIfStillOwner();

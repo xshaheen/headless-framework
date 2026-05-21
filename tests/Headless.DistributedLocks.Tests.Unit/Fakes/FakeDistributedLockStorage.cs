@@ -8,6 +8,14 @@ namespace Tests.Fakes;
 internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, LockEntry> _locks = new(StringComparer.Ordinal);
+    private readonly TimeProvider _timeProvider;
+
+    public FakeDistributedLockStorage(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    private DateTime _UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
     public ValueTask<bool> InsertAsync(
         string key,
@@ -17,7 +25,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var entry = new LockEntry(lockId, ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null);
+        var entry = new LockEntry(lockId, ttl.HasValue ? _UtcNow().Add(ttl.Value) : null);
         var added = _locks.TryAdd(key, entry);
         return ValueTask.FromResult(added);
     }
@@ -36,7 +44,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
             return ValueTask.FromResult(false);
         }
 
-        var newEntry = new LockEntry(newId, newTtl.HasValue ? DateTime.UtcNow.Add(newTtl.Value) : null);
+        var newEntry = new LockEntry(newId, newTtl.HasValue ? _UtcNow().Add(newTtl.Value) : null);
         var replaced = _locks.TryUpdate(key, newEntry, existing);
         return ValueTask.FromResult(replaced);
     }
@@ -65,7 +73,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
             return ValueTask.FromResult<TimeSpan?>(null);
         }
 
-        var remaining = entry.Expiration.Value - DateTime.UtcNow;
+        var remaining = entry.Expiration.Value - _UtcNow();
         return ValueTask.FromResult<TimeSpan?>(remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero);
     }
 
@@ -107,7 +115,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
                 kv =>
                 {
                     var remaining = kv.Value.Expiration.HasValue
-                        ? kv.Value.Expiration.Value - DateTime.UtcNow
+                        ? kv.Value.Expiration.Value - _UtcNow()
                         : (TimeSpan?)null;
                     var ttl = remaining > TimeSpan.Zero ? remaining : (remaining.HasValue ? TimeSpan.Zero : null);
                     return (kv.Value.LockId, ttl);
@@ -133,7 +141,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
 
     public void SetLock(string key, string lockId, TimeSpan? ttl = null)
     {
-        _locks[key] = new LockEntry(lockId, ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null);
+        _locks[key] = new LockEntry(lockId, ttl.HasValue ? _UtcNow().Add(ttl.Value) : null);
     }
 
     public void RemoveLock(string key)

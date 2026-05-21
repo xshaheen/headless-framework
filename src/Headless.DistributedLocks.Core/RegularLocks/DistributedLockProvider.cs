@@ -504,6 +504,12 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
+        // Deregister the monitor BEFORE publishing the outbox message. Otherwise the outbox
+        // consumer's _NudgeActiveMonitors would wake the still-registered monitor for the
+        // released lockId — the monitor probes storage, sees the row gone (because we just
+        // removed it), and declares Lost. That's a spurious signal on a self-release.
+        _DeregisterMonitor(resource, lockId);
+
         logger.LogReleaseStarted(resource, lockId);
 
         // If a transient exception fires AFTER storage has already deleted the row but BEFORE
@@ -727,7 +733,13 @@ public sealed class DistributedLockProvider(
             return leaseDuration;
         }
 
-        Ensure.False(monitorLease, "Lease monitoring requires a finite timeUntilExpires value.");
+        if (monitorLease)
+        {
+            throw new ArgumentException(
+                "Lease monitoring requires a finite timeUntilExpires value; pass a TimeSpan instead of Timeout.InfiniteTimeSpan.",
+                nameof(timeUntilExpires)
+            );
+        }
 
         return Timeout.InfiniteTimeSpan;
     }

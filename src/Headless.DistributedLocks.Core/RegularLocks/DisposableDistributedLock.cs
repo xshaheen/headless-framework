@@ -6,46 +6,84 @@ using Nito.AsyncEx;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class DisposableDistributedLock(
-    string resource,
-    string lockId,
-    TimeSpan leaseDuration,
-    TimeSpan timeWaitedForLock,
-    IDistributedLockProvider lockProvider,
-    bool releaseOnDispose,
-    bool autoExtend,
-    DistributedLockOptions options,
-    TimeProvider timeProvider,
-    Action<string, string>? deregisterMonitor,
-    ILogger logger
-) : IDistributedLock, LeaseMonitor.ILeaseHandle
+public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.ILeaseHandle
 {
+    private readonly TimeSpan _leaseDuration;
+    private readonly IDistributedLockProvider _lockProvider;
+    private readonly bool _releaseOnDispose;
+    private readonly bool _autoExtend;
+    private readonly TimeProvider _timeProvider;
+    private readonly Action<string, string>? _deregisterMonitor;
+    private readonly ILogger _logger;
+
+    internal DisposableDistributedLock(
+        string resource,
+        string lockId,
+        TimeSpan leaseDuration,
+        TimeSpan timeWaitedForLock,
+        IDistributedLockProvider lockProvider,
+        bool releaseOnDispose,
+        bool autoExtend,
+        DistributedLockOptions options,
+        TimeProvider timeProvider,
+        Action<string, string>? deregisterMonitor,
+        ILogger logger
+    )
+    {
+        LockId = lockId;
+        Resource = resource;
+        DateAcquired = timeProvider.GetUtcNow();
+        TimeWaitedForLock = timeWaitedForLock;
+        _timestamp = timeProvider.GetTimestamp();
+        _options = options;
+        _leaseDuration = leaseDuration;
+        _lockProvider = lockProvider;
+        _releaseOnDispose = releaseOnDispose;
+        _autoExtend = autoExtend;
+        _timeProvider = timeProvider;
+        _deregisterMonitor = deregisterMonitor;
+        _logger = logger;
+    }
+
     private volatile bool _isReleased;
     private readonly AsyncLock _lock = new();
-    private readonly long _timestamp = timeProvider.GetTimestamp();
-    private readonly DistributedLockOptions _options = options;
+    private readonly long _timestamp;
+    private readonly DistributedLockOptions _options;
     private LeaseMonitor? _monitor;
 
-    public string LockId { get; } = lockId;
+    // Snapshotted at AttachMonitor time so reads after the monitor's underlying CTS is disposed
+    // do not throw ObjectDisposedException. CancellationToken values are valid after the source
+    // is disposed; only IsCancellationRequested/Register on disposed sources throws — and the
+    // snapshot's IsCancellationRequested observes the final cancellation state set during dispose.
+#pragma warning disable IDE0032 // Field-backed by intent (not promoted to auto-property): the
+    // setter is internal (AttachMonitor) but the property must be public on IDistributedLock.
+    private CancellationToken _handleLostToken = CancellationToken.None;
+#pragma warning restore IDE0032
 
-    public string Resource { get; } = resource;
+    public string LockId { get; }
 
-    public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+    public string Resource { get; }
 
-    public TimeSpan TimeWaitedForLock { get; } = timeWaitedForLock;
+    public DateTimeOffset DateAcquired { get; }
 
-    public CancellationToken HandleLostToken => _monitor?.HandleLostToken ?? CancellationToken.None;
+    public TimeSpan TimeWaitedForLock { get; }
 
-    public int RenewalCount { get; private set; }
+    public CancellationToken HandleLostToken => _handleLostToken;
 
-    TimeSpan LeaseMonitor.ILeaseHandle.LeaseDuration => leaseDuration;
+    public bool IsMonitored => _monitor is not null;
+
+    private int _renewalCount;
+
+    public int RenewalCount => Volatile.Read(ref _renewalCount);
+
+    TimeSpan LeaseMonitor.ILeaseHandle.LeaseDuration => _leaseDuration;
 
     TimeSpan LeaseMonitor.ILeaseHandle.MonitoringCadence
     {
         get
         {
-            var fraction = autoExtend ? _options.AutoExtensionCadenceFraction : _options.PollingCadenceFraction;
-            var ticks = Math.Max(1, (long)(leaseDuration.Ticks * fraction));
+            var fraction = _autoExtend ? _options.AutoExtensionCadenceFraction : _options.PollingCadenceFraction;
+            var ticks = Math.Max(1, (long)(_leaseDuration.Ticks * fraction));
 
             return TimeSpan.FromTicks(ticks);
         }
@@ -54,31 +92,32 @@ public sealed class DisposableDistributedLock(
     internal void AttachMonitor(LeaseMonitor monitor)
     {
         _monitor = monitor;
+        _handleLostToken = monitor.HandleLostToken;
     }
 
     public async Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
-        if (logger.IsEnabled(LogLevel.Trace))
+        if (_logger.IsEnabled(LogLevel.Trace))
         {
-            logger.LogDisposableLockRenewing(Resource, LockId);
+            _logger.LogDisposableLockRenewing(Resource, LockId);
         }
 
-        var result = await lockProvider
+        var result = await _lockProvider
             .RenewAsync(Resource, LockId, timeUntilExpires, cancellationToken)
             .ConfigureAwait(false);
 
         if (!result)
         {
-            logger.LogDisposableLockRenewFailed(Resource, LockId);
+            _logger.LogDisposableLockRenewFailed(Resource, LockId);
 
             return false;
         }
 
-        RenewalCount++;
+        Interlocked.Increment(ref _renewalCount);
 
-        if (logger.IsEnabled(LogLevel.Debug))
+        if (_logger.IsEnabled(LogLevel.Debug))
         {
-            logger.LogDisposableLockRenewed(Resource, LockId);
+            _logger.LogDisposableLockRenewed(Resource, LockId);
         }
 
         return true;
@@ -100,24 +139,24 @@ public sealed class DisposableDistributedLock(
 
             _isReleased = true;
 
-            if (logger.IsEnabled(LogLevel.Debug))
+            if (_logger.IsEnabled(LogLevel.Debug))
             {
-                var elapsed = timeProvider.GetElapsedTime(_timestamp);
+                var elapsed = _timeProvider.GetElapsedTime(_timestamp);
 
-                logger.LogDisposableLockReleasing(Resource, LockId, elapsed);
+                _logger.LogDisposableLockReleasing(Resource, LockId, elapsed);
             }
 
-            await lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
+            await _lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
         }
     }
 
     public async ValueTask DisposeAsync()
     {
-        var isTraceLogLevelEnabled = logger.IsEnabled(LogLevel.Trace);
+        var isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogDisposableLockDisposing(Resource, LockId);
+            _logger.LogDisposableLockDisposing(Resource, LockId);
         }
 
         try
@@ -130,51 +169,96 @@ public sealed class DisposableDistributedLock(
                 }
                 catch (Exception e)
                 {
-                    logger.LogDisposableLockMonitorDisposeFailed(e, Resource, LockId);
+                    _logger.LogDisposableLockMonitorDisposeFailed(e, Resource, LockId);
                 }
                 finally
                 {
-                    deregisterMonitor?.Invoke(Resource, LockId);
+                    _deregisterMonitor?.Invoke(Resource, LockId);
                 }
             }
 
-            if (releaseOnDispose)
+            if (_releaseOnDispose)
             {
                 await ReleaseAsync().ConfigureAwait(false);
             }
         }
         catch (Exception e)
         {
-            if (logger.IsEnabled(LogLevel.Error))
-            {
-                logger.LogDisposableLockReleaseFailed(e, Resource, LockId);
-            }
+            _logger.LogDisposableLockReleaseFailed(e, Resource, LockId);
         }
 
         if (isTraceLogLevelEnabled)
         {
-            logger.LogDisposableLockDisposed(Resource, LockId);
+            _logger.LogDisposableLockDisposed(Resource, LockId);
         }
     }
 
+    /// <summary>
+    /// Auto-extend mode: attempt <see cref="IDistributedLockProvider.RenewAsync"/>. A successful
+    /// renewal returns <see cref="LeaseMonitor.LeaseState.Renewed"/>. A <see langword="false"/>
+    /// result is ambiguous (genuine fence mismatch vs. transient retry-exhaustion), so we probe
+    /// ownership via <see cref="IDistributedLockProvider.GetLockIdAsync"/>: matching id ⇒
+    /// <see cref="LeaseMonitor.LeaseState.Unknown"/> (let the safety net self-promote on
+    /// repeated failures), differing or absent id ⇒ <see cref="LeaseMonitor.LeaseState.Lost"/>.
+    /// Polling mode: only probe ownership.
+    /// </summary>
     async Task<LeaseMonitor.LeaseState> LeaseMonitor.ILeaseHandle.RenewOrValidateLeaseAsync(
         CancellationToken cancellationToken
     )
     {
-        if (autoExtend)
+        // Per-iteration deadline: bounds a single storage round-trip so a stuck/blocked
+        // storage call (e.g., StackExchange.Redis reconnect storm that ignores its CT) cannot
+        // wedge MonitoringTask — and therefore cannot wedge LeaseMonitor.DisposeAsync, which
+        // awaits that task. Capped at min(5s, cadence). On deadline trip we classify as
+        // Unknown (transient) and let the safety net self-promote on repeated misses.
+        var cadence = ((LeaseMonitor.ILeaseHandle)this).MonitoringCadence;
+        var deadline = cadence.TotalSeconds < 5.0 ? cadence : TimeSpan.FromSeconds(5);
+
+        using var deadlineSource = _timeProvider.CreateCancellationTokenSource(deadline);
+        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadlineSource.Token
+        );
+
+        try
         {
-            var renewed = await lockProvider
-                .RenewAsync(Resource, LockId, leaseDuration, cancellationToken)
+            if (_autoExtend)
+            {
+                var renewed = await _lockProvider
+                    .RenewAsync(Resource, LockId, _leaseDuration, linkedSource.Token)
+                    .ConfigureAwait(false);
+
+                if (renewed)
+                {
+                    Interlocked.Increment(ref _renewalCount);
+                    return LeaseMonitor.LeaseState.Renewed;
+                }
+
+                // Disambiguate: RenewAsync returns false for both fence mismatch and transient
+                // retry-exhaustion. Probe ownership before declaring Lost — a transient renewal
+                // failure must not cancel HandleLostToken when storage still confirms ownership.
+                var currentLockIdAfterRenew = await _lockProvider
+                    .GetLockIdAsync(Resource, linkedSource.Token)
+                    .ConfigureAwait(false);
+
+                return string.Equals(currentLockIdAfterRenew, LockId, StringComparison.Ordinal)
+                    ? LeaseMonitor.LeaseState.Unknown
+                    : LeaseMonitor.LeaseState.Lost;
+            }
+
+            var currentLockId = await _lockProvider
+                .GetLockIdAsync(Resource, linkedSource.Token)
                 .ConfigureAwait(false);
 
-            return renewed ? LeaseMonitor.LeaseState.Renewed : LeaseMonitor.LeaseState.Lost;
+            return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
+                ? LeaseMonitor.LeaseState.Held
+                : LeaseMonitor.LeaseState.Lost;
         }
-
-        var currentLockId = await lockProvider.GetLockIdAsync(Resource, cancellationToken).ConfigureAwait(false);
-
-        return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
-            ? LeaseMonitor.LeaseState.Held
-            : LeaseMonitor.LeaseState.Lost;
+        catch (OperationCanceledException) when (deadlineSource.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // Per-iteration deadline fired without caller cancellation — surface as transient.
+            return LeaseMonitor.LeaseState.Unknown;
+        }
     }
 }
 
@@ -186,7 +270,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Renewing lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewing(this ILogger logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewing(this ILogger _logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 2,
@@ -194,7 +278,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Unable to renew lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewFailed(this ILogger logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewFailed(this ILogger _logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 3,
@@ -202,7 +286,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Renewed lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewed(this ILogger logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewed(this ILogger _logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 4,
@@ -211,7 +295,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Releasing lock: R={Resource} Id={LockId} after {Duration:g}"
     )]
     public static partial void LogDisposableLockReleasing(
-        this ILogger logger,
+        this ILogger _logger,
         string resource,
         string lockId,
         TimeSpan duration
@@ -223,7 +307,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposing lock: R={Resource} Id={LockId}"
     )]
-    public static partial void LogDisposableLockDisposing(this ILogger logger, string resource, string lockId);
+    public static partial void LogDisposableLockDisposing(this ILogger _logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 6,
@@ -232,7 +316,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Unable to release lock: R={Resource} Id={LockId}"
     )]
     public static partial void LogDisposableLockReleaseFailed(
-        this ILogger logger,
+        this ILogger _logger,
         Exception exception,
         string resource,
         string lockId
@@ -244,7 +328,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposed lock: R={Resource} Id={LockId}"
     )]
-    public static partial void LogDisposableLockDisposed(this ILogger logger, string resource, string lockId);
+    public static partial void LogDisposableLockDisposed(this ILogger _logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 8,
@@ -253,7 +337,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Unable to dispose lease monitor before releasing lock: R={Resource} Id={LockId}"
     )]
     public static partial void LogDisposableLockMonitorDisposeFailed(
-        this ILogger logger,
+        this ILogger _logger,
         Exception exception,
         string resource,
         string lockId

@@ -478,6 +478,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         public CancellationToken HandleLostToken => CancellationToken.None;
 
+        public bool IsMonitored => false;
+
         public Task ReleaseAsync() => Task.CompletedTask;
 
         public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)

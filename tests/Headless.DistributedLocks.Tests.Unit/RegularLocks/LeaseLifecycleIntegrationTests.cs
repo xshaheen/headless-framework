@@ -13,7 +13,12 @@ namespace Tests.RegularLocks;
 public sealed class LeaseLifecycleIntegrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeDistributedLockStorage _storage = new();
+    private readonly FakeDistributedLockStorage _storage;
+
+    public LeaseLifecycleIntegrationTests()
+    {
+        _storage = new FakeDistributedLockStorage(_timeProvider);
+    }
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
     private long _lockIdCounter = 2000;
 
@@ -100,6 +105,216 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
         provider.GetActiveMonitorCount(resource).Should().Be(1);
         handle!.HandleLostToken.Should().NotBe(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_cancel_handle_lost_token_after_ttl_without_auto_extend()
+    {
+        // given - monitor-only mode. After lease TTL elapses without renewal the storage row
+        // is gone, so the next probe sees absence (or differing id) and declares Lost.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(1),
+            monitorLease: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when - simulate TTL expiry by removing the storage row, then advance time.
+        _storage.RemoveLock(options.KeyPrefix + resource);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
+
+        // then
+        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_keep_lock_past_ttl_when_auto_extend_is_enabled()
+    {
+        // given - auto-extend mode renews via RenewAsync each cadence tick; storage row stays.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(3),
+            autoExtend: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when - advance past TTL multiple cadence intervals.
+        for (var i = 0; i < 4; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Yield();
+        }
+
+        // then - HandleLostToken still not fired (auto-extend kept storage row alive).
+        handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_increment_renewal_count_when_background_auto_extend_renews()
+    {
+        // given - auto-extend handle: each cadence tick that succeeds calls RenewAsync.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(3),
+            autoExtend: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when - drive several cadence intervals; background loop should renew.
+        for (var i = 0; i < 5; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await _DrainUntilAsync(() => handle!.RenewalCount >= i + 1);
+        }
+
+        // then - background renewals were recorded.
+        handle!.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
+    }
+
+    [Fact]
+    public async Task should_report_null_provider_lock_as_unmonitored()
+    {
+        // given
+        var provider = new NullDistributedLockProvider(_timeProvider);
+
+        // when
+        await using var handle = await provider.TryAcquireAsync(
+            Faker.Random.AlphaNumeric(10),
+            cancellationToken: AbortToken
+        );
+
+        // then
+        handle!.IsMonitored.Should().BeFalse();
+        handle.HandleLostToken.Should().Be(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_expose_is_monitored_flag()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when - monitor enabled
+        await using var monitored = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(10),
+            monitorLease: true,
+            cancellationToken: AbortToken
+        );
+
+        // then
+        monitored!.IsMonitored.Should().BeTrue();
+
+        await monitored.DisposeAsync();
+
+        // when - monitor disabled
+        await using var unmonitored = await provider.TryAcquireAsync(
+            Faker.Random.AlphaNumeric(10),
+            cancellationToken: AbortToken
+        );
+
+        // then
+        unmonitored!.IsMonitored.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_deadlock_when_handle_lost_callback_disposes_handle()
+    {
+        // given - acquire with monitorLease enabled; register a HandleLostToken callback that
+        // disposes the handle. Storage row swap triggers Lost on the next probe.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(10),
+            monitorLease: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+        var disposalDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        handle!
+            .HandleLostToken.Register(
+                () =>
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        await handle.DisposeAsync();
+                        disposalDone.TrySetResult(true);
+                    });
+                }
+            );
+        _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+
+        // when - trigger validation
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
+
+        // then - dispose path completes in bounded time (no deadlock).
+        var work = Task.Run(async () => await disposalDone.Task);
+        await work.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_not_signal_handle_lost_on_self_release()
+    {
+        // given - monitor-backed handle, then provider.ReleaseAsync (direct) instead of dispose.
+        // The release path's OnLockReleased nudge must not declare Lost for the same lockId.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(10),
+            monitorLease: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when - direct release of the same lockId; this triggers the outbox path and would
+        // historically nudge the still-alive monitor for that resource.
+        await provider.ReleaseAsync(resource, handle!.LockId, AbortToken);
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LockId));
+        await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+
+        // then - HandleLostToken stays unfired (self-release deregistered the monitor first).
+        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+
+        await handle.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_throw_argument_exception_when_monitor_lease_with_infinite_ttl()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = () =>
+            provider.TryAcquireAsync(
+                resource,
+                timeUntilExpires: Timeout.InfiniteTimeSpan,
+                monitorLease: true,
+                cancellationToken: AbortToken
+            );
+
+        // then
+        var exception = await act.Should().ThrowAsync<ArgumentException>();
+        exception.Which.ParamName.Should().Be("timeUntilExpires");
     }
 
     private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null)

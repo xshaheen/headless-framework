@@ -27,11 +27,20 @@ public interface IDistributedLock : IAsyncDisposable
 
     /// <summary>
     /// Cancellation token that is cancelled when the lock lease is detected as lost.
-    /// Returns <see cref="CancellationToken.None"/> when lease monitoring was not enabled for the acquire call.
+    /// Returns <see cref="CancellationToken.None"/> when lease monitoring was not enabled for the acquire call
+    /// (check <see cref="IsMonitored"/> first).
     /// This is an observability signal. Consumers needing correctness must validate <see cref="LockId"/> at the
-    /// protected resource.
+    /// protected resource. A faulted monitor (e.g., logger or storage initialization throws unexpectedly) is
+    /// surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
     /// </summary>
     CancellationToken HandleLostToken { get; }
+
+    /// <summary>
+    /// <see langword="true"/> when the handle was acquired with lease monitoring enabled and
+    /// <see cref="HandleLostToken"/> carries a live signal. <see langword="false"/> when monitoring was
+    /// disabled and <see cref="HandleLostToken"/> returns <see cref="CancellationToken.None"/>.
+    /// </summary>
+    bool IsMonitored { get; }
 
     /// <summary>Releases the lock.</summary>
     Task ReleaseAsync();

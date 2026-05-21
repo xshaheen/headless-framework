@@ -109,7 +109,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
             () => Task.CompletedTask,
             timeUntilExpires,
             acquireTimeout,
-            cancellationToken
+            cancellationToken: cancellationToken
         );
 
         // then
@@ -120,7 +120,73 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
+                monitorLease: false,
+                autoExtend: false,
                 cancellationToken: cancellationToken
+            );
+    }
+
+    [Fact]
+    public async Task should_pass_monitor_flags_and_link_handle_lost_token_into_work()
+    {
+        // given - a real provider-built handle is needed to flow IsMonitored/HandleLostToken.
+        // Stub with NSubstitute returning a Substitute-backed IDistributedLock whose IsMonitored
+        // is true and HandleLostToken is a CTS we control. Verify the work delegate receives a
+        // linked token that becomes cancelled when HandleLostToken fires.
+        var provider = Substitute.For<IDistributedLockProvider>();
+        var distributedLock = Substitute.For<IDistributedLock>();
+        using var leaseLostCts = new CancellationTokenSource();
+        distributedLock.IsMonitored.Returns(true);
+        distributedLock.HandleLostToken.Returns(leaseLostCts.Token);
+        provider
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+
+        CancellationToken observedToken = default;
+        var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // when
+        var task = provider.TryUsingAsync(
+            "resource",
+            async ct =>
+            {
+                observedToken = ct;
+                started.SetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                }
+                catch (OperationCanceledException) { }
+            },
+            monitorLease: true
+        );
+
+        await started.Task;
+        await leaseLostCts.CancelAsync();
+        var result = await task;
+
+        // then
+        result.Should().BeTrue();
+        observedToken.CanBeCanceled.Should().BeTrue();
+        observedToken.IsCancellationRequested.Should().BeTrue();
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                "resource",
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
+                releaseOnDispose: true,
+                monitorLease: true,
+                autoExtend: false,
+                cancellationToken: Arg.Any<CancellationToken>()
             );
     }
 }
