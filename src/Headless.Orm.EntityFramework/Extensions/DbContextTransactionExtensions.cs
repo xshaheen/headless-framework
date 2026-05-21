@@ -2,8 +2,7 @@
 
 using System.Data;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>

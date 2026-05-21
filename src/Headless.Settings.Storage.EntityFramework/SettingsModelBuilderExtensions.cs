@@ -1,22 +1,31 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 [PublicAPI]
 public static class SettingsModelBuilderExtensions
 {
-    public static string DefaultSettingValuesTableName { get; set; } = "SettingValues";
-
-    public static string DefaultSettingDefinitionTableName { get; set; } = "SettingDefinitions";
-
-    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, string schema = "settings")
+    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, DbContext context)
     {
+        Argument.IsNotNull(context);
+
+        var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
+        modelBuilder.AddSettingsConfiguration(options);
+    }
+
+    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, SettingsStorageOptions options)
+    {
+        Argument.IsNotNull(options);
+
         modelBuilder.Entity<SettingValueRecord>(b =>
         {
-            b.ToTable(DefaultSettingValuesTableName, schema);
+            b.ToTable(options.SettingValuesTableName, options.Schema);
             b.ConfigureHeadlessConvention();
             b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
@@ -40,7 +49,7 @@ public static class SettingsModelBuilderExtensions
 
         modelBuilder.Entity<SettingDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultSettingDefinitionTableName, schema);
+            b.ToTable(options.SettingDefinitionsTableName, options.Schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();

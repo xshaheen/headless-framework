@@ -9,8 +9,7 @@ using NetTopologySuite.Operation.Valid;
 using NetTopologySuite.Precision;
 using NetTopologySuite.Simplify;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace NetTopologySuite.Geometries;
 
 [PublicAPI]

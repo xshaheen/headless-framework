@@ -3,8 +3,7 @@
 using CommunityToolkit.HighPerformance;
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 #pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.

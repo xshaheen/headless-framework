@@ -7,9 +7,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
 using Headless.Features;
 using Headless.Permissions;
-using Headless.Permissions.Storage.EntityFramework;
 using Headless.Settings;
-using Headless.Settings.Storage.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 
 // To add a migration use:

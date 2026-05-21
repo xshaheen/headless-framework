@@ -5,7 +5,7 @@ using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 public sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,

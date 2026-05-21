@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 #pragma warning disable CA1000 // Do not declare static members on generic types
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Cache value.</summary>

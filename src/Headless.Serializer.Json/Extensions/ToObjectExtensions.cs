@@ -5,8 +5,7 @@ using System.Diagnostics;
 using System.Text.Json.Nodes;
 using Headless.Serializer;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 [PublicAPI]

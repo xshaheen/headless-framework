@@ -2,8 +2,7 @@
 
 using System.Collections.ObjectModel;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Blobs;
 
 using NextPageFunc = Func<PagedFileListResult, CancellationToken, ValueTask<INextPageResult>>;

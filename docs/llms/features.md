@@ -34,6 +34,7 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-1)
         - [Using Built-in DbContext](#using-built-in-dbcontext)
+        - [Custom Schema / Table Names](#custom-schema--table-names)
         - [Using Custom DbContext](#using-custom-dbcontext)
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
@@ -62,10 +63,10 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 ## Agent Instructions
 
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
-- Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddFeature()`.
+- Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
 - Storage registration: use `AddFeaturesManagementDbContextStorage<TDbContext>()` for custom DbContext, or the overload with `Action<DbContextOptionsBuilder>` for a standalone context.
-- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.ConfigureFeatureManagement()` in `OnModelCreating`.
+- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.AddFeaturesConfiguration(this)` in `OnModelCreating`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
 - Gate access with `RequiresFeatureAttribute` on controllers/actions.
@@ -121,8 +122,8 @@ public class MyFeatureDefinitionProvider : IFeatureDefinitionProvider
     {
         var group = context.AddGroup("App.Features");
 
-        group.AddFeature("MaxUsers", defaultValue: "10");
-        group.AddFeature("EnableReports", defaultValue: "false");
+        group.AddChild("MaxUsers", defaultValue: "10");
+        group.AddChild("EnableReports", defaultValue: "false");
     }
 }
 ```
@@ -225,6 +226,7 @@ Provides persistent storage for feature definitions and values using Entity Fram
 
 - `IFeaturesDbContext` - DbContext interface for features
 - `FeaturesDbContext` - Ready-to-use DbContext
+- `FeaturesStorageOptions` - Schema and table-name configuration
 - EF repositories for feature definitions and values
 - Model builder extensions for custom DbContext integration
 - Pooled DbContext factory support
@@ -247,10 +249,26 @@ builder.Services.AddFeaturesManagementDbContextStorage(options =>
 );
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddFeaturesManagementDbContextStorage(
+    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Features")),
+    storage =>
+    {
+        storage.Schema = "app_features";
+        storage.FeatureValuesTableName = "FeatureValues";
+        storage.FeatureDefinitionsTableName = "FeatureDefinitions";
+        storage.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions";
+    }
+);
+```
+
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext : DbContext, IFeaturesDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), IFeaturesDbContext
 {
     public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
     public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
@@ -258,25 +276,37 @@ public class AppDbContext : DbContext, IFeaturesDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ConfigureFeatureManagement();
+        modelBuilder.AddFeaturesConfiguration(this);
     }
 }
 
 // Registration
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_features";
+});
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext setup.
+`FeaturesStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "features"`
+- `FeatureValuesTableName = "FeatureValues"`
+- `FeatureDefinitionsTableName = "FeatureDefinitions"`
+- `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty.
 
 ## Dependencies
 
 - `Headless.Features.Core`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
 
 - Registers `IFeatureDefinitionRecordRepository` as singleton
 - Registers `IFeatureValueRecordRepository` as singleton
+- Registers validated `FeaturesStorageOptions`
 - Uses pooled DbContext factory for performance

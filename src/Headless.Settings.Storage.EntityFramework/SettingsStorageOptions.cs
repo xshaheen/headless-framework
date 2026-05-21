@@ -1,0 +1,25 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using FluentValidation;
+
+namespace Headless.Settings;
+
+[PublicAPI]
+public sealed class SettingsStorageOptions
+{
+    public string Schema { get; set; } = "settings";
+
+    public string SettingValuesTableName { get; set; } = "SettingValues";
+
+    public string SettingDefinitionsTableName { get; set; } = "SettingDefinitions";
+}
+
+internal sealed class SettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
+{
+    public SettingsStorageOptionsValidator()
+    {
+        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.SettingValuesTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+    }
+}

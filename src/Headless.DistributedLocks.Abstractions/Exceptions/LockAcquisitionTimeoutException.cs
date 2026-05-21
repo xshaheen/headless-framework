@@ -2,8 +2,7 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>Exception raised when acquiring a distributed lock exceeds the configured timeout.</summary>

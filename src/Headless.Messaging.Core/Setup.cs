@@ -13,8 +13,7 @@ using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>

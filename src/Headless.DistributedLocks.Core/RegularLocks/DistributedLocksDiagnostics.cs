@@ -4,8 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Constants;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 internal static class DistributedLocksDiagnostics

@@ -2,8 +2,10 @@
 
 using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 [PublicAPI]
 public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(options), IPermissionsDbContext
@@ -17,6 +19,25 @@ public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(o
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddPermissionsConfiguration();
+
+        modelBuilder.AddPermissionsConfiguration(this);
+    }
+}
+
+[PublicAPI]
+public sealed class PermissionsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+{
+    public object Create(DbContext context, bool designTime)
+    {
+        var options = context.GetService<IOptions<PermissionsStorageOptions>>().Value;
+
+        return (
+            context.GetType(),
+            designTime,
+            options.Schema,
+            options.PermissionGrantsTableName,
+            options.PermissionDefinitionsTableName,
+            options.PermissionGroupDefinitionsTableName
+        );
     }
 }

@@ -65,6 +65,11 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
 
         services
             .AddFeaturesManagementCore()
-            .AddFeaturesManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddFeaturesManagementDbContextStorage(
+                options => options.UseNpgsql(Fixture.SqlConnectionString),
+                ConfigureFeaturesStorage
+            );
     }
+
+    protected virtual void ConfigureFeaturesStorage(FeaturesStorageOptions options) { }
 }

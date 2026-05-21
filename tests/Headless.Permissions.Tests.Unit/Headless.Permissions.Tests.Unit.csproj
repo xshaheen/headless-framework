@@ -18,6 +18,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

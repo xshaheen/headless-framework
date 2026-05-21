@@ -5,8 +5,7 @@ using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary><see cref="IServiceCollection"/> extension methods.</summary>

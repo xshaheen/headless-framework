@@ -10,6 +10,7 @@ Provides persistent storage for feature definitions and values using Entity Fram
 
 - `IFeaturesDbContext` - DbContext interface for features
 - `FeaturesDbContext` - Ready-to-use DbContext
+- `FeaturesStorageOptions` - Schema and table-name configuration
 - EF repositories for feature definitions and values
 - Model builder extensions for custom DbContext integration
 - Pooled DbContext factory support
@@ -32,10 +33,26 @@ builder.Services.AddFeaturesManagementDbContextStorage(options =>
 );
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddFeaturesManagementDbContextStorage(
+    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Features")),
+    storage =>
+    {
+        storage.Schema = "app_features";
+        storage.FeatureValuesTableName = "FeatureValues";
+        storage.FeatureDefinitionsTableName = "FeatureDefinitions";
+        storage.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions";
+    }
+);
+```
+
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext : DbContext, IFeaturesDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), IFeaturesDbContext
 {
     public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
     public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
@@ -43,25 +60,55 @@ public class AppDbContext : DbContext, IFeaturesDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ConfigureFeatureManagement();
+        modelBuilder.AddFeaturesConfiguration(this);
     }
 }
 
 // Registration
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_features";
+});
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext setup.
+`FeaturesStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "features"`
+- `FeatureValuesTableName = "FeatureValues"`
+- `FeatureDefinitionsTableName = "FeatureDefinitions"`
+- `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty (whitespace-only values are rejected).
+
+### Custom DbContext + custom schema: per-DbContext EF model cache
+
+The dedicated `FeaturesDbContext` registration (`AddFeaturesManagementDbContextStorage(o => ...)`) wires a custom `IModelCacheKeyFactory` that mixes the storage options into the EF compiled-model cache key. The shared-context overload `AddFeaturesManagementDbContextStorage<TContext>` does not — your `DbContextOptionsBuilder` belongs to the host app. Apply the same replacement yourself so the EF model cache picks up your storage options:
+
+```csharp
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+    options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
+});
+builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_features";
+});
+```
+
+`FeaturesStorageModelCacheKeyFactory` is exported as `public sealed` for this purpose. A single process that registers a single storage configuration on its shared `DbContext` can omit the replacement; add it whenever the same `TContext` type is configured with different storage options at different points in the process lifetime (for example, integration test fixtures that re-bind the options between classes).
 
 ## Dependencies
 
 - `Headless.Features.Core`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
 
 - Registers `IFeatureDefinitionRecordRepository` as singleton
 - Registers `IFeatureValueRecordRepository` as singleton
+- Registers validated `FeaturesStorageOptions`
 - Uses pooled DbContext factory for performance

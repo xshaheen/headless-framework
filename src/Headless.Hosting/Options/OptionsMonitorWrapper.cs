@@ -2,8 +2,7 @@
 
 using System.Reactive.Disposables;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Options;
 
 /// <summary><see cref="IOptionsMonitor{TOptions}"/> wrapper that returns the options instance.</summary>

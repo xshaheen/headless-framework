@@ -1,21 +1,31 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+using Headless.Checks;
+
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
+[PublicAPI]
 public static class TimeProviderExtensions
 {
-    public static async Task DelayUntilElapsedOrCancel(
-        this TimeProvider timeProvider,
-        TimeSpan delay,
-        CancellationToken cancellationToken = default
-    )
+    extension(TimeProvider timeProvider)
     {
-        try
+        public async Task DelayUntilElapsedOrCancel(TimeSpan delay, CancellationToken cancellationToken = default)
         {
-            await timeProvider.Delay(delay, cancellationToken);
+            try
+            {
+                await timeProvider.Delay(delay, cancellationToken);
+            }
+            catch (OperationCanceledException) { }
         }
-        catch (OperationCanceledException) { }
+
+        public Task DelayedAsync(
+            TimeSpan delay,
+            Func<CancellationToken, Task> action,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.DelayedAsync(delay, action, timeProvider, cancellationToken);
+        }
     }
 }

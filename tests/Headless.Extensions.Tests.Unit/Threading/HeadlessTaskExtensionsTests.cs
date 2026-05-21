@@ -1,11 +1,11 @@
 using System.Diagnostics;
-using Headless.Core;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Tests.Core;
+namespace Tests.Threading;
 
-public sealed class RunTests : TestBase
+// ReSharper disable AccessToDisposedClosure
+public sealed class HeadlessTaskExtensionsTests : TestBase
 {
     [Fact]
     public async Task should_complete_task_after_delay_when_delayed_async_is_called()
@@ -23,7 +23,7 @@ public sealed class RunTests : TestBase
 
         // when
         var timestamp = Stopwatch.GetTimestamp();
-        await Run.DelayedAsync(delay, action, cancellationToken: AbortToken);
+        await Task.DelayedAsync(delay, action, cancellationToken: AbortToken);
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
         // then
@@ -38,7 +38,7 @@ public sealed class RunTests : TestBase
         var delay = TimeSpan.FromMilliseconds(-100);
 
         // when
-        var action = async () => await Run.DelayedAsync(delay, _ => Task.CompletedTask, cancellationToken: AbortToken);
+        var action = async () => await Task.DelayedAsync(delay, _ => Task.CompletedTask, cancellationToken: AbortToken);
 
         // then
         await action.Should().ThrowAsync<ArgumentException>();
@@ -51,7 +51,7 @@ public sealed class RunTests : TestBase
         var delay = TimeSpan.FromMilliseconds(100);
 
         // when
-        var action = async () => await Run.DelayedAsync(delay, null!, cancellationToken: AbortToken);
+        var action = async () => await Task.DelayedAsync(delay, null!, cancellationToken: AbortToken);
 
         // then
         await action.Should().ThrowAsync<ArgumentNullException>();
@@ -66,7 +66,7 @@ public sealed class RunTests : TestBase
         await cts.CancelAsync();
 
         // when
-        var action = async () => await Run.DelayedAsync(delay, _ => Task.CompletedTask, cancellationToken: cts.Token);
+        var action = async () => await Task.DelayedAsync(delay, _ => Task.CompletedTask, cancellationToken: cts.Token);
 
         // then
         await action.Should().ThrowAsync<OperationCanceledException>();
@@ -88,7 +88,7 @@ public sealed class RunTests : TestBase
         }
 
         // when
-        var task = Run.DelayedAsync(delay, action, timeProvider: fakeTime, cancellationToken: AbortToken);
+        var task = Task.DelayedAsync(delay, action, timeProvider: fakeTime, cancellationToken: AbortToken);
 
         // then - action should not execute before advancing time
         await Task.Delay(50, AbortToken);

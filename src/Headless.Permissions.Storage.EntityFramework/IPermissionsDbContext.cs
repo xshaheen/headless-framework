@@ -3,7 +3,7 @@
 using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 public interface IPermissionsDbContext
 {

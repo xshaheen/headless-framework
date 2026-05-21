@@ -3,8 +3,7 @@
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Reflection;
 
 #pragma warning disable RCS1047 // Remove Async suffix.

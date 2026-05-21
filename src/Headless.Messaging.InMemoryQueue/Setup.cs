@@ -4,8 +4,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryQueue;
 using Headless.Messaging.Transport;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Extension methods for configuring messaging with In-Memory message queue.</summary>

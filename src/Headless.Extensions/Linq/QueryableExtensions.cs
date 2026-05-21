@@ -3,8 +3,7 @@
 using System.Linq.Expressions;
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Linq;
 
 [PublicAPI]

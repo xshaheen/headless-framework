@@ -3,8 +3,7 @@
 using Headless.Checks;
 using Microsoft.AspNetCore.Hosting;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
 
 /// <summary>

@@ -6,8 +6,7 @@ using Headless.Checks;
 using Headless.Core;
 using Headless.IO;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.IO;
 
 [PublicAPI]

@@ -2,8 +2,7 @@
 
 using System.Diagnostics;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Nito.AsyncEx;
 
 [PublicAPI]

@@ -2,8 +2,10 @@
 
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Storage.EntityFramework;
+namespace Headless.Settings;
 
 [PublicAPI]
 public sealed class SettingsDbContext(DbContextOptions options) : DbContext(options), ISettingsDbContext
@@ -15,6 +17,24 @@ public sealed class SettingsDbContext(DbContextOptions options) : DbContext(opti
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddSettingsConfiguration();
+
+        modelBuilder.AddSettingsConfiguration(this);
+    }
+}
+
+[PublicAPI]
+public sealed class SettingsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+{
+    public object Create(DbContext context, bool designTime)
+    {
+        var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
+
+        return (
+            context.GetType(),
+            designTime,
+            options.Schema,
+            options.SettingValuesTableName,
+            options.SettingDefinitionsTableName
+        );
     }
 }

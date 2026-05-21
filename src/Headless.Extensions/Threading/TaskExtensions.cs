@@ -3,8 +3,7 @@
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Threading.Tasks;
 
 [PublicAPI]
@@ -261,6 +260,43 @@ public static class HeadlessTaskExtensions
         await task.ConfigureAwait(continueOnCapturedContext);
     }
 #pragma warning restore VSTHRD003
+
+    #endregion
+
+    #region Run Delayed
+
+    extension(Task)
+    {
+        public static Task DelayedAsync(
+            TimeSpan delay,
+            Func<CancellationToken, Task> action,
+            TimeProvider? timeProvider = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Argument.IsPositive(delay);
+            Argument.IsNotNull(action);
+
+            timeProvider ??= TimeProvider.System;
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.Run(
+                async () =>
+                {
+                    if (delay.Ticks > 0)
+                    {
+                        await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    await action(cancellationToken).ConfigureAwait(false);
+                },
+                cancellationToken
+            );
+        }
+    }
 
     #endregion
 }

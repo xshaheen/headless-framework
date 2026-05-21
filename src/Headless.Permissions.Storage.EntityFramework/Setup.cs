@@ -2,36 +2,54 @@
 
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Permissions.Storage.EntityFramework;
+namespace Headless.Permissions;
 
 [PublicAPI]
 public static class EntityFrameworkPermissionsSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementDbContextStorage(Action<DbContextOptionsBuilder> setupAction)
+        public IServiceCollection AddPermissionsManagementDbContextStorage(
+            Action<DbContextOptionsBuilder> setupAction,
+            Action<PermissionsStorageOptions>? configureStorage = null
+        )
         {
-            services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+            services.AddPooledDbContextFactory<PermissionsDbContext>(options =>
+            {
+                setupAction(options);
+                options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+            });
+            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
             return services;
         }
 
         public IServiceCollection AddPermissionsManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction
+            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
+            Action<PermissionsStorageOptions>? configureStorage = null
         )
         {
-            services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+            services.AddPooledDbContextFactory<PermissionsDbContext>(
+                (provider, options) =>
+                {
+                    setupAction(provider, options);
+                    options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+                }
+            );
+            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
             return services;
         }
 
-        public IServiceCollection AddPermissionsManagementDbContextStorage<TContext>()
+        public IServiceCollection AddPermissionsManagementDbContextStorage<TContext>(
+            Action<PermissionsStorageOptions>? configureStorage = null
+        )
             where TContext : DbContext, IPermissionsDbContext
         {
+            services.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(configureStorage);
             services.AddSingleton<IPermissionGrantRepository, EfPermissionGrantRepository<TContext>>();
 
             services.AddSingleton<

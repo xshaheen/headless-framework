@@ -12,6 +12,7 @@ Provides EF Core repository implementations for storing setting definitions and 
 - `EfSettingDefinitionRecordRepository` - Definition record storage
 - `SettingsDbContext` - Dedicated settings DbContext
 - `ISettingsDbContext` - Interface for shared DbContext integration
+- `SettingsStorageOptions` - Schema and table-name configuration
 - Model builder extensions for entity configuration
 
 ## Installation
@@ -37,18 +38,33 @@ builder.Services.AddSettingsManagementDbContextStorage(options =>
 });
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddSettingsManagementDbContextStorage(
+    options => options.UseNpgsql(connectionString),
+    storage =>
+    {
+        storage.Schema = "app_settings";
+        storage.SettingValuesTableName = "SettingValues";
+        storage.SettingDefinitionsTableName = "SettingDefinitions";
+    }
+);
+```
+
 ### Option 2: Shared DbContext
 
 ```csharp
 // In your DbContext
-public class AppDbContext : DbContext, ISettingsDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), ISettingsDbContext
 {
     public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
     public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplySettingsConfiguration();
+        modelBuilder.AddSettingsConfiguration(this);
     }
 }
 
@@ -57,7 +73,10 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 builder.Services.AddSettingsManagementCore();
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_settings";
+});
 ```
 
 ## Configuration
@@ -70,6 +89,32 @@ builder.Services.AddStringEncryptionService(
 );
 ```
 
+`SettingsStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "settings"`
+- `SettingValuesTableName = "SettingValues"`
+- `SettingDefinitionsTableName = "SettingDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty (whitespace-only values are rejected).
+
+### Custom DbContext + custom schema: per-DbContext EF model cache
+
+The dedicated `SettingsDbContext` registration (`AddSettingsManagementDbContextStorage(o => ...)`) wires a custom `IModelCacheKeyFactory` that mixes the storage options into the EF compiled-model cache key. The shared-context overload `AddSettingsManagementDbContextStorage<TContext>` does not — your `DbContextOptionsBuilder` belongs to the host app. Apply the same replacement yourself so the EF model cache picks up your storage options:
+
+```csharp
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+    options.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
+});
+builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_settings";
+});
+```
+
+`SettingsStorageModelCacheKeyFactory` is exported as `public sealed` for this purpose. A single process that registers a single storage configuration on its shared `DbContext` can omit the replacement; add it whenever the same `TContext` type is configured with different storage options at different points in the process lifetime (for example, integration test fixtures that re-bind the options between classes).
+
 ## Dependencies
 
 - `Headless.Settings.Core`
@@ -80,4 +125,5 @@ builder.Services.AddStringEncryptionService(
 
 - Registers `ISettingValueRecordRepository` as singleton
 - Registers `ISettingDefinitionRecordRepository` as singleton
+- Registers validated `SettingsStorageOptions`
 - Optionally registers pooled `SettingsDbContext` factory
