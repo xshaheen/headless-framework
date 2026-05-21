@@ -36,6 +36,9 @@ public sealed class DistributedLockProvider(
         StringComparer.Ordinal
     );
 
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WeakReference<LeaseMonitor>>>
+        _activeMonitors = new(StringComparer.Ordinal);
+
     private readonly Lock _resetEventLock = new();
 
     ILogger IHaveLogger.Logger => logger;
@@ -81,6 +84,8 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -91,6 +96,8 @@ public sealed class DistributedLockProvider(
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose,
+                monitorLease,
+                autoExtend,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -110,6 +117,8 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -119,6 +128,8 @@ public sealed class DistributedLockProvider(
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        var effectiveMonitorLease = monitorLease || autoExtend;
+        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, effectiveMonitorLease);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
@@ -141,6 +152,9 @@ public sealed class DistributedLockProvider(
                     timeUntilExpires,
                     timestamp,
                     releaseOnDispose,
+                    effectiveMonitorLease,
+                    autoExtend,
+                    leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -264,14 +278,14 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(
+        return _CreateLockHandle(
             resource,
             lockId,
+            leaseDuration,
             timeWaitedForLock,
-            this,
             releaseOnDispose,
-            timeProvider,
-            logger
+            effectiveMonitorLease,
+            autoExtend
         );
     }
 
@@ -281,6 +295,9 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires,
         long timestamp,
         bool releaseOnDispose,
+        bool monitorLease,
+        bool autoExtend,
+        TimeSpan leaseDuration,
         CancellationToken callerToken
     )
     {
@@ -347,15 +364,53 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(
+        return _CreateLockHandle(
             resource,
             lockId,
+            leaseDuration,
+            timeWaitedForLock,
+            releaseOnDispose,
+            monitorLease,
+            autoExtend
+        );
+    }
+
+    private DisposableDistributedLock _CreateLockHandle(
+        string resource,
+        string lockId,
+        TimeSpan leaseDuration,
+        TimeSpan timeWaitedForLock,
+        bool releaseOnDispose,
+        bool monitorLease,
+        bool autoExtend
+    )
+    {
+        var handle = new DisposableDistributedLock(
+            resource,
+            lockId,
+            leaseDuration,
             timeWaitedForLock,
             this,
             releaseOnDispose,
+            autoExtend,
+            options,
             timeProvider,
+            _DeregisterMonitor,
             logger
         );
+
+        if (!monitorLease)
+        {
+            return handle;
+        }
+
+#pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
+        var monitor = new LeaseMonitor(handle, timeProvider, logger);
+#pragma warning restore CA2000
+        _RegisterMonitor(resource, lockId, monitor);
+        handle.AttachMonitor(monitor);
+
+        return handle;
     }
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
@@ -538,6 +593,23 @@ public sealed class DistributedLockProvider(
 
     #endregion
 
+    #region Lease validation
+
+    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+
+        return _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) => await state._storage.GetAsync(state.resource, ct).ConfigureAwait(false),
+                (_storage, resource),
+                cancellationToken
+            )
+            .AsTask();
+    }
+
+    #endregion
+
     #region IsLocked
 
     public async Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -646,6 +718,18 @@ public sealed class DistributedLockProvider(
         return timeUntilExpires is null ? DefaultTimeUntilExpires
             : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
             : Argument.IsPositive(timeUntilExpires.Value);
+    }
+
+    private static TimeSpan _RequireFiniteLeaseDuration(TimeSpan? timeUntilExpires, bool monitorLease)
+    {
+        if (timeUntilExpires is { } leaseDuration)
+        {
+            return leaseDuration;
+        }
+
+        Ensure.False(monitorLease, "Lease monitoring requires a finite timeUntilExpires value.");
+
+        return Timeout.InfiniteTimeSpan;
     }
 
     private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
@@ -785,6 +869,66 @@ public sealed class DistributedLockProvider(
         {
             autoResetEvent.Target.Set();
         }
+
+        _NudgeActiveMonitors(message.Resource);
+    }
+
+    private void _RegisterMonitor(string resource, string lockId, LeaseMonitor monitor)
+    {
+        var monitors = _activeMonitors.GetOrAdd(
+            resource,
+            static _ => new ConcurrentDictionary<string, WeakReference<LeaseMonitor>>(StringComparer.Ordinal)
+        );
+
+        monitors[lockId] = new WeakReference<LeaseMonitor>(monitor);
+        logger.LogLeaseMonitorRegistered(resource, lockId);
+    }
+
+    private void _DeregisterMonitor(string resource, string lockId)
+    {
+        if (!_activeMonitors.TryGetValue(resource, out var monitors))
+        {
+            return;
+        }
+
+        monitors.TryRemove(lockId, out _);
+        logger.LogLeaseMonitorDeregistered(resource, lockId);
+
+        if (monitors.IsEmpty)
+        {
+            _activeMonitors.TryRemove(resource, out _);
+        }
+    }
+
+    private void _NudgeActiveMonitors(string resource)
+    {
+        if (!_activeMonitors.TryGetValue(resource, out var monitors))
+        {
+            return;
+        }
+
+        foreach (var (lockId, weakReference) in monitors)
+        {
+            if (weakReference.TryGetTarget(out var monitor))
+            {
+                monitor.TriggerImmediateValidation();
+                logger.LogLeaseMonitorNudged(resource, lockId);
+
+                continue;
+            }
+
+            monitors.TryRemove(lockId, out _);
+        }
+
+        if (monitors.IsEmpty)
+        {
+            _activeMonitors.TryRemove(resource, out _);
+        }
+    }
+
+    internal int GetActiveMonitorCount(string resource)
+    {
+        return _activeMonitors.TryGetValue(resource, out var monitors) ? monitors.Count : 0;
     }
 
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)

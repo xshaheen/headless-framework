@@ -1,0 +1,49 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.DistributedLocks;
+using Headless.Testing.Tests;
+
+namespace Tests.Exceptions;
+
+public sealed class LockHandleLostExceptionTests : TestBase
+{
+    [Fact]
+    public void should_store_resource_lock_id_and_default_message()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+
+        // when
+        var exception = new LockHandleLostException(resource, lockId);
+
+        // then
+        exception.Resource.Should().Be(resource);
+        exception.LockId.Should().Be(lockId);
+        exception.Message.Should().Contain(resource).And.Contain(lockId);
+    }
+
+    [Theory]
+    [InlineData(null, "lock-id")]
+    [InlineData("", "lock-id")]
+    [InlineData("resource", null)]
+    [InlineData("resource", "")]
+    public void should_throw_when_resource_or_lock_id_is_null_or_whitespace(string? resource, string? lockId)
+    {
+        // when
+        var act = () => new LockHandleLostException(resource!, lockId!);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_inherit_from_distributed_lock_exception()
+    {
+        // when
+        var exception = new LockHandleLostException("resource", "lock-id");
+
+        // then
+        exception.Should().BeAssignableTo<DistributedLockException>();
+    }
+}

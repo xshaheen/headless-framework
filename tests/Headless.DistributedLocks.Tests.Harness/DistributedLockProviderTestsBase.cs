@@ -485,4 +485,64 @@ public abstract class DistributedLockProviderTestsBase : TestBase
     }
 
     #endregion
+
+    #region Lease Monitoring Tests
+
+    public virtual async Task should_expose_none_handle_lost_token_without_monitoring()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.TryAcquireAsync(resource);
+
+        handle.Should().NotBeNull();
+        handle!.HandleLostToken.Should().Be(CancellationToken.None);
+    }
+
+    public virtual async Task should_cancel_handle_lost_token_after_ttl_without_auto_extend()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromMilliseconds(300),
+            monitorLease: true
+        );
+
+        handle.Should().NotBeNull();
+        await _WaitUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested, TimeSpan.FromSeconds(2));
+
+        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    public virtual async Task should_keep_lock_past_ttl_when_auto_extend_is_enabled()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 10);
+
+        await using var handle = await locker.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromMilliseconds(300),
+            autoExtend: true
+        );
+
+        handle.Should().NotBeNull();
+        await Task.Delay(TimeSpan.FromMilliseconds(900), AbortToken);
+
+        (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+        handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> condition, TimeSpan timeout)
+    {
+        var stopAt = DateTimeOffset.UtcNow + timeout;
+
+        while (DateTimeOffset.UtcNow < stopAt && !condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(25), TestContext.Current.CancellationToken);
+        }
+    }
+
+    #endregion
 }

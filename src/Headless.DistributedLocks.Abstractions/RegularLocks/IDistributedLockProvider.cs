@@ -33,12 +33,22 @@ public interface IDistributedLockProvider
     /// <see langword="true"/> to release the lock when the returned handle is disposed;
     /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
     /// </param>
+    /// <param name="monitorLease">
+    /// <see langword="true"/> to enable background lease monitoring and a live
+    /// <see cref="IDistributedLock.HandleLostToken"/> signal.
+    /// </param>
+    /// <param name="autoExtend">
+    /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
+    /// <paramref name="monitorLease"/>.
+    /// </param>
     /// <param name="cancellationToken"></param>
     Task<IDistributedLock> AcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     );
 
@@ -63,6 +73,14 @@ public interface IDistributedLockProvider
     /// <see langword="true"/> to release the lock when the returned handle is disposed;
     /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
     /// </param>
+    /// <param name="monitorLease">
+    /// <see langword="true"/> to enable background lease monitoring and a live
+    /// <see cref="IDistributedLock.HandleLostToken"/> signal.
+    /// </param>
+    /// <param name="autoExtend">
+    /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
+    /// <paramref name="monitorLease"/>.
+    /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>
     /// A task that represents the asynchronous operation.
@@ -82,6 +100,8 @@ public interface IDistributedLockProvider
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     );
 
@@ -96,6 +116,9 @@ public interface IDistributedLockProvider
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>Gets the current lock id for a specified <paramref name="resource"/>, or null when it is not locked.</summary>
+    Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Releases a resource lock for a specified <paramref name="resource"/>

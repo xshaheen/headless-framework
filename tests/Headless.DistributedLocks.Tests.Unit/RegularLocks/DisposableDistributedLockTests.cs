@@ -88,6 +88,19 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public void should_return_none_handle_lost_token_when_monitor_is_absent()
+    {
+        // given
+        var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
+
+        // when
+        var token = sut.HandleLostToken;
+
+        // then
+        token.Should().Be(CancellationToken.None);
+    }
+
+    [Fact]
     public async Task should_release_explicitly_when_release_on_dispose_is_false()
     {
         // given
@@ -121,6 +134,40 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_route_auto_extend_lease_validation_to_renew()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var sut = _CreateLock(resource, lockId, autoExtend: true);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then
+        result.Should().Be(LeaseMonitor.LeaseState.Renewed);
+        await _lockProvider.Received(1).RenewAsync(resource, lockId, TimeSpan.FromSeconds(10), AbortToken);
+    }
+
+    [Fact]
+    public async Task should_route_monitor_only_lease_validation_to_get_lock_id()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        _lockProvider.GetLockIdAsync(resource, AbortToken).Returns(lockId);
+        var sut = _CreateLock(resource, lockId);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then
+        result.Should().Be(LeaseMonitor.LeaseState.Held);
+        await _lockProvider.Received(1).GetLockIdAsync(resource, AbortToken);
+    }
+
+    [Fact]
     public async Task should_calculate_locked_duration()
     {
         // given
@@ -143,16 +190,21 @@ public sealed class DisposableDistributedLockTests : TestBase
         string resource,
         string lockId,
         TimeSpan? timeWaitedForLock = null,
-        bool releaseOnDispose = true
+        bool releaseOnDispose = true,
+        bool autoExtend = false
     )
     {
         return new DisposableDistributedLock(
             resource,
             lockId,
+            TimeSpan.FromSeconds(10),
             timeWaitedForLock ?? TimeSpan.Zero,
             _lockProvider,
             releaseOnDispose,
+            autoExtend,
+            new DistributedLockOptions(),
             _timeProvider,
+            deregisterMonitor: null,
             LoggerFactory.CreateLogger(nameof(DisposableDistributedLock))
         );
     }

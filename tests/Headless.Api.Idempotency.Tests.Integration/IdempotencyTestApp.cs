@@ -362,6 +362,8 @@ internal static class IdempotencyTestApp
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
+            bool monitorLease = false,
+            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
@@ -370,6 +372,8 @@ internal static class IdempotencyTestApp
                         timeUntilExpires,
                         acquireTimeout,
                         releaseOnDispose,
+                        monitorLease,
+                        autoExtend,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -381,6 +385,8 @@ internal static class IdempotencyTestApp
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
+            bool monitorLease = false,
+            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
@@ -436,6 +442,8 @@ internal static class IdempotencyTestApp
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
+                monitorLease: false,
+                autoExtend: false,
                 cancellationToken: cancellationToken
             );
         }
@@ -446,6 +454,9 @@ internal static class IdempotencyTestApp
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -644,6 +655,8 @@ internal static class IdempotencyTestApp
         public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
 
         public Task ReleaseAsync()
         {

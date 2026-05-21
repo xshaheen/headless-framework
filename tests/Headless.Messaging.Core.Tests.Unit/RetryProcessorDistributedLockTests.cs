@@ -179,6 +179,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
@@ -232,6 +234,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
         await storage.Received().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
@@ -253,6 +257,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -374,6 +380,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
+            bool monitorLease = false,
+            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
@@ -382,6 +390,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                         timeUntilExpires,
                         acquireTimeout,
                         releaseOnDispose,
+                        monitorLease,
+                        autoExtend,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -396,6 +406,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
+            bool monitorLease = false,
+            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
@@ -419,6 +431,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
+                monitorLease: false,
+                autoExtend: false,
                 cancellationToken: cancellationToken
             );
         }
@@ -429,6 +443,9 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => Task.FromResult(false);
+
+        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(null);
 
         public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
@@ -458,6 +475,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         public int RenewalCount => Volatile.Read(ref _renewalCount);
         public DateTimeOffset DateAcquired => DateTimeOffset.UtcNow;
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
 
         public Task ReleaseAsync() => Task.CompletedTask;
 

@@ -710,6 +710,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ => throw new InvalidOperationException("lock store down"));
@@ -718,6 +720,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -776,6 +780,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ =>
@@ -797,6 +803,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -877,6 +885,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -914,6 +924,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(captured));
@@ -942,6 +954,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -977,6 +991,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1058,6 +1074,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
@@ -1120,6 +1138,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1188,6 +1208,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -1263,6 +1285,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )

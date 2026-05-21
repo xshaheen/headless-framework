@@ -131,5 +131,15 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     // Test helpers
     public void Clear() => _locks.Clear();
 
+    public void SetLock(string key, string lockId, TimeSpan? ttl = null)
+    {
+        _locks[key] = new LockEntry(lockId, ttl.HasValue ? DateTime.UtcNow.Add(ttl.Value) : null);
+    }
+
+    public void RemoveLock(string key)
+    {
+        _locks.TryRemove(key, out _);
+    }
+
     private sealed record LockEntry(string LockId, DateTime? Expiration);
 }

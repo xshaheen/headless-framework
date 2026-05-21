@@ -21,6 +21,8 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -34,6 +36,8 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
+        bool monitorLease = false,
+        bool autoExtend = false,
         CancellationToken cancellationToken = default
     )
     {
@@ -52,6 +56,13 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(true);
+    }
+
+    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult<string?>(null);
     }
 
     public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
@@ -99,6 +110,8 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
 
         public Task ReleaseAsync()
         {

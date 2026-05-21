@@ -45,6 +45,8 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -60,6 +62,8 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
@@ -79,6 +83,8 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
+                Arg.Any<bool>(),
                 Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
