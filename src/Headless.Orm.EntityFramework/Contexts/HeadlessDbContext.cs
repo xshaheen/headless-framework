@@ -14,6 +14,40 @@ public interface IHeadlessDbContext
     string? TenantId { get; }
 }
 
+/// <summary>
+/// Base <see cref="DbContext"/> with the framework's save pipeline, multi-tenancy filter,
+/// auditing, soft-delete, and domain-event dispatch wired in.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <b>Not poolable.</b> Do not register subclasses with <c>AddDbContextPool</c> or
+/// <c>AddPooledDbContextFactory</c>. Two independent reasons:
+/// </para>
+/// <list type="number">
+/// <item>
+/// <description>
+/// The instance holds a private <c>HeadlessDbContextRuntime</c> field that captures the
+/// scoped save pipeline (outbox dispatcher, audit persistence). Pooled instances would
+/// reuse a prior request's unit of work — a captive-dependency correctness bug. EF's own
+/// guidance: avoid pooling when the context maintains private state, since EF only resets
+/// state it is aware of.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// The constructor takes a second non-<see cref="DbContextOptions"/> parameter
+/// (<see cref="HeadlessDbContextServices"/>); the pooling path resolves contexts through a
+/// single-<see cref="DbContextOptions"/> constructor and does not support this shape.
+/// </description>
+/// </item>
+/// </list>
+/// <para>
+/// <c>ICurrentTenant</c> (AsyncLocal-backed) and <c>IClock</c> are not the blocker — only
+/// the save/outbox/audit pipeline is request-bound. Use a plain <see cref="DbContext"/>
+/// with <c>AddDbContextPool</c> for read-heavy hot paths that do not need the Headless
+/// write machinery.
+/// </para>
+/// </remarks>
 public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
 {
     private readonly HeadlessDbContextRuntime _runtime;
