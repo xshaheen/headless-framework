@@ -42,8 +42,13 @@ public sealed class LockAcquisitionTimeoutException : DistributedLockException
     /// <summary>The resource whose lock acquisition timed out.</summary>
     public string Resource { get; }
 
-    /// <summary>Throw shape for the <c>acquireTimeout: TimeSpan.Zero</c> fast-path (try-once contention).</summary>
-    public static LockAcquisitionTimeoutException ForFirstAttempt(string resource)
+    /// <summary>
+    /// Throw shape for the <c>acquireTimeout: TimeSpan.Zero</c> fast-path. The single storage
+    /// attempt observed contention; the caller asked for try-once semantics, so there is no
+    /// retry loop to surface as a "timeout elapsed" message.
+    /// </summary>
+    /// <param name="resource">The resource whose lock acquisition was attempted once and failed.</param>
+    public static LockAcquisitionTimeoutException ForTryOnceContention(string resource)
     {
         return new LockAcquisitionTimeoutException(
             Argument.IsNotNullOrWhiteSpace(resource),

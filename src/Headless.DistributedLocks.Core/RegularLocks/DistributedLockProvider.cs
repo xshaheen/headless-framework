@@ -96,7 +96,7 @@ public sealed class DistributedLockProvider(
         }
 
         throw acquireTimeout == TimeSpan.Zero
-            ? LockAcquisitionTimeoutException.ForFirstAttempt(resource)
+            ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
             : new LockAcquisitionTimeoutException(resource);
     }
 

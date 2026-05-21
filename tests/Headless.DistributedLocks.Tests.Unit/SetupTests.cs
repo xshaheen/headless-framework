@@ -73,8 +73,9 @@ public sealed class SetupTests : TestBase
         // start; outside a Host we trigger validation explicitly).
         _ = provider.GetRequiredService<DistributedLockOptions>();
 
-        // then
-        capturedLogs.Should().Contain(entry => entry.EventId.Id == 18 && entry.Level == LogLevel.Warning);
+        // then — ContainSingle guards against a regression where the validator fires per named
+        // options instance (would inflate the warning to N x duplicate noise at startup).
+        capturedLogs.Should().ContainSingle(entry => entry.EventId.Id == 18 && entry.Level == LogLevel.Warning);
 
         // The consumer was NOT registered (proves the warning is justified, not noise).
         services
