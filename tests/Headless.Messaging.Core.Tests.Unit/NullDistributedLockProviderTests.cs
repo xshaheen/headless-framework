@@ -1,16 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Internal;
+using Headless.DistributedLocks;
 
 namespace Tests;
 
-public sealed class NoOpDistributedLockProviderTests
+public sealed class NullDistributedLockProviderTests
 {
     [Fact]
     public async Task should_return_non_null_handle_when_TryAcquireAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
 
         // when
         var handle = await sut.TryAcquireAsync("test.resource");
@@ -25,7 +25,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_succeed_when_RenewAsync_called_on_handle()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -40,7 +40,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_increment_renewal_count_after_each_renew_async_call()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
@@ -58,7 +58,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_not_increment_renewal_count_when_RenewAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
@@ -78,7 +78,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_be_safe_to_DisposeAsync_multiple_times()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -97,7 +97,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_TryAcquireAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -112,7 +112,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_provider_RenewAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -127,7 +127,7 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_provider_ReleaseAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -142,13 +142,13 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_return_empty_list_when_ListActiveLocksAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when
         var locks = await sut.ListActiveLocksAsync();
 
-        // then — NoOp never tracks active locks (silent introspection contract)
+        // then — null provider never tracks active locks (silent introspection contract)
         locks.Should().NotBeNull();
         locks.Should().BeEmpty();
     }
@@ -157,13 +157,13 @@ public sealed class NoOpDistributedLockProviderTests
     public async Task should_return_zero_when_GetActiveLocksCountAsync_called()
     {
         // given
-        var sut = new NoOpDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when
         var count = await sut.GetActiveLocksCountAsync();
 
-        // then — NoOp never tracks active locks (silent introspection contract)
+        // then — null provider never tracks active locks (silent introspection contract)
         count.Should().Be(0L);
     }
 }

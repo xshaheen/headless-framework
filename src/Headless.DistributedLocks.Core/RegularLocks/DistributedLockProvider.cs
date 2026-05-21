@@ -4,10 +4,11 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
+using Polly;
+using Polly.Retry;
 
 #pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
@@ -15,14 +16,22 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher outboxPublisher,
+    IOutboxPublisher? outboxPublisher,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLockProvider> logger
-) : IDistributedLockProvider, IHaveLogger, IHaveTimeProvider
+) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
+    private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
+
+    // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
+    // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`.
+    private readonly ResiliencePipeline _releasePipeline = _BuildReleasePipeline(timeProvider, logger);
+
+    // Short pipeline for query/renew operations where 5 attempts mirror the prior default.
+    private readonly ResiliencePipeline _queryPipeline = _BuildQueryPipeline(timeProvider, logger);
 
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
         StringComparer.Ordinal
@@ -57,8 +66,6 @@ public sealed class DistributedLockProvider(
     // from PR #284 review.
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
 
-    private const int _MaxReleaseRetryAttempts = 15;
-
     // Configurable limits from options
     private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
     private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
@@ -70,15 +77,46 @@ public sealed class DistributedLockProvider(
 
     #region Acquire
 
+    public async Task<IDistributedLock> AcquireAsync(
+        string resource,
+        TimeSpan? timeUntilExpires = null,
+        TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ValidateAcquireTimeout(acquireTimeout);
+
+        var acquired = await TryAcquireAsync(
+                resource,
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (acquired is not null)
+        {
+            return acquired;
+        }
+
+        throw acquireTimeout == TimeSpan.Zero
+            ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+            : new LockAcquisitionTimeoutException(resource);
+    }
+
     public async Task<IDistributedLock?> TryAcquireAsync(
         string resource,
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
+        bool releaseOnDispose = true,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
+        _ValidateAcquireTimeout(acquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
@@ -98,7 +136,14 @@ public sealed class DistributedLockProvider(
         // fire and the lock-store stalls — F#2 from PR #284 review.
         if (acquireTimeout == TimeSpan.Zero)
         {
-            return await _TryAcquireOnceAsync(resource, lockId, timeUntilExpires, timestamp, cancellationToken)
+            return await _TryAcquireOnceAsync(
+                    resource,
+                    lockId,
+                    timeUntilExpires,
+                    timestamp,
+                    releaseOnDispose,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -200,6 +245,8 @@ public sealed class DistributedLockProvider(
             if (cts.IsCancellationRequested)
             {
                 logger.LogCancellationRequestedAfter(resource, lockId, timeWaitedForLock);
+
+                cancellationToken.ThrowIfCancellationRequested();
             }
             else
             {
@@ -218,7 +265,15 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+        return new DisposableDistributedLock(
+            resource,
+            lockId,
+            timeWaitedForLock,
+            this,
+            releaseOnDispose,
+            timeProvider,
+            logger
+        );
     }
 
     private async Task<IDistributedLock?> _TryAcquireOnceAsync(
@@ -226,6 +281,7 @@ public sealed class DistributedLockProvider(
         string lockId,
         TimeSpan? timeUntilExpires,
         long timestamp,
+        bool releaseOnDispose,
         CancellationToken callerToken
     )
     {
@@ -292,7 +348,15 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(resource, lockId, timeWaitedForLock, this, timeProvider, logger);
+        return new DisposableDistributedLock(
+            resource,
+            lockId,
+            timeWaitedForLock,
+            this,
+            releaseOnDispose,
+            timeProvider,
+            logger
+        );
     }
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
@@ -368,7 +432,7 @@ public sealed class DistributedLockProvider(
     private static TimeSpan _GetBackoffDelay(int attempt)
     {
         // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
-        var delayMs = _MinRetryDelay.TotalMilliseconds * Math.Pow(2, attempt);
+        var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));
         var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
 
         // Add jitter (±25%) to prevent thundering herd
@@ -388,28 +452,54 @@ public sealed class DistributedLockProvider(
 
         logger.LogReleaseStarted(resource, lockId);
 
-        var removed = await Run.WithRetriesAsync(
-                (_storage, resource, lockId, cancellationToken),
-                static state =>
-                {
-                    var (storage, resource, lockId, ct) = state;
+        // If a transient exception fires AFTER storage has already deleted the row but BEFORE
+        // we read the response, the retry's `RemoveIfEqualAsync` will return `false` (the
+        // record is gone). Without latching `true`, the final attempt's `false` would suppress
+        // the outbox publish and force waiters to fall back to polling backoff. We track
+        // whether ANY attempt observed `true` and treat it as authoritative; the lambda mutates
+        // `observedAttemptSucceeded` so success survives subsequent retries returning `false`.
+        var observedAttemptSucceeded = false;
 
-                    return storage.RemoveIfEqualAsync(resource, lockId, ct).AsTask();
+        var storageRef = _storage;
+        var resourceRef = resource;
+        var lockIdRef = lockId;
+
+        var lastResult = await _releasePipeline
+            .ExecuteAsync(
+                async ct =>
+                {
+                    var result = await storageRef.RemoveIfEqualAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false);
+
+                    if (result)
+                    {
+                        observedAttemptSucceeded = true;
+                    }
+
+                    return result;
                 },
-                maxAttempts: _MaxReleaseRetryAttempts,
-                timeProvider: timeProvider,
-                cancellationToken: cancellationToken
+                cancellationToken
             )
             .ConfigureAwait(false);
 
+        var removed = observedAttemptSucceeded || lastResult;
+
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed)
+        if (removed && _outboxPublisher is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
-            await outboxPublisher
-                .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+
+            try
+            {
+                await _outboxPublisher
+                    .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Release already succeeded — do not rethrow. Waiters will fall back to polling backoff.
+                logger.LogLockReleasePublishFailed(ex, resource, lockId);
+            }
         }
 
         logger.LogReleaseReleased(resource, lockId);
@@ -433,17 +523,18 @@ public sealed class DistributedLockProvider(
 
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
-        return Run.WithRetriesAsync(
-            (_storage, resource, lockId, timeUntilExpires, cancellationToken),
-            static state =>
-            {
-                var (storage, resource, lockId, ttl, ct) = state;
+        return _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) =>
+                {
+                    var (storage, resource, lockId, ttl) = state;
 
-                return storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).AsTask();
-            },
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken
-        );
+                    return await storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).ConfigureAwait(false);
+                },
+                (_storage, resource, lockId, timeUntilExpires),
+                cancellationToken
+            )
+            .AsTask();
     }
 
     #endregion
@@ -454,12 +545,13 @@ public sealed class DistributedLockProvider(
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        return await Run.WithRetriesAsync(
-            (_storage, resource, cancellationToken),
-            static x => x._storage.ExistsAsync(x.resource, x.cancellationToken).AsTask(),
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken
-        );
+        return await _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) => await state._storage.ExistsAsync(state.resource, ct).ConfigureAwait(false),
+                (_storage, resource),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -470,23 +562,25 @@ public sealed class DistributedLockProvider(
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        return Run.WithRetriesAsync(
-            (_storage, resource, cancellationToken),
-            static x => x._storage.GetExpirationAsync(x.resource, x.cancellationToken).AsTask(),
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken
-        );
+        return _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) =>
+                    await state._storage.GetExpirationAsync(state.resource, ct).ConfigureAwait(false),
+                (_storage, resource),
+                cancellationToken
+            )
+            .AsTask();
     }
 
     public async Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        var lockId = await Run.WithRetriesAsync(
-                (_storage, resource, cancellationToken),
-                static x => x._storage.GetAsync(x.resource, x.cancellationToken).AsTask(),
-                timeProvider: timeProvider,
-                cancellationToken: cancellationToken
+        var lockId = await _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) => await state._storage.GetAsync(state.resource, ct).ConfigureAwait(false),
+                (_storage, resource),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -507,11 +601,12 @@ public sealed class DistributedLockProvider(
 
     public async Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
-        var locks = await Run.WithRetriesAsync(
-                (_storage, cancellationToken),
-                static x => x._storage.GetAllWithExpirationByPrefixAsync("", x.cancellationToken).AsTask(),
-                timeProvider: timeProvider,
-                cancellationToken: cancellationToken
+        var locks = await _queryPipeline
+            .ExecuteAsync(
+                static async (storage, ct) =>
+                    await storage.GetAllWithExpirationByPrefixAsync("", ct).ConfigureAwait(false),
+                _storage,
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -534,12 +629,13 @@ public sealed class DistributedLockProvider(
 
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
     {
-        return Run.WithRetriesAsync(
-            (_storage, cancellationToken),
-            static x => x._storage.GetCountAsync("", x.cancellationToken).AsTask(),
-            timeProvider: timeProvider,
-            cancellationToken: cancellationToken
-        );
+        return _queryPipeline
+            .ExecuteAsync(
+                static async (storage, ct) => await storage.GetCountAsync("", ct).ConfigureAwait(false),
+                _storage,
+                cancellationToken
+            )
+            .AsTask();
     }
 
     #endregion
@@ -551,6 +647,18 @@ public sealed class DistributedLockProvider(
         return timeUntilExpires is null ? DefaultTimeUntilExpires
             : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
             : Argument.IsPositive(timeUntilExpires.Value);
+    }
+
+    private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
+    {
+        // Allow null (use default) and Timeout.InfiniteTimeSpan as the explicit "wait forever" sentinel;
+        // reject other negatives.
+        if (acquireTimeout is null || acquireTimeout == Timeout.InfiniteTimeSpan)
+        {
+            return;
+        }
+
+        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
     }
 
     private static Activity? _StartLockActivity(string resource)
@@ -566,6 +674,88 @@ public sealed class DistributedLockProvider(
         activity.DisplayName = $"Lock: {resource}";
 
         return activity;
+    }
+
+    private static IOutboxPublisher? _ConfigureOutboxPublisher(
+        IOutboxPublisher? outboxPublisher,
+        ILogger<DistributedLockProvider> logger
+    )
+    {
+        if (outboxPublisher is null)
+        {
+            logger.LogOutboxPublisherAbsent();
+        }
+
+        return outboxPublisher;
+    }
+
+    // Transient = anything that isn't a programmer error or caller-driven cancellation.
+    // Mirrors the existing catch filter used by the acquire loop (line ~185).
+    private static bool _IsTransientStorageException(Exception ex)
+    {
+        return ex
+            is not (
+                OperationCanceledException
+                or ObjectDisposedException
+                or InvalidOperationException
+                or ArgumentException
+            );
+    }
+
+    private static ResiliencePipeline _BuildReleasePipeline(
+        TimeProvider timeProvider,
+        ILogger<DistributedLockProvider> logger
+    )
+    {
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = static args => new ValueTask<bool>(
+                        args.Outcome.Exception is { } ex && _IsTransientStorageException(ex)
+                    ),
+                    MaxRetryAttempts = 14, // 15 total attempts (1 initial + 14 retries)
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromSeconds(2),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogLockStorageRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
+    }
+
+    private static ResiliencePipeline _BuildQueryPipeline(
+        TimeProvider timeProvider,
+        ILogger<DistributedLockProvider> logger
+    )
+    {
+        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = static args => new ValueTask<bool>(
+                        args.Outcome.Exception is { } ex && _IsTransientStorageException(ex)
+                    ),
+                    MaxRetryAttempts = 4, // 5 total attempts (1 initial + 4 retries)
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(100),
+                    MaxDelay = TimeSpan.FromSeconds(1),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        logger.LogLockStorageRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
     }
 
     private sealed class ResetEventWithRefCount
@@ -584,7 +774,7 @@ public sealed class DistributedLockProvider(
 
     #region Message Consumer
 
-    internal void _OnLockReleased(DistributedLockReleased message)
+    void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
     {
         logger.LogGotLockReleasedMessage(message.Resource, message.LockId);
 
@@ -598,7 +788,7 @@ public sealed class DistributedLockProvider(
         }
     }
 
-    internal sealed class LockReleasedConsumer(IDistributedLockProvider provider, ILogger<LockReleasedConsumer> logger)
+    internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
         : IConsume<DistributedLockReleased>
     {
         public ValueTask Consume(ConsumeContext<DistributedLockReleased> context, CancellationToken cancellationToken)
@@ -610,10 +800,10 @@ public sealed class DistributedLockProvider(
 
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
-            if (provider is DistributedLockProvider impl)
-            {
-                impl._OnLockReleased(context.Message);
-            }
+            // Routed through ICanReceiveLockReleased so an IDistributedLockProvider decorator
+            // doesn't break the wake-up signal (the registered DistributedLockProvider instance
+            // implements the marker directly).
+            receiver.OnLockReleased(context.Message);
 
             return ValueTask.CompletedTask;
         }

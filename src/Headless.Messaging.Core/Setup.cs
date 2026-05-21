@@ -129,7 +129,9 @@ public static class SetupMessaging
         // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
         // IDistributedLockProvider so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
-        services.TryAddKeyedSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>(MessagingKeys.LockProvider);
+        services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(
+            MessagingKeys.LockProvider
+        );
 
         //Processors
         services.TryAddEnumerable(

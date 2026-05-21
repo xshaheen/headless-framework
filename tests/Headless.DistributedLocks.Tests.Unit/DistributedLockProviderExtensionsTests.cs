@@ -17,6 +17,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -50,6 +51,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -84,6 +86,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -104,6 +107,14 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         );
 
         // then
-        await provider.Received(1).TryAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken);
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                resource,
+                timeUntilExpires,
+                acquireTimeout,
+                releaseOnDispose: true,
+                cancellationToken: cancellationToken
+            );
     }
 }

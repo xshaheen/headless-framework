@@ -44,6 +44,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 $"tus-file-lock-{fileId}",
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -59,6 +60,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -77,6 +79,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             );
     }

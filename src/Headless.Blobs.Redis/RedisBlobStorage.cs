@@ -11,6 +11,8 @@ using Headless.Urls;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Polly;
+using Polly.Retry;
 using StackExchange.Redis;
 
 namespace Headless.Blobs.Redis;
@@ -21,6 +23,7 @@ public sealed class RedisBlobStorage : IBlobStorage
     private readonly ISerializer _serializer;
     private readonly TimeProvider _timeProvider;
     private readonly RedisBlobStorageOptions _options;
+    private readonly ResiliencePipeline _retryPipeline;
 
     // Lua script for atomic rename: copies blob+info then deletes source
     // KEYS[1] = source blob hash, KEYS[2] = source info hash
@@ -82,6 +85,31 @@ public sealed class RedisBlobStorage : IBlobStorage
         _logger = _options.LoggerFactory?.CreateLogger(typeof(RedisBlobStorage)) ?? NullLogger.Instance;
         _serializer = _options.Serializer ?? defaultSerializer;
         _timeProvider = timeProvider ?? TimeProvider.System;
+
+        var pipelineLogger = _logger;
+
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
+            .AddRetry(
+                new RetryStrategyOptions
+                {
+                    ShouldHandle = new PredicateBuilder()
+                        .Handle<RedisConnectionException>()
+                        .Handle<RedisTimeoutException>()
+                        .Handle<TimeoutException>(),
+                    MaxRetryAttempts = 3,
+                    BackoffType = DelayBackoffType.Exponential,
+                    Delay = TimeSpan.FromMilliseconds(50),
+                    MaxDelay = TimeSpan.FromMilliseconds(500),
+                    UseJitter = true,
+                    OnRetry = args =>
+                    {
+                        pipelineLogger.LogRedisRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
+
+                        return default;
+                    },
+                }
+            )
+            .Build();
     }
 
     #region Create Container
@@ -170,15 +198,17 @@ public sealed class RedisBlobStorage : IBlobStorage
             Buffer.BlockCopy(infoSegment.Array!, infoSegment.Offset, infoData, 0, infoSegment.Count);
 
             // Atomic upload using Lua script to prevent orphaned data
-            await Run.WithRetriesAsync(
-                    () =>
-                        database.ScriptEvaluateAsync(
-                            _UploadScript,
-                            [blobsContainer, infoContainer],
-                            [blobPath, blobData, infoData]
-                        ),
-                    logger: _logger,
-                    cancellationToken: cancellationToken
+            await _retryPipeline
+                .ExecuteAsync(
+                    async ct =>
+                        await database
+                            .ScriptEvaluateAsync(
+                                _UploadScript,
+                                [blobsContainer, infoContainer],
+                                [blobPath, blobData, infoData]
+                            )
+                            .ConfigureAwait(false),
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -266,10 +296,13 @@ public sealed class RedisBlobStorage : IBlobStorage
         _logger.LogDeletingPath(blobPath);
 
         // Atomic delete using Lua script to ensure both blob and info are deleted together
-        var result = await Run.WithRetriesAsync(
-                () => Database.ScriptEvaluateAsync(_DeleteScript, [blobsContainer, infoContainer], [blobPath]),
-                logger: _logger,
-                cancellationToken: cancellationToken
+        var result = await _retryPipeline
+            .ExecuteAsync(
+                async ct =>
+                    await Database
+                        .ScriptEvaluateAsync(_DeleteScript, [blobsContainer, infoContainer], [blobPath])
+                        .ConfigureAwait(false),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -403,15 +436,17 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         try
         {
-            var result = await Run.WithRetriesAsync(
-                    () =>
-                        Database.ScriptEvaluateAsync(
-                            _RenameScript,
-                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                            [srcBlobPath, dstBlobPath]
-                        ),
-                    logger: _logger,
-                    cancellationToken: cancellationToken
+            var result = await _retryPipeline
+                .ExecuteAsync(
+                    async ct =>
+                        await Database
+                            .ScriptEvaluateAsync(
+                                _RenameScript,
+                                [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                                [srcBlobPath, dstBlobPath]
+                            )
+                            .ConfigureAwait(false),
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -451,15 +486,17 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         try
         {
-            var result = await Run.WithRetriesAsync(
-                    () =>
-                        Database.ScriptEvaluateAsync(
-                            _CopyScript,
-                            [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
-                            [srcBlobPath, dstBlobPath]
-                        ),
-                    logger: _logger,
-                    cancellationToken: cancellationToken
+            var result = await _retryPipeline
+                .ExecuteAsync(
+                    async ct =>
+                        await Database
+                            .ScriptEvaluateAsync(
+                                _CopyScript,
+                                [srcBlobsContainer, srcInfoContainer, dstBlobsContainer, dstInfoContainer],
+                                [srcBlobPath, dstBlobPath]
+                            )
+                            .ConfigureAwait(false),
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
 
@@ -491,11 +528,12 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogCheckingIfPathExists(blobPath);
 
-        return await Run.WithRetriesAsync(
-            () => Database.HashExistsAsync(infoContainer, blobPath),
-            logger: _logger,
-            cancellationToken: cancellationToken
-        );
+        return await _retryPipeline
+            .ExecuteAsync(
+                async ct => await Database.HashExistsAsync(infoContainer, blobPath).ConfigureAwait(false),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     #endregion
@@ -516,10 +554,10 @@ public sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogGettingFileStream(blobPath);
 
-        var fileContent = await Run.WithRetriesAsync(
-                () => Database.HashGetAsync(blobsContainer, blobPath),
-                logger: _logger,
-                cancellationToken: cancellationToken
+        var fileContent = await _retryPipeline
+            .ExecuteAsync(
+                async ct => await Database.HashGetAsync(blobsContainer, blobPath).ConfigureAwait(false),
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -548,11 +586,14 @@ public sealed class RedisBlobStorage : IBlobStorage
         var blobPath = _BuildBlobPath(container, blobName);
         _logger.LogGettingFileInfo(blobPath);
 
-        var blobInfo = await Run.WithRetriesAsync(
-            (Database, infoContainer, blobPath),
-            static state => state.Database.HashGetAsync(state.infoContainer, state.blobPath),
-            cancellationToken: cancellationToken
-        );
+        var blobInfo = await _retryPipeline
+            .ExecuteAsync(
+                static async (state, _) =>
+                    await state.Database.HashGetAsync(state.infoContainer, state.blobPath).ConfigureAwait(false),
+                (Database, infoContainer, blobPath),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
         if (!blobInfo.HasValue)
         {
@@ -985,4 +1026,12 @@ internal static partial class RedisBlobStorageLog
         Message = "Getting file info for {Path}"
     )]
     public static partial void LogGettingFileInfo(this ILogger logger, string path);
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "RedisRetry",
+        Level = LogLevel.Warning,
+        Message = "Retrying Redis operation (attempt {Attempt}) after {Delay:g}"
+    )]
+    public static partial void LogRedisRetry(this ILogger logger, int attempt, TimeSpan delay, Exception? exception);
 }

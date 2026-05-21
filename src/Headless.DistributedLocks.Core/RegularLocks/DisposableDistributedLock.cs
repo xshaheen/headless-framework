@@ -12,6 +12,7 @@ public sealed class DisposableDistributedLock(
     string lockId,
     TimeSpan timeWaitedForLock,
     IDistributedLockProvider lockProvider,
+    bool releaseOnDispose,
     TimeProvider timeProvider,
     ILogger logger
 ) : IDistributedLock
@@ -96,7 +97,10 @@ public sealed class DisposableDistributedLock(
 
         try
         {
-            await ReleaseAsync().ConfigureAwait(false);
+            if (releaseOnDispose)
+            {
+                await ReleaseAsync().ConfigureAwait(false);
+            }
         }
         catch (Exception e)
         {
