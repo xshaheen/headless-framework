@@ -3,8 +3,7 @@
 using Headless.Exceptions;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace AwesomeAssertions.Specialized;
 
 [PublicAPI]

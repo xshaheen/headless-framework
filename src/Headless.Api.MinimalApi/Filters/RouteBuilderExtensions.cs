@@ -2,8 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Builder;
 
 [PublicAPI]

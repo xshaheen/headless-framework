@@ -4,8 +4,7 @@ using System.Linq.Expressions;
 using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]

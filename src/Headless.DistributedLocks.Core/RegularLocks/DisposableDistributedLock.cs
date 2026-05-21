@@ -3,8 +3,7 @@
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 public sealed class DisposableDistributedLock(

@@ -2,8 +2,7 @@
 
 using System.Net;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 public static class HttpStatusCodeExtensions

@@ -3,8 +3,7 @@
 using System.Collections;
 using System.Reactive.Linq;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics;
 
 public static class ProcessExtensions

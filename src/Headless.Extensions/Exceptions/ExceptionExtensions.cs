@@ -4,8 +4,7 @@ using System.Runtime.ExceptionServices;
 using System.Text.RegularExpressions;
 using Headless.Exceptions;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 [PublicAPI]

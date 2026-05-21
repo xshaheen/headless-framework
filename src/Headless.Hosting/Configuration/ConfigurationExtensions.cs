@@ -3,8 +3,7 @@
 using FluentValidation;
 using Headless.Checks;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Configuration;
 
 [PublicAPI]

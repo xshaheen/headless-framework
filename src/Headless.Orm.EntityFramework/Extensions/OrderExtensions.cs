@@ -2,8 +2,7 @@
 
 using System.Linq.Expressions;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
 
 public sealed class InvalidOrderPropertyException(string message, Exception? inner) : Exception(message, inner);

@@ -3,8 +3,7 @@
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.K8s;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Contains extension methods to <see cref="IServiceCollection" /> for configuring consistence services.</summary>

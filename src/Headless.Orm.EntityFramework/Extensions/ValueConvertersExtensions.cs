@@ -4,8 +4,7 @@ using System.Reflection;
 using Headless.Generator.Primitives;
 using Headless.Reflection;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>A static class providing methods to configure EF value converts for Primitive types.</summary>

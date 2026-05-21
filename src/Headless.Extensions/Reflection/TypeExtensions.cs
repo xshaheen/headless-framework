@@ -5,8 +5,7 @@ using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Reflection;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 [PublicAPI]

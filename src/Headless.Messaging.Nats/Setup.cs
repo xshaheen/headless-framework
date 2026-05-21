@@ -5,8 +5,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 
-#pragma warning disable IDE0130
-// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 public static class SetupNatsMessaging
