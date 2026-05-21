@@ -2,6 +2,8 @@
 
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.Storage.EntityFramework;
 
@@ -15,6 +17,8 @@ public sealed class SettingsDbContext(DbContextOptions options) : DbContext(opti
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddSettingsConfiguration();
+
+        var storageOptions = this.GetService<IOptions<SettingsStorageOptions>>().Value;
+        modelBuilder.AddSettingsConfiguration(storageOptions);
     }
 }

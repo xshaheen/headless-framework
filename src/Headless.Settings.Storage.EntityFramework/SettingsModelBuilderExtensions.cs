@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Settings.Entities;
+using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Settings.Storage.EntityFramework;
@@ -8,15 +9,13 @@ namespace Headless.Settings.Storage.EntityFramework;
 [PublicAPI]
 public static class SettingsModelBuilderExtensions
 {
-    public static string DefaultSettingValuesTableName { get; set; } = "SettingValues";
-
-    public static string DefaultSettingDefinitionTableName { get; set; } = "SettingDefinitions";
-
-    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, string schema = "settings")
+    public static void AddSettingsConfiguration(this ModelBuilder modelBuilder, SettingsStorageOptions options)
     {
+        Argument.IsNotNull(options);
+
         modelBuilder.Entity<SettingValueRecord>(b =>
         {
-            b.ToTable(DefaultSettingValuesTableName, schema);
+            b.ToTable(options.SettingValuesTableName, options.Schema);
             b.ConfigureHeadlessConvention();
             b.Property(x => x.Name).HasMaxLength(SettingValueRecordConstants.NameMaxLength).IsRequired();
             b.Property(x => x.Value).HasMaxLength(SettingValueRecordConstants.ValueMaxLength).IsRequired();
@@ -40,7 +39,7 @@ public static class SettingsModelBuilderExtensions
 
         modelBuilder.Entity<SettingDefinitionRecord>(b =>
         {
-            b.ToTable(DefaultSettingDefinitionTableName, schema);
+            b.ToTable(options.SettingDefinitionsTableName, options.Schema);
             b.TryConfigureExtraProperties();
 
             b.Property(x => x.Name).HasMaxLength(SettingDefinitionRecordConstants.NameMaxLength).IsRequired();

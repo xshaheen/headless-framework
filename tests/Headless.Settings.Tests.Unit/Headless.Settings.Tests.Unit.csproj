@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -67,8 +67,13 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
 
         services
             .AddSettingsManagementCore()
-            .AddSettingsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddSettingsManagementDbContextStorage(
+                options => options.UseNpgsql(Fixture.SqlConnectionString),
+                ConfigureSettingsStorage
+            );
     }
+
+    protected virtual void ConfigureSettingsStorage(SettingsStorageOptions options) { }
 
     private static void _AddDefaultStringEncryptionConfiguration(IConfigurationBuilder configuration)
     {
