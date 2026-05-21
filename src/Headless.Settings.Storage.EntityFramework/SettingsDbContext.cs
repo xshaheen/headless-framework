@@ -18,8 +18,7 @@ public sealed class SettingsDbContext(DbContextOptions options) : DbContext(opti
     {
         base.OnModelCreating(modelBuilder);
 
-        var storageOptions = this.GetService<IOptions<SettingsStorageOptions>>().Value;
-        modelBuilder.AddSettingsConfiguration(storageOptions);
+        modelBuilder.AddSettingsConfiguration(this);
     }
 }
 

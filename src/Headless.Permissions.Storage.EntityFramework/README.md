@@ -51,10 +51,8 @@ builder.Services.AddPermissionsManagementDbContextStorage(
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<PermissionsStorageOptions> storageOptions
-) : DbContext(options), IPermissionsDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), IPermissionsDbContext
 {
     public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
     public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
@@ -62,7 +60,7 @@ public class AppDbContext(
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddPermissionsConfiguration(storageOptions.Value);
+        modelBuilder.AddPermissionsConfiguration(this);
     }
 }
 

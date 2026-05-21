@@ -3,12 +3,22 @@
 using Headless.Checks;
 using Headless.Features.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Features.Storage.EntityFramework;
 
 [PublicAPI]
 public static class FeaturesModelBuilderExtensions
 {
+    public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder, DbContext context)
+    {
+        Argument.IsNotNull(context);
+
+        var options = context.GetService<IOptions<FeaturesStorageOptions>>().Value;
+        modelBuilder.AddFeaturesConfiguration(options);
+    }
+
     public static void AddFeaturesConfiguration(this ModelBuilder modelBuilder, FeaturesStorageOptions options)
     {
         Argument.IsNotNull(options);

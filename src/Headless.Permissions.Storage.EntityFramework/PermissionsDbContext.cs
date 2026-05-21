@@ -20,8 +20,7 @@ public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(o
     {
         base.OnModelCreating(modelBuilder);
 
-        var storageOptions = this.GetService<IOptions<PermissionsStorageOptions>>().Value;
-        modelBuilder.AddPermissionsConfiguration(storageOptions);
+        modelBuilder.AddPermissionsConfiguration(this);
     }
 }
 

@@ -66,7 +66,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
 - Storage registration: use `AddFeaturesManagementDbContextStorage<TDbContext>()` for custom DbContext, or the overload with `Action<DbContextOptionsBuilder>` for a standalone context.
-- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.AddFeaturesConfiguration(storageOptions.Value)` in `OnModelCreating`.
+- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.AddFeaturesConfiguration(this)` in `OnModelCreating`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
 - Gate access with `RequiresFeatureAttribute` on controllers/actions.
@@ -267,10 +267,8 @@ builder.Services.AddFeaturesManagementDbContextStorage(
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<FeaturesStorageOptions> storageOptions
-) : DbContext(options), IFeaturesDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), IFeaturesDbContext
 {
     public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
     public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
@@ -278,7 +276,7 @@ public class AppDbContext(
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddFeaturesConfiguration(storageOptions.Value);
+        modelBuilder.AddFeaturesConfiguration(this);
     }
 }
 

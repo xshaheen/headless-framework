@@ -51,10 +51,8 @@ builder.Services.AddFeaturesManagementDbContextStorage(
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<FeaturesStorageOptions> storageOptions
-) : DbContext(options), IFeaturesDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), IFeaturesDbContext
 {
     public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
     public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
@@ -62,7 +60,7 @@ public class AppDbContext(
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddFeaturesConfiguration(storageOptions.Value);
+        modelBuilder.AddFeaturesConfiguration(this);
     }
 }
 

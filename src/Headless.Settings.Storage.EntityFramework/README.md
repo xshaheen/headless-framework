@@ -56,17 +56,15 @@ builder.Services.AddSettingsManagementDbContextStorage(
 
 ```csharp
 // In your DbContext
-public class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<SettingsStorageOptions> storageOptions
-) : DbContext(options), ISettingsDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), ISettingsDbContext
 {
     public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
     public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddSettingsConfiguration(storageOptions.Value);
+        modelBuilder.AddSettingsConfiguration(this);
     }
 }
 

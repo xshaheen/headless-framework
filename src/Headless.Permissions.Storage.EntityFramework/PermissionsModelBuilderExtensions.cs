@@ -3,12 +3,22 @@
 using Headless.Checks;
 using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.Storage.EntityFramework;
 
 [PublicAPI]
 public static class PermissionsModelBuilderExtensions
 {
+    public static void AddPermissionsConfiguration(this ModelBuilder modelBuilder, DbContext context)
+    {
+        Argument.IsNotNull(context);
+
+        var options = context.GetService<IOptions<PermissionsStorageOptions>>().Value;
+        modelBuilder.AddPermissionsConfiguration(options);
+    }
+
     public static void AddPermissionsConfiguration(this ModelBuilder modelBuilder, PermissionsStorageOptions options)
     {
         Argument.IsNotNull(options);

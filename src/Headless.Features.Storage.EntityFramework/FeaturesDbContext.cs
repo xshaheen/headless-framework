@@ -20,8 +20,7 @@ public class FeaturesDbContext(DbContextOptions options) : DbContext(options), I
     {
         base.OnModelCreating(modelBuilder);
 
-        var storageOptions = this.GetService<IOptions<FeaturesStorageOptions>>().Value;
-        modelBuilder.AddFeaturesConfiguration(storageOptions);
+        modelBuilder.AddFeaturesConfiguration(this);
     }
 }
 

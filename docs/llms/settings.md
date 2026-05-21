@@ -70,7 +70,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read/write via `ISett
 - Provider names are constants on `SettingValueProviderNames`: `Default`, `Configuration`, `Global`, `Tenant`, `User`.
 - For sensitive settings, set `isEncrypted: true` on `SettingDefinition` -- Core handles encryption/decryption automatically.
 - Core registers a `SettingsInitializationBackgroundService` hosted service -- do not register your own init logic for settings.
-- For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.AddSettingsConfiguration(storageOptions.Value)` in `OnModelCreating`.
+- For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.AddSettingsConfiguration(this)` in `OnModelCreating`.
 - Dependencies: Core requires `Headless.Caching.Abstractions` and `Headless.DistributedLocks.Abstractions` to be registered.
 - Pre-requisite: register `IStringEncryptionService` before `AddSettingsManagementCore(...)`. Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
 
@@ -350,17 +350,15 @@ builder.Services.AddSettingsManagementDbContextStorage(
 
 ```csharp
 // In your DbContext
-public class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<SettingsStorageOptions> storageOptions
-) : DbContext(options), ISettingsDbContext
+public class AppDbContext(DbContextOptions<AppDbContext> options)
+    : DbContext(options), ISettingsDbContext
 {
     public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
     public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddSettingsConfiguration(storageOptions.Value);
+        modelBuilder.AddSettingsConfiguration(this);
     }
 }
 

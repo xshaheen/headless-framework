@@ -2,6 +2,7 @@
 
 using Headless.Permissions;
 using Headless.Permissions.Definitions;
+using Headless.Permissions.Entities;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Headless.Permissions.Storage.EntityFramework;
@@ -86,6 +87,35 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         (await _TableHasRowsAsync("permissions", "PermissionGrants")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_apply_custom_storage_options_in_shared_dbcontext_without_constructor_injection()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddDbContextFactory<SharedPermissionsDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddPermissionsManagementDbContextStorage<SharedPermissionsDbContext>(ConfigurePermissionsStorage);
+        await using var provider = services.BuildServiceProvider();
+        await using var db = await provider
+            .GetRequiredService<IDbContextFactory<SharedPermissionsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+
+        // when
+        var grantsEntity = db.Model.FindEntityType(typeof(PermissionGrantRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(PermissionDefinitionRecord));
+        var groupDefinitionsEntity = db.Model.FindEntityType(typeof(PermissionGroupDefinitionRecord));
+
+        // then
+        grantsEntity.Should().NotBeNull();
+        grantsEntity!.GetSchema().Should().Be(_Schema);
+        grantsEntity.GetTableName().Should().Be(_GrantsTableName);
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be(_Schema);
+        definitionsEntity.GetTableName().Should().Be(_DefinitionsTableName);
+        groupDefinitionsEntity.Should().NotBeNull();
+        groupDefinitionsEntity!.GetSchema().Should().Be(_Schema);
+        groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
+    }
+
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -138,6 +168,22 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         );
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private sealed class SharedPermissionsDbContext(DbContextOptions<SharedPermissionsDbContext> options)
+        : DbContext(options), IPermissionsDbContext
+    {
+        public DbSet<PermissionGrantRecord> PermissionGrants => Set<PermissionGrantRecord>();
+
+        public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
+
+        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddPermissionsConfiguration(this);
+        }
     }
 
     [UsedImplicitly]

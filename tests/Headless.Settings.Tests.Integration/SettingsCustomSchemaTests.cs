@@ -2,6 +2,7 @@
 
 using Headless.Settings;
 using Headless.Settings.Definitions;
+using Headless.Settings.Entities;
 using Headless.Settings.Models;
 using Headless.Settings.Storage.EntityFramework;
 using Headless.Settings.ValueProviders;
@@ -84,6 +85,31 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         (await _TableHasRowsAsync("settings", "SettingValues")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_apply_custom_storage_options_in_shared_dbcontext_without_constructor_injection()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddDbContextFactory<SharedSettingsDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddSettingsManagementDbContextStorage<SharedSettingsDbContext>(ConfigureSettingsStorage);
+        await using var provider = services.BuildServiceProvider();
+        await using var db = await provider
+            .GetRequiredService<IDbContextFactory<SharedSettingsDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+
+        // when
+        var valuesEntity = db.Model.FindEntityType(typeof(SettingValueRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(SettingDefinitionRecord));
+
+        // then
+        valuesEntity.Should().NotBeNull();
+        valuesEntity!.GetSchema().Should().Be(_Schema);
+        valuesEntity.GetTableName().Should().Be(_ValuesTableName);
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be(_Schema);
+        definitionsEntity.GetTableName().Should().Be(_DefinitionsTableName);
+    }
+
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -136,6 +162,20 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         );
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private sealed class SharedSettingsDbContext(DbContextOptions<SharedSettingsDbContext> options)
+        : DbContext(options), ISettingsDbContext
+    {
+        public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
+
+        public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddSettingsConfiguration(this);
+        }
     }
 
     [UsedImplicitly]

@@ -40,8 +40,8 @@ Out of scope: pooling changes to `HeadlessDbContext`, non-EF storage providers, 
 
 - **Options class per package, not shared.** `SettingsStorageOptions`, `FeaturesStorageOptions`, `PermissionsStorageOptions`. Each carries its own table-name properties (different entity sets), so a shared base buys nothing.
 - **Options classes are `public`; validators are `internal sealed`.** The options classes are part of the package's NuGet contract (consumers configure them), so they're `public` with `[PublicAPI]`. Validators stay `internal sealed` per `CLAUDE.md` "Public API Discipline".
-- **Resolve options inside `OnModelCreating` via `this.GetService<IOptions<TStorageOptions>>()`.** Matches the established repo pattern in `src/Headless.Jobs.EntityFramework/DbContextFactory/JobsDbContext.cs` (`this.GetService<JobsEfCoreOptionBuilder<...>>().Schema`). `IOptions<T>` is singleton, safe with pooled DbContexts, and the model cache key is unaffected because storage options are app-singleton (one schema per process).
-- **Model-builder extension takes the options object.** New signature: `AddSettingsConfiguration(this ModelBuilder mb, SettingsStorageOptions options)`. No more `string schema = "settings"` overload — callers pass an options instance (default-constructable; defaults match prior values).
+- **Resolve options inside `OnModelCreating` via `this.GetService<IOptions<TStorageOptions>>()`.** Matches the established repo pattern in `src/Headless.Jobs.EntityFramework/DbContextFactory/JobsDbContext.cs` (`this.GetService<JobsEfCoreOptionBuilder<...>>().Schema`). `IOptions<T>` is singleton and safe with pooled DbContexts.
+- **Model-builder extension has context and options overloads.** Normal shared-`DbContext` callers use `AddSettingsConfiguration(this)`, which resolves options through EF context services and avoids adding storage options to the `DbContext` constructor. Advanced tests/callers can still pass `SettingsStorageOptions` directly.
 - **Remove the existing static `Default*TableName` properties.** Greenfield framework, no production consumers documented as relying on them. Functionality migrates cleanly into the new options.
 - **Optional `configureStorage` parameter on the existing setup methods.** Keeps the call site for the 99% case (no schema override) identical. New signature:
   ```text
@@ -104,9 +104,9 @@ Same flow for Features and Permissions. The model-builder extensions stay pure f
 
 **Approach:**
 - New `SettingsStorageOptions { Schema = "settings", SettingValuesTableName = "SettingValues", SettingDefinitionsTableName = "SettingDefinitions" }` plus an `internal sealed SettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>` in the same file.
-- Change `AddSettingsConfiguration(this ModelBuilder mb, string schema = "settings")` → `AddSettingsConfiguration(this ModelBuilder mb, SettingsStorageOptions options)`. Use `options.Schema` and `options.SettingValuesTableName` / `options.SettingDefinitionsTableName` in `ToTable(...)` calls.
+- Change `AddSettingsConfiguration(this ModelBuilder mb, string schema = "settings")` → context and options overloads. Use `options.Schema` and `options.SettingValuesTableName` / `options.SettingDefinitionsTableName` in `ToTable(...)` calls.
 - Delete the `DefaultSettingValuesTableName` and `DefaultSettingDefinitionTableName` static properties.
-- In `SettingsDbContext.OnModelCreating`: `var opts = this.GetService<IOptions<SettingsStorageOptions>>().Value; modelBuilder.AddSettingsConfiguration(opts);` (mirrors the `JobsDbContext` pattern).
+- In `SettingsDbContext.OnModelCreating`: `modelBuilder.AddSettingsConfiguration(this);` (the overload resolves `IOptions<SettingsStorageOptions>` through EF context services).
 - In `Setup.cs`: add optional `Action<SettingsStorageOptions>? configureStorage = null` to both `AddSettingsManagementDbContextStorage` overloads. When null, call `services.AddOptions<SettingsStorageOptions, SettingsStorageOptionsValidator>()`. When non-null, call `services.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(configureStorage)`. The generic `<TContext>` overload also takes `configureStorage` so consumers wiring their own `ISettingsDbContext` get the same option pipeline.
 
 **Patterns to follow:**
@@ -154,7 +154,7 @@ Same flow for Features and Permissions. The model-builder extensions stay pure f
 **Approach:**
 - `FeaturesStorageOptions` carries `Schema = "features"`, `FeatureValuesTableName = "FeatureValues"`, `FeatureDefinitionsTableName = "FeatureDefinitions"`, `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`. Validator asserts all non-empty.
 - Model builder takes `FeaturesStorageOptions options`. Three `ToTable(...)` sites use the corresponding table-name property.
-- `FeaturesDbContext.OnModelCreating` resolves `IOptions<FeaturesStorageOptions>` and calls the extension.
+- `FeaturesDbContext.OnModelCreating` calls `modelBuilder.AddFeaturesConfiguration(this)`, and the overload resolves `IOptions<FeaturesStorageOptions>` through EF context services.
 - `Setup.cs` adds `configureStorage` parameter on all three overloads. Also rename the class `SetupEntityFramework` → `EntityFrameworkFeaturesSetup` and move it from the `Headless.Features` namespace into `Headless.Features.Storage.EntityFramework`, to match the Settings/Permissions parity. The PR is already shipping a breaking API change here; folding in the naming fix avoids a separate breaking release. Update the two demo/test callers (their `using` directives) accordingly.
 
 **Patterns to follow:** same as U1.
@@ -301,7 +301,7 @@ Same flow for Features and Permissions. The model-builder extensions stay pure f
 ## Risks
 
 - **Pooled DbContext + `this.GetService<IOptions<T>>()`.** `AddPooledDbContextFactory` configures the application service provider on `DbContextOptionsBuilder`, so `IOptions<T>` resolves correctly inside `OnModelCreating`. Precedent: `src/Headless.Jobs.EntityFramework/DbContextFactory/JobsDbContext.cs:20`. Mitigation: integration tests in U1-U3 exercise this code path against real Postgres.
-- **EF model cache — first-resolution-wins.** EF caches the compiled model per context type. `OnModelCreating` runs exactly once per context type per process; whatever `IOptions<TStorageOptions>` resolves to on that first call is baked into the cached model for the lifetime of the process. Because storage options are app-singleton (set once at startup, immutable), this is safe — but if a future need arises for multiple schemas in the same process for the same context type, an `IModelCacheKeyFactory` override would be required. Explicitly out of scope here.
+- **EF model cache — first-resolution-wins.** EF caches the compiled model per context type. Built-in storage contexts replace `IModelCacheKeyFactory` so schema/table options are included in the model cache key. Custom shared contexts normally use one storage layout per app; if a future app needs multiple storage layouts for the same custom context type in one process, it should add its own model cache key factory.
 - **Static-property removal.** If any external consumer set `DefaultSettingValuesTableName = "..."` before calling `AddSettingsConfiguration()`, that path no longer exists. Mitigated by greenfield-project context (no documented external dependents) and the equivalent capability landing on `SettingsStorageOptions.SettingValuesTableName`.
 - **Validator runs at startup.** A misconfigured options object now fails fast at host build time rather than at first model-build. Behavioral change is desirable but worth noting.
 

@@ -2,6 +2,7 @@
 
 using Headless.Features;
 using Headless.Features.Definitions;
+using Headless.Features.Entities;
 using Headless.Features.Models;
 using Headless.Features.Storage.EntityFramework;
 using Headless.Features.Values;
@@ -89,6 +90,35 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         (await _TableHasRowsAsync("features", "FeatureValues")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task should_apply_custom_storage_options_in_shared_dbcontext_without_constructor_injection()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddDbContextFactory<SharedFeaturesDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        services.AddFeaturesManagementDbContextStorage<SharedFeaturesDbContext>(ConfigureFeaturesStorage);
+        await using var provider = services.BuildServiceProvider();
+        await using var db = await provider
+            .GetRequiredService<IDbContextFactory<SharedFeaturesDbContext>>()
+            .CreateDbContextAsync(AbortToken);
+
+        // when
+        var valuesEntity = db.Model.FindEntityType(typeof(FeatureValueRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(FeatureDefinitionRecord));
+        var groupDefinitionsEntity = db.Model.FindEntityType(typeof(FeatureGroupDefinitionRecord));
+
+        // then
+        valuesEntity.Should().NotBeNull();
+        valuesEntity!.GetSchema().Should().Be(_Schema);
+        valuesEntity.GetTableName().Should().Be(_ValuesTableName);
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be(_Schema);
+        definitionsEntity.GetTableName().Should().Be(_DefinitionsTableName);
+        groupDefinitionsEntity.Should().NotBeNull();
+        groupDefinitionsEntity!.GetSchema().Should().Be(_Schema);
+        groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
+    }
+
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -141,6 +171,22 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         );
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private sealed class SharedFeaturesDbContext(DbContextOptions<SharedFeaturesDbContext> options)
+        : DbContext(options), IFeaturesDbContext
+    {
+        public DbSet<FeatureValueRecord> FeatureValues => Set<FeatureValueRecord>();
+
+        public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
+
+        public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddFeaturesConfiguration(this);
+        }
     }
 
     [UsedImplicitly]
