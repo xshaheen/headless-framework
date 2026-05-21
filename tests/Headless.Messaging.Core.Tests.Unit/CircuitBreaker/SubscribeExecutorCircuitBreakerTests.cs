@@ -43,6 +43,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }

@@ -148,6 +148,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                         StorageId = 1L,
                         Origin = content,
                         Content = "{}",
+            IntentType = IntentType.Bus,
                         Added = DateTime.UtcNow,
                     }
                 );

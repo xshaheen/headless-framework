@@ -26,6 +26,13 @@ internal sealed class OutboxPublisher(
         T? contentObj,
         PublishOptions? options = null,
         CancellationToken cancellationToken = default
+    ) => PublishAsync(contentObj, options, IntentType.Bus, cancellationToken);
+
+    internal Task PublishAsync<T>(
+        T? contentObj,
+        PublishOptions? options,
+        IntentType intentType,
+        CancellationToken cancellationToken
     )
     {
         // Pre-decide whether this publish lands on the non-AutoCommit transactional branch so the
@@ -38,7 +45,7 @@ internal sealed class OutboxPublisher(
             delayTime: null,
             // DelayTime is undefined for the immediate publish path; ignored.
             innerPublish: (middlewareOptions, _, ct) =>
-                _PublishInternalAsync(publishRequestFactory.Create(contentObj, middlewareOptions), ct),
+                _PublishInternalAsync(publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType), ct),
             isTransactional,
             cancellationToken
         );
@@ -49,6 +56,14 @@ internal sealed class OutboxPublisher(
         T? contentObj,
         PublishOptions? options = null,
         CancellationToken cancellationToken = default
+    ) => PublishDelayAsync(delayTime, contentObj, options, IntentType.Bus, cancellationToken);
+
+    internal Task PublishDelayAsync<T>(
+        TimeSpan delayTime,
+        T? contentObj,
+        PublishOptions? options,
+        IntentType intentType,
+        CancellationToken cancellationToken
     )
     {
         var isTransactional = _IsNonAutoCommitTransactional();
@@ -62,8 +77,8 @@ internal sealed class OutboxPublisher(
                 // Middleware mutated DelayTime to null -> drop to immediate-publish path; otherwise use the
                 // middleware-mutated value, falling back to the caller-supplied delay if middleware left it untouched.
                 var request = middlewareDelay.HasValue
-                    ? publishRequestFactory.Create(contentObj, middlewareOptions, middlewareDelay.Value)
-                    : publishRequestFactory.Create(contentObj, middlewareOptions);
+                    ? publishRequestFactory.Create(contentObj, middlewareOptions, middlewareDelay.Value, intentType)
+                    : publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType);
                 return _PublishInternalAsync(request, ct);
             },
             isTransactional,
@@ -89,7 +104,12 @@ internal sealed class OutboxPublisher(
             if (currentTransaction?.DbTransaction == null)
             {
                 var mediumMessage = await storage
-                    .StoreMessageAsync(publishRequest.Topic, publishRequest.Message, null, CancellationToken.None)
+                    .StoreMessageAsync(
+                        publishRequest.Topic,
+                        _CreateStorageEnvelope(publishRequest),
+                        null,
+                        CancellationToken.None
+                    )
                     .ConfigureAwait(false);
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, cancellationToken);
@@ -118,7 +138,7 @@ internal sealed class OutboxPublisher(
                 var mediumMessage = await storage
                     .StoreMessageAsync(
                         publishRequest.Topic,
-                        publishRequest.Message,
+                        _CreateStorageEnvelope(publishRequest),
                         currentTransaction.DbTransaction,
                         cancellationToken
                     )
@@ -141,6 +161,15 @@ internal sealed class OutboxPublisher(
             throw;
         }
     }
+
+    private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest) =>
+        new()
+        {
+            StorageId = 0,
+            Origin = publishRequest.Message,
+            Content = string.Empty,
+            IntentType = publishRequest.IntentType,
+        };
 
     #region Tracing
 

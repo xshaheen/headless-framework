@@ -251,6 +251,7 @@ public sealed class RetryHelperTests : TestBase
             StorageId = 1,
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
 
     private sealed class AlwaysRetryStrategy(TimeSpan delay) : IRetryBackoffStrategy

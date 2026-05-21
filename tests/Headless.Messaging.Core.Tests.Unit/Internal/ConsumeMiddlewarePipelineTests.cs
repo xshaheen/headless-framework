@@ -170,6 +170,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 StorageId = 1,
                 Origin = origin,
                 Content = "{}",
+            IntentType = IntentType.Bus,
                 Added = DateTime.UtcNow,
             }
         );

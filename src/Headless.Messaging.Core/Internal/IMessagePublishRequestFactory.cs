@@ -11,7 +11,12 @@ namespace Headless.Messaging.Internal;
 
 internal interface IMessagePublishRequestFactory
 {
-    PreparedPublishMessage Create<T>(T? contentObj, PublishOptions? options = null, TimeSpan? delayTime = null);
+    PreparedPublishMessage Create<T>(
+        T? contentObj,
+        PublishOptions? options = null,
+        TimeSpan? delayTime = null,
+        IntentType intentType = IntentType.Bus
+    );
 }
 
 internal sealed class MessagePublishRequestFactory(
@@ -39,7 +44,12 @@ internal sealed class MessagePublishRequestFactory(
     private readonly TimeProvider _timeProvider = timeProvider;
     private readonly ICurrentTenant _currentTenant = currentTenant;
 
-    public PreparedPublishMessage Create<T>(T? contentObj, PublishOptions? options = null, TimeSpan? delayTime = null)
+    public PreparedPublishMessage Create<T>(
+        T? contentObj,
+        PublishOptions? options = null,
+        TimeSpan? delayTime = null,
+        IntentType intentType = IntentType.Bus
+    )
     {
         if (delayTime is { } requestedDelay)
         {
@@ -62,6 +72,7 @@ internal sealed class MessagePublishRequestFactory(
             Topic = topicName,
             PublishAt = publishAt.UtcDateTime,
             Message = new Message(headers, contentObj),
+            IntentType = intentType,
         };
     }
 
@@ -283,4 +294,6 @@ internal sealed class PreparedPublishMessage
     public required DateTime PublishAt { get; init; }
 
     public required Message Message { get; init; }
+
+    public required IntentType IntentType { get; init; }
 }

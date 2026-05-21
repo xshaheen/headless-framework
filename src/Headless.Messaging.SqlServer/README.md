@@ -9,7 +9,8 @@ Provides durable, transactional message storage using SQL Server with automatic 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates
+- **Auto-Migration**: Automatic table creation and schema updates, including durable bus/queue intent columns
+- **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
@@ -59,4 +60,5 @@ options.UseSqlServer(config =>
   - `{schema}.Received` - Received messages
   - `{schema}.Lock` - Distributed lock table
 - Creates indexes for message queries
+- Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages

@@ -14,6 +14,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Consumer Management**: `AddHeadlessMessaging(...)`, `Subscribe*()`, `AddBusConsumer(...)`, `AddQueueConsumer(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
@@ -88,6 +89,8 @@ public sealed class MetricsService(IDirectPublisher publisher)
 - `SubscribeFromAssemblyContaining<T>()` and `Subscribe<T>()` are the primary registration APIs.
 - `AddBusConsumer<TConsumer, TMessage>(topic)` and `AddQueueConsumer<TConsumer, TMessage>(topic)` are the library-author registration APIs when a package wants to contribute consumers through DI with explicit delivery intent.
 - topic and group defaults are deterministic; duplicate registrations fail fast by default.
+- persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.
+- a persisted row whose `IntentType` has no registered transport is marked terminal `Failed` with no next retry; the drainer logs the unsupported intent and continues processing later rows.
 - direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
 - `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.

@@ -46,7 +46,8 @@ internal sealed class MessageSender : IMessageSender
     private readonly ILogger _logger;
     private readonly MessagingOptions _options;
     private readonly ISerializer _serializer;
-    private readonly ITransport _transport;
+    private readonly IBusTransport? _busTransport;
+    private readonly IQueueTransport? _queueTransport;
     private readonly TimeProvider _timeProvider;
     private readonly RetryPolicyOptions _retryPolicy;
     private readonly CancellationToken _shutdownToken;
@@ -57,7 +58,8 @@ internal sealed class MessageSender : IMessageSender
         _logger = logger;
         _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
         _serializer = serviceProvider.GetRequiredService<ISerializer>();
-        _transport = serviceProvider.GetRequiredService<ITransport>();
+        _busTransport = serviceProvider.GetService<IBusTransport>();
+        _queueTransport = serviceProvider.GetService<IQueueTransport>();
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
@@ -104,23 +106,29 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);
+        var selected = await _ResolveTransportAsync(message).ConfigureAwait(false);
+        if (selected.Result is { } failure)
+        {
+            return (RetryDecision.Stop, failure);
+        }
 
-        var tracingTimestamp = _TracingBefore(transportMsg, _transport.BrokerAddress, cancellationToken);
+        var transport = selected.Transport.GetValueOrDefault();
+        var tracingTimestamp = _TracingBefore(transportMsg, transport.BrokerAddress, cancellationToken);
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
-        var result = await _transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
+        var result = await transport.SendAsync(transportMsg, publishCts.Token).ConfigureAwait(false);
 
         if (result.Succeeded)
         {
             await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, transportMsg, _transport.BrokerAddress, cancellationToken);
+            _TracingAfter(tracingTimestamp, transportMsg, transport.BrokerAddress, cancellationToken);
 
             return (RetryDecision.Stop, OperateResult.Success);
         }
 
-        _TracingError(tracingTimestamp, transportMsg, _transport.BrokerAddress, result, cancellationToken);
+        _TracingError(tracingTimestamp, transportMsg, transport.BrokerAddress, result, cancellationToken);
 
         var decision = await _SetFailedState(
                 message,
@@ -132,6 +140,59 @@ internal sealed class MessageSender : IMessageSender
             .ConfigureAwait(false);
 
         return (decision, OperateResult.Failed(result.Exception!));
+    }
+
+    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
+    {
+        if (!Enum.IsDefined(message.IntentType))
+        {
+            var ex = new InvalidOperationException(
+                $"Stored message {message.StorageId} has unsupported IntentType value '{(short)message.IntentType}'."
+            );
+            await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+            return (null, OperateResult.Failed(ex));
+        }
+
+        return message.IntentType switch
+        {
+            IntentType.Bus when _busTransport is not null => (DispatchTransport.ForBus(_busTransport), null),
+            IntentType.Queue when _queueTransport is not null => (DispatchTransport.ForQueue(_queueTransport), null),
+            IntentType.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
+            IntentType.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
+            _ => throw new UnreachableException(),
+        };
+    }
+
+    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _MissingTransportAsync(
+        MediumMessage message,
+        string transportType
+    )
+    {
+        var ex = new InvalidOperationException(
+            $"Stored message {message.StorageId} requires {transportType}, but no matching transport is registered."
+        );
+        await _MarkUnsupportedIntentFailedAsync(message, ex).ConfigureAwait(false);
+        return (null, OperateResult.Failed(ex));
+    }
+
+    private async Task _MarkUnsupportedIntentFailedAsync(MediumMessage message, Exception ex)
+    {
+        message.ExpiresAt = _timeProvider.GetUtcNow().UtcDateTime.AddSeconds(_options.FailedMessageExpiredAfter);
+        message.NextRetryAt = null;
+        message.LockedUntil = null;
+
+        await _dataStorage
+            .ChangePublishStateAsync(
+                message,
+                StatusName.Failed,
+                nextRetryAt: null,
+                lockedUntil: null,
+                originalRetries: message.Retries,
+                cancellationToken: CancellationToken.None
+            )
+            .ConfigureAwait(false);
+
+        _logger.StoredMessageUnsupportedIntent(ex, message.StorageId, message.IntentType.ToString("D"));
     }
 
     private async Task _SetSuccessfulState(MediumMessage message, CancellationToken cancellationToken)
@@ -381,4 +442,14 @@ internal sealed class MessageSender : IMessageSender
     }
 
     #endregion
+}
+
+internal readonly record struct DispatchTransport(
+    BrokerAddress BrokerAddress,
+    Func<TransportMessage, CancellationToken, Task<OperateResult>> SendAsync
+)
+{
+    public static DispatchTransport ForBus(IBusTransport transport) => new(transport.BrokerAddress, transport.SendAsync);
+
+    public static DispatchTransport ForQueue(IQueueTransport transport) => new(transport.BrokerAddress, transport.SendAsync);
 }

@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
@@ -134,6 +136,85 @@ public abstract class DataStorageTestsBase : TestBase
         result.Origin.GetId().Should().Be("non-numeric-id");
     }
 
+    public virtual async Task should_store_published_message_with_intent_type()
+    {
+        // given
+        if (!Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support monitoring roundtrip");
+        }
+
+        var storage = GetStorage();
+        var message = CreateMessage();
+        var envelope = new MediumMessage
+        {
+            StorageId = 0,
+            Origin = message,
+            Content = string.Empty,
+            IntentType = IntentType.Queue,
+        };
+
+        // when
+        var result = await storage.StoreMessageAsync("test-published-message", envelope, cancellationToken: AbortToken);
+
+        // then
+        result.IntentType.Should().Be(IntentType.Queue);
+        var roundTripped = await storage.GetMonitoringApi().GetPublishedMessageAsync(result.StorageId, AbortToken);
+        roundTripped.Should().NotBeNull();
+        roundTripped!.IntentType.Should().Be(IntentType.Queue);
+    }
+
+    public virtual async Task should_filter_monitoring_messages_by_intent_type()
+    {
+        // given
+        if (!Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not support monitoring roundtrip");
+        }
+
+        var storage = GetStorage();
+        await storage.StoreMessageAsync(
+            "intent-filter",
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            cancellationToken: AbortToken
+        );
+        await storage.StoreMessageAsync(
+            "intent-filter",
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = CreateMessage(),
+                Content = string.Empty,
+                IntentType = IntentType.Queue,
+            },
+            cancellationToken: AbortToken
+        );
+
+        // when
+        var page = await storage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Publish,
+                    Name = "intent-filter",
+                    IntentType = IntentType.Queue,
+                    PageSize = 20,
+                },
+                AbortToken
+            );
+
+        // then
+        page.Items.Should().OnlyContain(message => message.IntentType == IntentType.Queue);
+        page.Items.Should().ContainSingle();
+    }
+
     public virtual async Task should_store_received_message()
     {
         // given
@@ -149,6 +230,47 @@ public abstract class DataStorageTestsBase : TestBase
         result.Should().NotBeNull();
         result.StorageId.Should().BeGreaterThan(0);
         result.Origin.Should().BeSameAs(message);
+    }
+
+    public virtual async Task should_store_received_bus_and_queue_rows_with_same_identity()
+    {
+        // given
+        var storage = GetStorage();
+        var messageId = $"same-identity-{Guid.NewGuid():N}";
+        var bus = CreateMessage(messageId);
+        var queue = CreateMessage(messageId);
+        const string messageName = "test-received-message";
+        const string group = "test-group";
+
+        // when
+        await storage.StoreReceivedMessageAsync(
+            messageName,
+            group,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = bus,
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            AbortToken
+        );
+        await storage.StoreReceivedMessageAsync(
+            messageName,
+            group,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = queue,
+                Content = string.Empty,
+                IntentType = IntentType.Queue,
+            },
+            AbortToken
+        );
+
+        // then
+        var rowCount = await CountReceivedMessagesByIdentityAsync(messageId, group, AbortToken);
+        rowCount.Should().Be(2);
     }
 
     public virtual async Task should_store_received_exception_message()
@@ -685,6 +807,7 @@ public abstract class DataStorageTestsBase : TestBase
                             StorageId = storedMessage.StorageId,
                             Origin = storedMessage.Origin,
                             Content = storedMessage.Content,
+            IntentType = IntentType.Bus,
                             Retries = 1,
                         };
                         var ok = await storage.ChangeReceiveStateAsync(

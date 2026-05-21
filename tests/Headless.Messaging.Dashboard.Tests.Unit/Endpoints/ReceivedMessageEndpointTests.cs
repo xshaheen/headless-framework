@@ -32,6 +32,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         {
             StorageId = messageId,
             Content = "{\"received\":\"data\"}",
+            IntentType = IntentType.Bus,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {

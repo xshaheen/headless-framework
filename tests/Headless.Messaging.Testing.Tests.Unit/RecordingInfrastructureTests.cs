@@ -52,6 +52,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         {
             StorageId = 1,
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
             Origin = new Message(_BaseHeaders(id, name, correlationId), value: null),
         };

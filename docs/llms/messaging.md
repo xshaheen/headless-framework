@@ -256,6 +256,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
 - **One publish shape**: `IDirectPublisher` and `IOutboxPublisher` both use `PublishAsync(message, options, cancellationToken)`. Prefer mappings or conventions for topics, and use `PublishOptions` only for explicit overrides.
+- **Outbox intent is durable**: Storage rows carry `IntentType`; retry drainers dispatch bus rows through `IBusTransport` and queue rows through `IQueueTransport`. A persisted row whose intent has no registered transport is terminally failed and the drainer continues.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
@@ -495,7 +496,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 - **Outbox Publisher**: Transactional message publishing with database consistency
 - **Consumer Management**: Automatic registration, invocation, and per-dispatch lifecycle handling
-- **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Message Processing**: Retry processor, delayed message scheduler, transport health checks, and intent-aware drainer dispatch
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
@@ -569,6 +570,7 @@ Use `IOutboxPublisher` for messages that must not be lost:
 - **At-least-once**: Automatic retries with configurable backoff
 - **Delayed delivery**: Schedule messages for future delivery
 - **Ordering**: Preserves publish order within transactions
+- **Durable intent**: Stored rows preserve bus/queue intent; retry pickup routes to the matching transport instead of relying on the current publisher facade.
 
 ### IDirectPublisher (Fire-and-Forget)
 
@@ -2061,7 +2063,8 @@ Provides durable, transactional message storage using PostgreSQL with schema ini
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
@@ -2111,6 +2114,7 @@ options.UsePostgreSql(config =>
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
 - Creates indexes for message queries
+- Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages
 
 ---
@@ -2126,7 +2130,8 @@ Provides durable, transactional message storage using SQL Server with schema ini
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
@@ -2176,6 +2181,7 @@ options.UseSqlServer(config =>
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
 - Creates indexes for message queries
+- Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages
 
 ---
@@ -2194,6 +2200,7 @@ Provides ephemeral message storage without database dependencies for local devel
 - **Fast**: In-memory operations
 - **Testing**: Deterministic behavior for tests
 - **Full API**: Complete outbox storage implementation
+- **Intent-Aware Identity**: Mirrors durable providers by storing bus/queue intent and including it in received-message de-duplication
 - **Monitoring**: In-memory dashboard data
 
 ## Installation

@@ -134,15 +134,44 @@ public interface IDataStorage
 
     ValueTask<MediumMessage> StoreMessageAsync(
         string name,
-        Message content,
+        MediumMessage message,
         object? transaction = null,
         CancellationToken cancellationToken = default
     );
 
+    ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return StoreMessageAsync(
+            name,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = content,
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            transaction,
+            cancellationToken
+        );
+    }
+
     /// <summary>
     /// Stores a failed received message using serialized <see cref="Message"/> JSON so providers can persist message headers.
     /// </summary>
-    /// <param name="content">Serialized <see cref="Message"/> payload, including headers.</param>
+    /// <param name="message">The failed received message envelope, including serialized content and delivery intent.</param>
+    ValueTask<bool> StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        MediumMessage message,
+        string? exceptionInfo = null,
+        CancellationToken cancellationToken = default
+    );
+
     ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
         string group,
@@ -154,9 +183,30 @@ public interface IDataStorage
     ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
-        Message content,
+        MediumMessage message,
         CancellationToken cancellationToken = default
     );
+
+    ValueTask<MediumMessage> StoreReceivedMessageAsync(
+        string name,
+        string group,
+        Message content,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return StoreReceivedMessageAsync(
+            name,
+            group,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = content,
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            cancellationToken
+        );
+    }
 
     ValueTask<int> DeleteExpiresAsync(
         string table,

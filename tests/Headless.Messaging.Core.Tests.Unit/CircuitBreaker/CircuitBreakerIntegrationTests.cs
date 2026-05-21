@@ -73,6 +73,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, null),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
     }
 

@@ -2,7 +2,7 @@
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class OutboxBus(IOutboxPublisher publisher, IScheduledPublisher scheduledPublisher) : IOutboxBus
+internal sealed class OutboxBus(OutboxPublisher publisher) : IOutboxBus
 {
     public Task PublishAsync<T>(
         T? contentObj,
@@ -11,7 +11,7 @@ internal sealed class OutboxBus(IOutboxPublisher publisher, IScheduledPublisher 
     )
     {
         return options?.Delay is { } delay
-            ? scheduledPublisher.PublishDelayAsync(delay, contentObj, options, cancellationToken)
-            : publisher.PublishAsync(contentObj, options, cancellationToken);
+            ? publisher.PublishDelayAsync(delay, contentObj, options, IntentType.Bus, cancellationToken)
+            : publisher.PublishAsync(contentObj, options, IntentType.Bus, cancellationToken);
     }
 }
