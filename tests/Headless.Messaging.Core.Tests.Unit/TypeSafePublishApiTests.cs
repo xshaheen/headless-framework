@@ -28,7 +28,7 @@ public sealed class TypeSafePublishApiTests
         services.AddHeadlessMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
-            opt.UseInMemoryMessageQueue();
+            opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
 
@@ -51,7 +51,7 @@ public sealed class TypeSafePublishApiTests
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
             opt.WithTopicMapping<UserRegistered>("users.registered");
-            opt.UseInMemoryMessageQueue();
+            opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
 
@@ -78,7 +78,7 @@ public sealed class TypeSafePublishApiTests
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.new"); // Different topic
-                    opt.UseInMemoryMessageQueue();
+                    opt.UseInMemory();
                     opt.UseInMemoryStorage();
                 })
             )
@@ -100,7 +100,7 @@ public sealed class TypeSafePublishApiTests
                 {
                     opt.WithTopicMapping<OrderCreated>("orders.created");
                     opt.WithTopicMapping<OrderCreated>("orders.created"); // Same topic
-                    opt.UseInMemoryMessageQueue();
+                    opt.UseInMemory();
                     opt.UseInMemoryStorage();
                 })
             )
@@ -119,7 +119,7 @@ public sealed class TypeSafePublishApiTests
         {
             // Topic mapping can be used by both publisher and consumer
             opt.WithTopicMapping<OrderCreated>("orders.created");
-            opt.UseInMemoryMessageQueue();
+            opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
 
@@ -187,7 +187,7 @@ public sealed class TypeSafePublishApiTests
         services.AddHeadlessMessaging(opt =>
         {
             opt.WithTopicMapping<OrderCreated>("orders.created");
-            opt.UseInMemoryMessageQueue();
+            opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
 

@@ -11,6 +11,8 @@ namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
+    private static string _CircuitKey(IntentType intentType, string group) => $"{intentType:D}:{group}";
+
     [Fact]
     public void should_register_consumers_via_scan()
     {
@@ -201,7 +203,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -227,7 +229,7 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.UseInMemoryMessageQueue();
+                messaging.UseInMemory();
                 messaging.UseInMemoryStorage();
                 messaging.UseConventions(conventions =>
                 {
@@ -258,7 +260,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
             messaging.Options.TopicNamePrefix = "billing";
         });
@@ -580,7 +582,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then — override is registered against the final group name
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 
@@ -604,7 +606,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(5);
     }
 
@@ -657,7 +659,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then — no stale default-group entry, only the final one
-        cbRegistry.TryGet("final-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "final-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 }

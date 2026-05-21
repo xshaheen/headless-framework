@@ -277,21 +277,26 @@ internal sealed class ConsumerRegister(
 
     public async ValueTask ExecuteAsync()
     {
-        var groupingMatches = _selector.GetCandidatesMethodsOfGroupNameGrouped();
+        var groupingMatches = _selector.GetCandidatesMethodsOfIntentGroupNameGrouped();
         List<Task>? startupTasks = null;
 
+        _EnsureConsumerFactorySupportsIntent(groupingMatches.Keys);
+
         // Arm the OTel cardinality guard so unrecognized group names are rejected.
-        _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys);
+        _circuitBreakerStateManager?.RegisterKnownGroups(groupingMatches.Keys.Select(_CreateHandleName));
 
         foreach (var matchGroup in groupingMatches)
         {
-            var groupName = matchGroup.Key;
-            var limit = _selector.GetGroupConcurrentLimit(groupName);
+            var groupKey = matchGroup.Key;
+            var groupName = groupKey.GroupName;
+            var intentType = groupKey.IntentType;
+            var handleName = _CreateHandleName(groupKey);
+            var limit = _selector.GetGroupConcurrentLimit(groupKey);
 
             ICollection<string> topics;
             try
             {
-                await using var client = await _consumerClientFactory.CreateAsync(groupName, limit);
+                await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType);
                 client.OnLogCallback = _WriteLog;
                 topics = await client.FetchTopicsAsync(matchGroup.Value.Select(x => x.TopicName));
             }
@@ -307,12 +312,12 @@ internal sealed class ConsumerRegister(
             {
                 Logger = _logger,
                 Cts = groupCts,
-                GroupName = groupName,
+                GroupName = handleName,
             };
 
-            _groupHandles[groupName] = handle;
+            _groupHandles[handleName] = handle;
             _circuitBreakerStateManager?.RegisterGroupCallbacks(
-                groupName,
+                handleName,
                 onPause: () => _PauseGroupAsync(handle),
                 onResume: () => _ResumeGroupAsync(handle)
             );
@@ -321,11 +326,11 @@ internal sealed class ConsumerRegister(
             // This is a no-op during initial startup (no groups are in HalfOpen then).
             if (_circuitBreakerStateManager is not null)
             {
-                await _circuitBreakerStateManager.AbortHalfOpenProbeAsync(groupName).ConfigureAwait(false);
+                await _circuitBreakerStateManager.AbortHalfOpenProbeAsync(handleName).ConfigureAwait(false);
 
                 // If the circuit is Open (or was just re-normalized from HalfOpen),
                 // pre-pause the new handle so newly created clients get paused via AddClientAsync.
-                if (_circuitBreakerStateManager.IsOpen(groupName))
+                if (_circuitBreakerStateManager.IsOpen(handleName))
                 {
                     handle.IsPaused = true;
                 }
@@ -340,13 +345,13 @@ internal sealed class ConsumerRegister(
                         {
                             try
                             {
-                                var innerClient = await _consumerClientFactory.CreateAsync(groupName, limit);
+                                var innerClient = await _CreateConsumerClientAsync(groupName, limit, intentType);
 
                                 await handle.AddClientAsync(innerClient);
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient, groupCts.Token);
+                                _RegisterMessageProcessor(innerClient, groupName, handleName, intentType, groupCts.Token);
 
                                 await innerClient.SubscribeAsync(topics);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -385,6 +390,39 @@ internal sealed class ConsumerRegister(
             await Task.WhenAll(startupTasks).ConfigureAwait(false);
         }
     }
+
+    private Task<IConsumerClient> _CreateConsumerClientAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType
+    )
+    {
+        return _consumerClientFactory is IIntentAwareConsumerClientFactory intentAwareFactory
+            ? intentAwareFactory.CreateAsync(groupName, groupConcurrent, intentType)
+            : _consumerClientFactory.CreateAsync(groupName, groupConcurrent);
+    }
+
+    private void _EnsureConsumerFactorySupportsIntent(IEnumerable<ConsumerGroupKey> groupKeys)
+    {
+        if (_consumerClientFactory is IIntentAwareConsumerClientFactory)
+        {
+            return;
+        }
+
+        var unsupportedGroup = groupKeys.FirstOrDefault(group => group.IntentType != IntentType.Bus);
+
+        if (unsupportedGroup != default)
+        {
+            throw new InvalidOperationException(
+                $"Consumer group '{unsupportedGroup.GroupName}' is registered for {unsupportedGroup.IntentType} delivery, "
+                    + $"but the configured {nameof(IConsumerClientFactory)} does not implement "
+                    + $"{nameof(IIntentAwareConsumerClientFactory)}. Use an intent-aware messaging provider for queue consumers."
+            );
+        }
+    }
+
+    private static string _CreateHandleName(ConsumerGroupKey groupKey) =>
+        CircuitBreakerGroupKeys.For(groupKey.IntentType, groupKey.GroupName);
 
     private async Task _AwaitConsumerReadyThenListenAsync(
         IConsumerClient innerClient,
@@ -540,25 +578,25 @@ internal sealed class ConsumerRegister(
         );
     }
 
-    private void _RegisterMessageProcessor(IConsumerClient client, CancellationToken hostShutdownToken)
+    private void _RegisterMessageProcessor(
+        IConsumerClient client,
+        string group,
+        string handleName,
+        IntentType intentType,
+        CancellationToken hostShutdownToken
+    )
     {
         client.OnLogCallback = _WriteLog;
         client.OnMessageCallback = async (transportMessage, sender) =>
         {
-            // Fast path: skip sanitization for groups registered at startup (trusted config).
-            var rawGroup = transportMessage.GetGroup();
-            var groupName =
-                rawGroup is not null && _groupHandles.ContainsKey(rawGroup)
-                    ? rawGroup
-                    : LogSanitizer.Sanitize(rawGroup, 256);
             var probeAcquired = false;
             var probeOutcomeTransferred = false;
             long? tracingTimestamp = null;
             try
             {
-                if (groupName is not null && _circuitBreakerStateManager is not null)
+                if (_circuitBreakerStateManager is not null)
                 {
-                    probeAcquired = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(groupName);
+                    probeAcquired = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(handleName);
 
                     if (!probeAcquired)
                     {
@@ -577,12 +615,11 @@ internal sealed class ConsumerRegister(
                 tracingTimestamp = _TracingBefore(transportMessage, _serverAddress, hostShutdownToken);
 
                 var name = transportMessage.GetName();
-                var group = groupName!;
 
                 Message message;
                 Exception? dispatchBypassException = null;
 
-                var canFindSubscriber = _selector.TryGetTopicExecutor(name, group, out var executor);
+                var canFindSubscriber = _selector.TryGetTopicExecutor(name, group, intentType, out var executor);
                 string? exceptionInfo = null;
                 try
                 {
@@ -645,7 +682,7 @@ internal sealed class ConsumerRegister(
                     if (dispatchBypassException is not null && _circuitBreakerStateManager is not null)
                     {
                         await _circuitBreakerStateManager
-                            .ReportFailureAsync(group, dispatchBypassException, CancellationToken.None)
+                            .ReportFailureAsync(handleName, dispatchBypassException, CancellationToken.None)
                             .ConfigureAwait(false);
                         probeOutcomeTransferred = true;
                     }
@@ -655,7 +692,19 @@ internal sealed class ConsumerRegister(
 #pragma warning restore VSTHRD103, CA1849
 
                     var stored = await _storage
-                        .StoreReceivedExceptionMessageAsync(name, group, content, exceptionInfo, hostShutdownToken)
+                        .StoreReceivedExceptionMessageAsync(
+                            name,
+                            group,
+                            new MediumMessage
+                            {
+                                StorageId = 0,
+                                Origin = message,
+                                Content = content,
+                                IntentType = intentType,
+                            },
+                            exceptionInfo,
+                            hostShutdownToken
+                        )
                         .ConfigureAwait(false);
 
                     await client.CommitAsync(sender);
@@ -684,6 +733,7 @@ internal sealed class ConsumerRegister(
                                     ServiceProvider = exhaustedScope.ServiceProvider,
                                     MessageType = MessageType.Subscribe,
                                     Message = message,
+                                    IntentType = intentType,
                                     Exception =
                                         dispatchBypassException
                                         ?? new InvalidOperationException(
@@ -723,7 +773,13 @@ internal sealed class ConsumerRegister(
                     var mediumMessage = await _storage.StoreReceivedMessageAsync(
                         name,
                         group,
-                        message,
+                        new MediumMessage
+                        {
+                            StorageId = 0,
+                            Origin = message,
+                            Content = string.Empty,
+                            IntentType = intentType,
+                        },
                         CancellationToken.None
                     );
                     mediumMessage.Origin = message;
@@ -746,9 +802,9 @@ internal sealed class ConsumerRegister(
             }
             finally
             {
-                if (probeAcquired && !probeOutcomeTransferred && groupName is not null)
+                if (probeAcquired && !probeOutcomeTransferred)
                 {
-                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(groupName);
+                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(handleName);
                 }
             }
         };

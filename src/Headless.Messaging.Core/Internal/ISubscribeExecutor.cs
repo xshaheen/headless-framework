@@ -72,7 +72,14 @@ internal sealed class SubscribeExecutor(
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
-            if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
+            if (
+                !selector.TryGetTopicExecutor(
+                    message.Origin.GetName(),
+                    message.Origin.GetGroup()!,
+                    message.IntentType,
+                    out descriptor
+                )
+            )
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
@@ -207,7 +214,8 @@ internal sealed class SubscribeExecutor(
 
         if (circuitBreakerStateManager is not null)
         {
-            await circuitBreakerStateManager.ReportSuccessAsync(message.Origin.GetGroup()!).ConfigureAwait(false);
+            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
+            await circuitBreakerStateManager.ReportSuccessAsync(circuitBreakerGroup).ConfigureAwait(false);
         }
     }
 
@@ -366,8 +374,8 @@ internal sealed class SubscribeExecutor(
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
 
-            await circuitBreakerStateManager
-                .ReportFailureAsync(message.Origin.GetGroup()!, reportedException, cancellationToken)
+            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
+            await circuitBreakerStateManager.ReportFailureAsync(circuitBreakerGroup, reportedException, cancellationToken)
                 .ConfigureAwait(false);
         }
 

@@ -9,6 +9,8 @@ namespace Tests;
 
 public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 {
+    private static string _CircuitKey(IntentType intentType, string group) => $"{intentType:D}:{group}";
+
     [Fact]
     public void should_register_consumer_with_topic()
     {
@@ -357,7 +359,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -365,7 +367,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then — override is registered against the final group name
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 
@@ -384,7 +386,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -392,8 +394,35 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(5);
+    }
+
+    [Fact]
+    public void queue_consumer_circuit_breaker_registers_with_queue_intent_key()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services
+            .AddQueueConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
+            .Group("my-group")
+            .WithCircuitBreaker(cb => cb.FailureThreshold = 7);
+
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.UseInMemory();
+            messaging.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        // then
+        cbRegistry.TryGet(_CircuitKey(IntentType.Queue, "my-group"), out var opts).Should().BeTrue();
+        opts!.FailureThreshold.Should().Be(7);
     }
 
     [Fact]

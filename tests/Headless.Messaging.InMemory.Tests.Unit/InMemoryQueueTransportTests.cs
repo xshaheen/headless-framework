@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -21,7 +21,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         var queue = new MemoryQueue(queueLogger);
         _transport = new InMemoryQueueTransport(queue, transportLogger);
-        _consumerClient = new InMemoryConsumerClient(queue, "test-group", 1);
+        _consumerClient = new InMemoryConsumerClient(queue, "test-group", 1, IntentType.Queue);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -283,6 +283,73 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // then
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
         receivedMessages.Should().HaveCount(messageCount);
+    }
+
+    [Fact]
+    public async Task should_deliver_to_exactly_one_competing_worker()
+    {
+        // given
+        var queueLogger = Substitute.For<ILogger<MemoryQueue>>();
+        var transportLogger = Substitute.For<ILogger<InMemoryQueueTransport>>();
+        var queue = new MemoryQueue(queueLogger);
+        await using var transport = new InMemoryQueueTransport(queue, transportLogger);
+        await using var worker1 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
+        await using var worker2 = new InMemoryConsumerClient(queue, "workers", 1, IntentType.Queue);
+
+        await worker1.SubscribeAsync(["jobs"]);
+        await worker2.SubscribeAsync(["jobs"]);
+
+        var received = 0;
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task OnMessage(TransportMessage _, object? __)
+        {
+            if (Interlocked.Increment(ref received) == 1)
+            {
+                tcs.TrySetResult();
+            }
+
+            return Task.CompletedTask;
+        }
+
+        worker1.OnMessageCallback = OnMessage;
+        worker2.OnMessageCallback = OnMessage;
+
+        using var cts = new CancellationTokenSource();
+        var listen1 = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await worker1.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+        var listen2 = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    await worker2.ListeningAsync(TimeSpan.FromSeconds(5), cts.Token);
+                }
+                catch (OperationCanceledException) { }
+            },
+            AbortToken
+        );
+
+        await Task.Delay(50, AbortToken);
+
+        // when
+        var result = await transport.SendAsync(_CreateTestMessage("job-1", "jobs"), AbortToken);
+        _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
+        await Task.Delay(100, AbortToken);
+        await cts.CancelAsync();
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        received.Should().Be(1);
     }
 
     private static TransportMessage _CreateTestMessage(string id, string topic)

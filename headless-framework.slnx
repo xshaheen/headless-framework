@@ -201,7 +201,7 @@
         <Project Path="src/Headless.Messaging.Core/Headless.Messaging.Core.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
-        <Project Path="src/Headless.Messaging.InMemoryQueue/Headless.Messaging.InMemoryQueue.csproj" />
+        <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
         <Project Path="src/Headless.Messaging.InMemoryStorage/Headless.Messaging.InMemoryStorage.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
@@ -223,7 +223,7 @@
         <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Unit/Headless.Messaging.AwsSqs.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.InMemoryQueue.Tests.Unit/Headless.Messaging.InMemoryQueue.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.InMemory.Tests.Unit/Headless.Messaging.InMemory.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemoryStorage.Tests.Unit/Headless.Messaging.InMemoryStorage.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />

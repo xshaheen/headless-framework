@@ -1,0 +1,61 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Transport;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Messaging.InMemory;
+
+/// <summary>
+/// Transport implementation for in-memory message queue.
+/// </summary>
+internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemoryQueueTransport> logger) : IQueueTransport
+{
+    private readonly ILogger _logger = logger;
+
+    /// <summary>
+    /// Gets the broker address information.
+    /// </summary>
+    public BrokerAddress BrokerAddress => new("InMemory", "localhost");
+
+    /// <summary>
+    /// Sends a transport message asynchronously.
+    /// </summary>
+    /// <param name="message">The transport message to send.</param>
+    /// <param name="cancellationToken">Token to cancel the send operation.</param>
+    /// <returns>A task that returns the operation result.</returns>
+    public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            queue.SendQueue(message);
+            var messageName = message.GetName();
+            _logger.QueueMessagePublished(messageName);
+            return Task.FromResult(OperateResult.Success);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            var wrapperEx = new PublisherSentFailedException(e.Message, e);
+            return Task.FromResult(OperateResult.Failed(wrapperEx));
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
+
+internal static partial class InMemoryQueueTransportLog
+{
+    [LoggerMessage(
+        EventId = 3000,
+        Level = LogLevel.Debug,
+        Message = "Event message [{MessageName}] has been published."
+    )]
+    public static partial void QueueMessagePublished(this ILogger logger, string messageName);
+}

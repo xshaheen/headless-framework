@@ -14,7 +14,7 @@ container
         setup.Subscribe<EventConsumer>().Topic("sample.console.showtime");
         // Console app does not support dashboard
         setup.UseInMemoryStorage();
-        setup.UseInMemoryMessageQueue();
+        setup.UseInMemory();
     })
     .AddBusConsumeMiddleware<CustomConsumerMiddleware>();
 

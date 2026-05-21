@@ -1,11 +1,14 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
 using Headless.Messaging.Transport;
 
-namespace Headless.Messaging.InMemoryQueue;
+namespace Headless.Messaging.InMemory;
 
 /// <summary>
 /// Factory for creating in-memory consumer clients.
 /// </summary>
-internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsumerClientFactory
+internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IIntentAwareConsumerClientFactory
 {
     /// <summary>
     /// Creates a new consumer client for the specified group.
@@ -15,7 +18,12 @@ internal sealed class InMemoryConsumerClientFactory(MemoryQueue queue) : IConsum
     /// <returns>A task that returns the created consumer client</returns>
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
-        var client = new InMemoryConsumerClient(queue, groupName, groupConcurrent);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+    }
+
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    {
+        var client = new InMemoryConsumerClient(queue, groupName, groupConcurrent, intentType);
         return Task.FromResult<IConsumerClient>(client);
     }
 }

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -95,7 +95,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        _queue.Send(message);
+        _queue.SendBus(message);
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -136,7 +136,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        _queue.Send(_CreateTestMessage("msg-1", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -174,7 +174,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        _queue.Send(_CreateTestMessage("msg-1", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -236,9 +236,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         await client.DisposeAsync();
 
-        // then - sending to the topic should not deliver to the unsubscribed client
-        // (the topic still exists but the client is removed)
-        queue.Send(_CreateTestMessage("msg-1", "dispose-topic"));
+        // then - sending to the topic should fail because the disposed client removed the binding
+        var act = () => queue.SendBus(_CreateTestMessage("msg-1", "dispose-topic"));
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Cannot find the corresponding group*");
         await Task.Delay(100, AbortToken);
         receivedMessage.Should().BeNull();
     }
@@ -304,7 +304,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when - send multiple messages
         for (var i = 0; i < messageCount; i++)
         {
-            queue.Send(_CreateTestMessage($"msg-{i}", "concurrent-topic"));
+            queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-topic"));
         }
 
         // Wait for processing
@@ -349,9 +349,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when - send messages in order
-        queue.Send(_CreateTestMessage("1", "sequential-topic"));
-        queue.Send(_CreateTestMessage("2", "sequential-topic"));
-        queue.Send(_CreateTestMessage("3", "sequential-topic"));
+        queue.SendBus(_CreateTestMessage("1", "sequential-topic"));
+        queue.SendBus(_CreateTestMessage("2", "sequential-topic"));
+        queue.SendBus(_CreateTestMessage("3", "sequential-topic"));
 
         await Task.Delay(200, AbortToken);
         await cts.CancelAsync();
@@ -405,7 +405,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        _queue.Send(_CreateTestMessage("msg-1", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -478,7 +478,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
 
         // when — pause then send
         await _client.PauseAsync(AbortToken);
-        _queue.Send(_CreateTestMessage("paused-msg", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("paused-msg", "test-topic"));
         await Task.Delay(200, AbortToken);
 
         // then — message not delivered while paused
@@ -503,8 +503,8 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // given
         await _client.SubscribeAsync(["test-topic"]);
 
-        _queue.Send(_CreateTestMessage("drain-1", "test-topic"));
-        _queue.Send(_CreateTestMessage("drain-2", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("drain-1", "test-topic"));
+        _queue.SendBus(_CreateTestMessage("drain-2", "test-topic"));
 
         // when — drain before any listener picks them up
         _client.DrainPendingMessages();

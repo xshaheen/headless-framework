@@ -25,6 +25,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     // Helpers
     // -------------------------------------------------------------------------
 
+    private static string _CircuitKey(string group) => $"{IntentType.Bus:D}:{group}";
+
     private static MediumMessage _CreateMessage(string? group = _Group)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -127,8 +129,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var msg2 = _CreateMessage("group-b");
         var msg3 = _CreateMessage("group-a");
 
-        cb.IsOpen("group-a").Returns(true);
-        cb.IsOpen("group-b").Returns(false);
+        cb.IsOpen(_CircuitKey("group-a")).Returns(true);
+        cb.IsOpen(_CircuitKey("group-b")).Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, msg1, msg2, msg3);
@@ -209,8 +211,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var baseInterval = TimeSpan.FromSeconds(1);
 
-        cb.IsOpen("open-group").Returns(true);
-        cb.IsOpen("healthy-group").Returns(false);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
 
         var messages = new[]
         {
@@ -282,7 +284,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, adaptivePolling: false);
 
-        cb.IsOpen("open-group").Returns(true);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
 
         var messages = Enumerable.Range(0, 10).Select(_ => _CreateMessage("open-group")).ToArray();
 
@@ -314,7 +316,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             maxPollingIntervalSeconds: 2,
             circuitOpenRateThreshold: 0.5
         );
-        cb.IsOpen("open-group").Returns(true);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
 
         var dataStorage = Substitute.For<IDataStorage>();
         _SetupReceivedMessages(dataStorage, _CreateMessage("open-group"));
@@ -348,8 +350,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
 
         // Cycle 1: High transient rate → doubles interval
-        cb.IsOpen("open-group").Returns(true);
-        cb.IsOpen("healthy-group").Returns(false);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
         _SetupReceivedMessages(
             dataStorage,
             _CreateMessage("open-group"),
@@ -360,7 +362,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await sut.ProcessAsync(context);
 
         // Cycle 2-3: All healthy (no open circuits) → 2 consecutive healthy cycles
-        cb.IsOpen("open-group").Returns(false);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(false);
         _SetupReceivedMessages(dataStorage, _CreateMessage("healthy-group"), _CreateMessage("healthy-group"));
         await sut.ProcessAsync(context);
         await sut.ProcessAsync(context);
@@ -452,8 +454,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // Arrange — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
         var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.8);
-        cb.IsOpen("open-group").Returns(true);
-        cb.IsOpen("healthy-group").Returns(false);
+        cb.IsOpen(_CircuitKey("open-group")).Returns(true);
+        cb.IsOpen(_CircuitKey("healthy-group")).Returns(false);
 
         var dataStorage = Substitute.For<IDataStorage>();
         // 6 open + 4 healthy = 60% transient rate → mid-range

@@ -212,7 +212,7 @@ public sealed class BootstrapperTests : TestBase
 
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
         messagingBuilder.UseDistributedLock(messagingProvider);
@@ -270,7 +270,7 @@ public sealed class BootstrapperTests : TestBase
 
         var messagingBuilder = services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
             setup.UseConventions(c =>
             {

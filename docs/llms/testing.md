@@ -450,12 +450,13 @@ Transport-level test harness for asserting on published, consumed, faulted, and 
 
 ## Problem Solved
 
-Asserting on messaging by querying the outbox table covers only messages that flow through the outbox -- direct publishes bypass it and leave assertions blind. `MessagingTestHarness` records every message at the `ITransport` boundary, so tests can wait on and assert against outboxed and direct-published messages through one API.
+Asserting on messaging by querying the outbox table covers only messages that flow through the outbox -- direct publishes bypass it and leave assertions blind. `MessagingTestHarness` records every message at the transport boundary, including typed `IBusTransport` and `IQueueTransport` sends, so tests can wait on and assert against outboxed and direct-published messages through one API.
 
 ## Key Features
 
-- `MessagingTestHarness` records messages at the transport layer (covers outbox + direct publish).
+- `MessagingTestHarness` records messages at the bus/queue transport layer (covers outbox + direct publish).
 - `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, `WaitForExhausted<T>(...)` block until a match arrives or the configured timeout elapses (`MessageObservationTimeoutException`).
+- `WaitForPublished<T>(IntentType.Bus)` and `WaitForPublished<T>(IntentType.Queue)` distinguish identical payloads sent through bus and queue paths.
 - Predicate overloads for filtering by payload shape.
 - `Published`, `Consumed`, `Faulted`, `Exhausted` collections for non-blocking assertions.
 - `Clear()` for clean test isolation; integrates with `HeadlessTestServer.ResetMessagingHarness()`.
@@ -506,7 +507,7 @@ A common reflex is to assert by selecting from the outbox table (`outbox.publish
 
 ### Isolation Between Tests
 
-Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both methods drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections without re-creating the transport stub. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since the transport stub records on the consumer's thread.
+Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTestServer`) from your fixture's `ResetStateAsync()` so observations from one test do not leak into the next. Both methods drop the accumulated `Published` / `Consumed` / `Faulted` / `Exhausted` collections without re-creating the transport decorators. Tests that observe asynchronous publish-then-consume flows should rely on the `WaitFor*` APIs rather than reading the collections immediately, since transport and consume observations can arrive on background processing threads.
 
 ## Dependencies
 
@@ -515,4 +516,4 @@ Call `harness.Clear()` (or `App.ResetMessagingHarness()` when using `HeadlessTes
 
 ## Side Effects
 
-- Replaces the configured `ITransport` with a recording stub. Tests using the harness do not exchange messages with any real broker.
+- Decorates configured `ITransport`, `IBusTransport`, and `IQueueTransport` services with recording wrappers. Tests using the harness should register `UseInMemory()` and `UseInMemoryStorage()` unless they intentionally supply a custom in-process transport.

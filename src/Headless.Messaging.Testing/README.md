@@ -1,6 +1,6 @@
 # Headless.Messaging.Testing
 
-In-process test harness for asserting on published, consumed, and faulted messages without external infrastructure.
+In-process test harness for asserting on published, consumed, faulted, and exhausted messages without external infrastructure.
 
 ## Problem Solved
 
@@ -9,8 +9,9 @@ Integration-testing a messaging pipeline typically requires a running broker and
 ## Key Features
 
 - **Zero Infrastructure**: No broker, no Docker — runs entirely in-process
-- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted` block until observed or timed out
-- **Full Pipeline Coverage**: Decorates the real transport and consume pipeline, so middleware, serialization, and consumer logic all execute
+- **Awaitable Assertions**: `WaitForPublished`, `WaitForConsumed`, `WaitForFaulted`, and `WaitForExhausted` block until observed or timed out
+- **Intent-Aware Observations**: `WaitForPublished<T>(IntentType.Bus)` and `WaitForPublished<T>(IntentType.Queue)` distinguish identical payloads on bus vs queue paths
+- **Full Pipeline Coverage**: Decorates the real bus/queue transports and consume pipeline, so middleware, serialization, and consumer logic all execute
 - **Isolated Per Test**: Each `MessagingTestHarness` instance owns its own observation store
 - **Host Integration**: `AddMessagingTestHarness()` extension decorates an existing DI container for use with `WebApplicationFactory`, `IHost`, or `WebApplication`
 - **Predicate Overloads**: Wait for a specific message matching a condition, not just any message of a type
@@ -28,7 +29,7 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
-        options.UseInMemoryMessageQueue();
+        options.UseInMemory();
         options.UseInMemoryStorage();
         options.Subscribe<OrderCreatedConsumer>("orders.created").Group("order-svc");
     });
@@ -42,20 +43,21 @@ msg.Message.Should().BeOfType<OrderCreated>();
 
 ## Observable Collections
 
-The harness records every message in three collections, available as snapshots at any time:
+The harness records every message in four collections, available as snapshots at any time:
 
 | Property | Contents |
 |---|---|
 | `harness.Published` | All messages sent to the transport |
 | `harness.Consumed` | All messages consumed successfully |
 | `harness.Faulted` | All messages whose consumer threw an unhandled exception |
+| `harness.Exhausted` | All messages whose retry budget was exhausted |
 
 ```csharp
 harness.Published.Should().ContainSingle(m => m.MessageType == typeof(OrderCreated));
 harness.Faulted.Should().BeEmpty();
 ```
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `IntentType`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
 
 ## WaitFor* Methods
 
@@ -72,7 +74,10 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(
 
 // Same API for published and faulted
 await harness.WaitForPublished<OrderCreated>(TimeSpan.FromSeconds(5));
+await harness.WaitForPublished<OrderCreated>(IntentType.Bus, TimeSpan.FromSeconds(5));
+await harness.WaitForConsumed<OrderCreated>(IntentType.Queue, TimeSpan.FromSeconds(5));
 await harness.WaitForFaulted<BadMessage>(TimeSpan.FromSeconds(5));
+await harness.WaitForExhausted<BadMessage>(TimeSpan.FromSeconds(5));
 ```
 
 ## TestConsumer\<T\>
@@ -86,7 +91,7 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 
     services.AddHeadlessMessaging(options =>
     {
-        options.UseInMemoryMessageQueue();
+        options.UseInMemory();
         options.UseInMemoryStorage();
         options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
     });
@@ -122,7 +127,7 @@ public sealed class OrderMessagingTests : TestBase
         {
             services.AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.Subscribe<OrderCreatedConsumer>("orders.created");
             });
@@ -153,7 +158,7 @@ public sealed class OrderHarnessFixture : IAsyncLifetime
             services.AddSingleton<TestConsumer<OrderCreated>>();
             services.AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
             });
@@ -235,7 +240,7 @@ public sealed class OrderApiTests : TestBase
 
         builder.Services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
             options.UseInMemoryStorage();
             options.Subscribe<OrderCreatedConsumer>("orders.created");
         });
@@ -271,5 +276,5 @@ Each `MessagingTestHarness` instance owns its own `MessageObservationStore`. Tes
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `Headless.Messaging.InMemoryQueue`
+- `Headless.Messaging.InMemory`
 - `Headless.Messaging.InMemoryStorage`

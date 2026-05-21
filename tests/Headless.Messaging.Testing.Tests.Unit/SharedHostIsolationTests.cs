@@ -38,7 +38,7 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
         {
             services.AddHeadlessMessaging(setup =>
             {
-                setup.UseInMemoryMessageQueue();
+                setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 setup.Subscribe<AlphaConsumer>("alpha-topic");
                 setup.Subscribe<BetaConsumer>("beta-topic");

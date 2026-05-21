@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -161,7 +161,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
             [Headers.MessageName] = "shared-topic",
         };
         var message = new Headless.Messaging.Messages.TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
-        _queue.Send(message);
+        _queue.SendBus(message);
 
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();

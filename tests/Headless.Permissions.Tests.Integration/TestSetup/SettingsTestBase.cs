@@ -54,7 +54,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
         // Cache

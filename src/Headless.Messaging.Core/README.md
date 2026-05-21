@@ -280,7 +280,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
 - **Pulsar**: Ordered within partitions when using partition key
-- **InMemoryQueue**: FIFO ordering with single consumer thread
+- **InMemory**: FIFO ordering with single consumer thread
 
 ### Configuration Impact on Ordering
 
@@ -441,11 +441,11 @@ var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen("payments");
-var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
+var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
+var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
+var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

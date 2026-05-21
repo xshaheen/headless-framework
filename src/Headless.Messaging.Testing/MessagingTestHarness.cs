@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -126,6 +127,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         services.AddSingleton(store);
 
         _DecorateTransport(services, store);
+        _DecorateBusTransport(services, store);
+        _DecorateQueueTransport(services, store);
         _DecoratePipeline(services, store);
         _DecorateOnExhausted(services, store);
 
@@ -169,6 +172,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
+            intentType: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -186,7 +190,22 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
+            intentType: null,
             obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+
+    public Task<RecordedMessage> WaitForPublished<T>(
+        IntentType intentType,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Published,
+            intentType,
+            predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
         );
@@ -206,6 +225,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
+            intentType: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -223,7 +243,22 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
+            intentType: null,
             obj => predicate((T)obj),
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+
+    public Task<RecordedMessage> WaitForConsumed<T>(
+        IntentType intentType,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Consumed,
+            intentType,
+            predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
         );
@@ -243,6 +278,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
+            intentType: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -260,6 +296,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
+            intentType: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -281,6 +318,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
+            intentType: null,
             predicate: null,
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -298,6 +336,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
+            intentType: null,
             obj => predicate((T)obj),
             timeout ?? DefaultTimeout,
             cancellationToken
@@ -399,7 +438,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         {
             throw new InvalidOperationException(
                 "MessagingTestHarness requires an in-memory transport. "
-                    + "Call setup.UseInMemoryMessageQueue() inside your AddHeadlessMessaging callback."
+                    + "Call setup.UseInMemory() inside your AddHeadlessMessaging callback."
             );
         }
 
@@ -414,7 +453,24 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     private static void _DecorateTransport(IServiceCollection services, MessageObservationStore store)
     {
-        var original = services.FirstOrDefault(d => d.ServiceType == typeof(ITransport));
+        _DecorateLast<ITransport>(
+            services,
+            sp =>
+            {
+                var serializer = sp.GetRequiredService<ISerializer>();
+                var logger = sp.GetService<ILogger<RecordingTransport>>();
+                return inner => new RecordingTransport(inner, store, serializer, logger);
+            }
+        );
+    }
+
+    private static void _DecorateLast<TService>(
+        IServiceCollection services,
+        Func<IServiceProvider, Func<TService, TService>> createDecorator
+    )
+        where TService : class
+    {
+        var original = services.LastOrDefault(d => d.ServiceType == typeof(TService));
 
         if (original is null)
         {
@@ -423,13 +479,13 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         services.Remove(original);
 
-        services.AddSingleton<ITransport>(sp =>
-        {
-            var inner = _ResolveFromDescriptor<ITransport>(sp, original);
-            var serializer = sp.GetRequiredService<ISerializer>();
-            var logger = sp.GetService<ILogger<RecordingTransport>>();
-            return new RecordingTransport(inner, store, serializer, logger);
-        });
+        services.Add(new ServiceDescriptor(typeof(TService), sp =>
+            {
+                var inner = _ResolveFromDescriptor<TService>(sp, original);
+                return createDecorator(sp)(inner);
+            },
+            original.Lifetime
+        ));
     }
 
     private static void _DecoratePipeline(IServiceCollection services, MessageObservationStore store)
@@ -471,6 +527,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                         payload,
                         payload.GetType(),
                         store.GetUtcNow(),
+                        info.IntentType,
                         info.Exception
                     ),
                     MessageObservationType.Exhausted
@@ -482,6 +539,32 @@ public sealed class MessagingTestHarness : IAsyncDisposable
                 }
             };
         });
+    }
+
+    private static void _DecorateBusTransport(IServiceCollection services, MessageObservationStore store)
+    {
+        _DecorateLast<IBusTransport>(
+            services,
+            sp =>
+            {
+                var serializer = sp.GetRequiredService<ISerializer>();
+                var logger = sp.GetService<ILogger<RecordingTransport>>();
+                return inner => new RecordingBusTransport(inner, store, serializer, logger);
+            }
+        );
+    }
+
+    private static void _DecorateQueueTransport(IServiceCollection services, MessageObservationStore store)
+    {
+        _DecorateLast<IQueueTransport>(
+            services,
+            sp =>
+            {
+                var serializer = sp.GetRequiredService<ISerializer>();
+                var logger = sp.GetService<ILogger<RecordingTransport>>();
+                return inner => new RecordingQueueTransport(inner, store, serializer, logger);
+            }
+        );
     }
 
     /// <summary>

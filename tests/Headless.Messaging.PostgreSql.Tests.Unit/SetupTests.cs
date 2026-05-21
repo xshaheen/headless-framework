@@ -25,7 +25,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v7";
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
 
@@ -56,7 +56,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v9";
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseEntityFramework<TestMessagingDbContext>(postgreSql => postgreSql.Schema = "custom_schema");
         });
 

@@ -22,6 +22,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 {
     private const string _TopicName = "cb.test.topic";
     private const string _GroupName = "cb.test.group";
+    private const string _CircuitBreakerGroupName = "0:cb.test.group";
 
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
@@ -91,7 +92,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Subscribe<CbTestConsumer>().Topic(_TopicName);
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
@@ -156,7 +157,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportFailureAsync(_GroupName, original);
+        await cbMock.Received(1).ReportFailureAsync(_CircuitBreakerGroupName, original);
     }
 
     [Fact]
@@ -175,7 +176,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
     }
 
     [Fact]
@@ -196,7 +197,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
-        await cbMock.Received(1).ReportFailureAsync(_GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
+        await cbMock.Received(1)
+            .ReportFailureAsync(_CircuitBreakerGroupName, Arg.Is<Exception>(e => e is HttpRequestException));
     }
 
     [Fact]
@@ -254,7 +256,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
-        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
     }
 }
 

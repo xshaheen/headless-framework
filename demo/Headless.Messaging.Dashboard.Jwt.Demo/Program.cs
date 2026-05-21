@@ -64,7 +64,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.MaxInlineRetries = 0;
     setup.SubscribeFromAssembly(typeof(Program).Assembly);
     setup.UseInMemoryStorage();
-    setup.UseInMemoryMessageQueue();
+    setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));
 });
 

@@ -111,7 +111,8 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
             _topic,
             _group,
             _concurrency,
-            _handlerId
+            _handlerId,
+            _registeredMetadata.IntentType
         );
 
         _registry.Update(m => ReferenceEquals(m, _registeredMetadata), metadata);
@@ -133,19 +134,22 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
             _topic,
             _group,
             _concurrency,
-            _handlerId
+            _handlerId,
+            _registeredMetadata.IntentType
         );
 
         var cbOptions = new ConsumerCircuitBreakerOptions();
         _pendingCircuitBreakerConfigure(cbOptions);
 
         // Remove stale registration if group name changed
-        if (_lastRegisteredCbGroup is not null && _lastRegisteredCbGroup != metadata.Group)
+        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(metadata);
+
+        if (_lastRegisteredCbGroup is not null && _lastRegisteredCbGroup != circuitBreakerGroup)
         {
             _circuitBreakerRegistry.Remove(_lastRegisteredCbGroup);
         }
 
-        _circuitBreakerRegistry.RegisterOrUpdate(metadata.Group!, cbOptions);
-        _lastRegisteredCbGroup = metadata.Group;
+        _circuitBreakerRegistry.RegisterOrUpdate(circuitBreakerGroup, cbOptions);
+        _lastRegisteredCbGroup = circuitBreakerGroup;
     }
 }

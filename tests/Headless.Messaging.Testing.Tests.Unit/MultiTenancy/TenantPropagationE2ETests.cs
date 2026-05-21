@@ -111,7 +111,7 @@ public sealed class TenantPropagationE2ETests : TestBase
 
             var messagingBuilder = services.AddHeadlessMessaging(setup =>
             {
-                setup.UseInMemoryMessageQueue();
+                setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 configureMessaging(setup);
             });

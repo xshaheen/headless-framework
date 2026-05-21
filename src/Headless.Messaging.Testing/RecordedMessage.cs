@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using MsgHeaders = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Testing;
@@ -47,6 +48,9 @@ public sealed record RecordedMessage
     /// <summary>The topic the message was published to or consumed from.</summary>
     public required string Topic { get; init; }
 
+    /// <summary>The bus/queue intent that produced the observation.</summary>
+    public required IntentType IntentType { get; init; }
+
     /// <summary>
     /// UTC wall-clock time when the observation was recorded — publish acknowledgment
     /// or consume completion, not the original message creation time.
@@ -62,6 +66,7 @@ public sealed record RecordedMessage
         object message,
         Type messageType,
         DateTimeOffset timestamp,
+        IntentType intentType = IntentType.Bus,
         Exception? exception = null
     )
     {
@@ -80,6 +85,7 @@ public sealed record RecordedMessage
             CorrelationId = correlationId,
             Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
             Topic = topic,
+            IntentType = intentType,
             Timestamp = timestamp,
             Exception = exception,
         };

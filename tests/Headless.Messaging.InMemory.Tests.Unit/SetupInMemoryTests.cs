@@ -2,14 +2,14 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.InMemoryQueue;
+using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class SetupInMemoryQueueTests : TestBase
+public sealed class SetupInMemoryTests : TestBase
 {
     [Fact]
     public async Task should_register_transport_services()
@@ -21,13 +21,15 @@ public sealed class SetupInMemoryQueueTests : TestBase
         // when
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
         });
 
         await using var provider = services.BuildServiceProvider();
 
         // then
         provider.GetService<ITransport>().Should().NotBeNull();
+        provider.GetService<IBusTransport>().Should().NotBeNull();
+        provider.GetService<IQueueTransport>().Should().NotBeNull();
     }
 
     [Fact]
@@ -39,7 +41,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -62,7 +64,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -84,7 +86,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -94,7 +96,9 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         // then
         transport.Should().NotBeNull();
-        transport.Should().BeOfType<InMemoryQueueTransport>();
+        transport.Should().BeOfType<InMemoryBusTransport>();
+        provider.GetService<IBusTransport>().Should().BeOfType<InMemoryBusTransport>();
+        provider.GetService<IQueueTransport>().Should().BeOfType<InMemoryQueueTransport>();
     }
 
     [Fact]
@@ -106,7 +110,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         services.AddHeadlessMessaging(options =>
         {
-            options.UseInMemoryMessageQueue();
+            options.UseInMemory();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -116,7 +120,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
 
         // then
         marker.Should().NotBeNull();
-        marker!.Name.Should().Be("InMemoryQueue");
+        marker!.Name.Should().Be("InMemory");
     }
 
     [Fact]
@@ -126,7 +130,7 @@ public sealed class SetupInMemoryQueueTests : TestBase
         var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
 
         // when
-        var result = setup.UseInMemoryMessageQueue();
+        var result = setup.UseInMemory();
 
         // then
         result.Should().BeSameAs(setup);

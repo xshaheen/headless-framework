@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Tests.IntegrationTests;
 
 /// <summary>
-/// Integration tests verifying IDirectPublisher works with real InMemoryQueue transport.
+/// Integration tests verifying IDirectPublisher works with real InMemory transport.
 /// These tests verify end-to-end message flow from publishing to consumption.
 /// </summary>
 /// <remarks>
@@ -40,7 +40,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
             messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -80,7 +80,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
             messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -114,7 +114,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("custom-topic-name");
             messaging.Subscribe<DirectTestConsumer>().Topic("custom-topic-name");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -148,7 +148,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.WithTopicMapping<DirectTestMessage>("multi-group-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("multi-group-test").Group("direct.primary");
             messaging.Subscribe<DirectAnalyticsConsumer>().Topic("multi-group-test").Group("direct.analytics");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -184,7 +184,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.TopicNamePrefix = "myapp";
             messaging.WithTopicMapping<DirectTestMessage>("prefixed-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("prefixed-test");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -216,7 +216,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("header-test-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("header-test-topic");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -261,7 +261,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("tenant-test-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-test-topic");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -301,7 +301,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("tenant-unset-topic");
             messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-unset-topic");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -339,7 +339,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
             messaging.Options.Version = "v1";
             messaging.WithTopicMapping<DirectTestMessage>("sequential-test");
             messaging.Subscribe<DirectTestConsumer>().Topic("sequential-test");
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 

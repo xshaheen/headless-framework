@@ -16,7 +16,7 @@ public static class TestServiceCollectionExtensions
             {
                 setup.SubscribeFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
                 setup.Options.DefaultGroupName = TestGroupName;
-                setup.UseInMemoryMessageQueue();
+                setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
         }
