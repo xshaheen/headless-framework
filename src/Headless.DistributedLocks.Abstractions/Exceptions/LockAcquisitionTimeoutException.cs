@@ -1,0 +1,58 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+
+#pragma warning disable IDE0130
+// ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
+
+/// <summary>Exception raised when acquiring a distributed lock exceeds the configured timeout.</summary>
+/// <remarks>
+/// This exception intentionally inherits <see cref="DistributedLockException"/> rather than
+/// <see cref="TimeoutException"/>. Callers writing <c>catch (TimeoutException)</c> will NOT catch
+/// this exception — they must catch <see cref="LockAcquisitionTimeoutException"/> directly or its
+/// base <see cref="DistributedLockException"/>. The hierarchy preserves room for additional
+/// lock-specific exceptions (for example, a future <c>LockHandleLostException</c>) under the same
+/// base, while keeping lock-acquisition timeouts distinct from generic I/O-style timeouts.
+/// </remarks>
+[PublicAPI]
+public sealed class LockAcquisitionTimeoutException : DistributedLockException
+{
+    // Validation runs as part of the chained-ctor argument evaluation (left-to-right) so an
+    // invalid `resource` throws before the message is interpolated and before the base ctor
+    // runs — avoids constructing a misleading "for resource ''" string just to discard it.
+    public LockAcquisitionTimeoutException(string resource)
+        : this(
+            Argument.IsNotNullOrWhiteSpace(resource),
+            $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed."
+        ) { }
+
+    public LockAcquisitionTimeoutException(string resource, string? message)
+        : base(message)
+    {
+        Resource = Argument.IsNotNullOrWhiteSpace(resource);
+    }
+
+    public LockAcquisitionTimeoutException(string resource, string? message, Exception? innerException)
+        : base(message, innerException)
+    {
+        Resource = Argument.IsNotNullOrWhiteSpace(resource);
+    }
+
+    /// <summary>The resource whose lock acquisition timed out.</summary>
+    public string Resource { get; }
+
+    /// <summary>
+    /// Throw shape for the <c>acquireTimeout: TimeSpan.Zero</c> fast-path. The single storage
+    /// attempt observed contention; the caller asked for try-once semantics, so there is no
+    /// retry loop to surface as a "timeout elapsed" message.
+    /// </summary>
+    /// <param name="resource">The resource whose lock acquisition was attempted once and failed.</param>
+    public static LockAcquisitionTimeoutException ForTryOnceContention(string resource)
+    {
+        return new LockAcquisitionTimeoutException(
+            Argument.IsNotNullOrWhiteSpace(resource),
+            $"Failed to acquire distributed lock on '{resource}' on the first attempt (try-once contention)."
+        );
+    }
+}

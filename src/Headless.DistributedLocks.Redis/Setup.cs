@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Redis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,7 +15,8 @@ namespace Headless.DistributedLocks.Redis;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Requires a message bus to be registered for lock release notifications.
+/// Messaging is optional; when an <see cref="IOutboxPublisher"/> registration exists before lock setup,
+/// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]
 public static class RedisDistributedLockSetup
@@ -31,7 +33,7 @@ public static class RedisDistributedLockSetup
         /// Prerequisites:
         /// <list type="bullet">
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        ///   <item>Messaging must be configured via <c>AddMessages()</c> for lock release notifications</item>
+        ///   <item>Register messaging before this method when push-based lock release wake-ups are needed</item>
         /// </list>
         /// </remarks>
         public IServiceCollection AddRedisDistributedLock(
@@ -60,97 +62,5 @@ public static class RedisDistributedLockSetup
         }
 
         #endregion
-
-        #region Redis Throttling Distributed Lock
-
-        /// <summary>
-        /// Adds Redis-backed throttling resource lock provider.
-        /// Suitable for distributed rate limiting across multiple instances.
-        /// </summary>
-        /// <remarks>
-        /// Prerequisites:
-        /// <list type="bullet">
-        ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        /// </list>
-        /// </remarks>
-        public IServiceCollection AddRedisThrottlingDistributedLock(
-            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, optionSetupAction);
-        }
-
-        /// <summary>Adds Redis-backed throttling resource lock provider.</summary>
-        public IServiceCollection AddRedisThrottlingDistributedLock(
-            Action<ThrottlingDistributedLockOptions> optionSetupAction
-        )
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, optionSetupAction);
-        }
-
-        /// <summary>Adds Redis-backed throttling resource lock provider.</summary>
-        public IServiceCollection AddRedisThrottlingDistributedLock(IConfiguration config)
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddThrottlingDistributedLock(_CreateThrottlingStorage, config);
-        }
-
-        #endregion
-
-        #region Keyed Redis Throttling Distributed Lock
-
-        /// <summary>
-        /// Adds keyed Redis-backed throttling resource lock provider.
-        /// Suitable for distributed rate limiting with multiple configurations.
-        /// </summary>
-        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(
-            string key,
-            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, optionSetupAction);
-        }
-
-        /// <summary>
-        /// Adds keyed Redis-backed throttling resource lock provider.
-        /// Suitable for distributed rate limiting with multiple configurations.
-        /// </summary>
-        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(
-            string key,
-            Action<ThrottlingDistributedLockOptions> optionSetupAction
-        )
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, optionSetupAction);
-        }
-
-        /// <summary>
-        /// Adds keyed Redis-backed throttling resource lock provider.
-        /// Suitable for distributed rate limiting with multiple configurations.
-        /// </summary>
-        public IServiceCollection AddKeyedRedisThrottlingDistributedLock(string key, IConfiguration config)
-        {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddKeyedThrottlingDistributedLock(key, _CreateThrottlingStorage, config);
-        }
-
-        #endregion
-    }
-
-    private static RedisThrottlingDistributedLockStorage _CreateThrottlingStorage(IServiceProvider provider)
-    {
-        return new RedisThrottlingDistributedLockStorage(
-            provider.GetRequiredService<IConnectionMultiplexer>(),
-            provider.GetRequiredService<HeadlessRedisScriptsLoader>()
-        );
     }
 }

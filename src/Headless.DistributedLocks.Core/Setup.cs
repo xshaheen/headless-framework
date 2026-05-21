@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -98,150 +97,50 @@ public static class AddDistributedLockExtensions
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
-            services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
+            // TryAddSingleton on the concrete + the public interface keeps repeated
+            // AddDistributedLock(...) calls idempotent (matching the ICanReceiveLockReleased
+            // registration below). Two AddSingleton calls would accumulate descriptors and
+            // register two distinct lambdas resolving against the same concrete type.
+            services.TryAddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
-                provider.GetRequiredService<IOutboxPublisher>(),
+                provider.GetService<IOutboxPublisher>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<DistributedLockProvider>>()
             ));
 
-            services
-                .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                    "headless.locks.released"
-                )
-                .Concurrency(1);
+            services.TryAddSingleton<IDistributedLockProvider>(sp => sp.GetRequiredService<DistributedLockProvider>());
 
-            return services;
-        }
+            // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
+            // decorator wrapped around IDistributedLockProvider does not break the lock-release
+            // wake-up signal (the consumer always receives the real DistributedLockProvider).
+            services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
 
-        #endregion
-
-        #region Throttling Distributed Lock - Default
-
-        public IServiceCollection AddThrottlingDistributedLock(
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
-                optionSetupAction
+            // Startup-time hook that warns when IOutboxPublisher is registered AFTER
+            // AddDistributedLock(...). The consumer registration block below only runs at
+            // registration time; a later AddMessages(...) call silently skips push wake-ups
+            // and the existing LogOutboxPublisherAbsent warning would NOT fire (publisher is
+            // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<
+                    IValidateOptions<DistributedLockOptions>,
+                    DistributedLockMessagingValidator
+                >()
             );
 
-            return services._AddThrottlingDistributedLockCore(storageFactory);
-        }
-
-        public IServiceCollection AddThrottlingDistributedLock(
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            Action<ThrottlingDistributedLockOptions> optionSetupAction
-        )
-        {
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
-                optionSetupAction
-            );
-
-            return services._AddThrottlingDistributedLockCore(storageFactory);
-        }
-
-        public IServiceCollection AddThrottlingDistributedLock(
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            IConfiguration config
-        )
-        {
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(config);
-
-            return services._AddThrottlingDistributedLockCore(storageFactory);
-        }
-
-        private IServiceCollection _AddThrottlingDistributedLockCore(
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory
-        )
-        {
-            services.AddLogging();
-            services.AddSingletonOptionValue<ThrottlingDistributedLockOptions>();
-            services.TryAddSingleton(TimeProvider.System);
-
-            services.AddSingleton<IThrottlingDistributedLockProvider>(provider => new ThrottlingDistributedLockProvider(
-                storageFactory(provider),
-                provider.GetRequiredService<ThrottlingDistributedLockOptions>(),
-                provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
-            ));
-
-            return services;
-        }
-
-        #endregion
-
-        #region Throttling Distributed Lock - Keyed
-
-        public IServiceCollection AddKeyedThrottlingDistributedLock(
-            string key,
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            Action<ThrottlingDistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            Argument.IsNotNullOrEmpty(key);
-
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
-                optionSetupAction,
-                name: key
-            );
-
-            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
-        }
-
-        public IServiceCollection AddKeyedThrottlingDistributedLock(
-            string key,
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            Action<ThrottlingDistributedLockOptions> optionSetupAction
-        )
-        {
-            Argument.IsNotNullOrEmpty(key);
-
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
-                optionSetupAction,
-                name: key
-            );
-
-            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
-        }
-
-        public IServiceCollection AddKeyedThrottlingDistributedLock(
-            string key,
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory,
-            IConfiguration config
-        )
-        {
-            Argument.IsNotNullOrEmpty(key);
-
-            services.Configure<ThrottlingDistributedLockOptions, ThrottlingDistributedLockOptionsValidator>(
-                config,
-                name: key
-            );
-
-            return services._AddKeyedThrottlingDistributedLockCore(key, storageFactory);
-        }
-
-        private IServiceCollection _AddKeyedThrottlingDistributedLockCore(
-            string key,
-            Func<IServiceProvider, IThrottlingDistributedLockStorage> storageFactory
-        )
-        {
-            services.AddLogging();
-            services.TryAddSingleton(TimeProvider.System);
-
-            services.AddKeyedSingleton<IThrottlingDistributedLockProvider>(
-                key,
-                (provider, _) =>
-                    new ThrottlingDistributedLockProvider(
-                        storageFactory(provider),
-                        provider.GetRequiredService<IOptionsMonitor<ThrottlingDistributedLockOptions>>().Get(key),
-                        provider.GetRequiredService<TimeProvider>(),
-                        provider.GetRequiredService<ILogger<ThrottlingDistributedLockProvider>>()
+            // Only register the lock-released consumer when an IOutboxPublisher is available; the
+            // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
+            // which themselves only get published via the outbox path. Without IOutboxPublisher no
+            // such messages ever flow, so the consumer registration is dead weight.
+            if (services.Any(d => d.ServiceType == typeof(IOutboxPublisher)))
+            {
+                services
+                    .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                        "headless.locks.released"
                     )
-            );
+                    .Concurrency(1);
+            }
 
             return services;
         }

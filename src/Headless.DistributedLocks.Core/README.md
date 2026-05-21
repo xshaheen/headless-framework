@@ -1,18 +1,22 @@
 # Headless.DistributedLocks.Core
 
-Core implementation of distributed resource locking with storage abstraction.
+Provides the distributed-lock provider implementation and setup extensions.
 
 ## Problem Solved
 
-Provides the lock provider implementation with automatic renewal, expiration handling, and support for pluggable storage backends (cache, Redis).
+Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over an `IDistributedLockStorage`.
 
 ## Key Features
 
-- `DistributedLockProvider` - Full implementation of `IDistributedLockProvider`
-- `ThrottlingDistributedLockProvider` - Rate-limited lock provider
-- `DisposableDistributedLock` - Auto-releasing lock handle
-- Storage interfaces: `IDistributedLockStorage`, `IThrottlingDistributedLockStorage`
-- Configurable options for timeouts and expiration
+- `DistributedLockProvider` implements `IDistributedLockProvider`.
+- `DisposableDistributedLock` releases on dispose by default.
+- `DistributedLockOptions` configures key prefix, resource name length, and waiter limits.
+- `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
+
+## Design Notes
+
+- `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
 
 ## Installation
 
@@ -23,37 +27,37 @@ dotnet add package Headless.DistributedLocks.Core
 ## Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddDistributedLock(options =>
-{
-    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
-    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
-});
-
-// Add storage (cache or Redis)
-builder.Services.AddDistributedLockCacheStorage();
-// or
-builder.Services.AddDistributedLockRedisStorage();
+builder.Services.AddDistributedLock(
+    sp => sp.GetRequiredService<IDistributedLockStorage>(),
+    options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+        options.MaxResourceNameLength = 512;
+    }
+);
 ```
 
 ## Configuration
 
-### Options
-
 ```csharp
-services.AddDistributedLock(options =>
-{
-    options.DefaultTimeUntilExpires = TimeSpan.FromMinutes(20);
-    options.DefaultAcquireTimeout = TimeSpan.FromSeconds(30);
-});
+options.KeyPrefix = "distributed-lock:";
+options.MaxResourceNameLength = 512;
+options.MaxConcurrentWaitingResources = 10_000;
+options.MaxWaitersPerResource = 1_000;
 ```
+
+Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per `AcquireAsync(...)` or `TryAcquireAsync(...)` call.
 
 ## Dependencies
 
 - `Headless.DistributedLocks.Abstractions`
+- `Headless.Core`
+- `Headless.Hosting`
+- `Headless.Messaging.Abstractions`
+- `Headless.Messaging.Core`
 
 ## Side Effects
 
-- Registers `IDistributedLockProvider` as singleton
-- Registers `IThrottlingDistributedLockProvider` as singleton (if throttling storage is provided)
+- Registers `IDistributedLockProvider` as singleton.
+- Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
+- Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.

@@ -1,17 +1,16 @@
 # Headless.DistributedLocks.Redis
 
-Redis-based resource lock storage using StackExchange.Redis.
+Redis-backed storage and setup helpers for distributed locks.
 
 ## Problem Solved
 
-Provides high-performance distributed locking using Redis with atomic Lua scripts for lock acquisition and release, suitable for multi-instance production deployments.
+Stores lock records directly in Redis with atomic acquire, replace, and release operations.
 
 ## Key Features
 
-- `RedisDistributedLockStorage` - Atomic lock operations via Redis
-- `RedisThrottlingDistributedLockStorage` - Rate-limited locking
-- Lua scripts for atomic acquire/release
-- High performance and reliability
+- `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
+- `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
+- Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
 ## Installation
 
@@ -22,19 +21,20 @@ dotnet add package Headless.DistributedLocks.Redis
 ## Quick Start
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    _ => ConnectionMultiplexer.Connect("localhost:6379")
+);
 
-var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
-builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
-
-// Add resource locks with Redis storage
-builder.Services.AddDistributedLock();
-builder.Services.AddSingleton<IDistributedLockStorage, RedisDistributedLockStorage>();
+builder.Services.AddRedisDistributedLock(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+    options.MaxResourceNameLength = 512;
+});
 ```
 
 ## Configuration
 
-No additional configuration beyond Redis connection.
+No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`. Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per lock-acquire call.
 
 ## Dependencies
 
@@ -44,5 +44,5 @@ No additional configuration beyond Redis connection.
 
 ## Side Effects
 
-- Registers `IDistributedLockStorage` as singleton
-- Registers `IThrottlingDistributedLockStorage` as singleton (optional)
+- Registers `HeadlessRedisScriptsLoader`.
+- Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.

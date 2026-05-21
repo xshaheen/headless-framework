@@ -724,6 +724,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -786,6 +787,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -830,6 +832,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);
@@ -887,6 +890,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -937,6 +941,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -986,6 +991,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);

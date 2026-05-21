@@ -25,7 +25,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
   - `IHaveLogger` / `IHaveTimeProvider` - Mixin interfaces for logger and time provider access
 
 - **Utilities**:
-  - `Run` - Retry helper with exponential backoff (`WithRetriesAsync`, `DelayedAsync`)
+  - `Run.DelayedAsync` - Deferred async invocation honoring `TimeProvider` and cancellation
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
   - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
 ## Installation
@@ -63,15 +63,20 @@ logger.LogInformation(
 );
 ```
 
-### Retry with Backoff
+### Deferred Execution
 
 ```csharp
-var result = await Run.WithRetriesAsync(
-    async ct => await httpClient.GetAsync(url, ct),
-    maxAttempts: 3,
-    logger: logger
+await Run.DelayedAsync(
+    TimeSpan.FromSeconds(5),
+    async ct => await PublishHeartbeatAsync(ct),
+    timeProvider: TimeProvider.System,
+    cancellationToken: cancellationToken
 );
 ```
+
+For retry semantics, prefer `Polly.Core` (`ResiliencePipelineBuilder().AddRetry(...)`) — it
+offers exponential backoff with jitter, exception predicates, telemetry hooks, and
+composition with timeouts and circuit breakers.
 
 ## Configuration
 

@@ -61,28 +61,4 @@ public sealed class RedisConnectionFailureTests : TestBase
 
         await multiplexer.DisposeAsync();
     }
-
-    [Fact]
-    public async Task should_throw_when_redis_unavailable_on_throttling_increment()
-    {
-        // given
-        var options = ConfigurationOptions.Parse("localhost:59999"); // Non-existent Redis
-        options.AbortOnConnectFail = false;
-        options.ConnectTimeout = 100;
-        options.SyncTimeout = 100;
-
-        var multiplexer = await ConnectionMultiplexer.ConnectAsync(options);
-        var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
-        var storage = new RedisThrottlingDistributedLockStorage(multiplexer, scriptsLoader);
-
-        var resource = $"throttle:{Faker.Random.AlphaNumeric(10)}";
-
-        // when
-        var act = () => storage.IncrementAsync(resource, TimeSpan.FromMinutes(5));
-
-        // then
-        await act.Should().ThrowAsync<RedisException>();
-
-        await multiplexer.DisposeAsync();
-    }
 }

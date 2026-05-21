@@ -16,8 +16,6 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
     public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
-    public RedisThrottlingDistributedLockStorage ThrottlingLockStorage { get; private set; } = null!;
-
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -30,8 +28,6 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
         await _scriptLoader.LoadScriptsAsync();
 
         LockStorage = new(ConnectionMultiplexer, _scriptLoader);
-        ThrottlingLockStorage = new(ConnectionMultiplexer, _scriptLoader);
-
         await ConnectionMultiplexer.FlushAllAsync();
     }
 

@@ -281,7 +281,7 @@ Send push notifications through Firebase Cloud Messaging with a clean abstractio
 
 ### Distributed Locking
 
-Coordinate access to shared resources across distributed services. Supports regular locks with expiration and throttling locks for rate limiting.
+Coordinate access to shared resources across distributed services.
 
 | Package | Description |
 |---------|-------------|

@@ -121,7 +121,7 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .Contain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-                "UseStorageLockWithNoOpProvider warning must fire when only NoOpDistributedLockProvider is registered"
+                "UseStorageLockWithNoOpProvider warning must fire when only NullDistributedLockProvider is registered"
             );
     }
 
@@ -141,7 +141,7 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .NotContain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-                "warning must be silent when UseStorageLock is false, even with NoOpDistributedLockProvider"
+                "warning must be silent when UseStorageLock is false, even with NullDistributedLockProvider"
             );
     }
 

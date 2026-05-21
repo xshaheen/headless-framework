@@ -245,9 +245,15 @@ internal sealed class Bootstrapper(
             return;
         }
 
-        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(
+            MessagingKeys.LockProvider
+        );
 
-        if (lockProvider is not NoOpDistributedLockProvider)
+        // Direct type check on the public sentinel — sealed, so the test is exact. A user
+        // who deliberately wraps a NullDistributedLockProvider in a decorator will bypass
+        // this warning; that's an opt-out we accept rather than guard against, since the
+        // sentinel exists specifically to be detectable.
+        if (lockProvider is not NullDistributedLockProvider)
         {
             return;
         }
@@ -273,7 +279,7 @@ internal sealed class Bootstrapper(
         }
 #pragma warning restore RCS1075, ERP022
 
-        if (unkeyedProvider is not null and not NoOpDistributedLockProvider)
+        if (unkeyedProvider is not null and not NullDistributedLockProvider)
         {
             logger.UseStorageLockWithNoOpProviderButRealUnkeyed();
             return;

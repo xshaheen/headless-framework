@@ -73,6 +73,37 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_release_on_dispose_when_release_on_dispose_is_false()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, lockId, releaseOnDispose: false);
+
+        // when
+        await sut.DisposeAsync();
+
+        // then
+        await _lockProvider.DidNotReceive().ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_release_explicitly_when_release_on_dispose_is_false()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, lockId, releaseOnDispose: false);
+
+        // when
+        await sut.ReleaseAsync();
+        await sut.DisposeAsync();
+
+        // then
+        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_only_release_once()
     {
         // given
@@ -108,13 +139,19 @@ public sealed class DisposableDistributedLockTests : TestBase
         await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
     }
 
-    private DisposableDistributedLock _CreateLock(string resource, string lockId, TimeSpan? timeWaitedForLock = null)
+    private DisposableDistributedLock _CreateLock(
+        string resource,
+        string lockId,
+        TimeSpan? timeWaitedForLock = null,
+        bool releaseOnDispose = true
+    )
     {
         return new DisposableDistributedLock(
             resource,
             lockId,
             timeWaitedForLock ?? TimeSpan.Zero,
             _lockProvider,
+            releaseOnDispose,
             _timeProvider,
             LoggerFactory.CreateLogger(nameof(DisposableDistributedLock))
         );
