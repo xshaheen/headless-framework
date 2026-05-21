@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Tests.TestSetup;
 
@@ -114,6 +115,98 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         groupDefinitionsEntity.Should().NotBeNull();
         groupDefinitionsEntity!.GetSchema().Should().Be(_Schema);
         groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
+    }
+
+    [Fact]
+    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
+    {
+        // given
+        var factory = new PermissionsStorageModelCacheKeyFactory();
+        var contextA = _BuildContextWithOptions(new PermissionsStorageOptions
+        {
+            Schema = "permissions_a",
+            PermissionGrantsTableName = "PermissionGrants",
+            PermissionDefinitionsTableName = "PermissionDefinitions",
+            PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
+        });
+        var contextB = _BuildContextWithOptions(new PermissionsStorageOptions
+        {
+            Schema = "permissions_b",
+            PermissionGrantsTableName = "PermissionGrants",
+            PermissionDefinitionsTableName = "PermissionDefinitions",
+            PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().NotBe(keyB);
+        keyA.Should().Be(factory.Create(contextA, designTime: false));
+    }
+
+    [Fact]
+    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
+    {
+        // given
+        var factory = new PermissionsStorageModelCacheKeyFactory();
+        var optionsValues = new PermissionsStorageOptions
+        {
+            Schema = "shared",
+            PermissionGrantsTableName = "Grants",
+            PermissionDefinitionsTableName = "Definitions",
+            PermissionGroupDefinitionsTableName = "Groups",
+        };
+        var contextA = _BuildContextWithOptions(optionsValues);
+        var contextB = _BuildContextWithOptions(new PermissionsStorageOptions
+        {
+            Schema = optionsValues.Schema,
+            PermissionGrantsTableName = optionsValues.PermissionGrantsTableName,
+            PermissionDefinitionsTableName = optionsValues.PermissionDefinitionsTableName,
+            PermissionGroupDefinitionsTableName = optionsValues.PermissionGroupDefinitionsTableName,
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().Be(keyB);
+    }
+
+    [Fact]
+    public void should_distinguish_designtime_in_model_cache_key()
+    {
+        // given
+        var factory = new PermissionsStorageModelCacheKeyFactory();
+        var context = _BuildContextWithOptions(new PermissionsStorageOptions());
+
+        // when
+        var runtimeKey = factory.Create(context, designTime: false);
+        var designTimeKey = factory.Create(context, designTime: true);
+
+        // then
+        runtimeKey.Should().NotBe(designTimeKey);
+    }
+
+    private static PermissionsDbContext _BuildContextWithOptions(PermissionsStorageOptions storageOptions)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IOptions<PermissionsStorageOptions>>(Options.Create(storageOptions));
+        var sp = services.BuildServiceProvider();
+
+        var dbOptions = new DbContextOptionsBuilder<PermissionsDbContext>()
+            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
+            .UseApplicationServiceProvider(sp)
+            .Options;
+
+        return new PermissionsDbContext(dbOptions)
+        {
+            PermissionGrants = null!,
+            PermissionDefinitions = null!,
+            PermissionGroupDefinitions = null!,
+        };
     }
 
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)

@@ -79,7 +79,25 @@ builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage 
 - `PermissionDefinitionsTableName = "PermissionDefinitions"`
 - `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
 
-The storage registration validates these values on startup; schema and table names must be non-empty.
+The storage registration validates these values on startup; schema and table names must be non-empty (whitespace-only values are rejected).
+
+### Custom DbContext + custom schema: per-DbContext EF model cache
+
+The dedicated `PermissionsDbContext` registration (`AddPermissionsManagementDbContextStorage(o => ...)`) wires a custom `IModelCacheKeyFactory` that mixes the storage options into the EF compiled-model cache key. The shared-context overload `AddPermissionsManagementDbContextStorage<TContext>` does not — your `DbContextOptionsBuilder` belongs to the host app. Apply the same replacement yourself so the EF model cache picks up your storage options:
+
+```csharp
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+    options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+});
+builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_permissions";
+});
+```
+
+`PermissionsStorageModelCacheKeyFactory` is exported as `public sealed` for this purpose. A single process that registers a single storage configuration on its shared `DbContext` can omit the replacement; add it whenever the same `TContext` type is configured with different storage options at different points in the process lifetime (for example, integration test fixtures that re-bind the options between classes).
 
 ## Dependencies
 

@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Tests.TestSetup;
 
@@ -108,6 +109,93 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         definitionsEntity.Should().NotBeNull();
         definitionsEntity!.GetSchema().Should().Be(_Schema);
         definitionsEntity.GetTableName().Should().Be(_DefinitionsTableName);
+    }
+
+    [Fact]
+    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
+    {
+        // given
+        var factory = new SettingsStorageModelCacheKeyFactory();
+        var contextA = _BuildContextWithOptions(new SettingsStorageOptions
+        {
+            Schema = "settings_a",
+            SettingValuesTableName = "SettingValues",
+            SettingDefinitionsTableName = "SettingDefinitions",
+        });
+        var contextB = _BuildContextWithOptions(new SettingsStorageOptions
+        {
+            Schema = "settings_b",
+            SettingValuesTableName = "SettingValues",
+            SettingDefinitionsTableName = "SettingDefinitions",
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().NotBe(keyB);
+        keyA.Should().Be(factory.Create(contextA, designTime: false));
+    }
+
+    [Fact]
+    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
+    {
+        // given
+        var factory = new SettingsStorageModelCacheKeyFactory();
+        var optionsValues = new SettingsStorageOptions
+        {
+            Schema = "shared",
+            SettingValuesTableName = "Values",
+            SettingDefinitionsTableName = "Definitions",
+        };
+        var contextA = _BuildContextWithOptions(optionsValues);
+        var contextB = _BuildContextWithOptions(new SettingsStorageOptions
+        {
+            Schema = optionsValues.Schema,
+            SettingValuesTableName = optionsValues.SettingValuesTableName,
+            SettingDefinitionsTableName = optionsValues.SettingDefinitionsTableName,
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().Be(keyB);
+    }
+
+    [Fact]
+    public void should_distinguish_designtime_in_model_cache_key()
+    {
+        // given
+        var factory = new SettingsStorageModelCacheKeyFactory();
+        var context = _BuildContextWithOptions(new SettingsStorageOptions());
+
+        // when
+        var runtimeKey = factory.Create(context, designTime: false);
+        var designTimeKey = factory.Create(context, designTime: true);
+
+        // then
+        runtimeKey.Should().NotBe(designTimeKey);
+    }
+
+    private static SettingsDbContext _BuildContextWithOptions(SettingsStorageOptions storageOptions)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IOptions<SettingsStorageOptions>>(Options.Create(storageOptions));
+        var sp = services.BuildServiceProvider();
+
+        var dbOptions = new DbContextOptionsBuilder<SettingsDbContext>()
+            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
+            .UseApplicationServiceProvider(sp)
+            .Options;
+
+        return new SettingsDbContext(dbOptions)
+        {
+            SettingValues = null!,
+            SettingDefinitions = null!,
+        };
     }
 
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)

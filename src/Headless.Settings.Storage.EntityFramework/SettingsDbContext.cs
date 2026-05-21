@@ -22,15 +22,11 @@ public sealed class SettingsDbContext(DbContextOptions options) : DbContext(opti
     }
 }
 
-internal sealed class SettingsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+[PublicAPI]
+public sealed class SettingsStorageModelCacheKeyFactory : IModelCacheKeyFactory
 {
     public object Create(DbContext context, bool designTime)
     {
-        if (context is not SettingsDbContext)
-        {
-            return (context.GetType(), designTime);
-        }
-
         var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
 
         return (

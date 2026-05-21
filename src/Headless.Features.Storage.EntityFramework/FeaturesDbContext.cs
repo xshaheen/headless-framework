@@ -8,7 +8,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Features.Storage.EntityFramework;
 
 [PublicAPI]
-public class FeaturesDbContext(DbContextOptions options) : DbContext(options), IFeaturesDbContext
+public sealed class FeaturesDbContext(DbContextOptions options) : DbContext(options), IFeaturesDbContext
 {
     public required DbSet<FeatureValueRecord> FeatureValues { get; init; }
 
@@ -24,15 +24,11 @@ public class FeaturesDbContext(DbContextOptions options) : DbContext(options), I
     }
 }
 
-internal sealed class FeaturesStorageModelCacheKeyFactory : IModelCacheKeyFactory
+[PublicAPI]
+public sealed class FeaturesStorageModelCacheKeyFactory : IModelCacheKeyFactory
 {
     public object Create(DbContext context, bool designTime)
     {
-        if (context is not FeaturesDbContext)
-        {
-            return (context.GetType(), designTime);
-        }
-
         var options = context.GetService<IOptions<FeaturesStorageOptions>>().Value;
 
         return (

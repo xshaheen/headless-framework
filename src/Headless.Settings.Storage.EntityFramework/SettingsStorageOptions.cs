@@ -18,8 +18,8 @@ internal sealed class SettingsStorageOptionsValidator : AbstractValidator<Settin
 {
     public SettingsStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty();
-        RuleFor(x => x.SettingValuesTableName).NotEmpty();
-        RuleFor(x => x.SettingDefinitionsTableName).NotEmpty();
+        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.SettingValuesTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
     }
 }

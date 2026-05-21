@@ -80,7 +80,25 @@ builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
 - `FeatureDefinitionsTableName = "FeatureDefinitions"`
 - `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
 
-The storage registration validates these values on startup; schema and table names must be non-empty.
+The storage registration validates these values on startup; schema and table names must be non-empty (whitespace-only values are rejected).
+
+### Custom DbContext + custom schema: per-DbContext EF model cache
+
+The dedicated `FeaturesDbContext` registration (`AddFeaturesManagementDbContextStorage(o => ...)`) wires a custom `IModelCacheKeyFactory` that mixes the storage options into the EF compiled-model cache key. The shared-context overload `AddFeaturesManagementDbContextStorage<TContext>` does not — your `DbContextOptionsBuilder` belongs to the host app. Apply the same replacement yourself so the EF model cache picks up your storage options:
+
+```csharp
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+{
+    options.UseNpgsql(connectionString);
+    options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
+});
+builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_features";
+});
+```
+
+`FeaturesStorageModelCacheKeyFactory` is exported as `public sealed` for this purpose. A single process that registers a single storage configuration on its shared `DbContext` can omit the replacement; add it whenever the same `TContext` type is configured with different storage options at different points in the process lifetime (for example, integration test fixtures that re-bind the options between classes).
 
 ## Dependencies
 

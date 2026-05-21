@@ -20,9 +20,9 @@ internal sealed class FeaturesStorageOptionsValidator : AbstractValidator<Featur
 {
     public FeaturesStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty();
-        RuleFor(x => x.FeatureValuesTableName).NotEmpty();
-        RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty();
-        RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty();
+        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.FeatureValuesTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
     }
 }

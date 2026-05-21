@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Tests.TestSetup;
 
@@ -117,6 +118,98 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         groupDefinitionsEntity.Should().NotBeNull();
         groupDefinitionsEntity!.GetSchema().Should().Be(_Schema);
         groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
+    }
+
+    [Fact]
+    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
+    {
+        // given
+        var factory = new FeaturesStorageModelCacheKeyFactory();
+        var contextA = _BuildContextWithOptions(new FeaturesStorageOptions
+        {
+            Schema = "features_a",
+            FeatureValuesTableName = "FeatureValues",
+            FeatureDefinitionsTableName = "FeatureDefinitions",
+            FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
+        });
+        var contextB = _BuildContextWithOptions(new FeaturesStorageOptions
+        {
+            Schema = "features_b",
+            FeatureValuesTableName = "FeatureValues",
+            FeatureDefinitionsTableName = "FeatureDefinitions",
+            FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().NotBe(keyB);
+        keyA.Should().Be(factory.Create(contextA, designTime: false));
+    }
+
+    [Fact]
+    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
+    {
+        // given
+        var factory = new FeaturesStorageModelCacheKeyFactory();
+        var optionsValues = new FeaturesStorageOptions
+        {
+            Schema = "shared",
+            FeatureValuesTableName = "Values",
+            FeatureDefinitionsTableName = "Definitions",
+            FeatureGroupDefinitionsTableName = "Groups",
+        };
+        var contextA = _BuildContextWithOptions(optionsValues);
+        var contextB = _BuildContextWithOptions(new FeaturesStorageOptions
+        {
+            Schema = optionsValues.Schema,
+            FeatureValuesTableName = optionsValues.FeatureValuesTableName,
+            FeatureDefinitionsTableName = optionsValues.FeatureDefinitionsTableName,
+            FeatureGroupDefinitionsTableName = optionsValues.FeatureGroupDefinitionsTableName,
+        });
+
+        // when
+        var keyA = factory.Create(contextA, designTime: false);
+        var keyB = factory.Create(contextB, designTime: false);
+
+        // then
+        keyA.Should().Be(keyB);
+    }
+
+    [Fact]
+    public void should_distinguish_designtime_in_model_cache_key()
+    {
+        // given
+        var factory = new FeaturesStorageModelCacheKeyFactory();
+        var context = _BuildContextWithOptions(new FeaturesStorageOptions());
+
+        // when
+        var runtimeKey = factory.Create(context, designTime: false);
+        var designTimeKey = factory.Create(context, designTime: true);
+
+        // then
+        runtimeKey.Should().NotBe(designTimeKey);
+    }
+
+    private static FeaturesDbContext _BuildContextWithOptions(FeaturesStorageOptions storageOptions)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IOptions<FeaturesStorageOptions>>(Options.Create(storageOptions));
+        var sp = services.BuildServiceProvider();
+
+        var dbOptions = new DbContextOptionsBuilder<FeaturesDbContext>()
+            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
+            .UseApplicationServiceProvider(sp)
+            .Options;
+
+        return new FeaturesDbContext(dbOptions)
+        {
+            FeatureValues = null!,
+            FeatureDefinitions = null!,
+            FeatureGroupDefinitions = null!,
+        };
     }
 
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)

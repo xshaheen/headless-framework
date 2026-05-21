@@ -22,7 +22,9 @@ public static class EntityFrameworkFeaturesSetup
                 setupAction(options);
                 options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
             });
-            return services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
+            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
+
+            return services;
         }
 
         public IServiceCollection AddFeaturesManagementDbContextStorage(
@@ -35,7 +37,9 @@ public static class EntityFrameworkFeaturesSetup
                 setupAction(provider, options);
                 options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
             });
-            return services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
+            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
+
+            return services;
         }
 
         public IServiceCollection AddFeaturesManagementDbContextStorage<TContext>(

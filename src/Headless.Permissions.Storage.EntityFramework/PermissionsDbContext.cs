@@ -24,15 +24,11 @@ public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(o
     }
 }
 
-internal sealed class PermissionsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+[PublicAPI]
+public sealed class PermissionsStorageModelCacheKeyFactory : IModelCacheKeyFactory
 {
     public object Create(DbContext context, bool designTime)
     {
-        if (context is not PermissionsDbContext)
-        {
-            return (context.GetType(), designTime);
-        }
-
         var options = context.GetService<IOptions<PermissionsStorageOptions>>().Value;
 
         return (

@@ -20,9 +20,9 @@ internal sealed class PermissionsStorageOptionsValidator : AbstractValidator<Per
 {
     public PermissionsStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty();
-        RuleFor(x => x.PermissionGrantsTableName).NotEmpty();
-        RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty();
-        RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty();
+        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
     }
 }
