@@ -7,6 +7,14 @@ using Headless.Checks;
 namespace Headless.DistributedLocks;
 
 /// <summary>Exception raised when acquiring a distributed lock exceeds the configured timeout.</summary>
+/// <remarks>
+/// This exception intentionally inherits <see cref="DistributedLockException"/> rather than
+/// <see cref="TimeoutException"/>. Callers writing <c>catch (TimeoutException)</c> will NOT catch
+/// this exception — they must catch <see cref="LockAcquisitionTimeoutException"/> directly or its
+/// base <see cref="DistributedLockException"/>. The hierarchy preserves room for additional
+/// lock-specific exceptions (for example, a future <c>LockHandleLostException</c>) under the same
+/// base, while keeping lock-acquisition timeouts distinct from generic I/O-style timeouts.
+/// </remarks>
 [PublicAPI]
 public sealed class LockAcquisitionTimeoutException : DistributedLockException
 {

@@ -453,19 +453,36 @@ public sealed class DistributedLockProvider(
 
         logger.LogReleaseStarted(resource, lockId);
 
-        var removed = await Run.WithRetriesAsync(
-                (_storage, resource, lockId, cancellationToken),
-                static state =>
-                {
-                    var (storage, resource, lockId, ct) = state;
+        // If a transient exception fires AFTER storage has already deleted the row but BEFORE
+        // we read the response, the retry's `RemoveIfEqualAsync` will return `false` (the
+        // record is gone). Without latching `true`, the final attempt's `false` would suppress
+        // the outbox publish and force waiters to fall back to polling backoff. We track
+        // whether ANY attempt observed `true` and treat it as authoritative; the lambda mutates
+        // `observedAttemptSucceeded` so success survives subsequent retries returning `false`.
+        var observedAttemptSucceeded = false;
 
-                    return storage.RemoveIfEqualAsync(resource, lockId, ct).AsTask();
+        var lastResult = await Run.WithRetriesAsync(
+                (storage: _storage, resource, lockId, cancellationToken),
+                async state =>
+                {
+                    var result = await state
+                        .storage.RemoveIfEqualAsync(state.resource, state.lockId, state.cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (result)
+                    {
+                        observedAttemptSucceeded = true;
+                    }
+
+                    return result;
                 },
                 maxAttempts: _MaxReleaseRetryAttempts,
                 timeProvider: timeProvider,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+
+        var removed = observedAttemptSucceeded || lastResult;
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
