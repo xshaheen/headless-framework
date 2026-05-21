@@ -108,7 +108,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         // when
-        var result = await provider.TryAcquireAsync(resource, null, null, AbortToken);
+        var result = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
         // then
         result.Should().NotBeNull();

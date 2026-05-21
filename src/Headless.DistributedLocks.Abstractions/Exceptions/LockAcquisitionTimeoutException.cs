@@ -18,9 +18,14 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class LockAcquisitionTimeoutException : DistributedLockException
 {
+    // Validation runs as part of the chained-ctor argument evaluation (left-to-right) so an
+    // invalid `resource` throws before the message is interpolated and before the base ctor
+    // runs — avoids constructing a misleading "for resource ''" string just to discard it.
     public LockAcquisitionTimeoutException(string resource)
-        : this(resource, $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed.")
-    { }
+        : this(
+            Argument.IsNotNullOrWhiteSpace(resource),
+            $"Unable to acquire distributed lock for resource '{resource}' before the timeout elapsed."
+        ) { }
 
     public LockAcquisitionTimeoutException(string resource, string? message)
         : base(message)

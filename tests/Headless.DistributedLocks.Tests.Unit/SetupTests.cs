@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_register_lock_provider_without_messaging()
+    public void should_register_lock_provider_without_messaging_and_skip_lock_released_consumer()
     {
         // given
         var services = new ServiceCollection();
@@ -24,8 +24,12 @@ public sealed class SetupTests : TestBase
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
         provider.GetService<IOutboxPublisher>().Should().BeNull();
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ConsumerMetadata));
+        // The LockReleasedConsumer's only job is to wake waiters on DistributedLockReleased outbox
+        // messages; without IOutboxPublisher no such messages ever flow, so the consumer is
+        // intentionally NOT registered in polling-only mode.
+        services
+            .Should()
+            .NotContain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
     }
 
     [Fact]

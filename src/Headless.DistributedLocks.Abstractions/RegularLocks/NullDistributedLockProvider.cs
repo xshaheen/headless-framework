@@ -43,22 +43,6 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return Task.FromResult<IDistributedLock?>(new NullDistributedLock(resource, timeProvider));
     }
 
-    public Task<IDistributedLock?> TryAcquireAsync(
-        string resource,
-        TimeSpan? timeUntilExpires,
-        TimeSpan? acquireTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        return TryAcquireAsync(
-            resource,
-            timeUntilExpires,
-            acquireTimeout,
-            releaseOnDispose: true,
-            cancellationToken: cancellationToken
-        );
-    }
-
     public Task<bool> RenewAsync(
         string resource,
         string lockId,

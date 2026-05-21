@@ -87,16 +87,6 @@ public interface IDistributedLockProvider
     );
 
     /// <summary>
-    /// Acquires a resource lock using the pre-<c>releaseOnDispose</c> positional argument shape.
-    /// </summary>
-    Task<IDistributedLock?> TryAcquireAsync(
-        string resource,
-        TimeSpan? timeUntilExpires,
-        TimeSpan? acquireTimeout,
-        CancellationToken cancellationToken
-    );
-
-    /// <summary>
     /// Renews a resource lock for a specified <paramref name="resource"/> by extending
     /// the expiration time of the lock if it is still held to the <paramref name="lockId"/>
     /// and return <see langword="true"/>, otherwise <see langword="false"/>.

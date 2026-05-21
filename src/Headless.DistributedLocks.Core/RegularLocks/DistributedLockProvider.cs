@@ -261,22 +261,6 @@ public sealed class DistributedLockProvider(
         );
     }
 
-    public Task<IDistributedLock?> TryAcquireAsync(
-        string resource,
-        TimeSpan? timeUntilExpires,
-        TimeSpan? acquireTimeout,
-        CancellationToken cancellationToken
-    )
-    {
-        return TryAcquireAsync(
-            resource,
-            timeUntilExpires,
-            acquireTimeout,
-            releaseOnDispose: true,
-            cancellationToken: cancellationToken
-        );
-    }
-
     private async Task<IDistributedLock?> _TryAcquireOnceAsync(
         string resource,
         string lockId,
