@@ -106,10 +106,16 @@ public static class SetupMessaging
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
+        services.TryAddSingleton<IBusTransport>(sp => new LegacyBusTransportAdapter(sp.GetRequiredService<ITransport>()));
+        services.TryAddSingleton<IQueueTransport>(sp => new LegacyQueueTransportAdapter(sp.GetRequiredService<ITransport>()));
+        services.TryAddSingleton<IBus, Bus>();
+        services.TryAddSingleton<IQueue, Queue>();
         services.TryAddSingleton<OutboxPublisher>();
         services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
         services.TryAddSingleton<IScheduledPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
         services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
+        services.TryAddSingleton<IOutboxBus, OutboxBus>();
+        services.TryAddSingleton<IOutboxQueue, OutboxQueue>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
 
@@ -239,7 +245,8 @@ public static class SetupMessaging
             metadata.Topic,
             metadata.Group,
             metadata.Concurrency,
-            metadata.HandlerId
+            metadata.HandlerId,
+            metadata.IntentType
         );
 
         // CreateConsumerMetadata normalizes topic/group but doesn't carry over builder-only

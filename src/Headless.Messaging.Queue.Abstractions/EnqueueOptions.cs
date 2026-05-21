@@ -37,7 +37,7 @@ public sealed record EnqueueOptions : MessagePublishOptionsBase
     /// </summary>
     public bool Equals(EnqueueOptions? other)
     {
-        return base.Equals(other) && Nullable.Equals(Delay, other?.Delay);
+        return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
     }
 
     /// <inheritdoc />

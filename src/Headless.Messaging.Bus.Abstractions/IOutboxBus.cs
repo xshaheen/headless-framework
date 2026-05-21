@@ -14,7 +14,7 @@ namespace Headless.Messaging;
 /// </para>
 /// <para>
 /// Set <see cref="PublishOptions.Delay"/> to defer dispatch until a future point in time; the
-/// outbox row's <c>NotBefore</c> column is stamped accordingly and the drainer respects it.
+/// outbox row's <c>DelayTime</c> / <c>ExpiresAt</c> fields are stamped accordingly and the drainer respects them.
 /// </para>
 /// <para>
 /// At least one <see cref="IBusTransport"/> must be registered in DI for an application that

@@ -323,7 +323,38 @@ internal sealed class Bootstrapper(
                     + Environment.NewLine
                     + "========   eg: services.AddHeadlessMessaging( setup => { setup.UseSqlServer(...) }); ========"
                     + Environment.NewLine
-                    + "==================================================================================="
+                + "==================================================================================="
+            );
+        }
+
+        _CheckIntentTransportSupport();
+    }
+
+    private void _CheckIntentTransportSupport()
+    {
+        var registry = serviceProvider.GetService<IConsumerRegistry>();
+        var consumers = registry?.GetAll();
+
+        if (consumers is null || consumers.Count == 0)
+        {
+            return;
+        }
+
+        var requiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
+        if (requiresBus && serviceProvider.GetService<IBusTransport>() is null)
+        {
+            throw new InvalidOperationException(
+                "Messaging bus consumers are registered, but no IBusTransport is available. "
+                    + "Register a bus-capable provider before messaging bootstrap starts."
+            );
+        }
+
+        var requiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
+        if (requiresQueue && serviceProvider.GetService<IQueueTransport>() is null)
+        {
+            throw new InvalidOperationException(
+                "Messaging queue consumers are registered, but no IQueueTransport is available. "
+                    + "Register a queue-capable provider before messaging bootstrap starts."
             );
         }
     }

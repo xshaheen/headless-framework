@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;
 
-/// <summary>Stamps <see cref="PublishOptions.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
+/// <summary>Stamps <see cref="MessagePublishOptionsBase.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
 [PublicAPI]
 public sealed class TenantPropagationPublishMiddleware(
     ICurrentTenant currentTenant,

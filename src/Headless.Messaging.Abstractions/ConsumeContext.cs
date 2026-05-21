@@ -138,9 +138,9 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
-    /// (<c>"headless-tenant-id"</c>), populated from <see cref="PublishOptions"/>.TenantId at publish time.
+    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
-    /// <see cref="PublishOptions.TenantIdMaxLength"/> (lenient consume-side handling).
+    /// <see cref="MessagePublishOptionsBase.TenantIdMaxLength"/> (lenient consume-side handling).
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty or whitespace string.
