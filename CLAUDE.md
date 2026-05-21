@@ -69,7 +69,6 @@ Use the [Makefile](Makefile) targets instead of raw `dotnet` invocations — the
 Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root, following this shape:
 
 ```csharp
-[PublicAPI]
 public static class SetupRedisCache
 {
     extension(IServiceCollection services) // C# 14 extension members
@@ -88,9 +87,6 @@ public static class SetupRedisCache
 **Public API Discipline:**
 
 - Each package's `public` surface IS its NuGet contract — keep types `internal sealed` and promote to `public` only when consumers must reference them.
-- Use `JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props)
-    - Annotate the intentional public surface with `[PublicAPI]`.
-    - Use `[Pure]`, `[MustDisposeResource]` and `[MustUseReturnValue]` where applicable.
 
 **Source File Header:**
 
@@ -109,6 +105,26 @@ This framework delegates certain input validation to consuming applications:
 
 - **Cache key length limits**: Not enforced by `ICache` implementations. Consumers should validate key lengths at their application boundaries if DoS protection is needed.
 - **Message payload sizes**: `CacheInvalidationMessage` and similar DTOs don't enforce size limits. Consumers should configure their messaging infrastructure (RabbitMQ, Redis, etc.) with appropriate limits.
+
+### Annotations Usage
+
+Use `JetBrains.Annotations` is globally imported via [Directory.Build.props](Directory.Build.props) only when it adds value beyond standard .NET/BCL annotations and C# nullable reference types.
+
+### Prefer important JetBrains annotations
+
+Use these annotations when appropriate:
+
+- `[PublicAPI]` for public framework/package APIs that are consumed externally but may look unused internally.
+- `[UsedImplicitly]` for types, members, constructors, or properties used by reflection, DI, serializers, source generators, EF Core, ASP.NET Core, test frameworks, or conventions.
+- `[ContractAnnotation]` for guard/helper methods where Rider cannot infer null-state or control flow.
+- `[Pure]` for side-effect-free methods where ignoring the result is likely a bug.
+- `[InstantHandle]` for delegates/lambdas that are invoked immediately and are not stored.
+- `[RequireStaticDelegate]` for hot-path APIs where delegate captures should be avoided.
+- `[StringFormatMethod]` for custom formatting/logging methods.
+- `[RegexPattern]` for parameters that expect regular expression patterns.
+- `[LocalizationRequired]` for string values, properties, parameters, or APIs where localization intent must be explicit.
+
+Do not over-annotate. Add annotations only when they prevent false positives, document framework/convention usage, or help detect real bugs.
 
 ## Package Management
 
