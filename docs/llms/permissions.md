@@ -36,6 +36,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
   - [Installation](#installation-2)
   - [Quick Start](#quick-start-1)
     - [Using Built-in DbContext](#using-built-in-dbcontext)
+    - [Custom Schema / Table Names](#custom-schema--table-names)
     - [Using Custom DbContext](#using-custom-dbcontext)
   - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
@@ -53,11 +54,11 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 ## Agent Instructions
 - Use `IPermissionManager` from Abstractions to check permissions. Call `GetAsync("Permission.Name", currentUser)` and inspect `result.IsGranted`.
 - Do NOT roll custom permission checks — always use the framework's `IPermissionManager` or the `[HasPermission("...")]` attribute.
-- Define permissions by implementing `IPermissionDefinitionProvider` and calling `context.AddGroup("GroupName").AddPermission("Group.Action")`.
+- Define permissions by implementing `IPermissionDefinitionProvider` and calling `context.AddGroup("GroupName").AddChild("Group.Action")`.
 - Permission resolution order: User > Role > Store. An explicit `Prohibited` from ANY provider denies access regardless of other grants.
 - Three states: **Granted** (record with `IsGranted = true`), **Prohibited** (record with `IsGranted = false`), **Undefined** (no record, defaults to deny).
 - Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered. Ensure these are wired before adding permissions.
-- Storage.EntityFramework supports both built-in `PermissionsDbContext` and custom `DbContext` implementing `IPermissionsDbContext`. Use `modelBuilder.ConfigurePermissionManagement()` in custom contexts.
+- Storage.EntityFramework supports both built-in `PermissionsDbContext` and custom `DbContext` implementing `IPermissionsDbContext`. Use `modelBuilder.AddPermissionsConfiguration(storageOptions.Value)` in custom contexts.
 - `PermissionsInitializationBackgroundService` runs on startup — permission definitions are synced to the database automatically.
 - For testing, use `AlwaysAllowPermissionManager` from Core to bypass all permission checks.
 
@@ -111,10 +112,10 @@ public class OrderPermissionProvider : IPermissionDefinitionProvider
     {
         var group = context.AddGroup("Orders");
 
-        group.AddPermission("Orders.View");
-        group.AddPermission("Orders.Create");
-        group.AddPermission("Orders.Edit");
-        group.AddPermission("Orders.Delete");
+        group.AddChild("Orders.View");
+        group.AddChild("Orders.Create");
+        group.AddChild("Orders.Edit");
+        group.AddChild("Orders.Delete");
     }
 }
 ```
@@ -253,6 +254,7 @@ Provides persistent storage for permission definitions and grants using Entity F
 
 - `IPermissionsDbContext` - DbContext interface for permissions
 - `PermissionsDbContext` - Ready-to-use DbContext
+- `PermissionsStorageOptions` - Schema and table-name configuration
 - EF repositories for definitions and grants
 - Model builder extensions for custom DbContext integration
 - Pooled DbContext factory support
@@ -275,10 +277,28 @@ builder.Services.AddPermissionsManagementDbContextStorage(options =>
 );
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddPermissionsManagementDbContextStorage(
+    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Permissions")),
+    storage =>
+    {
+        storage.Schema = "app_permissions";
+        storage.PermissionGrantsTableName = "PermissionGrants";
+        storage.PermissionDefinitionsTableName = "PermissionDefinitions";
+        storage.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions";
+    }
+);
+```
+
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext : DbContext, IPermissionsDbContext
+public class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : DbContext(options), IPermissionsDbContext
 {
     public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
     public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
@@ -286,23 +306,35 @@ public class AppDbContext : DbContext, IPermissionsDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ConfigurePermissionManagement();
+        modelBuilder.AddPermissionsConfiguration(storageOptions.Value);
     }
 }
 
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_permissions";
+});
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext setup.
+`PermissionsStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "permissions"`
+- `PermissionGrantsTableName = "PermissionGrants"`
+- `PermissionDefinitionsTableName = "PermissionDefinitions"`
+- `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty.
 
 ## Dependencies
 
 - `Headless.Permissions.Core`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
 
 - Registers `IPermissionDefinitionRecordRepository` as singleton
 - Registers `IPermissionGrantRepository` as singleton
+- Registers validated `PermissionsStorageOptions`

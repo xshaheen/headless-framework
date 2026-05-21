@@ -33,6 +33,7 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
   - [Installation](#installation-2)
   - [Quick Start](#quick-start-1)
     - [Option 1: Dedicated DbContext](#option-1-dedicated-dbcontext)
+    - [Custom Schema / Table Names](#custom-schema--table-names)
     - [Option 2: Shared DbContext](#option-2-shared-dbcontext)
   - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
@@ -69,7 +70,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read/write via `ISett
 - Provider names are constants on `SettingValueProviderNames`: `Default`, `Configuration`, `Global`, `Tenant`, `User`.
 - For sensitive settings, set `isEncrypted: true` on `SettingDefinition` -- Core handles encryption/decryption automatically.
 - Core registers a `SettingsInitializationBackgroundService` hosted service -- do not register your own init logic for settings.
-- For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.ApplySettingsConfiguration()` in `OnModelCreating`.
+- For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.AddSettingsConfiguration(storageOptions.Value)` in `OnModelCreating`.
 - Dependencies: Core requires `Headless.Caching.Abstractions` and `Headless.DistributedLocks.Abstractions` to be registered.
 - Pre-requisite: register `IStringEncryptionService` before `AddSettingsManagementCore(...)`. Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
 
@@ -305,6 +306,7 @@ Provides EF Core repository implementations for storing setting definitions and 
 - `EfSettingDefinitionRecordRepository` - Definition record storage
 - `SettingsDbContext` - Dedicated settings DbContext
 - `ISettingsDbContext` - Interface for shared DbContext integration
+- `SettingsStorageOptions` - Schema and table-name configuration
 - Model builder extensions for entity configuration
 
 ## Installation
@@ -330,18 +332,35 @@ builder.Services.AddSettingsManagementDbContextStorage(options =>
 });
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddSettingsManagementDbContextStorage(
+    options => options.UseNpgsql(connectionString),
+    storage =>
+    {
+        storage.Schema = "app_settings";
+        storage.SettingValuesTableName = "SettingValues";
+        storage.SettingDefinitionsTableName = "SettingDefinitions";
+    }
+);
+```
+
 ### Option 2: Shared DbContext
 
 ```csharp
 // In your DbContext
-public class AppDbContext : DbContext, ISettingsDbContext
+public class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<SettingsStorageOptions> storageOptions
+) : DbContext(options), ISettingsDbContext
 {
     public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
     public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplySettingsConfiguration();
+        modelBuilder.AddSettingsConfiguration(storageOptions.Value);
     }
 }
 
@@ -350,12 +369,23 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 builder.Services.AddSettingsManagementCore(_ => { });
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_settings";
+});
 ```
 
 ## Configuration
 
 Pre-requisite: register string encryption before calling `AddSettingsManagementCore(...)`.
+
+`SettingsStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "settings"`
+- `SettingValuesTableName = "SettingValues"`
+- `SettingDefinitionsTableName = "SettingDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty.
 
 ## Dependencies
 
@@ -367,4 +397,5 @@ Pre-requisite: register string encryption before calling `AddSettingsManagementC
 
 - Registers `ISettingValueRecordRepository` as singleton
 - Registers `ISettingDefinitionRecordRepository` as singleton
+- Registers validated `SettingsStorageOptions`
 - Optionally registers pooled `SettingsDbContext` factory

@@ -10,6 +10,7 @@ Provides persistent storage for permission definitions and grants using Entity F
 
 - `IPermissionsDbContext` - DbContext interface for permissions
 - `PermissionsDbContext` - Ready-to-use DbContext
+- `PermissionsStorageOptions` - Schema and table-name configuration
 - EF repositories for definitions and grants
 - Model builder extensions for custom DbContext integration
 - Pooled DbContext factory support
@@ -32,10 +33,28 @@ builder.Services.AddPermissionsManagementDbContextStorage(options =>
 );
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddPermissionsManagementDbContextStorage(
+    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Permissions")),
+    storage =>
+    {
+        storage.Schema = "app_permissions";
+        storage.PermissionGrantsTableName = "PermissionGrants";
+        storage.PermissionDefinitionsTableName = "PermissionDefinitions";
+        storage.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions";
+    }
+);
+```
+
 ### Using Custom DbContext
 
 ```csharp
-public class AppDbContext : DbContext, IPermissionsDbContext
+public class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : DbContext(options), IPermissionsDbContext
 {
     public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
     public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
@@ -43,23 +62,35 @@ public class AppDbContext : DbContext, IPermissionsDbContext
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ConfigurePermissionManagement();
+        modelBuilder.AddPermissionsConfiguration(storageOptions.Value);
     }
 }
 
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_permissions";
+});
 ```
 
 ## Configuration
 
-No additional configuration required beyond DbContext setup.
+`PermissionsStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "permissions"`
+- `PermissionGrantsTableName = "PermissionGrants"`
+- `PermissionDefinitionsTableName = "PermissionDefinitions"`
+- `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty.
 
 ## Dependencies
 
 - `Headless.Permissions.Core`
+- `Headless.Orm.EntityFramework`
 - `Microsoft.EntityFrameworkCore`
 
 ## Side Effects
 
 - Registers `IPermissionDefinitionRecordRepository` as singleton
 - Registers `IPermissionGrantRepository` as singleton
+- Registers validated `PermissionsStorageOptions`

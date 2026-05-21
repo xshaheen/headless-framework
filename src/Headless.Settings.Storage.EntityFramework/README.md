@@ -12,6 +12,7 @@ Provides EF Core repository implementations for storing setting definitions and 
 - `EfSettingDefinitionRecordRepository` - Definition record storage
 - `SettingsDbContext` - Dedicated settings DbContext
 - `ISettingsDbContext` - Interface for shared DbContext integration
+- `SettingsStorageOptions` - Schema and table-name configuration
 - Model builder extensions for entity configuration
 
 ## Installation
@@ -37,18 +38,35 @@ builder.Services.AddSettingsManagementDbContextStorage(options =>
 });
 ```
 
+### Custom Schema / Table Names
+
+```csharp
+builder.Services.AddSettingsManagementDbContextStorage(
+    options => options.UseNpgsql(connectionString),
+    storage =>
+    {
+        storage.Schema = "app_settings";
+        storage.SettingValuesTableName = "SettingValues";
+        storage.SettingDefinitionsTableName = "SettingDefinitions";
+    }
+);
+```
+
 ### Option 2: Shared DbContext
 
 ```csharp
 // In your DbContext
-public class AppDbContext : DbContext, ISettingsDbContext
+public class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<SettingsStorageOptions> storageOptions
+) : DbContext(options), ISettingsDbContext
 {
     public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
     public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.ApplySettingsConfiguration();
+        modelBuilder.AddSettingsConfiguration(storageOptions.Value);
     }
 }
 
@@ -57,7 +75,10 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 builder.Services.AddSettingsManagementCore();
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>(storage =>
+{
+    storage.Schema = "app_settings";
+});
 ```
 
 ## Configuration
@@ -70,6 +91,14 @@ builder.Services.AddStringEncryptionService(
 );
 ```
 
+`SettingsStorageOptions` defaults preserve the original physical layout:
+
+- `Schema = "settings"`
+- `SettingValuesTableName = "SettingValues"`
+- `SettingDefinitionsTableName = "SettingDefinitions"`
+
+The storage registration validates these values on startup; schema and table names must be non-empty.
+
 ## Dependencies
 
 - `Headless.Settings.Core`
@@ -80,4 +109,5 @@ builder.Services.AddStringEncryptionService(
 
 - Registers `ISettingValueRecordRepository` as singleton
 - Registers `ISettingDefinitionRecordRepository` as singleton
+- Registers validated `SettingsStorageOptions`
 - Optionally registers pooled `SettingsDbContext` factory
