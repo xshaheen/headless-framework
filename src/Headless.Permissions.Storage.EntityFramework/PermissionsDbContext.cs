@@ -2,6 +2,8 @@
 
 using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.Storage.EntityFramework;
 
@@ -17,6 +19,8 @@ public sealed class PermissionsDbContext(DbContextOptions options) : DbContext(o
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddPermissionsConfiguration();
+
+        var storageOptions = this.GetService<IOptions<PermissionsStorageOptions>>().Value;
+        modelBuilder.AddPermissionsConfiguration(storageOptions);
     }
 }

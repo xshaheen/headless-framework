@@ -67,6 +67,11 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
 
         services
             .AddPermissionsManagementCore()
-            .AddPermissionsManagementDbContextStorage(options => options.UseNpgsql(Fixture.SqlConnectionString));
+            .AddPermissionsManagementDbContextStorage(
+                options => options.UseNpgsql(Fixture.SqlConnectionString),
+                ConfigurePermissionsStorage
+            );
     }
+
+    protected virtual void ConfigurePermissionsStorage(PermissionsStorageOptions options) { }
 }

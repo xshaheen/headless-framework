@@ -11,27 +11,34 @@ public static class EntityFrameworkPermissionsSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementDbContextStorage(Action<DbContextOptionsBuilder> setupAction)
+        public IServiceCollection AddPermissionsManagementDbContextStorage(
+            Action<DbContextOptionsBuilder> setupAction,
+            Action<PermissionsStorageOptions>? configureStorage = null
+        )
         {
             services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
             return services;
         }
 
         public IServiceCollection AddPermissionsManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction
+            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
+            Action<PermissionsStorageOptions>? configureStorage = null
         )
         {
             services.AddPooledDbContextFactory<PermissionsDbContext>(setupAction);
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
             return services;
         }
 
-        public IServiceCollection AddPermissionsManagementDbContextStorage<TContext>()
+        public IServiceCollection AddPermissionsManagementDbContextStorage<TContext>(
+            Action<PermissionsStorageOptions>? configureStorage = null
+        )
             where TContext : DbContext, IPermissionsDbContext
         {
+            services.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(configureStorage);
             services.AddSingleton<IPermissionGrantRepository, EfPermissionGrantRepository<TContext>>();
 
             services.AddSingleton<
