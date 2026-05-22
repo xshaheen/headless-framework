@@ -101,6 +101,30 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task queue_intent_subscribe_should_not_create_group_queue()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient(
+            "test-group",
+            1,
+            _CreateOptions(),
+            logger,
+            IntentType.Queue
+        );
+
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        _SetPrivateFields(client, sqsClient, string.Empty);
+
+        // when
+        await client.SubscribeAsync(["https://sqs.local/orders"]);
+
+        // then
+        await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await sqsClient.DidNotReceive().CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_log_error_when_consumeAsync_throws_in_concurrent_mode()
     {
         // given

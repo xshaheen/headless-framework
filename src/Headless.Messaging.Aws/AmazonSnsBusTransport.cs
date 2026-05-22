@@ -46,6 +46,16 @@ internal sealed class AmazonSnsBusTransport(
 
                 var request = new PublishRequest(arn, bodyJson) { MessageAttributes = attributes };
 
+                if (normalizeForAws.IsAwsFifoName())
+                {
+                    request.MessageGroupId = message.GetGroup() ?? "default";
+
+                    if (message.Headers.TryGetValue(Headers.MessageId, out var messageId) && !string.IsNullOrWhiteSpace(messageId))
+                    {
+                        request.MessageDeduplicationId = messageId;
+                    }
+                }
+
                 await _snsClient!.PublishAsync(request, cancellationToken);
 
                 if (_logger.IsEnabled(LogLevel.Debug))
@@ -140,7 +150,9 @@ internal sealed class AmazonSnsBusTransport(
             return (true, topicArn);
         }
 
-        var response = await _snsClient!.CreateTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
+        var response = topicName.IsAwsFifoName()
+            ? await _snsClient!.CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), cancellationToken).ConfigureAwait(false)
+            : await _snsClient!.CreateTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrEmpty(response.TopicArn))
         {

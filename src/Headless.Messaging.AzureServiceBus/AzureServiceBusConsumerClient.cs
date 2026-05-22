@@ -289,23 +289,14 @@ internal sealed class AzureServiceBusConsumerClient(
         if (groupConcurrent > 0)
         {
             await _semaphore.WaitAsync().ConfigureAwait(false);
-            _ObserveBackgroundHandler(
-                Task.Run(
-                    async () =>
-                    {
-                        try
-                        {
-                            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg))
-                                .ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                )
-            );
+            try
+            {
+                await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+            }
+            finally
+            {
+                _ReleaseSemaphore();
+            }
         }
         else
         {
@@ -318,30 +309,6 @@ internal sealed class AzureServiceBusConsumerClient(
         var context = _ConvertMessage(arg.Message);
 
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
-    }
-
-    private void _ObserveBackgroundHandler(Task task)
-    {
-        _ = task.ContinueWith(
-            completedTask =>
-            {
-                var exception = completedTask.Exception?.GetBaseException();
-                if (exception is not null)
-                {
-                    OnLogCallback?.Invoke(
-                        new LogMessageEventArgs
-                        {
-                            LogType = MqLogType.ConsumeError,
-                            Reason =
-                                $"Unhandled exception in Azure Service Bus background message handler: {exception}",
-                        }
-                    );
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
     }
 
     public async Task ConnectAsync()
@@ -368,7 +335,11 @@ internal sealed class AzureServiceBusConsumerClient(
                     _administrationClient = _asbOptions.TokenCredential is not null
                         ? new ServiceBusAdministrationClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
                         : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
+                }
 
+                if (intentType == IntentType.Bus && _asbOptions.AutoProvision)
+                {
+                    var administrationClient = _administrationClient!;
                     var topicConfigs = _asbOptions
                         .CustomProducers.Select(producer =>
                             (topicPaths: producer.TopicPath, subscribe: producer.CreateSubscription)
@@ -379,15 +350,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
                     foreach (var (topicPath, subscribe) in topicConfigs)
                     {
-                        if (!await _administrationClient.TopicExistsAsync(topicPath))
+                        if (!await administrationClient.TopicExistsAsync(topicPath))
                         {
-                            await _administrationClient.CreateTopicAsync(topicPath);
+                            await administrationClient.CreateTopicAsync(topicPath);
                             logger.TopicCreated(topicPath);
                         }
 
                         if (
                             subscribe
-                            && !await _administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
+                            && !await administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
                         )
                         {
                             var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
@@ -399,7 +370,7 @@ internal sealed class AzureServiceBusConsumerClient(
                                 MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
                             };
 
-                            await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
+                            await administrationClient.CreateSubscriptionAsync(subscriptionDescription);
 
                             logger.SubscriptionCreated(topicPath, subscriptionName);
                         }

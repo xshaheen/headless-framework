@@ -15,6 +15,7 @@ internal sealed class AmazonSqsQueueTransport(
     IOptions<AmazonSqsOptions> sqsOptionsAccessor
 ) : IQueueTransport
 {
+    private const int _MaxMessageAttributes = 10;
     private readonly ConcurrentDictionary<string, string> _queueUrlMaps = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSQS? _sqsClient;
@@ -36,12 +37,34 @@ internal sealed class AmazonSqsQueueTransport(
                     StringComparer.Ordinal
                 );
 
+            if (attributes.Count > _MaxMessageAttributes)
+            {
+                return OperateResult.Failed(
+                    new InvalidOperationException("AWS SQS supports at most 10 message attributes."),
+                    new OperateError
+                    {
+                        Code = "AWS_SQS_MESSAGE_ATTRIBUTES_LIMIT",
+                        Description = "AWS SQS supports at most 10 message attributes.",
+                    }
+                );
+            }
+
             var request = new SendMessageRequest
             {
                 QueueUrl = queueUrl,
                 MessageBody = body,
                 MessageAttributes = attributes,
             };
+
+            if (queueName.IsAwsFifoName())
+            {
+                request.MessageGroupId = message.GetGroup() ?? "default";
+
+                if (message.Headers.TryGetValue(Headers.MessageId, out var messageId) && !string.IsNullOrWhiteSpace(messageId))
+                {
+                    request.MessageDeduplicationId = messageId;
+                }
+            }
 
             await _sqsClient!.SendMessageAsync(request, cancellationToken).ConfigureAwait(false);
 
@@ -93,7 +116,9 @@ internal sealed class AmazonSqsQueueTransport(
             }
 
             _sqsClient ??= AwsClientFactory.CreateSqsClient(sqsOptionsAccessor.Value);
-            var response = await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
+            var response = queueName.IsAwsFifoName()
+                ? await _sqsClient.CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken).ConfigureAwait(false)
+                : await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
             _queueUrlMaps[queueName] = response.QueueUrl;
 
             return response.QueueUrl;

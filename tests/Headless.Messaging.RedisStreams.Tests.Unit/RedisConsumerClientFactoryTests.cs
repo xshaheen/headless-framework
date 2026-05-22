@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.RedisStreams;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -71,5 +72,24 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
 
         // then
         client1.Should().NotBeSameAs(client2);
+    }
+
+    [Fact]
+    public async Task should_reject_bus_consumer_intent()
+    {
+        // given
+        var mockStreamManager = Substitute.For<IRedisStreamManager>();
+        var options = Options.Create(
+            new MessagingRedisOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+        );
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+
+        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
+
+        // when
+        var act = async () => await factory.CreateAsync("group-name", 1, IntentType.Bus);
+
+        // then
+        await act.Should().ThrowAsync<NotSupportedException>();
     }
 }
