@@ -9,11 +9,26 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsConsumerClientFactory(
     IOptions<MessagingNatsOptions> natsOptions,
     IServiceProvider serviceProvider
-) : IConsumerClientFactory
+) : IIntentAwareConsumerClientFactory
 {
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
-        var client = new NatsConsumerClient(groupName, groupConcurrent, natsOptions, serviceProvider);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+    }
+
+    public async Task<IConsumerClient> CreateAsync(
+        string groupName,
+        byte groupConcurrent,
+        IntentType intentType
+    )
+    {
+        var client = new NatsConsumerClient(
+            groupName,
+            groupConcurrent,
+            natsOptions,
+            serviceProvider,
+            intentType: intentType
+        );
         try
         {
             await client.ConnectAsync().ConfigureAwait(false);

@@ -8,7 +8,7 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Headless.Messaging.RabbitMq;
 
-internal sealed class RabbitMqTransport : ITransport
+internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 {
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly string _exchange;

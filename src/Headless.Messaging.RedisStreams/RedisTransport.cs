@@ -11,7 +11,7 @@ internal sealed class RedisTransport(
     IRedisStreamManager redis,
     IOptions<MessagingRedisOptions> options,
     ILogger<RedisTransport> logger
-) : ITransport
+) : IQueueTransport
 {
     private readonly MessagingRedisOptions _options = options.Value;
 

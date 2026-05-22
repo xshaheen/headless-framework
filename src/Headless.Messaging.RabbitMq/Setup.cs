@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
@@ -38,7 +39,9 @@ public static class SetupRabbitMqMessaging
         {
             services.AddSingleton(new MessageQueueMarkerService("RabbitMQ"));
             services.Configure<RabbitMqOptions, RabbitMqOptionsValidator>(configure);
-            services.AddSingleton<ITransport, RabbitMqTransport>();
+            services.AddSingleton<RabbitMqTransport>();
+            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());
+            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<RabbitMqTransport>());
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }

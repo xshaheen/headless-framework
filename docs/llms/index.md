@@ -197,11 +197,12 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.OpenTelemetry` — Tracing, metrics, context propagation.
 - `Headless.Messaging.RabbitMq` — RabbitMQ (AMQP) transport.
 - `Headless.Messaging.Kafka` — Apache Kafka transport.
-- `Headless.Messaging.AwsSqs` — AWS SQS + SNS transport.
+- `Headless.Messaging.Aws` — AWS SQS + SNS transport.
 - `Headless.Messaging.AzureServiceBus` — Azure Service Bus transport.
 - `Headless.Messaging.Nats` — NATS with JetStream transport.
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
 - `Headless.Messaging.RedisStreams` — Redis Streams transport.
+- `Headless.Messaging.RedisPubSub` — Redis Pub/Sub transport.
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.SqlServer` — SQL Server durable storage.

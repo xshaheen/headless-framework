@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
@@ -47,7 +48,9 @@ public static class SetupNatsMessaging
 
             services.Configure<MessagingNatsOptions, MessagingNatsOptionsValidator>(configure);
 
-            services.AddSingleton<ITransport, NatsTransport>();
+            services.AddSingleton<NatsTransport>();
+            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<NatsTransport>());
+            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<NatsTransport>());
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
         }

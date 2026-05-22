@@ -7,5 +7,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
   </ItemGroup>
 </Project>

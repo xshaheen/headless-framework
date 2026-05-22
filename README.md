@@ -201,11 +201,12 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 |---------|-------------|
 | [Headless.Messaging.RabbitMq](src/Headless.Messaging.RabbitMq/README.md) | RabbitMQ (AMQP) |
 | [Headless.Messaging.Kafka](src/Headless.Messaging.Kafka/README.md) | Apache Kafka |
-| [Headless.Messaging.AwsSqs](src/Headless.Messaging.AwsSqs/README.md) | AWS SQS + SNS |
+| [Headless.Messaging.Aws](src/Headless.Messaging.Aws/README.md) | AWS SQS + SNS |
 | [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS with JetStream |
 | [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
 | [Headless.Messaging.RedisStreams](src/Headless.Messaging.RedisStreams/README.md) | Redis Streams |
+| [Headless.Messaging.RedisPubSub](src/Headless.Messaging.RedisPubSub/README.md) | Redis Pub/Sub |
 | [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (dev/testing) |
 
 **Storage backends:**

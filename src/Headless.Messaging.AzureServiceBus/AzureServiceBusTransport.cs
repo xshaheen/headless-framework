@@ -14,7 +14,7 @@ namespace Headless.Messaging.AzureServiceBus;
 internal class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
     IOptions<AzureServiceBusOptions> busOptions
-) : ITransport, IServiceBusProducerDescriptorFactory
+) : IBusTransport, IServiceBusProducerDescriptorFactory
 {
     private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly ILogger _logger = logger;
@@ -46,38 +46,10 @@ internal class AzureServiceBusTransport(
             var producer = CreateProducerForMessage(transportMessage);
             var sender = _GetSenderForProducer(producer);
 
-            var message = new ServiceBusMessage(transportMessage.Body.ToArray())
-            {
-                MessageId = transportMessage.GetId(),
-                Subject = transportMessage.GetName(),
-                CorrelationId = transportMessage.GetCorrelationId(),
-            };
-
-            if (busOptions.Value.EnableSessions || producer.EnableSessions)
-            {
-                transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
-                message.SessionId = string.IsNullOrEmpty(sessionId) ? transportMessage.GetId() : sessionId;
-            }
-
-            if (
-                transportMessage.Headers.TryGetValue(
-                    AzureServiceBusHeaders.ScheduledEnqueueTimeUtc,
-                    out var scheduledEnqueueTimeUtcString
-                )
-                && DateTimeOffset.TryParse(
-                    scheduledEnqueueTimeUtcString,
-                    CultureInfo.InvariantCulture,
-                    out var scheduledEnqueueTimeUtc
-                )
-            )
-            {
-                message.ScheduledEnqueueTime = scheduledEnqueueTimeUtc;
-            }
-
-            foreach (var header in transportMessage.Headers)
-            {
-                message.ApplicationProperties.Add(header.Key, header.Value);
-            }
+            var message = AzureServiceBusMessageBuilder.Build(
+                transportMessage,
+                busOptions.Value.EnableSessions || producer.EnableSessions
+            );
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 

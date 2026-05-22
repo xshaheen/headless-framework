@@ -1,7 +1,7 @@
 ---
 date: 2026-05-21
 type: feat
-status: active
+status: completed
 depth: deep
 origin: docs/plans/2026-05-21-001-feat-messaging-bus-queue-split-plan.md
 part_of: messaging-bus-queue-split

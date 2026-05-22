@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Messaging.Pulsar;
 
 internal sealed class PulsarTransport(ILogger<PulsarTransport> logger, IConnectionFactory connectionFactory)
-    : ITransport
+    : IBusTransport, IQueueTransport
 {
     private readonly ILogger _logger = logger;
 
