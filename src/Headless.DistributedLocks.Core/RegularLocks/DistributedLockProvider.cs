@@ -85,9 +85,6 @@ public sealed class DistributedLockProvider(
         CancellationToken cancellationToken = default
     )
     {
-        options ??= new DistributedLockAcquireOptions();
-        _ValidateAcquireTimeout(options.AcquireTimeout);
-
         var acquired = await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false);
 
         if (acquired is not null)
@@ -95,7 +92,7 @@ public sealed class DistributedLockProvider(
             return acquired;
         }
 
-        throw options.AcquireTimeout == TimeSpan.Zero
+        throw options?.AcquireTimeout == TimeSpan.Zero
             ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
             : new LockAcquisitionTimeoutException(resource);
     }
