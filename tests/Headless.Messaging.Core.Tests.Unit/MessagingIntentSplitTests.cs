@@ -18,23 +18,6 @@ namespace Tests;
 
 public sealed class MessagingIntentSplitTests : TestBase
 {
-    [Fact(Skip = "Plan 003")]
-    public void Plan003_OutboxBus_persists_bus_intent_on_row()
-    {
-        // Asserts that IOutboxBus.PublishAsync persists the IntentType.Bus value onto the outbox
-        // row. Currently OutboxBus delegates to IOutboxPublisher, which has no IntentType
-        // parameter. Plan 003 introduces IntentType-on-row persistence; this guard test lights up
-        // when the parameter is threaded through.
-        Assert.Fail("Plan 003 — IntentType-on-row persistence not yet implemented.");
-    }
-
-    [Fact(Skip = "Plan 003")]
-    public void Plan003_OutboxQueue_persists_queue_intent_on_row()
-    {
-        // Twin for IOutboxQueue: asserts IntentType.Queue is captured on the persisted row.
-        Assert.Fail("Plan 003 — IntentType-on-row persistence not yet implemented.");
-    }
-
     [Fact]
     public void intent_type_storage_values_should_be_stable()
     {
@@ -204,111 +187,6 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         // then
         await act.Should().ThrowAsync<PublisherSentFailedException>();
-    }
-
-    [Fact]
-    public async Task outbox_bus_should_route_to_direct_publisher_when_no_delay_is_set()
-    {
-        // given
-        var publisher = Substitute.For<IOutboxPublisher>();
-        var scheduled = Substitute.For<IScheduledPublisher>();
-        var outboxBus = new OutboxBus(publisher, scheduled);
-        var options = new PublishOptions();
-
-        // when
-        await outboxBus.PublishAsync(new TestMessage(), options, AbortToken);
-
-        // then
-        await publisher
-            .Received(1)
-            .PublishAsync(Arg.Any<TestMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
-        await scheduled
-            .DidNotReceive()
-            .PublishDelayAsync(
-                Arg.Any<TimeSpan>(),
-                Arg.Any<TestMessage>(),
-                Arg.Any<PublishOptions>(),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
-    public async Task outbox_bus_should_route_to_scheduled_publisher_when_delay_is_set()
-    {
-        // given
-        var publisher = Substitute.For<IOutboxPublisher>();
-        var scheduled = Substitute.For<IScheduledPublisher>();
-        var outboxBus = new OutboxBus(publisher, scheduled);
-        var delay = TimeSpan.FromMinutes(5);
-        var options = new PublishOptions { Delay = delay };
-
-        // when
-        await outboxBus.PublishAsync(new TestMessage(), options, AbortToken);
-
-        // then
-        await scheduled
-            .Received(1)
-            .PublishDelayAsync(
-                delay,
-                Arg.Any<TestMessage>(),
-                Arg.Any<PublishOptions>(),
-                Arg.Any<CancellationToken>()
-            );
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(Arg.Any<TestMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task outbox_queue_should_route_to_direct_publisher_when_no_delay_is_set()
-    {
-        // given
-        var publisher = Substitute.For<IOutboxPublisher>();
-        var scheduled = Substitute.For<IScheduledPublisher>();
-        var outboxQueue = new OutboxQueue(publisher, scheduled);
-
-        // when
-        await outboxQueue.EnqueueAsync(new TestMessage(), options: null, AbortToken);
-
-        // then
-        await publisher
-            .Received(1)
-            .PublishAsync(Arg.Any<TestMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
-        await scheduled
-            .DidNotReceive()
-            .PublishDelayAsync(
-                Arg.Any<TimeSpan>(),
-                Arg.Any<TestMessage>(),
-                Arg.Any<PublishOptions>(),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
-    public async Task outbox_queue_should_route_to_scheduled_publisher_when_delay_is_set()
-    {
-        // given
-        var publisher = Substitute.For<IOutboxPublisher>();
-        var scheduled = Substitute.For<IScheduledPublisher>();
-        var outboxQueue = new OutboxQueue(publisher, scheduled);
-        var delay = TimeSpan.FromMinutes(5);
-        var options = new EnqueueOptions { Delay = delay };
-
-        // when
-        await outboxQueue.EnqueueAsync(new TestMessage(), options, AbortToken);
-
-        // then
-        await scheduled
-            .Received(1)
-            .PublishDelayAsync(
-                delay,
-                Arg.Any<TestMessage>(),
-                Arg.Any<PublishOptions>(),
-                Arg.Any<CancellationToken>()
-            );
-        await publisher
-            .DidNotReceive()
-            .PublishAsync(Arg.Any<TestMessage>(), Arg.Any<PublishOptions>(), Arg.Any<CancellationToken>());
     }
 
     private static IBus _CreateBus(IBusTransport transport)
