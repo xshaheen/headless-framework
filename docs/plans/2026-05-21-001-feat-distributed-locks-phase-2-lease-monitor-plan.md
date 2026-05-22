@@ -80,17 +80,17 @@ Origin: GitHub issue #289 (treated as the requirements document for this plan).
 stateDiagram-v2
     [*] --> Held : monitor constructed
     Held --> Renewed : RenewOrValidateLeaseAsync = Renewed (lifetime reset)
-    Held --> Held : RenewOrValidateLeaseAsync = Held
+    Held --> Held : RenewOrValidateLeaseAsync = Held (lifetime reset)
     Held --> Unknown : transient exception
     Held --> Lost : RenewOrValidateLeaseAsync = Lost
     Renewed --> Held : continue polling
-    Unknown --> Held : next iteration ok
-    Unknown --> Lost : lifetime > LeaseDuration (self-loss)
-    Unknown --> Renewed : transient cleared
+    Unknown --> Held : next iteration ok (lifetime reset)
+    Unknown --> Lost : lifetime > LeaseDuration AND state == Unknown (self-loss)
+    Unknown --> Renewed : transient cleared (lifetime reset)
     Lost --> [*] : HandleLostToken cancelled, loop exits
 ```
 
-Key invariant: `Lost` is terminal. Only `Renewed` resets `leaseLifetime`. `Unknown` does not reset — repeated `Unknown` accumulates lifetime and eventually self-promotes to `Lost` when `leaseLifetime > LeaseDuration`. This is what makes partition behavior correct (AC1).
+Key invariant: `Lost` is terminal. Both `Renewed` and `Held` reset `leaseLifetime` — both are positive ownership confirmations from storage and the polling-only mode (`autoExtend: false`) never sees `Renewed`, so resetting only on `Renewed` would accumulate lifetime drift across long `Held` streaks. `Unknown` does NOT reset — repeated `Unknown` accumulates lifetime. The self-loss promotion fires only when `leaseLifetime > LeaseDuration` AND the prior probe was `Unknown`; a confirmed `Held` or `Renewed` cannot trip the safety net (defense in depth alongside the lifetime reset). This is what makes partition behavior correct (AC1) without producing false-positive Lost in polling mode.
 
 ### Acquire-to-monitor-to-dispose sequence
 
