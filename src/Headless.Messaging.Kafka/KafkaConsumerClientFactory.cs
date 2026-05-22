@@ -18,9 +18,15 @@ public sealed class KafkaConsumerClientFactory(
 
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
+        if (intentType == IntentType.Bus)
+        {
+            throw new NotSupportedException(
+                "Headless.Messaging.Kafka is a queue transport provider and cannot create bus consumers."
+            );
+        }
+
         try
         {
-            _ = intentType;
             return Task.FromResult<IConsumerClient>(
                 new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider)
             );

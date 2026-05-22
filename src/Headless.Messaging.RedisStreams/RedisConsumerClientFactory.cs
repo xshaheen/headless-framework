@@ -19,7 +19,13 @@ internal sealed class RedisConsumerClientFactory(
 
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
-        _ = intentType;
+        if (intentType == IntentType.Bus)
+        {
+            throw new NotSupportedException(
+                "Headless.Messaging.RedisStreams is a queue transport provider and cannot create bus consumers."
+            );
+        }
+
         var client = new RedisConsumerClient(groupName, groupConcurrent, redis, redisOptions, logger);
         return Task.FromResult<IConsumerClient>(client);
     }

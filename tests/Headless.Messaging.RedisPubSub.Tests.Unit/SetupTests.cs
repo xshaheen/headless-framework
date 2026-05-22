@@ -26,6 +26,7 @@ public sealed class SetupTests : TestBase
 
         // then
         provider.GetService<IBusTransport>().Should().BeOfType<RedisPubSubBusTransport>();
+        provider.GetService<IQueueTransport>().Should().BeNull();
         provider.GetService<IConsumerClientFactory>().Should().BeOfType<RedisPubSubConsumerClientFactory>();
         provider.GetService<IRedisPubSubConnectionProvider>().Should().BeOfType<RedisPubSubConnectionProvider>();
     }

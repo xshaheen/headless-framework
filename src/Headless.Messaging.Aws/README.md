@@ -14,10 +14,15 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 - **Auto-Provisioning**: Automatic queue and topic creation
 - **Dead Letter Queues**: Built-in failure handling
 - **IAM Integration**: Automatic policy configuration
+- **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
 
 ## Design Notes
 
-The package registers both bus and queue capabilities. Bus publishes use SNS and subscribe SQS queues to the topic. Queue sends bypass SNS and write directly to the message queue name in SQS.
+The package registers both bus and queue capabilities. Bus publishes use SNS and subscribes SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message.
+
+Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from the `headless-msg-group` header when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
+
+SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
 
 ## Installation
 
@@ -54,19 +59,6 @@ options.UseAws(sqs =>
 });
 ```
 
-## Messaging Semantics
-
-- Bus publish sends the serialized body through SNS and preserves message headers.
-- Queue send writes the serialized body directly to SQS and preserves message headers as message attributes.
-- Delay stays in the core pipeline. This provider does not add broker-native scheduling.
-- Commit deletes the SQS message.
-- Reject shortens visibility to trigger SQS redelivery. Dead-lettering follows queue redrive policy.
-- Bus `FetchTopicsAsync(...)` creates SNS topics and returns ARNs.
-- Queue `FetchTopicsAsync(...)` creates direct SQS queues and returns queue URLs.
-- Bus consumer startup creates the queue, updates its access policy, and `SubscribeAsync(...)` binds the queue to SNS topics.
-- Ordering follows the configured SQS/SNS resources. Do not assume FIFO unless AWS FIFO entities are used.
-- Topic names, payload size, and header limits follow AWS SNS and SQS broker limits.
-
 ## Dependencies
 
 - `Headless.Messaging.Core`
@@ -75,6 +67,7 @@ options.UseAws(sqs =>
 
 ## Side Effects
 
-- Creates SQS queues and SNS topics if they don't exist
-- Configures IAM policies for queue access
-- Establishes persistent connections to AWS services
+- Creates SQS queues and SNS topics when they do not exist.
+- Configures IAM policies for bus queue access.
+- Establishes persistent connections to AWS services.
+- Queue-intent consumers subscribe directly to queue URLs and do not create the bus group queue.

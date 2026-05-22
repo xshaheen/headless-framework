@@ -201,6 +201,58 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_create_fifo_topic_and_publish_with_fifo_metadata()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:order-created.fifo" });
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(transport, snsClient, []);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "order.created.fifo",
+                [Headers.MessageId] = "message-1",
+                [Headers.Group] = "tenant-a",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .CreateTopicAsync(
+                Arg.Is<CreateTopicRequest>(r =>
+                    r.Name == "order-created.fifo"
+                    && r.Attributes["FifoTopic"] == "true"
+                    && r.Attributes["ContentBasedDeduplication"] == "true"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await snsClient
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<PublishRequest>(r =>
+                    r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_handle_send_failure()
     {
         // given

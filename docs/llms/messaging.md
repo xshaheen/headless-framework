@@ -103,6 +103,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
 - [Headless.Messaging.Aws](#headlessmessagingaws)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
@@ -1435,29 +1436,39 @@ The `MessagingTags` static class exposes built-in tag names as public constants 
 
 ---
 
-# Headless.Messaging.Aws
+## Headless.Messaging.Aws
 
 Amazon SQS and SNS transport provider for the messaging system.
 
-## Problem Solved
+### Problem Solved
 
-Enables reliable message delivery using AWS SQS queues and SNS topics with automatic queue creation, dead-letter queues, and IAM policy management.
+Enables bus fan-out through SNS topics and queue work delivery through SQS queues with automatic topic, queue, and policy provisioning.
 
-## Key Features
+### Key Features
 
-- **SQS Consumer**: Reliable queue-based message consumption
-- **SNS Publisher**: Topic-based message distribution
+- **SNS Bus**: Broadcasts messages through SNS topics.
+- **SQS Queue**: Sends queue-intent messages directly to SQS queues.
+- **SQS Consumer**: Receives both SNS-enveloped bus messages and direct queue messages.
 - **Auto-Provisioning**: Automatic queue and topic creation
 - **Dead Letter Queues**: Built-in failure handling
 - **IAM Integration**: Automatic policy configuration
+- **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
 
-## Installation
+### Design Notes
+
+The package registers both bus and queue capabilities. Bus publishes use SNS and subscribes SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message.
+
+Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from the `headless-msg-group` header when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
+
+SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
+
+### Installation
 
 ```bash
 dotnet add package Headless.Messaging.Aws
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
@@ -1474,7 +1485,7 @@ builder.Services.AddHeadlessMessaging(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
 options.UseAws(sqs =>
@@ -1486,17 +1497,18 @@ options.UseAws(sqs =>
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Messaging.Core`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.SQS`
 
-## Side Effects
+### Side Effects
 
-- Creates SQS queues and SNS topics if they don't exist
-- Configures IAM policies for queue access
-- Establishes persistent connections to AWS services
+- Creates SQS queues and SNS topics when they do not exist.
+- Configures IAM policies for bus queue access.
+- Establishes persistent connections to AWS services.
+- Queue-intent consumers subscribe directly to queue URLs and do not create the bus group queue.
 
 ---
 
@@ -2040,7 +2052,7 @@ options.UseRedisStreams(redis =>
 
 ---
 
-# Headless.Messaging.RedisPubSub
+## Headless.Messaging.RedisPubSub
 
 Redis Pub/Sub bus transport provider for Headless Messaging.
 

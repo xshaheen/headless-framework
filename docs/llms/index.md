@@ -107,7 +107,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [imaging.md](imaging.md) — ImageSharp-based resizing and compression.
 - [logging.md](logging.md) — Serilog configuration with structured logging defaults.
 - [media.md](media.md) — Text extraction from PDF, Word, PowerPoint for indexing.
-- [messaging.md](messaging.md) — Distributed messaging with transactional outbox, 7 transports, 3 storage backends.
+- [messaging.md](messaging.md) — Distributed messaging with transactional outbox, 8 transports, 3 storage backends.
 - [openapi.md](openapi.md) — NSwag OpenAPI generation and Scalar documentation UI.
 - [orm.md](orm.md) — Entity Framework Core and Couchbase with DDD support.
 - [payments.md](payments.md) — Paymob Accept (cash-in / cash-out).

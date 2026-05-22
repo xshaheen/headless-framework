@@ -185,7 +185,7 @@ Content indexing and metadata extraction for media files — images, video, and 
 
 ### Messaging
 
-Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 7 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
+Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 8 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
 
 | Package | Description |
 |---------|-------------|

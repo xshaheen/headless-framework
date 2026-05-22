@@ -46,6 +46,19 @@ public sealed class TopicNormalizerTests
     }
 
     [Fact]
+    public void should_preserve_fifo_suffix_when_normalizing()
+    {
+        // given
+        const string input = "orders.created.fifo";
+
+        // when
+        var result = input.NormalizeForAws();
+
+        // then
+        result.Should().Be("orders-created.fifo");
+    }
+
+    [Fact]
     public void should_accept_256_character_topic_name()
     {
         // given - AWS SNS max is 256 chars
