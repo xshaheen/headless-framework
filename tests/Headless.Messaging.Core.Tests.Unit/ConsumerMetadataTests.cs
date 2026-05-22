@@ -18,7 +18,7 @@ public sealed class ConsumerMetadataTests : TestBase
         const byte concurrency = 5;
 
         // when
-        var metadata = new ConsumerMetadata(messageType, consumerType, topic, group, concurrency);
+        var metadata = new ConsumerMetadata(messageType, consumerType, topic, group, concurrency, IntentType: IntentType.Bus);
 
         // then
         metadata.MessageType.Should().Be(messageType);
@@ -32,13 +32,7 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_allow_null_group()
     {
         // when
-        var metadata = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "test.topic",
-            null,
-            1
-        );
+        var metadata = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "test.topic", null, 1, IntentType: IntentType.Bus);
 
         // then
         metadata.Group.Should().BeNull();
@@ -48,13 +42,7 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_support_with_expression_for_topic()
     {
         // given
-        var original = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "original.topic",
-            "group",
-            1
-        );
+        var original = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "original.topic", "group", 1, IntentType: IntentType.Bus);
 
         // when
         var updated = original with
@@ -74,13 +62,7 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_support_with_expression_for_group()
     {
         // given
-        var original = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "topic",
-            "original-group",
-            1
-        );
+        var original = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "topic", "original-group", 1, IntentType: IntentType.Bus);
 
         // when
         var updated = original with
@@ -97,13 +79,7 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_support_with_expression_for_concurrency()
     {
         // given
-        var original = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "topic",
-            "group",
-            1
-        );
+        var original = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "topic", "group", 1, IntentType: IntentType.Bus);
 
         // when
         var updated = original with
@@ -119,20 +95,8 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_support_record_equality()
     {
         // given
-        var metadata1 = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "topic",
-            "group",
-            5
-        );
-        var metadata2 = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "topic",
-            "group",
-            5
-        );
+        var metadata1 = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "topic", "group", 5, IntentType: IntentType.Bus);
+        var metadata2 = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "topic", "group", 5, IntentType: IntentType.Bus);
 
         // then
         metadata1.Should().Be(metadata2);
@@ -143,20 +107,8 @@ public sealed class ConsumerMetadataTests : TestBase
     public void should_not_be_equal_when_properties_differ()
     {
         // given
-        var metadata1 = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "topic",
-            "group",
-            5
-        );
-        var metadata2 = new ConsumerMetadata(
-            typeof(MetadataTestMessage),
-            typeof(MetadataTestConsumer),
-            "different-topic",
-            "group",
-            5
-        );
+        var metadata1 = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "topic", "group", 5, IntentType: IntentType.Bus);
+        var metadata2 = new ConsumerMetadata(typeof(MetadataTestMessage), typeof(MetadataTestConsumer), "different-topic", "group", 5, IntentType: IntentType.Bus);
 
         // then
         metadata1.Should().NotBe(metadata2);

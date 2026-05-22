@@ -60,7 +60,7 @@ public sealed class IConsumeIntegrationTests
         // Build consume context manually
         var message = new OrderPlaced("ORDER-123", 99.99m);
         var context = new ConsumeContext<OrderPlaced>
-        {
+        { IntentType = IntentType.Bus,
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -218,7 +218,7 @@ public sealed class IConsumeIntegrationTests
         var orderCancelled = new OrderCancelled("ORDER-2", "Customer request");
 
         var placedContext = new ConsumeContext<OrderPlaced>
-        {
+        { IntentType = IntentType.Bus,
             Message = orderPlaced,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -228,7 +228,7 @@ public sealed class IConsumeIntegrationTests
         };
 
         var cancelledContext = new ConsumeContext<OrderCancelled>
-        {
+        { IntentType = IntentType.Bus,
             Message = orderCancelled,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,

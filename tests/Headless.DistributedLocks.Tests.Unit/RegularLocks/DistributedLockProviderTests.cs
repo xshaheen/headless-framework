@@ -15,7 +15,7 @@ public sealed class DistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeDistributedLockStorage _storage = new();
-    private readonly IOutboxPublisher _outboxPublisher = Substitute.For<IOutboxPublisher>();
+    private readonly IOutboxBus _outboxPublisher = Substitute.For<IOutboxBus>();
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
 
     private long _lockIdCounter = 1000;

@@ -63,15 +63,20 @@ public readonly struct OperateResult(bool succeeded, Exception? exception = null
     public override string ToString() => Succeeded ? "Succeeded" : $"Failed : {_operateError?.Code}";
 
     /// <summary>
-    /// Determines whether two <see cref="OperateResult"/> instances are equal based on their success status.
+    /// Determines whether two <see cref="OperateResult"/> instances are equal based on success status,
+    /// the wrapped exception reference, and the structured error.
     /// </summary>
     /// <param name="x">The first result to compare.</param>
     /// <param name="y">The second result to compare.</param>
-    /// <returns>true if both results have the same success status; otherwise false.</returns>
-    public bool Equals(OperateResult x, OperateResult y) => x.Succeeded == y.Succeeded;
+    /// <returns>true if both results match on all three fields; otherwise false.</returns>
+    public bool Equals(OperateResult x, OperateResult y) =>
+        x.Succeeded == y.Succeeded
+        && ReferenceEquals(x.Exception, y.Exception)
+        && Nullable.Equals(x._operateError, y._operateError);
 
     /// <summary>
     /// Serves as the default hash function for the <see cref="OperateResult"/> struct.
+    /// Hashes the same fields <see cref="Equals(OperateResult, OperateResult)"/> compares.
     /// </summary>
     /// <param name="o">The result to compute the hash code for.</param>
     /// <returns>A hash code combining the error, success status, and exception information.</returns>

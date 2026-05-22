@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher outboxPublisher,
+    IOutboxBus outboxPublisher,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,

@@ -101,6 +101,7 @@ internal sealed class Bootstrapper(
             catch (Exception e) when (e is not InvalidOperationException)
             {
                 logger.StorageInitFailed(e);
+                throw;
             }
 
             await _BootstrapCoreAsync(startupToken).ConfigureAwait(false);
@@ -129,7 +130,7 @@ internal sealed class Bootstrapper(
             if (wasStopping)
             {
                 await registration.DisposeAsync().ConfigureAwait(false);
-                _StopProcessors();
+                await _StopProcessorsAsync().ConfigureAwait(false);
                 runtimeCts.Dispose();
                 return;
             }
@@ -147,7 +148,7 @@ internal sealed class Bootstrapper(
                 // Ignore races with external disposal during startup failure cleanup.
             }
 
-            _StopProcessors();
+            await _StopProcessorsAsync().ConfigureAwait(false);
             await _stoppingRegistration.DisposeAsync().ConfigureAwait(false);
 
             lock (_bootstrapLock)
@@ -296,13 +297,11 @@ internal sealed class Bootstrapper(
         if (messageQueueMarker == null)
         {
             throw new InvalidOperationException(
-                "You must be config transport provider for the messaging system!"
+                "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
+                    + "(e.g., UseRabbitMQ, UseKafka, UseAzureServiceBus) or register an ITransport so the "
+                    + "legacy adapter applies."
                     + Environment.NewLine
-                    + "=================================================================================="
-                    + Environment.NewLine
-                    + "========   eg: services.AddHeadlessMessaging( setup => { setup.UseRabbitMq(...) }); ========"
-                    + Environment.NewLine
-                    + "=================================================================================="
+                    + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );
         }
 
@@ -311,13 +310,10 @@ internal sealed class Bootstrapper(
         if (databaseMarker == null)
         {
             throw new InvalidOperationException(
-                "You must be config storage provider for the messaging system!"
+                "Messaging requires a storage provider. Register one (e.g., UseSqlServer, UsePostgreSql, "
+                    + "UseInMemoryStorage) so persisted publishes and the inbox/outbox can be backed."
                     + Environment.NewLine
-                    + "==================================================================================="
-                    + Environment.NewLine
-                    + "========   eg: services.AddHeadlessMessaging( setup => { setup.UseSqlServer(...) }); ========"
-                    + Environment.NewLine
-                + "==================================================================================="
+                    + "Example: services.AddHeadlessMessaging(setup => { setup.UseSqlServer(...); });"
             );
         }
 
@@ -327,30 +323,59 @@ internal sealed class Bootstrapper(
     private void _CheckIntentTransportSupport()
     {
         var registry = serviceProvider.GetService<IConsumerRegistry>();
-        var consumers = registry?.GetAll();
+        var consumers = registry?.GetAll() ?? [];
 
-        if (consumers is null || consumers.Count == 0)
+        var consumerRequiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
+        var consumerRequiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
+
+        // Publisher-side fences: if any IBus/IOutboxBus (or queue equivalents) is resolvable,
+        // a matching IBusTransport/IQueueTransport must be wired before bootstrap completes.
+        var publisherRequiresBus =
+            serviceProvider.GetService<IBus>() is not null || serviceProvider.GetService<IOutboxBus>() is not null;
+        var publisherRequiresQueue =
+            serviceProvider.GetService<IQueue>() is not null || serviceProvider.GetService<IOutboxQueue>() is not null;
+
+        _RequireTransportFor<IBusTransport>(
+            "bus",
+            consumerRequiresBus || publisherRequiresBus,
+            consumerSide: consumerRequiresBus,
+            publisherSide: publisherRequiresBus
+        );
+
+        _RequireTransportFor<IQueueTransport>(
+            "queue",
+            consumerRequiresQueue || publisherRequiresQueue,
+            consumerSide: consumerRequiresQueue,
+            publisherSide: publisherRequiresQueue
+        );
+    }
+
+    private void _RequireTransportFor<TTransport>(string intent, bool required, bool consumerSide, bool publisherSide)
+        where TTransport : class
+    {
+        if (!required)
         {
             return;
         }
 
-        var requiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
-        if (requiresBus && serviceProvider.GetService<IBusTransport>() is null)
+        if (serviceProvider.GetService<TTransport>() is not null)
         {
-            throw new InvalidOperationException(
-                "Messaging bus consumers are registered, but no IBusTransport is available. "
-                    + "Register a bus-capable provider before messaging bootstrap starts."
-            );
+            return;
         }
 
-        var requiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
-        if (requiresQueue && serviceProvider.GetService<IQueueTransport>() is null)
+        var caller = (consumerSide, publisherSide) switch
         {
-            throw new InvalidOperationException(
-                "Messaging queue consumers are registered, but no IQueueTransport is available. "
-                    + "Register a queue-capable provider before messaging bootstrap starts."
-            );
-        }
+            (true, true) => $"Add{intent}Consumer<...>/I{intent} publisher",
+            (true, false) => $"Add{intent}Consumer<...>",
+            (false, true) => $"I{intent}/IOutbox{intent} publisher",
+            _ => $"{intent} subsystem",
+        };
+
+        throw new InvalidOperationException(
+            $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport (or "
+                + "ITransport bridged via the legacy adapter) is available. Register a "
+                + $"{intent}-capable transport provider before messaging bootstrap starts."
+        );
     }
 
     public override void Dispose()
@@ -431,8 +456,28 @@ internal sealed class Bootstrapper(
         base.Dispose();
     }
 
+    private async Task _StopProcessorsAsync()
+    {
+        logger.MessagingStopping();
+
+        foreach (var item in processors)
+        {
+            try
+            {
+                await item.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex)
+            {
+                logger.ExpectedOperationCanceledException(ex, ex.Message);
+            }
+        }
+    }
+
     private void _StopProcessors()
     {
+        // Synchronous shutdown bridge for CancellationToken.Register callbacks. The async equivalent
+        // (_StopProcessorsAsync) is used everywhere else; this path preserves drainer compatibility
+        // by blocking the cancellation callback until the processors stop.
         logger.MessagingStopping();
 
         foreach (var item in processors)

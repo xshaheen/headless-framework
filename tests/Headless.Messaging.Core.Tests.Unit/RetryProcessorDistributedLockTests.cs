@@ -31,7 +31,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storage = new CacheDistributedLockStorage(_cache);
         _realLockProvider = new DistributedLockProvider(
             storage,
-            Substitute.For<IOutboxPublisher>(),
+            Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,

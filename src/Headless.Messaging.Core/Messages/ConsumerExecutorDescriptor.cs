@@ -42,7 +42,7 @@ public sealed class ConsumerExecutorDescriptor
     /// <summary>
     /// Delivery intent used to subscribe this consumer.
     /// </summary>
-    public IntentType IntentType { get; init; } = IntentType.Bus;
+    public required IntentType IntentType { get; init; }
 }
 
 public sealed class ParameterDescriptor

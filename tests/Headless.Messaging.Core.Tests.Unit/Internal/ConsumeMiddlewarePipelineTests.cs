@@ -141,7 +141,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     private static ConsumerContext _BuildConsumerContext()
     {
         var descriptor = new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,

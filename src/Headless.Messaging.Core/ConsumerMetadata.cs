@@ -22,8 +22,8 @@ public sealed record ConsumerMetadata(
     string Topic,
     string? Group,
     byte Concurrency,
-    string? HandlerId = null,
-    IntentType IntentType = IntentType.Bus
+    IntentType IntentType,
+    string? HandlerId = null
 )
 {
     /// <summary>

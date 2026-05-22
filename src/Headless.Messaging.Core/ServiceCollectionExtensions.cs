@@ -10,6 +10,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 /// <summary>
 /// Provides extension methods for registering message consumers directly on <see cref="IServiceCollection"/>.
 /// </summary>
+[PublicAPI]
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>

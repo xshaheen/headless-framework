@@ -276,7 +276,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         }
 
         var descriptor = new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,

@@ -100,7 +100,7 @@ public static class AddDistributedLockExtensions
 
             services.AddSingleton<IDistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
-                provider.GetRequiredService<IOutboxPublisher>(),
+                provider.GetRequiredService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),

@@ -159,7 +159,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         // Manually create descriptor with wrong method
         var badDescriptor = new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = typeof(InvokerTestConsumer).GetMethod(
@@ -453,7 +453,7 @@ public sealed class SubscribeInvokerTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -484,7 +484,7 @@ public sealed class SubscribeInvokerTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

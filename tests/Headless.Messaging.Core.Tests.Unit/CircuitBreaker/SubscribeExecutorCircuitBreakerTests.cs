@@ -60,7 +60,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,

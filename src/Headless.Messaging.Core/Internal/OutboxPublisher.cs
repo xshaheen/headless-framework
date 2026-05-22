@@ -108,7 +108,7 @@ internal sealed class OutboxPublisher(
                         publishRequest.Topic,
                         _CreateStorageEnvelope(publishRequest),
                         null,
-                        CancellationToken.None
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
 

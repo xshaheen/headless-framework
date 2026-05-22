@@ -53,7 +53,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
