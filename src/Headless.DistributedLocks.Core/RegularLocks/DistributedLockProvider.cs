@@ -84,8 +84,7 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     )
     {
@@ -96,8 +95,7 @@ public sealed class DistributedLockProvider(
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose,
-                monitorLease,
-                autoExtend,
+                monitoring,
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -117,8 +115,7 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     )
     {
@@ -128,8 +125,9 @@ public sealed class DistributedLockProvider(
         cancellationToken.ThrowIfCancellationRequested();
 
         timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
-        var effectiveMonitorLease = monitorLease || autoExtend;
-        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, effectiveMonitorLease);
+        var monitorLease = monitoring != LockMonitoringMode.None;
+        var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
+        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
@@ -152,7 +150,7 @@ public sealed class DistributedLockProvider(
                     timeUntilExpires,
                     timestamp,
                     releaseOnDispose,
-                    effectiveMonitorLease,
+                    monitorLease,
                     autoExtend,
                     leaseDuration,
                     cancellationToken
@@ -284,7 +282,7 @@ public sealed class DistributedLockProvider(
             leaseDuration,
             timeWaitedForLock,
             releaseOnDispose,
-            effectiveMonitorLease,
+            monitorLease,
             autoExtend
         );
     }

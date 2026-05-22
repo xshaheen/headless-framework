@@ -710,8 +710,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ => throw new InvalidOperationException("lock store down"));
@@ -721,8 +720,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -780,8 +778,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ =>
@@ -804,8 +801,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -885,8 +881,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -924,8 +919,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(captured));
@@ -955,8 +949,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => neverCompletes.Task);
@@ -992,8 +985,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(renewableLock));
@@ -1074,8 +1066,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
@@ -1139,8 +1130,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(acquiredLock));
@@ -1209,8 +1199,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
@@ -1286,8 +1275,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(failingLock));

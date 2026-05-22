@@ -52,21 +52,18 @@ public static class DistributedLockProviderExtensions
         /// <item>Value greater than or equal to 0.</item>
         /// </list>
         /// </param>
-        /// <param name="monitorLease">
-        /// <see langword="true"/> to enable background lease monitoring. Overloads taking a
-        /// <see cref="CancellationToken"/>-receiving <paramref name="work"/> delegate forward a token
-        /// that is also cancelled when the lease is lost.
-        /// </param>
-        /// <param name="autoExtend">
-        /// <see langword="true"/> to renew the lease in the background while monitoring. Implies <paramref name="monitorLease"/>.
+        /// <param name="monitoring">
+        /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/>.
+        /// Overloads taking a <see cref="CancellationToken"/>-receiving <paramref name="work"/>
+        /// delegate forward a token that is also cancelled when the lease is lost (when monitoring
+        /// is enabled).
         /// </param>
         public async Task<bool> TryUsingAsync(
             string resource,
             Func<Task> work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -76,8 +73,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitoring: monitoring,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -95,15 +91,14 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
             Func<TState, Task> work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -113,8 +108,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitoring: monitoring,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -129,14 +123,13 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
         public async Task<bool> TryUsingAsync(
             string resource,
             Func<CancellationToken, Task> work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -146,8 +139,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitoring: monitoring,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -176,15 +168,14 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
             Func<TState, CancellationToken, Task> work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -194,8 +185,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitoring: monitoring,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -225,8 +215,8 @@ public static class DistributedLockProviderExtensions
         /// <summary>
         /// Tries to acquire a lock for <paramref name="resource"/> and runs a synchronous
         /// <paramref name="work"/> delegate. Synchronous work cannot observe a lease-lost
-        /// cancellation, so this overload does NOT expose <c>monitorLease</c>/<c>autoExtend</c>.
-        /// Use the <see cref="Func{Task}"/>-receiving overload when you want lease monitoring.
+        /// cancellation, so this overload does NOT expose a <see cref="LockMonitoringMode"/>
+        /// parameter. Use the <see cref="Func{Task}"/>-receiving overload when you want lease monitoring.
         /// </summary>
         public async Task<bool> TryUsingAsync(
             string resource,
@@ -242,8 +232,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: false,
-                    autoExtend: false,
+                    monitoring: LockMonitoringMode.None,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -274,8 +263,7 @@ public static class DistributedLockProviderExtensions
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: false,
-                    autoExtend: false,
+                    monitoring: LockMonitoringMode.None,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);

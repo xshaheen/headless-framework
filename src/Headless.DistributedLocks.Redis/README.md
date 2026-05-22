@@ -34,7 +34,7 @@ builder.Services.AddRedisDistributedLock(options =>
 
 ## Configuration
 
-No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`. Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per lock-acquire call. Lease monitoring and `autoExtend` are storage-agnostic provider features configured through `Headless.DistributedLocks.Core`.
+No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`. Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per lock-acquire call. `LockMonitoringMode` (lease monitoring and auto-extension) is a storage-agnostic provider feature configured through `Headless.DistributedLocks.Core`.
 
 ## Dependencies
 

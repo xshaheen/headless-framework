@@ -179,8 +179,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
@@ -234,8 +233,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             );
         await storage.Received().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
@@ -258,8 +256,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
@@ -380,8 +377,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -390,8 +386,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                         timeUntilExpires,
                         acquireTimeout,
                         releaseOnDispose,
-                        monitorLease,
-                        autoExtend,
+                        monitoring,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -406,8 +401,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -431,8 +425,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
-                monitorLease: false,
-                autoExtend: false,
+                monitoring: LockMonitoringMode.None,
                 cancellationToken: cancellationToken
             );
         }

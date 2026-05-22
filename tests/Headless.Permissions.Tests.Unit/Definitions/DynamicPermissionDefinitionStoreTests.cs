@@ -233,8 +233,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(lockHandle);

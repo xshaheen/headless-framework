@@ -49,7 +49,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
 
@@ -72,7 +72,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -97,7 +97,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            autoExtend: true,
+            monitoring: LockMonitoringMode.AutoExtend,
             cancellationToken: AbortToken
         );
 
@@ -118,7 +118,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(1),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -142,7 +142,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(3),
-            autoExtend: true,
+            monitoring: LockMonitoringMode.AutoExtend,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -168,7 +168,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(3),
-            autoExtend: true,
+            monitoring: LockMonitoringMode.AutoExtend,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -212,7 +212,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var monitored = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
 
@@ -242,7 +242,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -279,7 +279,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();
@@ -308,7 +308,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             provider.TryAcquireAsync(
                 resource,
                 timeUntilExpires: Timeout.InfiniteTimeSpan,
-                monitorLease: true,
+                monitoring: LockMonitoringMode.Monitor,
                 cancellationToken: AbortToken
             );
 
@@ -329,7 +329,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         await using var handle = await provider.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: AbortToken
         );
         handle.Should().NotBeNull();

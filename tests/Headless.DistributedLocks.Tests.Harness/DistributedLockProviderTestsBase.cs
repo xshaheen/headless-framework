@@ -510,7 +510,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await using var handle = await locker.TryAcquireAsync(
             resource,
             timeUntilExpires: TimeSpan.FromSeconds(2),
-            autoExtend: true
+            monitoring: LockMonitoringMode.AutoExtend
         );
 
         handle.Should().NotBeNull();

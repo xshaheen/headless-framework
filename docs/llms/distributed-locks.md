@@ -62,7 +62,7 @@ Use `IDistributedLockProvider` when only one worker should own a named resource 
 - Code against `IDistributedLockProvider` from `Headless.DistributedLocks.Abstractions`; do not inject Redis or cache storage types into application services.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
 - Always `await using` the returned lock when `releaseOnDispose` is `true`; use `releaseOnDispose: false` only when ownership is deliberately transferred and the caller will release explicitly.
-- Pass `monitorLease: true` when work should observe lease loss through `IDistributedLock.HandleLostToken`; pass `autoExtend: true` only when long work should renew its own lease in the background.
+- Pass `monitoring: LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLock.HandleLostToken`; pass `monitoring: LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
 - Do not use distributed locks as rate limiters. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + community Redis (distributed) — the framework does not ship a rate-limiting package.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis and cache locks are efficiency locks, not transaction-coupled correctness locks.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per `AcquireAsync(...)` or `TryAcquireAsync(...)` call; `DistributedLockOptions` configures key prefix and waiter/resource limits.
@@ -87,13 +87,13 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 ### Lease Lifecycle Monitoring
 
-Lock monitoring is opt-in per acquire call. `monitorLease: true` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. Without monitoring, `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
+Lock monitoring is opt-in per acquire call via the `LockMonitoringMode` enum. `monitoring: LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. With `LockMonitoringMode.None` (default), `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
 
 Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 1`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
 
-Combining `monitorLease: true` or `autoExtend: true` with `Timeout.InfiniteTimeSpan` for `timeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
+Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `timeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
-`autoExtend: true` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. Monitoring without auto-extension validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `LockId` when stale owners can corrupt state.
+`LockMonitoringMode.AutoExtend` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `LockMonitoringMode.Monitor` (validate only) validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `LockId` when stale owners can corrupt state.
 
 ### Messaging Wake-ups
 
@@ -149,7 +149,7 @@ public sealed class OrderWorker(IDistributedLockProvider lockProvider)
             $"order:{orderId}",
             timeUntilExpires: TimeSpan.FromMinutes(5),
             acquireTimeout: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: ct
         );
 
@@ -232,8 +232,7 @@ await lockProvider.AcquireAsync(
     "orders:123",
     timeUntilExpires: TimeSpan.FromMinutes(5),
     acquireTimeout: TimeSpan.FromSeconds(10),
-    monitorLease: true,
-    autoExtend: false,
+    monitoring: LockMonitoringMode.Monitor,
     cancellationToken: ct
 );
 ```

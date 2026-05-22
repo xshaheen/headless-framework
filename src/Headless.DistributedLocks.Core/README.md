@@ -17,7 +17,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 - `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
 - `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
-- Lease monitors are opt-in per acquire call through `monitorLease: true`; `autoExtend: true` implies monitoring and renews the lease in the background. Both require a finite `timeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
+- Lease monitors are opt-in per acquire call through `monitoring: LockMonitoringMode.Monitor` (validate only) or `monitoring: LockMonitoringMode.AutoExtend` (validate + renew). Both require a finite `timeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
 - Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 1`) for programmatic log filtering. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
@@ -51,7 +51,7 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per `AcquireAsync(...)` or `TryAcquireAsync(...)` call. Use `monitorLease: true` for `HandleLostToken` loss detection and `autoExtend: true` for background renewal.
+Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per `AcquireAsync(...)` or `TryAcquireAsync(...)` call. Use `monitoring: LockMonitoringMode.Monitor` for `HandleLostToken` loss detection and `monitoring: LockMonitoringMode.AutoExtend` for background renewal.
 
 ## Dependencies
 

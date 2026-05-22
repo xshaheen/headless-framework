@@ -362,8 +362,7 @@ internal static class IdempotencyTestApp
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -372,8 +371,7 @@ internal static class IdempotencyTestApp
                         timeUntilExpires,
                         acquireTimeout,
                         releaseOnDispose,
-                        monitorLease,
-                        autoExtend,
+                        monitoring,
                         cancellationToken
                     )
                     .ConfigureAwait(false)
@@ -385,8 +383,7 @@ internal static class IdempotencyTestApp
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
             bool releaseOnDispose = true,
-            bool monitorLease = false,
-            bool autoExtend = false,
+            LockMonitoringMode monitoring = LockMonitoringMode.None,
             CancellationToken cancellationToken = default
         )
         {
@@ -442,8 +439,7 @@ internal static class IdempotencyTestApp
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
-                monitorLease: false,
-                autoExtend: false,
+                monitoring: LockMonitoringMode.None,
                 cancellationToken: cancellationToken
             );
         }

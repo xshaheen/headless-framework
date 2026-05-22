@@ -36,7 +36,7 @@ public sealed class OrderWorker(IDistributedLockProvider lockProvider)
             $"order:{orderId}",
             timeUntilExpires: TimeSpan.FromMinutes(5),
             acquireTimeout: TimeSpan.FromSeconds(10),
-            monitorLease: true,
+            monitoring: LockMonitoringMode.Monitor,
             cancellationToken: ct
         );
 

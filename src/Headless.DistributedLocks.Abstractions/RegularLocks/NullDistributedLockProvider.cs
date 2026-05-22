@@ -21,8 +21,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     )
     {
@@ -36,8 +35,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     )
     {

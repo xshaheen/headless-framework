@@ -33,16 +33,12 @@ public interface IDistributedLockProvider
     /// <see langword="true"/> to release the lock when the returned handle is disposed;
     /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
     /// </param>
-    /// <param name="monitorLease">
-    /// <see langword="true"/> to enable background lease monitoring and a live
-    /// <see cref="IDistributedLock.HandleLostToken"/> signal. Requires a finite
-    /// <paramref name="timeUntilExpires"/>; combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>
-    /// throws <see cref="ArgumentException"/>.
-    /// </param>
-    /// <param name="autoExtend">
-    /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
-    /// <paramref name="monitorLease"/>. Requires a finite <paramref name="timeUntilExpires"/>;
-    /// combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws <see cref="ArgumentException"/>.
+    /// <param name="monitoring">
+    /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/> for
+    /// per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and
+    /// <see cref="LockMonitoringMode.AutoExtend"/> require a finite <paramref name="timeUntilExpires"/>;
+    /// combining either with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws
+    /// <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     Task<IDistributedLock> AcquireAsync(
@@ -50,8 +46,7 @@ public interface IDistributedLockProvider
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     );
 
@@ -76,16 +71,12 @@ public interface IDistributedLockProvider
     /// <see langword="true"/> to release the lock when the returned handle is disposed;
     /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
     /// </param>
-    /// <param name="monitorLease">
-    /// <see langword="true"/> to enable background lease monitoring and a live
-    /// <see cref="IDistributedLock.HandleLostToken"/> signal. Requires a finite
-    /// <paramref name="timeUntilExpires"/>; combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/>
-    /// throws <see cref="ArgumentException"/>.
-    /// </param>
-    /// <param name="autoExtend">
-    /// <see langword="true"/> to renew the lease in the background while monitoring. This implies
-    /// <paramref name="monitorLease"/>. Requires a finite <paramref name="timeUntilExpires"/>;
-    /// combining with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws <see cref="ArgumentException"/>.
+    /// <param name="monitoring">
+    /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/> for
+    /// per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and
+    /// <see cref="LockMonitoringMode.AutoExtend"/> require a finite <paramref name="timeUntilExpires"/>;
+    /// combining either with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws
+    /// <see cref="ArgumentException"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>
@@ -106,8 +97,7 @@ public interface IDistributedLockProvider
         TimeSpan? timeUntilExpires = null,
         TimeSpan? acquireTimeout = null,
         bool releaseOnDispose = true,
-        bool monitorLease = false,
-        bool autoExtend = false,
+        LockMonitoringMode monitoring = LockMonitoringMode.None,
         CancellationToken cancellationToken = default
     );
 

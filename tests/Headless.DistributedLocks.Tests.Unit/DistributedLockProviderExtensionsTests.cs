@@ -18,8 +18,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -54,8 +53,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -94,8 +92,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -123,8 +120,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 timeUntilExpires,
                 acquireTimeout,
                 releaseOnDispose: true,
-                monitorLease: false,
-                autoExtend: false,
+                monitoring: LockMonitoringMode.None,
                 cancellationToken: cancellationToken
             );
     }
@@ -147,8 +143,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(),
-                Arg.Any<bool>(),
-                Arg.Any<bool>(),
+                Arg.Any<LockMonitoringMode>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -169,7 +164,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 }
                 catch (OperationCanceledException) { }
             },
-            monitorLease: true
+            monitoring: LockMonitoringMode.Monitor
         );
 
         await started.Task;
@@ -187,8 +182,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 Arg.Any<TimeSpan?>(),
                 Arg.Any<TimeSpan?>(),
                 releaseOnDispose: true,
-                monitorLease: true,
-                autoExtend: false,
+                monitoring: LockMonitoringMode.Monitor,
                 cancellationToken: Arg.Any<CancellationToken>()
             );
     }

@@ -31,7 +31,7 @@ builder.Services.AddDistributedLock<CacheDistributedLockStorage>(options =>
 
 ## Configuration
 
-No storage-specific configuration. Configure the selected `ICache` provider and `DistributedLockOptions`. Lease monitoring and `autoExtend` are storage-agnostic provider features configured through `Headless.DistributedLocks.Core`.
+No storage-specific configuration. Configure the selected `ICache` provider and `DistributedLockOptions`. `LockMonitoringMode` (lease monitoring and auto-extension) is a storage-agnostic provider feature configured through `Headless.DistributedLocks.Core`.
 
 ## Dependencies
 
