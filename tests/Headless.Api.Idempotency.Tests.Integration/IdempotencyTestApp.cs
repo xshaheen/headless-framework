@@ -359,34 +359,23 @@ internal static class IdempotencyTestApp
 
         public async Task<IDistributedLock> AcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
-            return await TryAcquireAsync(
-                        resource,
-                        timeUntilExpires,
-                        acquireTimeout,
-                        releaseOnDispose,
-                        monitoring,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false)
+            return await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false)
                 ?? throw new LockAcquisitionTimeoutException(resource);
         }
 
         public async Task<IDistributedLock?> TryAcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            var timeUntilExpires = options?.TimeUntilExpires;
+            var acquireTimeout = options?.AcquireTimeout;
+
             if (BeforeAcquireAsync is not null)
             {
                 await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
@@ -425,23 +414,6 @@ internal static class IdempotencyTestApp
                     return null;
                 }
             }
-        }
-
-        public Task<IDistributedLock?> TryAcquireAsync(
-            string resource,
-            TimeSpan? timeUntilExpires,
-            TimeSpan? acquireTimeout,
-            CancellationToken cancellationToken
-        )
-        {
-            return TryAcquireAsync(
-                resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose: true,
-                monitoring: LockMonitoringMode.None,
-                cancellationToken: cancellationToken
-            );
         }
 
         public Task<bool> RenewAsync(

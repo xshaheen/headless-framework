@@ -48,14 +48,15 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var lockProvider = GetLockProvider();
         var resource = Faker.Random.String2(3, 20);
         var acquireTimeout = TimeSpan.FromSeconds(1);
+        var options = new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout };
 
-        await using (var handle = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout))
+        await using (var handle = await lockProvider.TryAcquireAsync(resource, options))
         {
             handle.Should().NotBeNull();
 
             await Task.Run(async () =>
             {
-                await using var handle2 = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout);
+                await using var handle2 = await lockProvider.TryAcquireAsync(resource, options);
 
                 handle2.Should().BeNull();
             });
@@ -63,7 +64,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         await Task.Run(async () =>
         {
-            await using var handle = await lockProvider.TryAcquireAsync(resource, null, acquireTimeout);
+            await using var handle = await lockProvider.TryAcquireAsync(resource, options);
 
             handle.Should().NotBeNull();
         });
@@ -74,9 +75,13 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var lockProvider = GetLockProvider();
         var resource = Faker.Random.String2(3, 20);
 
-        await using var handle = await lockProvider.AcquireAsync(resource, acquireTimeout: TimeSpan.FromSeconds(1));
+        await using var handle = await lockProvider.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(1) }
+        );
 
-        var act = async () => await lockProvider.AcquireAsync(resource, acquireTimeout: TimeSpan.Zero);
+        var act = async () =>
+            await lockProvider.AcquireAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero });
 
         var assertion = await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
         assertion.Which.Resource.Should().Be(resource);
@@ -107,8 +112,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         var lock1 = await locker.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(1),
-            acquireTimeout: TimeSpan.FromMilliseconds(100)
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
+                AcquireTimeout = TimeSpan.FromMilliseconds(100),
+            }
         );
 
         lock1.Should().NotBeNull();
@@ -117,8 +125,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         var lock2 = await locker.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(1),
-            acquireTimeout: TimeSpan.FromMilliseconds(100)
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
+                AcquireTimeout = TimeSpan.FromMilliseconds(100),
+            }
         );
 
         lock2.Should().NotBeNull();
@@ -142,9 +153,12 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         var handle = await locker.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(30),
-            acquireTimeout: TimeSpan.FromMilliseconds(100),
-            releaseOnDispose: false
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(30),
+                AcquireTimeout = TimeSpan.FromMilliseconds(100),
+                ReleaseOnDispose = false,
+            }
         );
 
         handle.Should().NotBeNull();
@@ -162,9 +176,12 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         await using var handle = await locker.AcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(30),
-            acquireTimeout: TimeSpan.FromMilliseconds(100),
-            releaseOnDispose: false
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(30),
+                AcquireTimeout = TimeSpan.FromMilliseconds(100),
+                ReleaseOnDispose = false,
+            }
         );
 
         await handle.ReleaseAsync();
@@ -179,17 +196,26 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var resource = Faker.Random.String2(3, 10);
 
         Logger.LogInformation("################## Acquiring lock #1");
-        var testLock = await locker.TryAcquireAsync(resource, timeUntilExpires: TimeSpan.FromMilliseconds(250));
+        var testLock = await locker.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMilliseconds(250) }
+        );
         Logger.LogInformation(testLock != null ? "Acquired lock #1" : "Unable to acquire lock #1");
         testLock.Should().NotBeNull();
 
         Logger.LogInformation("################## Acquiring lock #2");
-        testLock = await locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromMilliseconds(50));
+        testLock = await locker.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMilliseconds(50) }
+        );
         Logger.LogInformation(testLock != null ? "Acquired lock #2" : "Unable to acquire lock #2");
         testLock.Should().BeNull();
 
         Logger.LogInformation("################## Acquiring lock #3");
-        testLock = await locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromSeconds(10));
+        testLock = await locker.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(10) }
+        );
         Logger.LogInformation(testLock != null ? "Acquired lock #3" : "Unable to acquire lock #3");
         testLock.Should().NotBeNull();
     }
@@ -202,8 +228,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         // Try to acquire a lock
         var lock1 = await locker.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(1),
-            acquireTimeout: TimeSpan.FromMilliseconds(200)
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
+                AcquireTimeout = TimeSpan.FromMilliseconds(200),
+            }
         );
 
         try
@@ -213,7 +242,10 @@ public abstract class DistributedLockProviderTestsBase : TestBase
             (await locker.IsLockedAsync(resource)).Should().BeTrue();
 
             // Cannot acquire a lock on the same resource
-            var lock2Task = locker.TryAcquireAsync(resource, acquireTimeout: TimeSpan.FromMilliseconds(250));
+            var lock2Task = locker.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMilliseconds(250) }
+            );
             await Task.Delay(TimeSpan.FromMilliseconds(250), TimeProvider);
             (await lock2Task).Should().BeNull();
         }
@@ -268,8 +300,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         {
             await using var myLock = await locker.TryAcquireAsync(
                 resource: "test",
-                timeUntilExpires: TimeSpan.FromMinutes(2),
-                acquireTimeout: TimeSpan.FromMinutes(2)
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = TimeSpan.FromMinutes(2),
+                    AcquireTimeout = TimeSpan.FromMinutes(2),
+                }
             );
 
             myLock.Should().NotBeNull();
@@ -305,9 +340,12 @@ public abstract class DistributedLockProviderTestsBase : TestBase
             {
                 await using var myLock = await locker.TryAcquireAsync(
                     resource: "test",
-                    timeUntilExpires: TimeSpan.FromMinutes(2),
-                    acquireTimeout: TimeSpan.FromMinutes(2),
-                    cancellationToken: ct
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = TimeSpan.FromMinutes(2),
+                        AcquireTimeout = TimeSpan.FromMinutes(2),
+                    },
+                    ct
                 );
 
                 myLock.Should().NotBeNull();
@@ -391,8 +429,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
             return locker.TryUsingAsync(
                 resource: resource,
                 work: async () => await Task.Delay(300),
-                timeUntilExpires: TimeSpan.FromMinutes(1),
-                acquireTimeout: TimeSpan.Zero // No waiting just single try
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = TimeSpan.FromMinutes(1),
+                    AcquireTimeout = TimeSpan.Zero, // No waiting just single try
+                }
             );
         }
     }
@@ -405,7 +446,10 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var resource = Faker.Random.String2(3, 10);
         var ttl = TimeSpan.FromMinutes(5);
 
-        await using var handle = await locker.TryAcquireAsync(resource, timeUntilExpires: ttl);
+        await using var handle = await locker.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = ttl }
+        );
         handle.Should().NotBeNull();
 
         var expiration = await locker.GetExpirationAsync(resource);
@@ -430,7 +474,10 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var resource = Faker.Random.String2(3, 10);
         var ttl = TimeSpan.FromMinutes(5);
 
-        await using var handle = await locker.TryAcquireAsync(resource, timeUntilExpires: ttl);
+        await using var handle = await locker.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = ttl }
+        );
         handle.Should().NotBeNull();
 
         var info = await locker.GetLockInfoAsync(resource);
@@ -509,8 +556,11 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         await using var handle = await locker.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(2),
-            monitoring: LockMonitoringMode.AutoExtend
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(2),
+                Monitoring = LockMonitoringMode.AutoExtend,
+            }
         );
 
         handle.Should().NotBeNull();

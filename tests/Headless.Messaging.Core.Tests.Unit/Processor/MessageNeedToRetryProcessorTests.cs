@@ -707,20 +707,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ => throw new InvalidOperationException("lock store down"));
         lockProvider
             .TryAcquireAsync(
                 Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -775,10 +769,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns<Task<IDistributedLock?>>(_ =>
@@ -798,10 +789,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -878,10 +866,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .DidNotReceive()
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -916,10 +901,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(captured));
@@ -946,10 +928,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => neverCompletes.Task);
@@ -982,10 +961,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(renewableLock));
@@ -1030,10 +1006,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Received()
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                acquireTimeout: TimeSpan.Zero,
-                releaseOnDispose: Arg.Any<bool>(),
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.AcquireTimeout == TimeSpan.Zero),
+                Arg.Any<CancellationToken>()
             );
     }
 
@@ -1063,10 +1037,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
@@ -1127,10 +1098,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(acquiredLock));
@@ -1196,10 +1164,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
@@ -1272,10 +1237,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(failingLock));

@@ -14,90 +14,58 @@ public interface IDistributedLockProvider
     /// <summary>
     /// Acquires a resource lock for a specified resource and throws
     /// <see cref="LockAcquisitionTimeoutException"/> if the lock is not acquired before
-    /// <paramref name="acquireTimeout"/> is reached.
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
     /// <param name="resource">The resource to acquire the lock for.</param>
-    /// <param name="timeUntilExpires">
-    /// The amount of time until the lock expires. The allowed values are:<br/>
-    /// * <see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).<br/>
-    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.<br/>
-    /// * Value greater than 0.<br/>
-    /// </param>
-    /// <param name="acquireTimeout">
-    /// The amount of time to wait for the lock to be acquired. The allowed values are:<br/>
-    /// * <see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).<br/>
-    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire<br/>
-    /// * Value greater than or equal to 0.<br/>
-    /// </param>
-    /// <param name="releaseOnDispose">
-    /// <see langword="true"/> to release the lock when the returned handle is disposed;
-    /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
-    /// </param>
-    /// <param name="monitoring">
-    /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/> for
-    /// per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and
-    /// <see cref="LockMonitoringMode.AutoExtend"/> require a finite <paramref name="timeUntilExpires"/>;
-    /// combining either with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws
-    /// <see cref="ArgumentException"/>.
+    /// <param name="options">
+    /// Per-call configuration (lease TTL, acquire timeout, release-on-dispose, monitoring mode).
+    /// <see langword="null"/> applies the provider defaults. See <see cref="DistributedLockAcquireOptions"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+    /// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/> but
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
+    /// (monitoring requires a finite lease).
+    /// </exception>
     Task<IDistributedLock> AcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     );
 
     /// <summary>
     /// Acquires a resource lock for a specified resource this method will block
-    /// until the lock is acquired or the <paramref name="acquireTimeout"/> is reached.
+    /// until the lock is acquired or the <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
     /// <param name="resource">The resource to acquire the lock for.</param>
-    /// <param name="timeUntilExpires">
-    /// The amount of time until the lock expires. The allowed values are:<br/>
-    /// * <see langword="null"/>: means the default value <see cref="DefaultTimeUntilExpires"/> (20 minutes).<br/>
-    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.<br/>
-    /// * Value greater than 0.<br/>
-    /// </param>
-    /// <param name="acquireTimeout">
-    /// The amount of time to wait for the lock to be acquired. The allowed values are:<br/>
-    /// * <see langword="null"/>: means the default value <see cref="DefaultAcquireTimeout"/> (30 seconds).<br/>
-    /// * <see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire<br/>
-    /// * Value greater than or equal to 0.<br/>
-    /// </param>
-    /// <param name="releaseOnDispose">
-    /// <see langword="true"/> to release the lock when the returned handle is disposed;
-    /// <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>.
-    /// </param>
-    /// <param name="monitoring">
-    /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/> for
-    /// per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and
-    /// <see cref="LockMonitoringMode.AutoExtend"/> require a finite <paramref name="timeUntilExpires"/>;
-    /// combining either with <see cref="System.Threading.Timeout.InfiniteTimeSpan"/> throws
-    /// <see cref="ArgumentException"/>.
+    /// <param name="options">
+    /// Per-call configuration (lease TTL, acquire timeout, release-on-dispose, monitoring mode).
+    /// <see langword="null"/> applies the provider defaults. See <see cref="DistributedLockAcquireOptions"/>.
     /// </param>
     /// <param name="cancellationToken"></param>
     /// <returns>
     /// A task that represents the asynchronous operation.
     /// The task result contains the acquired lock or null if the lock could not be acquired.
     /// </returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+    /// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/> but
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
+    /// (monitoring requires a finite lease).
+    /// </exception>
     /// <remarks>
-    /// When <paramref name="acquireTimeout"/> is <see cref="TimeSpan.Zero"/> the implementation runs a single
-    /// storage attempt with no retry loop (the "try once, no wait" semantic). The attempt is bounded by an
-    /// internal safety deadline so a stalled lock-store call cannot hang the caller indefinitely, even when
-    /// <paramref name="cancellationToken"/> is <see cref="CancellationToken.None"/>. The deadline is a ceiling
-    /// on the storage round-trip, not a wait budget — under healthy lock-store conditions the call completes
-    /// well within it. The caller's <paramref name="cancellationToken"/> still takes precedence if it fires
-    /// first. See issue #297 and the F#2 review finding from PR #284 for the rationale.
+    /// When <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is <see cref="TimeSpan.Zero"/> the
+    /// implementation runs a single storage attempt with no retry loop (the "try once, no wait" semantic).
+    /// The attempt is bounded by an internal safety deadline so a stalled lock-store call cannot hang the
+    /// caller indefinitely, even when <paramref name="cancellationToken"/> is <see cref="CancellationToken.None"/>.
+    /// The deadline is a ceiling on the storage round-trip, not a wait budget — under healthy lock-store
+    /// conditions the call completes well within it. The caller's <paramref name="cancellationToken"/> still
+    /// takes precedence if it fires first. See issue #297 and the F#2 review finding from PR #284 for the rationale.
     /// </remarks>
     Task<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     );
 

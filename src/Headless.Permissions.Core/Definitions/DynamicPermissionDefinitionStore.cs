@@ -149,9 +149,12 @@ public sealed class DynamicPermissionDefinitionStore(
         await using var commonLockHandle =
             await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
-                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
-                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                cancellationToken: cancellationToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                },
+                cancellationToken
             )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for permission definition common stamp check!"
@@ -260,9 +263,12 @@ public sealed class DynamicPermissionDefinitionStore(
     {
         await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
             _appSaveLockKey,
-            timeUntilExpires: _options.ApplicationSaveLockExpiration,
-            acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-            cancellationToken: cancellationToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = _options.ApplicationSaveLockExpiration,
+                AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
+            },
+            cancellationToken
         );
 
         if (appDistributedLock is null)
@@ -296,9 +302,12 @@ public sealed class DynamicPermissionDefinitionStore(
         await using var commonLockHandle =
             await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
-                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
-                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                cancellationToken: cancellationToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                },
+                cancellationToken
             )
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static permissions!"); // It will re-try
 

@@ -129,8 +129,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when - try to acquire second lock with zero timeout (immediate)
         var result = await provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
         );
 
         // then
@@ -168,7 +168,11 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // when
         var act = async () =>
-            await provider.AcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: AbortToken);
+            await provider.AcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                AbortToken
+            );
 
         // then
         var assertion = await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
@@ -203,8 +207,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var acquireTask = provider.AcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.FromSeconds(30),
-            cancellationToken: cts.Token
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            cts.Token
         );
         await Task.Delay(50, AbortToken);
         await cts.CancelAsync();
@@ -220,7 +224,11 @@ public sealed class DistributedLockProviderTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        var handle = await provider.AcquireAsync(resource, releaseOnDispose: false, cancellationToken: AbortToken);
+        var handle = await provider.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            AbortToken
+        );
 
         // when
         await handle.DisposeAsync();
@@ -240,8 +248,8 @@ public sealed class DistributedLockProviderTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.AcquireAsync(
             resource,
-            releaseOnDispose: false,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            AbortToken
         );
 
         // when
@@ -271,8 +279,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when - try to acquire on a FREE resource with zero acquire timeout
         var result = await provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
         );
 
         // then - handle must be returned; Zero is "no wait", not "no attempt"
@@ -302,8 +310,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // Start acquisition task
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.FromSeconds(30),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            AbortToken
         );
 
         // Drive the provider's retry loop by advancing fake time until it acquires.
@@ -343,8 +351,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when - use zero timeout for immediate failure
         var result = await provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
         );
 
         // then
@@ -369,8 +377,8 @@ public sealed class DistributedLockProviderTests : TestBase
         var act = async () =>
             await provider.TryAcquireAsync(
                 resource,
-                acquireTimeout: TimeSpan.FromMinutes(1),
-                cancellationToken: cts.Token
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(1) },
+                cts.Token
             );
 
         // then
@@ -403,8 +411,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var result = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: customTtl,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = customTtl },
+            AbortToken
         );
 
         // then
@@ -425,8 +433,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var result = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: Timeout.InfiniteTimeSpan,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = Timeout.InfiniteTimeSpan },
+            AbortToken
         );
 
         // then
@@ -454,15 +462,15 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable AsyncFixer04 // Intentionally not awaiting to simulate concurrent waiters
             _ = provider.TryAcquireAsync(
                 resource,
-                acquireTimeout: TimeSpan.FromSeconds(30),
-                cancellationToken: cts.Token
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                cts.Token
             );
             await Task.Delay(100, AbortToken); // Give time for waiter1 to enter retry loop
 
             _ = provider.TryAcquireAsync(
                 resource,
-                acquireTimeout: TimeSpan.FromSeconds(30),
-                cancellationToken: cts.Token
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                cts.Token
             );
             await Task.Delay(100, AbortToken); // Give time for waiter2 to enter retry loop
 #pragma warning restore AsyncFixer04
@@ -471,8 +479,8 @@ public sealed class DistributedLockProviderTests : TestBase
             var act = async () =>
                 await provider.TryAcquireAsync(
                     resource,
-                    acquireTimeout: TimeSpan.FromSeconds(30),
-                    cancellationToken: cts.Token
+                    new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                    cts.Token
                 );
 
             // then
@@ -504,15 +512,15 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable AsyncFixer04 // Intentionally not awaiting to simulate concurrent waiters
             _ = provider.TryAcquireAsync(
                 "resource1",
-                acquireTimeout: TimeSpan.FromSeconds(30),
-                cancellationToken: cts.Token
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                cts.Token
             );
             await Task.Delay(100, AbortToken);
 
             _ = provider.TryAcquireAsync(
                 "resource2",
-                acquireTimeout: TimeSpan.FromSeconds(30),
-                cancellationToken: cts.Token
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                cts.Token
             );
             await Task.Delay(100, AbortToken);
 #pragma warning restore AsyncFixer04
@@ -521,8 +529,8 @@ public sealed class DistributedLockProviderTests : TestBase
             var act = async () =>
                 await provider.TryAcquireAsync(
                     "resource3",
-                    acquireTimeout: TimeSpan.FromSeconds(30),
-                    cancellationToken: cts.Token
+                    new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                    cts.Token
                 );
 
             // then
@@ -579,8 +587,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when — Zero acquireTimeout, CancellationToken.None (no caller-side bound)
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: CancellationToken.None
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
         );
 
         // Advance past the safety deadline — virtualised via FakeTimeProvider, no wall-clock wait.
@@ -609,8 +617,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: callerCts.Token
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            callerCts.Token
         );
 
         _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
@@ -635,7 +643,11 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // when — caller token is already cancelled BEFORE the call enters the helper
         var act = async () =>
-            await provider.TryAcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: callerCts.Token);
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                callerCts.Token
+            );
 
         // then — the pre-call ThrowIfCancellationRequested guard fires (no storage call reached)
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -663,7 +675,11 @@ public sealed class DistributedLockProviderTests : TestBase
 
         // when
         var act = async () =>
-            await provider.TryAcquireAsync(resource, acquireTimeout: TimeSpan.Zero, cancellationToken: callerCts.Token);
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                callerCts.Token
+            );
 
         // then — OCE must propagate to caller, AND best-effort orphan cleanup must fire
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -696,8 +712,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var result = await provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
         );
 
         // then — single attempt, no retry loop entered. Subsequent fake-time advances must not
@@ -729,8 +745,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: CancellationToken.None
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            CancellationToken.None
         );
 
         _timeProvider.Advance(TimeSpan.FromSeconds(_SafetyDeadlineSeconds + 1));
@@ -762,8 +778,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var result = await provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: callerCts.Token
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            callerCts.Token
         );
 
         // then
@@ -916,8 +932,8 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var acquireTask = provider.TryAcquireAsync(
             resource,
-            acquireTimeout: TimeSpan.FromSeconds(30),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            AbortToken
         );
         await Task.Delay(50, AbortToken);
         await existing.ReleaseAsync();
@@ -1026,8 +1042,8 @@ public sealed class DistributedLockProviderTests : TestBase
 
         var acquiredLock = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromMinutes(5),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(5) },
+            AbortToken
         );
         acquiredLock.Should().NotBeNull();
 
@@ -1071,8 +1087,8 @@ public sealed class DistributedLockProviderTests : TestBase
 
         var acquiredLock = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromMinutes(5),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(5) },
+            AbortToken
         );
         acquiredLock.Should().NotBeNull();
 
@@ -1160,7 +1176,11 @@ public sealed class DistributedLockProviderTests : TestBase
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
         var ttl = TimeSpan.FromMinutes(10);
-        await provider.TryAcquireAsync(resource, timeUntilExpires: ttl, cancellationToken: AbortToken);
+        await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = ttl },
+            AbortToken
+        );
 
         // when
         var result = await provider.GetExpirationAsync(resource, AbortToken);
@@ -1192,8 +1212,8 @@ public sealed class DistributedLockProviderTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var acquiredLock = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromMinutes(5),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(5) },
+            AbortToken
         );
 
         // when

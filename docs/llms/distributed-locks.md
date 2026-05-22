@@ -61,11 +61,12 @@ Use `IDistributedLockProvider` when only one worker should own a named resource 
 
 - Code against `IDistributedLockProvider` from `Headless.DistributedLocks.Abstractions`; do not inject Redis or cache storage types into application services.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
-- Always `await using` the returned lock when `releaseOnDispose` is `true`; use `releaseOnDispose: false` only when ownership is deliberately transferred and the caller will release explicitly.
-- Pass `monitoring: LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLock.HandleLostToken`; pass `monitoring: LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
+- Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
+- Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
+- Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLock.HandleLostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
 - Do not use distributed locks as rate limiters. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + community Redis (distributed) — the framework does not ship a rate-limiting package.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis and cache locks are efficiency locks, not transaction-coupled correctness locks.
-- Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per `AcquireAsync(...)` or `TryAcquireAsync(...)` call; `DistributedLockOptions` configures key prefix and waiter/resource limits.
+- Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
 - If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxPublisher` is registered, the provider still works and falls back to polling backoff with a one-time warning.
 - `Headless.Messaging.Core` uses a keyed `IDistributedLockProvider` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
 
@@ -87,11 +88,11 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 ### Lease Lifecycle Monitoring
 
-Lock monitoring is opt-in per acquire call via the `LockMonitoringMode` enum. `monitoring: LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. With `LockMonitoringMode.None` (default), `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
+Lock monitoring is opt-in per acquire call via `DistributedLockAcquireOptions.Monitoring` (a `LockMonitoringMode` enum). `Monitoring = LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. With `LockMonitoringMode.None` (default), `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
 
 Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 1`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
 
-Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `timeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
+Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `TimeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
 `LockMonitoringMode.AutoExtend` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `LockMonitoringMode.Monitor` (validate only) validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `LockId` when stale owners can corrupt state.
 
@@ -129,7 +130,8 @@ Lets application and domain code depend on lock interfaces without referencing a
 ### Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
-- `releaseOnDispose: false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
+- Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
+- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
 - `HandleLostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`.
 
 ### Installation
@@ -147,10 +149,13 @@ public sealed class OrderWorker(IDistributedLockProvider lockProvider)
     {
         await using var lease = await lockProvider.AcquireAsync(
             $"order:{orderId}",
-            timeUntilExpires: TimeSpan.FromMinutes(5),
-            acquireTimeout: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: ct
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromMinutes(5),
+                AcquireTimeout = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            ct
         );
 
         using var lostRegistration = lease.HandleLostToken.Register(() => { /* stop work */ });
@@ -192,7 +197,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 ### Design Notes
 
 - `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
-- `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
+- `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors drain before dispose-time release, so monitoring does not add release retry latency during shutdown.
 
 ### Installation
@@ -225,15 +230,18 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Use method arguments to override per-call expiration and acquire timeout:
+Use `DistributedLockAcquireOptions` to override per-call expiration, acquire timeout, monitoring, and dispose behavior:
 
 ```csharp
 await lockProvider.AcquireAsync(
     "orders:123",
-    timeUntilExpires: TimeSpan.FromMinutes(5),
-    acquireTimeout: TimeSpan.FromSeconds(10),
-    monitoring: LockMonitoringMode.Monitor,
-    cancellationToken: ct
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(5),
+        AcquireTimeout = TimeSpan.FromSeconds(10),
+        Monitoring = LockMonitoringMode.Monitor,
+    },
+    ct
 );
 ```
 

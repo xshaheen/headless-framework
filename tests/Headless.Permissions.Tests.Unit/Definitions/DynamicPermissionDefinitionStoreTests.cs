@@ -230,10 +230,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(lockHandle);

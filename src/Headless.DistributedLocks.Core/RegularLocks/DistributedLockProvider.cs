@@ -81,50 +81,41 @@ public sealed class DistributedLockProvider(
 
     public async Task<IDistributedLock> AcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        _ValidateAcquireTimeout(acquireTimeout);
+        options ??= new DistributedLockAcquireOptions();
+        _ValidateAcquireTimeout(options.AcquireTimeout);
 
-        var acquired = await TryAcquireAsync(
-                resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose,
-                monitoring,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var acquired = await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false);
 
         if (acquired is not null)
         {
             return acquired;
         }
 
-        throw acquireTimeout == TimeSpan.Zero
+        throw options.AcquireTimeout == TimeSpan.Zero
             ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
             : new LockAcquisitionTimeoutException(resource);
     }
 
     public async Task<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
-        _ValidateAcquireTimeout(acquireTimeout);
+        options ??= new DistributedLockAcquireOptions();
+        _ValidateAcquireTimeout(options.AcquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
-        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        var timeUntilExpires = _NormalizeTimeUntilExpires(options.TimeUntilExpires);
+        var acquireTimeout = options.AcquireTimeout;
+        var releaseOnDispose = options.ReleaseOnDispose;
+        var monitoring = options.Monitoring;
         var monitorLease = monitoring != LockMonitoringMode.None;
         var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);

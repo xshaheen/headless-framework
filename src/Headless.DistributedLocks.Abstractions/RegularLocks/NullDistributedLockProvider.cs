@@ -18,10 +18,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
     public Task<IDistributedLock> AcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -32,10 +29,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
     public Task<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
-        LockMonitoringMode monitoring = LockMonitoringMode.None,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {

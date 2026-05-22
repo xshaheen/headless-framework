@@ -16,7 +16,8 @@ Lets application and domain code depend on lock interfaces without referencing a
 ## Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
-- `releaseOnDispose: false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
+- Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
+- `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
 - `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `IsMonitored` to disambiguate). It is an observability signal; fence protected writes with `LockId` when correctness matters. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
 
 ## Installation
@@ -34,10 +35,13 @@ public sealed class OrderWorker(IDistributedLockProvider lockProvider)
     {
         await using var lease = await lockProvider.AcquireAsync(
             $"order:{orderId}",
-            timeUntilExpires: TimeSpan.FromMinutes(5),
-            acquireTimeout: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: ct
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromMinutes(5),
+                AcquireTimeout = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            ct
         );
 
         using var lostRegistration = lease.HandleLostToken.Register(() => { /* stop work */ });

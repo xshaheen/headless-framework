@@ -48,9 +48,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when
         var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
 
         // then
@@ -71,9 +74,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
         _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
@@ -96,9 +102,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.AutoExtend,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.AutoExtend,
+            },
+            AbortToken
         );
 
         // then
@@ -117,9 +126,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(1),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 
@@ -141,9 +153,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(3),
-            monitoring: LockMonitoringMode.AutoExtend,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(3),
+                Monitoring = LockMonitoringMode.AutoExtend,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 
@@ -167,9 +182,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(3),
-            monitoring: LockMonitoringMode.AutoExtend,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(3),
+                Monitoring = LockMonitoringMode.AutoExtend,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 
@@ -211,9 +229,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when - monitor enabled
         await using var monitored = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
 
         // then
@@ -241,9 +262,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
         var disposalDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -278,9 +302,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 
@@ -307,9 +334,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var act = () =>
             provider.TryAcquireAsync(
                 resource,
-                timeUntilExpires: Timeout.InfiniteTimeSpan,
-                monitoring: LockMonitoringMode.Monitor,
-                cancellationToken: AbortToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = Timeout.InfiniteTimeSpan,
+                    Monitoring = LockMonitoringMode.Monitor,
+                },
+                AbortToken
             );
 
         // then
@@ -328,9 +358,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            timeUntilExpires: TimeSpan.FromSeconds(10),
-            monitoring: LockMonitoringMode.Monitor,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
         );
         handle.Should().NotBeNull();
 

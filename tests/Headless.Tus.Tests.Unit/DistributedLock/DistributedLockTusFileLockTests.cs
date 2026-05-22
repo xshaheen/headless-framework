@@ -22,10 +22,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -47,10 +44,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);
@@ -79,10 +73,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 "tus-file-lock-my-upload-id",
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -102,10 +93,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Timeout.InfiniteTimeSpan,
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.TimeUntilExpires == Timeout.InfiniteTimeSpan),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -125,10 +113,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                TimeSpan.Zero,
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.AcquireTimeout == TimeSpan.Zero),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -150,10 +135,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -178,10 +160,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);

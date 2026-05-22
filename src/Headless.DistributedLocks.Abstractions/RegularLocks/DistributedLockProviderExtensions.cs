@@ -36,46 +36,27 @@ public static class DistributedLockProviderExtensions
         /// <summary>
         /// Tries to acquire a lock for a specified <paramref name="resource"/> and execute the <paramref name="work"/>.
         /// </summary>
-        /// <param name="timeUntilExpires">
-        /// The amount of time until the lock expires. The allowed values are:
-        /// <list type="bullet">
-        /// <item><see langword="null"/>: means the default value (20 minutes).</item>
-        /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 milliseconds): means infinity no expiration set.</item>
-        /// <item>Value greater than 0.</item>
-        /// </list>
-        /// </param>
-        /// <param name="acquireTimeout">
-        /// The amount of time to wait for the lock to be acquired. The allowed values are:
-        /// <list type="bullet">
-        /// <item><see langword="null"/>: means the default value (30 seconds).</item>
-        /// <item><see cref="Timeout.InfiniteTimeSpan"/> (-1 millisecond): means infinity wait to acquire</item>
-        /// <item>Value greater than or equal to 0.</item>
-        /// </list>
-        /// </param>
-        /// <param name="monitoring">
-        /// Controls whether and how the lease is monitored. See <see cref="LockMonitoringMode"/>.
+        /// <param name="resource">The resource to acquire the lock for.</param>
+        /// <param name="work">The async work to execute while holding the lock.</param>
+        /// <param name="options">
+        /// Per-call configuration. See <see cref="DistributedLockAcquireOptions"/>.
+        /// The extension owns the handle lifetime, so <see cref="DistributedLockAcquireOptions.ReleaseOnDispose"/>
+        /// is forced to <see langword="true"/> regardless of what the caller sets.
         /// Overloads taking a <see cref="CancellationToken"/>-receiving <paramref name="work"/>
-        /// delegate forward a token that is also cancelled when the lease is lost (when monitoring
-        /// is enabled).
+        /// delegate forward a token that is also cancelled when the lease is lost (when monitoring is enabled).
         /// </param>
+        /// <param name="cancellationToken">Cancellation token.</param>
         public async Task<bool> TryUsingAsync(
             string resource,
             Func<Task> work,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            options = (options ?? new DistributedLockAcquireOptions()) with { ReleaseOnDispose = true };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: monitoring,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)
@@ -91,26 +72,19 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
             Func<TState, Task> work,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            options = (options ?? new DistributedLockAcquireOptions()) with { ReleaseOnDispose = true };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: monitoring,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)
@@ -123,25 +97,18 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync(
             string resource,
             Func<CancellationToken, Task> work,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            options = (options ?? new DistributedLockAcquireOptions()) with { ReleaseOnDispose = true };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: monitoring,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)
@@ -168,26 +135,19 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,LockMonitoringMode,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
             Func<TState, CancellationToken, Task> work,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            LockMonitoringMode monitoring = LockMonitoringMode.None,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            options = (options ?? new DistributedLockAcquireOptions()) with { ReleaseOnDispose = true };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: monitoring,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)
@@ -215,8 +175,8 @@ public static class DistributedLockProviderExtensions
         /// <summary>
         /// Tries to acquire a lock for <paramref name="resource"/> and runs a synchronous
         /// <paramref name="work"/> delegate. Synchronous work cannot observe a lease-lost
-        /// cancellation, so this overload does NOT expose a <see cref="LockMonitoringMode"/>
-        /// parameter. Use the <see cref="Func{Task}"/>-receiving overload when you want lease monitoring.
+        /// cancellation, so this overload always passes <see cref="LockMonitoringMode.None"/>.
+        /// Use the <see cref="Func{Task}"/>-receiving overload when you want lease monitoring.
         /// </summary>
         public async Task<bool> TryUsingAsync(
             string resource,
@@ -226,15 +186,16 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
+            var options = new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = timeUntilExpires,
+                AcquireTimeout = acquireTimeout,
+                ReleaseOnDispose = true,
+                Monitoring = LockMonitoringMode.None,
+            };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: LockMonitoringMode.None,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)
@@ -257,15 +218,16 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
+            var options = new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = timeUntilExpires,
+                AcquireTimeout = acquireTimeout,
+                ReleaseOnDispose = true,
+                Monitoring = LockMonitoringMode.None,
+            };
+
             await using var distributedLock = await provider
-                .TryAcquireAsync(
-                    resource,
-                    timeUntilExpires,
-                    acquireTimeout,
-                    releaseOnDispose: true,
-                    monitoring: LockMonitoringMode.None,
-                    cancellationToken: cancellationToken
-                )
+                .TryAcquireAsync(resource, options, cancellationToken)
                 .ConfigureAwait(false);
 
             if (distributedLock is null)

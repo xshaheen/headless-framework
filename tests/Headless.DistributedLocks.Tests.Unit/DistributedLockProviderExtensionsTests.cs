@@ -15,10 +15,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         provider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(null));
@@ -50,10 +47,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         provider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -89,10 +83,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         provider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -107,9 +98,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         await provider.TryUsingAsync(
             resource,
             () => Task.CompletedTask,
-            timeUntilExpires,
-            acquireTimeout,
-            cancellationToken: cancellationToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = timeUntilExpires,
+                AcquireTimeout = acquireTimeout,
+            },
+            cancellationToken
         );
 
         // then
@@ -117,11 +111,14 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose: true,
-                monitoring: LockMonitoringMode.None,
-                cancellationToken: cancellationToken
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null
+                    && o.TimeUntilExpires == timeUntilExpires
+                    && o.AcquireTimeout == acquireTimeout
+                    && o.ReleaseOnDispose
+                    && o.Monitoring == LockMonitoringMode.None
+                ),
+                cancellationToken
             );
     }
 
@@ -140,10 +137,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         provider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
-                Arg.Any<LockMonitoringMode>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
@@ -164,7 +158,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 }
                 catch (OperationCanceledException) { }
             },
-            monitoring: LockMonitoringMode.Monitor
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor }
         );
 
         await started.Task;
@@ -179,11 +173,10 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 "resource",
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                releaseOnDispose: true,
-                monitoring: LockMonitoringMode.Monitor,
-                cancellationToken: Arg.Any<CancellationToken>()
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null && o.Monitoring == LockMonitoringMode.Monitor && o.ReleaseOnDispose
+                ),
+                Arg.Any<CancellationToken>()
             );
     }
 }

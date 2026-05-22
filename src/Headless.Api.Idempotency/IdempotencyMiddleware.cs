@@ -166,9 +166,12 @@ internal sealed partial class IdempotencyMiddleware(
                 winnerLock = await lockProvider
                     .TryAcquireAsync(
                         $"lock:{cacheKey}",
-                        timeUntilExpires: options.WinnerLockLease,
-                        acquireTimeout: TimeSpan.Zero,
-                        cancellationToken: ct
+                        new DistributedLockAcquireOptions
+                        {
+                            TimeUntilExpires = options.WinnerLockLease,
+                            AcquireTimeout = TimeSpan.Zero,
+                        },
+                        ct
                     )
                     .ConfigureAwait(false);
             }
@@ -422,9 +425,12 @@ internal sealed partial class IdempotencyMiddleware(
             dlock = await lockProvider
                 .TryAcquireAsync(
                     lockKey,
-                    timeUntilExpires: options.WinnerLockLease,
-                    acquireTimeout: options.InFlightLockTimeout,
-                    cancellationToken: ct
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = options.WinnerLockLease,
+                        AcquireTimeout = options.InFlightLockTimeout,
+                    },
+                    ct
                 )
                 .ConfigureAwait(false);
         }
