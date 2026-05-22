@@ -9,12 +9,18 @@ namespace Headless.Messaging.Kafka;
 public sealed class KafkaConsumerClientFactory(
     IOptions<MessagingKafkaOptions> kafkaOptions,
     IServiceProvider serviceProvider
-) : IConsumerClientFactory
+) : IIntentAwareConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
+        return CreateAsync(groupName, groupConcurrent, IntentType.Queue);
+    }
+
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    {
         try
         {
+            _ = intentType;
             return Task.FromResult<IConsumerClient>(
                 new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider)
             );

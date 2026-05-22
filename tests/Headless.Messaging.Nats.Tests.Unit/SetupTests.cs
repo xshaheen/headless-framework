@@ -91,7 +91,8 @@ public sealed class SetupTests : TestBase
 
         await using var provider = services.BuildServiceProvider();
 
-        provider.GetRequiredService<ITransport>().Should().BeOfType<NatsTransport>();
+        provider.GetRequiredService<IBusTransport>().Should().BeOfType<NatsTransport>();
+        provider.GetRequiredService<IQueueTransport>().Should().BeOfType<NatsTransport>();
         provider.GetRequiredService<IConsumerClientFactory>().Should().BeOfType<NatsConsumerClientFactory>();
         provider.GetRequiredService<INatsConnectionPool>().Should().BeOfType<NatsConnectionPool>();
         provider

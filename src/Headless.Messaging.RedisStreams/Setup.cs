@@ -2,6 +2,7 @@
 
 using System.Net;
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RedisStreams;
 using Headless.Messaging.Transport;
@@ -50,7 +51,7 @@ public static class SetupRedisStreamsMessaging
             services.AddSingleton(new MessageQueueMarkerService("RedisStreams"));
             services.AddSingleton<IRedisStreamManager, RedisStreamManager>();
             services.AddSingleton<IConsumerClientFactory, RedisConsumerClientFactory>();
-            services.AddSingleton<ITransport, RedisTransport>();
+            services.AddSingleton<IQueueTransport, RedisTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<

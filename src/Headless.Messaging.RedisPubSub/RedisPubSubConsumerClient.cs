@@ -1,0 +1,167 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Transport;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+
+namespace Headless.Messaging.RedisPubSub;
+
+internal sealed class RedisPubSubConsumerClient(
+    string groupName,
+    byte groupConcurrent,
+    IRedisPubSubConnectionProvider connectionProvider,
+    IOptions<RedisPubSubOptions> options,
+    ILogger<RedisPubSubConsumerClient> logger
+) : IConsumerClient
+{
+    private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
+    private readonly Dictionary<string, ChannelMessageQueue> _subscriptions = new(StringComparer.Ordinal);
+    private readonly ConsumerPauseGate _pauseGate = new();
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private int _disposed;
+
+    public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
+
+    public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
+
+    public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
+
+    public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    {
+        return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(topicNames)]);
+    }
+
+    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    {
+        Argument.IsNotNull(topics);
+
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            ObjectDisposedException.ThrowIf(true, this);
+        }
+
+        var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);
+        var subscriber = connection.GetSubscriber();
+
+        foreach (var topic in Argument.IsNotNull(topics).Distinct(StringComparer.Ordinal))
+        {
+            if (_subscriptions.ContainsKey(topic))
+            {
+                continue;
+            }
+
+            var queue = await subscriber.SubscribeAsync(RedisChannel.Literal(topic)).ConfigureAwait(false);
+            queue.OnMessage(_DispatchWithConcurrencyAsync);
+            _subscriptions.Add(topic, queue);
+        }
+
+        _ready.TrySetResult();
+    }
+
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        _ = timeout;
+        await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+    }
+
+    public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
+    {
+        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
+    }
+
+    public ValueTask CommitAsync(object? sender)
+    {
+        _ = sender;
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask RejectAsync(object? sender)
+    {
+        _ = sender;
+        return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask PauseAsync(CancellationToken cancellationToken = default) => await _pauseGate.PauseAsync();
+
+    public async ValueTask ResumeAsync(CancellationToken cancellationToken = default) => await _pauseGate.ResumeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _pauseGate.Release();
+
+        foreach (var subscription in _subscriptions.Values)
+        {
+            await subscription.UnsubscribeAsync().ConfigureAwait(false);
+        }
+
+        _subscriptions.Clear();
+        _semaphore?.Dispose();
+        _ready.TrySetCanceled();
+    }
+
+    private async Task _DispatchWithConcurrencyAsync(ChannelMessage channelMessage)
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
+        if (_semaphore is null)
+        {
+            await _DispatchAsync(channelMessage).ConfigureAwait(false);
+            return;
+        }
+
+        await _semaphore.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await _DispatchAsync(channelMessage).ConfigureAwait(false);
+        }
+        finally
+        {
+            _semaphore.Release();
+        }
+    }
+
+    private async Task _DispatchAsync(ChannelMessage channelMessage)
+    {
+        try
+        {
+            await _pauseGate.WaitIfPausedAsync(CancellationToken.None).ConfigureAwait(false);
+
+            var message = RedisPubSubEnvelope.Deserialize(channelMessage.Message!);
+            message.Headers[Headers.Group] = groupName;
+
+            if (OnMessageCallback is not null)
+            {
+                await OnMessageCallback(message, null).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.RedisPubSubMessageDispatchFailed(ex, channelMessage.Channel.ToString());
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs { LogType = MqLogType.ExceptionReceived, Reason = ex.Message }
+            );
+        }
+    }
+}
+
+internal static partial class RedisPubSubConsumerClientLog
+{
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Error,
+        Message = "Redis Pub/Sub message dispatch failed for channel {Channel}."
+    )]
+    public static partial void RedisPubSubMessageDispatchFailed(this ILogger logger, Exception exception, string channel);
+}

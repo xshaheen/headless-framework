@@ -14,7 +14,8 @@ internal sealed class PulsarConsumerClient(
     IOptions<MessagingPulsarOptions> options,
     PulsarClient client,
     string groupName,
-    byte groupConcurrent
+    byte groupConcurrent,
+    IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
@@ -43,12 +44,17 @@ internal sealed class PulsarConsumerClient(
         _consumerClient = await client
             .NewConsumer()
             .Topics(topics)
-            .SubscriptionName(groupName)
+            .SubscriptionName(GetSubscriptionName(groupName, intentType))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
             .SubscribeAsync()
             .WaitAsync(cts.Token);
         _ready.TrySetResult();
+    }
+
+    internal static string GetSubscriptionName(string groupName, IntentType intentType)
+    {
+        return intentType == IntentType.Queue ? "headless-queue" : groupName;
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)

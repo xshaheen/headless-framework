@@ -8,7 +8,8 @@ using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
-internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool) : ITransport
+internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnectionPool connectionPool)
+    : IBusTransport, IQueueTransport
 {
     public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 

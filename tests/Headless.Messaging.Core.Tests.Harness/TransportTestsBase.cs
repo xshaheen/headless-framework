@@ -15,13 +15,27 @@ namespace Tests;
 public abstract class TransportTestsBase : TestBase
 {
     /// <summary>Gets the transport instance for testing.</summary>
-    protected abstract ITransport GetTransport();
+    protected virtual ITransport? GetTransport() => null;
 
     /// <summary>Gets the bus transport instance for testing.</summary>
-    protected virtual IBusTransport GetBusTransport() => new BusTransportAdapter(GetTransport());
+    protected virtual IBusTransport GetBusTransport()
+    {
+        var legacyTransport = GetTransport();
+
+        return legacyTransport is not null
+            ? new BusTransportAdapter(legacyTransport)
+            : throw new InvalidOperationException("No bus transport was configured for this test.");
+    }
 
     /// <summary>Gets the queue transport instance for testing.</summary>
-    protected virtual IQueueTransport GetQueueTransport() => new QueueTransportAdapter(GetTransport());
+    protected virtual IQueueTransport GetQueueTransport()
+    {
+        var legacyTransport = GetTransport();
+
+        return legacyTransport is not null
+            ? new QueueTransportAdapter(legacyTransport)
+            : throw new InvalidOperationException("No queue transport was configured for this test.");
+    }
 
     /// <summary>Gets the transport capabilities for conditional test execution.</summary>
     protected virtual TransportCapabilities Capabilities => TransportCapabilities.Default;
@@ -54,7 +68,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_send_message_successfully()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var message = CreateMessage();
 
         // when
@@ -103,7 +117,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_have_valid_broker_address()
     {
         // given, when
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
 
         // then
         transport.BrokerAddress.Name.Should().NotBeNullOrEmpty();
@@ -118,7 +132,7 @@ public abstract class TransportTestsBase : TestBase
         }
 
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             { "CustomHeader1", "Value1" },
@@ -144,7 +158,7 @@ public abstract class TransportTestsBase : TestBase
         }
 
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var messages = Enumerable.Range(0, 10).Select(i => CreateMessage(messageId: $"batch-msg-{i}")).ToList();
 
         // when
@@ -161,7 +175,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_throw_when_transport_disposed()
     {
         // given
-        var transport = GetTransport();
+        var transport = GetPrimaryTransport();
         await transport.DisposeAsync();
 
         var message = CreateMessage();
@@ -176,7 +190,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_empty_message_body()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var message = CreateMessage(body: ReadOnlyMemory<byte>.Empty);
 
         // when
@@ -189,7 +203,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_large_message_body()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var largeBody = new byte[64 * 1024]; // 64KB
         Random.Shared.NextBytes(largeBody);
         var message = CreateMessage(body: largeBody);
@@ -204,7 +218,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_dispose_async_without_exception()
     {
         // given
-        var transport = GetTransport();
+        var transport = GetPrimaryTransport();
 
         // when & then - dispose should complete without exception
         var act = () => transport.DisposeAsync().AsTask();
@@ -214,7 +228,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_concurrent_sends()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var results = new ConcurrentBag<OperateResult>();
         var tasks = Enumerable
             .Range(0, 50)
@@ -236,7 +250,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_include_message_id_in_headers()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var expectedId = Guid.NewGuid().ToString();
         var message = CreateMessage(messageId: expectedId);
 
@@ -251,7 +265,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_include_message_name_in_headers()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         const string expectedName = "TestMessageName";
         var message = CreateMessage(messageName: expectedName);
 
@@ -266,7 +280,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_special_characters_in_message_body()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         const string specialContent = "{\"text\": \"Hello \\\"World\\\" with émojis 🎉 and unicode: 日本語\"}";
         var message = CreateMessage(body: Encoding.UTF8.GetBytes(specialContent));
 
@@ -280,7 +294,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_null_header_values()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { { "NullableHeader", null } };
         var message = CreateMessage(additionalHeaders: headers);
 
@@ -294,7 +308,7 @@ public abstract class TransportTestsBase : TestBase
     public virtual async Task should_handle_correlation_id_header()
     {
         // given
-        await using var transport = GetTransport();
+        await using var transport = GetPrimaryTransport();
         var correlationId = Guid.NewGuid().ToString();
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -328,5 +342,42 @@ public abstract class TransportTestsBase : TestBase
             transport.SendAsync(message, cancellationToken);
 
         public ValueTask DisposeAsync() => transport.DisposeAsync();
+    }
+
+    private ProbeTransport GetPrimaryTransport()
+    {
+        if (Capabilities.SupportsBusTransport)
+        {
+            var busTransport = GetBusTransport();
+            return new ProbeTransport(busTransport.BrokerAddress, busTransport.SendAsync, busTransport.DisposeAsync);
+        }
+
+        if (Capabilities.SupportsQueueTransport)
+        {
+            var queueTransport = GetQueueTransport();
+            return new ProbeTransport(queueTransport.BrokerAddress, queueTransport.SendAsync, queueTransport.DisposeAsync);
+        }
+
+        var legacyTransport = GetTransport();
+
+        return legacyTransport is not null
+            ? new ProbeTransport(legacyTransport.BrokerAddress, legacyTransport.SendAsync, legacyTransport.DisposeAsync)
+            : throw new InvalidOperationException("No transport was configured for this test.");
+    }
+
+    private sealed class ProbeTransport(
+        BrokerAddress brokerAddress,
+        Func<TransportMessage, CancellationToken, Task<OperateResult>> sendAsync,
+        Func<ValueTask> disposeAsync
+    ) : IAsyncDisposable
+    {
+        public BrokerAddress BrokerAddress { get; } = brokerAddress;
+
+        public Task<OperateResult> SendAsync(
+            TransportMessage message,
+            CancellationToken cancellationToken = default
+        ) => sendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => disposeAsync();
     }
 }

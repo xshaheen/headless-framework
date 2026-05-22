@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Capabilities;
@@ -41,7 +41,7 @@ public sealed class NatsTransportTests : TransportTestsBase
             SupportsHeaders = true,
         };
 
-    protected override ITransport GetTransport()
+    protected override IBusTransport GetBusTransport()
     {
         var natsOptions = Options.Create(
             new MessagingNatsOptions
@@ -56,6 +56,9 @@ public sealed class NatsTransportTests : TransportTestsBase
 
         return new NatsTransport(NullLogger<NatsTransport>.Instance, _connectionPool);
     }
+
+    protected override IQueueTransport GetQueueTransport() =>
+        GetBusTransport() as IQueueTransport ?? throw new InvalidOperationException("NATS transport must support queue intent.");
 
     protected override async ValueTask DisposeAsyncCore()
     {

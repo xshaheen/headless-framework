@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RedisStreams;
 using Headless.Messaging.Transport;
@@ -27,7 +28,7 @@ public sealed class SetupTests : TestBase
         await using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetService<ITransport>().Should().NotBeNull();
+        provider.GetService<IQueueTransport>().Should().BeOfType<RedisTransport>();
         provider.GetService<IConsumerClientFactory>().Should().NotBeNull();
         provider.GetService<IRedisStreamManager>().Should().NotBeNull();
         provider.GetService<IRedisConnectionPool>().Should().NotBeNull();

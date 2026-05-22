@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.RedisPubSub, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -19,12 +19,13 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Quick Start](#quick-start)
     - [Envelope](#envelope)
         - [Reserved Wire Headers](#reserved-wire-headers)
-        - [PublishOptions](#publishoptions)
+        - [`PublishOptions`](#publishoptions)
         - [Tenant Header Integrity](#tenant-header-integrity)
     - [Transport Pause/Resume](#transport-pauseresume)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
+    - [None. This is an abstractions package.](#none-this-is-an-abstractions-package)
 - [Headless.Messaging.Core](#headlessmessagingcore)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
@@ -35,7 +36,25 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
         - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
     - [Configuration](#configuration-1)
+        - [Retry Policy](#retry-policy)
+            - [Shape](#shape)
+            - [Retry decisions](#retry-decisions)
+            - [Exhausted vs Stop](#exhausted-vs-stop)
+            - [MaxInlineRetries — inline vs persisted retry paths](#maxinlineretries-inline-vs-persisted-retry-paths)
+            - [FailedInfo construction (for tests / fakes)](#failedinfo-construction-for-tests-fakes)
+            - [RetryProcessorOptions](#retryprocessoroptions)
+            - [Migration from pre-RetryPolicy primitives](#migration-from-pre-retrypolicy-primitives)
+    - [Distributed Lock Integration](#distributed-lock-integration)
+        - [What this is and isn't (correctness vs coordination)](#what-this-is-and-isnt-correctness-vs-coordination)
+        - [When to enable](#when-to-enable)
+        - [When to skip](#when-to-skip)
+        - [Requirements](#requirements)
+        - [Lock names](#lock-names)
+        - [EventIds](#eventids)
+        - [Pros and cons](#pros-and-cons)
     - [Strict Publish Tenancy](#strict-publish-tenancy)
+    - [Middleware](#middleware)
+        - [Multi-tenancy](#multi-tenancy)
     - [Message Ordering Guarantees](#message-ordering-guarantees)
         - [Transport-Specific Ordering](#transport-specific-ordering)
         - [Configuration Impact on Ordering](#configuration-impact-on-ordering)
@@ -55,8 +74,11 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
-        - [With Authorization Policy](#with-authorization-policy)
-        - [Anonymous Access (Dev/Testing Only)](#anonymous-access-devtesting-only)
+        - [No Authentication](#no-authentication)
+        - [Basic Authentication](#basic-authentication)
+        - [API Key Authentication](#api-key-authentication)
+        - [Host Authentication](#host-authentication)
+        - [Custom Authentication](#custom-authentication)
         - [All Options](#all-options)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
@@ -78,7 +100,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [Built-in Tag Reference](#built-in-tag-reference)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
-- [Headless.Messaging.AwsSqs](#headlessmessagingawssqs)
+- [Headless.Messaging.Aws](#headlessmessagingaws)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
     - [Installation](#installation-5)
@@ -112,12 +134,13 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [Ordering Guarantees](#ordering-guarantees-1)
     - [Dependencies](#dependencies-7)
     - [Side Effects](#side-effects-7)
-- [Headless.Messaging.NATS](#headlessmessagingnats)
+- [Headless.Messaging.Nats](#headlessmessagingnats)
     - [Problem Solved](#problem-solved-8)
     - [Key Features](#key-features-8)
     - [Installation](#installation-8)
     - [Quick Start](#quick-start-8)
     - [Configuration](#configuration-8)
+        - [Stream Auto-Creation](#stream-auto-creation)
     - [Dependencies](#dependencies-8)
     - [Side Effects](#side-effects-8)
 - [Headless.Messaging.Pulsar](#headlessmessagingpulsar)
@@ -149,15 +172,16 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-11)
     - [Dependencies](#dependencies-11)
     - [Side Effects](#side-effects-11)
-- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
+- [Headless.Messaging.RedisPubSub](#headlessmessagingredispubsub)
     - [Problem Solved](#problem-solved-12)
     - [Key Features](#key-features-12)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-12)
     - [Quick Start](#quick-start-12)
     - [Configuration](#configuration-12)
     - [Dependencies](#dependencies-12)
     - [Side Effects](#side-effects-12)
-- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
+- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
     - [Problem Solved](#problem-solved-13)
     - [Key Features](#key-features-13)
     - [Installation](#installation-13)
@@ -165,7 +189,8 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-13)
     - [Dependencies](#dependencies-13)
     - [Side Effects](#side-effects-13)
-- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
+    - [None. Messages are stored in memory only and lost on restart.](#none-messages-are-stored-in-memory-only-and-lost-on-restart)
+- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
     - [Problem Solved](#problem-solved-14)
     - [Key Features](#key-features-14)
     - [Installation](#installation-14)
@@ -173,7 +198,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-14)
     - [Dependencies](#dependencies-14)
     - [Side Effects](#side-effects-14)
-- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
+- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
     - [Problem Solved](#problem-solved-15)
     - [Key Features](#key-features-15)
     - [Installation](#installation-15)
@@ -181,18 +206,27 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-15)
     - [Dependencies](#dependencies-15)
     - [Side Effects](#side-effects-15)
-- [Headless.Messaging.Testing](#headlessmessagingtesting)
+- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
     - [Problem Solved](#problem-solved-16)
     - [Key Features](#key-features-16)
     - [Installation](#installation-16)
-    - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
-    - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory--ihost)
-    - [Observable Collections](#observable-collections)
-    - [WaitFor\* Methods](#waitfor-methods)
-    - [TestConsumer\<T\>](#testconsumert)
+    - [Quick Start](#quick-start-16)
     - [Configuration](#configuration-16)
     - [Dependencies](#dependencies-16)
     - [Side Effects](#side-effects-16)
+    - [None. All messages are stored in memory and lost on restart. Not suitable for production.](#none-all-messages-are-stored-in-memory-and-lost-on-restart-not-suitable-for-production)
+- [Headless.Messaging.Testing](#headlessmessagingtesting)
+    - [Problem Solved](#problem-solved-17)
+    - [Key Features](#key-features-17)
+    - [Installation](#installation-17)
+    - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
+    - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory-ihost)
+    - [Observable Collections](#observable-collections)
+    - [WaitFor\* Methods](#waitfor-methods)
+    - [TestConsumer\<T\>](#testconsumert)
+    - [Configuration](#configuration-17)
+    - [Dependencies](#dependencies-17)
+    - [Side Effects](#side-effects-17)
 - [Appendix: Deferred to Phase 2](#appendix-deferred-to-phase-2)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
@@ -206,10 +240,11 @@ Always install four packages together: **Abstractions + Core + one transport + o
 - `Headless.Messaging.RabbitMq` -- AMQP, exchanges/queues, flexible routing
 - `Headless.Messaging.Kafka` -- high-throughput event streaming, partition-based ordering
 - `Headless.Messaging.AzureServiceBus` -- enterprise Azure messaging, session-based ordering
-- `Headless.Messaging.AwsSqs` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
+- `Headless.Messaging.Aws` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
 - `Headless.Messaging.Nats` -- lightweight cloud-native, JetStream persistence
 - `Headless.Messaging.Pulsar` -- multi-tenant, geo-replicated streaming
 - `Headless.Messaging.RedisStreams` -- sub-millisecond latency, consumer groups
+- `Headless.Messaging.RedisPubSub` -- volatile Redis broadcast for connected subscribers
 - `Headless.Messaging.InMemory` -- dev/testing only, zero infrastructure
 
 **Storage** (pick one):
@@ -277,24 +312,23 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 These matrices summarize the current Phase 1 surface for each transport and storage package. Every cell is derived from the package's `Setup.cs`, transport, or consumer-client source — when this doc and a sibling README disagree, the package source is authoritative and the sibling README is the one with drift. The carry-forward rule for future PRs: any change to a transport or storage's public surface (interfaces wired, broker-API calls, capability seams) MUST update the corresponding row in the same change.
 
-The matrices intentionally do not include columns for Phase 2 concepts (`DeliveryKind`, send vs broadcast intent). See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for what is scheduled later.
-
 ### Transport Providers
 
-| Provider          | Direct publish | Consume | Native scheduled              | Ordering shape                    | Tenant header round-trip | Broker reject                       | Auto-provisioning                          |
-|-------------------|----------------|---------|-------------------------------|-----------------------------------|--------------------------|-------------------------------------|--------------------------------------------|
-| `RabbitMq`        | yes            | yes     | no (broker plugin not wired)  | FIFO per queue                    | yes                      | `BasicReject` (nack)                | exchange + queue declare on subscribe      |
-| `Nats`            | yes            | yes     | no                            | per-subject (sequential consumer) | yes                      | broker nack                         | stream + subject create (when opt-in)      |
-| `AzureServiceBus` | yes            | yes     | **yes** (`ScheduledEnqueueTime`) | FIFO per session               | yes                      | broker `Abandon`                    | topic + subscription create                |
-| `AwsSqs`          | yes            | yes     | no                            | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)   | SNS topic create + SQS policy generation   |
-| `Kafka`           | yes            | yes     | no                            | per-partition with partition key  | yes                      | seek to offset (re-read partition)  | auto-create concrete topics                |
-| `Pulsar`          | yes            | yes     | no (`DeliverAfter` not wired) | per-key when partition key set    | yes                      | `NegativeAcknowledge`               | passthrough (broker auto-creates)          |
-| `RedisStreams`    | yes            | yes     | no                            | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)    | passthrough (`XADD` creates on publish)    |
-| `InMemory`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
+| Provider          | Bus transport | Queue transport | Native scheduled                | Ordering shape                    | Tenant header round-trip | Broker reject                      | Auto-provisioning                        |
+|-------------------|---------------|-----------------|---------------------------------|-----------------------------------|--------------------------|------------------------------------|------------------------------------------|
+| `RabbitMq`        | yes           | yes             | no (broker plugin not wired)    | FIFO per queue                    | yes                      | `BasicReject` (nack)               | exchange + queue declare on subscribe    |
+| `Nats`            | yes           | yes             | no                              | per-subject (sequential consumer) | yes                      | broker nack                        | stream + subject create (when opt-in)    |
+| `AzureServiceBus` | yes           | yes             | **yes** (`ScheduledEnqueueTime`) | FIFO per session                  | yes                      | broker `Abandon`                   | topic + subscription create              |
+| `Aws`             | yes           | yes             | no                              | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)  | SNS topic, SQS queue, and policy create  |
+| `Kafka`           | no            | yes             | no                              | per-partition with partition key  | yes                      | seek to offset (re-read partition) | auto-create concrete topics              |
+| `Pulsar`          | yes           | yes             | no (`DeliverAfter` not wired)   | per-key when partition key set    | yes                      | `NegativeAcknowledge`              | passthrough (broker auto-creates)        |
+| `RedisStreams`    | no            | yes             | no                              | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)   | passthrough (`XADD` creates on publish)  |
+| `RedisPubSub`     | yes           | no              | no                              | connected subscribers only        | yes                      | **no-op** (volatile delivery)      | passthrough (Redis channel subscription) |
+| `InMemory`        | yes           | yes             | n/a (framework-owned queue)     | FIFO per queue with single thread | yes                      | **no-op** (test transport)         | n/a                                      |
 
 How to read each column:
 
-- **Direct publish / Consume** — the transport implements `ITransport.SendAsync` and `IConsumerClient.ListeningAsync`. Uniformly yes across the Phase 1 surface; the columns anchor each row.
+- **Bus transport / Queue transport** — whether the package registers `IBusTransport` and/or `IQueueTransport`.
 - **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through the framework's outbox-backed `IScheduledPublisher` regardless of transport.
 - **Ordering shape** — the strongest guarantee the broker offers within the named scope. The framework's outbox preserves publish order within a transaction; everything beyond that is broker semantics.
 - **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
@@ -1401,7 +1435,7 @@ The `MessagingTags` static class exposes built-in tag names as public constants 
 
 ---
 
-# Headless.Messaging.AwsSqs
+# Headless.Messaging.Aws
 
 Amazon SQS and SNS transport provider for the messaging system.
 
@@ -1420,7 +1454,7 @@ Enables reliable message delivery using AWS SQS queues and SNS topics with autom
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.AwsSqs
+dotnet add package Headless.Messaging.Aws
 ```
 
 ## Quick Start
@@ -1430,9 +1464,9 @@ builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseAmazonSqs(sqs =>
+    options.UseAws(sqs =>
     {
-        sqs.Region = "us-east-1";
+        sqs.Region = RegionEndpoint.USEast1;
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
 
@@ -1443,12 +1477,12 @@ builder.Services.AddHeadlessMessaging(options =>
 ## Configuration
 
 ```csharp
-options.UseAmazonSqs(sqs =>
+options.UseAws(sqs =>
 {
-    sqs.Region = "us-east-1";
+    sqs.Region = RegionEndpoint.USEast1;
     sqs.Credentials = awsCredentials;
-    sqs.SNSServiceUrl = "https://sns.us-east-1.amazonaws.com";
-    sqs.SQSServiceUrl = "https://sqs.us-east-1.amazonaws.com";
+    sqs.SnsServiceUrl = "https://sns.us-east-1.amazonaws.com";
+    sqs.SqsServiceUrl = "https://sqs.us-east-1.amazonaws.com";
 });
 ```
 
@@ -2003,6 +2037,66 @@ options.UseRedisStreams(redis =>
 - Creates consumer groups for message distribution
 - Maintains persistent connections to Redis
 - Periodically claims pending messages for retry
+
+---
+
+# Headless.Messaging.RedisPubSub
+
+Redis Pub/Sub bus transport provider for Headless Messaging.
+
+## Problem Solved
+
+Provides low-latency broadcast delivery to subscribers that are connected at publish time. Use it for notifications, cache invalidation, and ephemeral fan-out where replay is not required.
+
+## Key Features
+
+- **Bus-only transport**: Registers `IBusTransport` and does not register `IQueueTransport`.
+- **Volatile delivery**: Offline subscribers miss messages published while disconnected.
+- **Redis channels**: Publishes each message type to a Redis Pub/Sub channel.
+- **Shared Redis options**: Uses native `StackExchange.Redis` `ConfigurationOptions`.
+
+## Design Notes
+
+Redis Pub/Sub has no broker-side queue, consumer group, acknowledgment, or replay model. Choose `Headless.Messaging.RedisStreams` when messages must survive disconnects or be processed by competing workers.
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.RedisPubSub
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    options.UsePostgreSql("connection_string");
+
+    options.UseRedisPubSub("localhost:6379");
+
+    options.SubscribeFromAssemblyContaining<Program>();
+});
+```
+
+## Configuration
+
+```csharp
+options.UseRedisPubSub(redis =>
+{
+    redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
+});
+```
+
+## Dependencies
+
+- `Headless.Messaging.Core`
+- `StackExchange.Redis`
+
+## Side Effects
+
+- Registers a Redis Pub/Sub bus transport.
+- Opens a shared Redis connection multiplexer.
+- Subscribes consumer clients to Redis channels for discovered message types.
 
 ---
 

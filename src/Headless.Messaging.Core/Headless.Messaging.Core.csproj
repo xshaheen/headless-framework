@@ -4,8 +4,7 @@
     <RootNamespace>Headless.Messaging</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
-    <InternalsVisibleTo Include="Headless.Messaging.AwsSqs" />
+    <InternalsVisibleTo Include="Headless.Messaging.Aws" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemory" />
@@ -13,6 +12,7 @@
     <InternalsVisibleTo Include="Headless.Messaging.Nats" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar" />
     <InternalsVisibleTo Include="Headless.Messaging.RabbitMq" />
+    <InternalsVisibleTo Include="Headless.Messaging.RedisPubSub" />
     <InternalsVisibleTo Include="Headless.Messaging.RedisStreams" />
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Messaging.SqlServer" />
