@@ -70,7 +70,7 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
@@ -87,16 +87,12 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
-            {
-                await work().ConfigureAwait(false);
+            // `await using` ensures DisposeAsync runs on exit — DisposeAsync drains the lease
+            // monitor (cancelling its CTS) and then releases the storage row. ReleaseAsync alone
+            // would leave the monitor's internal CTS un-cancelled until GC.
+            await work().ConfigureAwait(false);
 
-                return true;
-            }
-            finally
-            {
-                await distributedLock.ReleaseAsync();
-            }
+            return true;
         }
 
         /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
@@ -111,7 +107,7 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
@@ -128,16 +124,9 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
-            {
-                await work(state).ConfigureAwait(false);
+            await work(state).ConfigureAwait(false);
 
-                return true;
-            }
-            finally
-            {
-                await distributedLock.ReleaseAsync();
-            }
+            return true;
         }
 
         /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
@@ -151,7 +140,7 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
@@ -168,30 +157,23 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
+            // When monitoring is enabled, link the caller's CT with the lease-lost token so
+            // the work delegate observes lease loss promptly via its CancellationToken.
+            if (distributedLock.IsMonitored)
             {
-                // When monitoring is enabled, link the caller's CT with the lease-lost token so
-                // the work delegate observes lease loss promptly via its CancellationToken.
-                if (distributedLock.IsMonitored)
-                {
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken,
-                        distributedLock.HandleLostToken
-                    );
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    distributedLock.HandleLostToken
+                );
 
-                    await work(linkedCts.Token).ConfigureAwait(false);
-                }
-                else
-                {
-                    await work(cancellationToken).ConfigureAwait(false);
-                }
-
-                return true;
+                await work(linkedCts.Token).ConfigureAwait(false);
             }
-            finally
+            else
             {
-                await distributedLock.ReleaseAsync();
+                await work(cancellationToken).ConfigureAwait(false);
             }
+
+            return true;
         }
 
         /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
@@ -206,7 +188,7 @@ public static class DistributedLockProviderExtensions
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
@@ -223,49 +205,45 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
+            if (distributedLock.IsMonitored)
             {
-                if (distributedLock.IsMonitored)
-                {
-                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                        cancellationToken,
-                        distributedLock.HandleLostToken
-                    );
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken,
+                    distributedLock.HandleLostToken
+                );
 
-                    await work(state, linkedCts.Token).ConfigureAwait(false);
-                }
-                else
-                {
-                    await work(state, cancellationToken).ConfigureAwait(false);
-                }
-
-                return true;
+                await work(state, linkedCts.Token).ConfigureAwait(false);
             }
-            finally
+            else
             {
-                await distributedLock.ReleaseAsync();
+                await work(state, cancellationToken).ConfigureAwait(false);
             }
+
+            return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
+        /// <summary>
+        /// Tries to acquire a lock for <paramref name="resource"/> and runs a synchronous
+        /// <paramref name="work"/> delegate. Synchronous work cannot observe a lease-lost
+        /// cancellation, so this overload does NOT expose <c>monitorLease</c>/<c>autoExtend</c>.
+        /// Use the <see cref="Func{Task}"/>-receiving overload when you want lease monitoring.
+        /// </summary>
         public async Task<bool> TryUsingAsync(
             string resource,
             Action work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitorLease: false,
+                    autoExtend: false,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -275,38 +253,29 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
-            {
-                work();
+            work();
 
-                return true;
-            }
-            finally
-            {
-                await distributedLock.ReleaseAsync();
-            }
+            return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},TimeSpan?,TimeSpan?,bool,bool,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
             Action<TState> work,
             TimeSpan? timeUntilExpires = null,
             TimeSpan? acquireTimeout = null,
-            bool monitorLease = false,
-            bool autoExtend = false,
             CancellationToken cancellationToken = default
         )
         {
-            var distributedLock = await provider
+            await using var distributedLock = await provider
                 .TryAcquireAsync(
                     resource,
                     timeUntilExpires,
                     acquireTimeout,
                     releaseOnDispose: true,
-                    monitorLease: monitorLease,
-                    autoExtend: autoExtend,
+                    monitorLease: false,
+                    autoExtend: false,
                     cancellationToken: cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -316,16 +285,9 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            try
-            {
-                work(state);
+            work(state);
 
-                return true;
-            }
-            finally
-            {
-                await distributedLock.ReleaseAsync();
-            }
+            return true;
         }
     }
 }

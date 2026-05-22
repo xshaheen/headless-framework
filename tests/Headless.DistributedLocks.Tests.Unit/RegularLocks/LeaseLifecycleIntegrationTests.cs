@@ -317,13 +317,43 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         exception.Which.ParamName.Should().Be("timeUntilExpires");
     }
 
+    [Fact]
+    public async Task should_signal_lease_loss_via_polling_when_outbox_publisher_is_null()
+    {
+        // AC8 — without an outbox publisher, the only way the monitor can learn of loss is
+        // via its own cadence-driven probe. Confirm that polling alone (no nudge) eventually
+        // surfaces HandleLostToken when storage is mutated by another party.
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options, outboxPublisher: null);
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.TryAcquireAsync(
+            resource,
+            timeUntilExpires: TimeSpan.FromSeconds(10),
+            monitorLease: true,
+            cancellationToken: AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when - foreign party takes over the row; advance the clock past a cadence interval.
+        _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+
+        await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
+
+        // then - polling cadence alone (no nudge) was sufficient to detect loss.
+        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
     private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null)
+        => _CreateProvider(options, Substitute.For<IOutboxPublisher>());
+
+    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options, IOutboxPublisher? outboxPublisher)
     {
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
         return new DistributedLockProvider(
             _storage,
-            Substitute.For<IOutboxPublisher>(),
+            outboxPublisher,
             options ?? new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,

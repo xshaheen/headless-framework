@@ -6,7 +6,7 @@ using Nito.AsyncEx;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.ILeaseHandle
+internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.ILeaseHandle
 {
     private readonly TimeSpan _leaseDuration;
     private readonly IDistributedLockProvider _lockProvider;
@@ -43,13 +43,29 @@ public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.I
         _timeProvider = timeProvider;
         _deregisterMonitor = deregisterMonitor;
         _logger = logger;
+
+        // Snapshot cadence + storage deadline once. Both are constant for the lifetime of this
+        // handle and were previously recomputed on every monitor iteration.
+        var fraction = autoExtend ? options.AutoExtensionCadenceFraction : options.PollingCadenceFraction;
+        var cadenceTicks = Math.Max(1, (long)(leaseDuration.Ticks * fraction));
+        _monitoringCadenceSnapshot = TimeSpan.FromTicks(cadenceTicks);
+        _storageDeadlineSnapshot = _monitoringCadenceSnapshot.TotalSeconds < 5.0
+            ? _monitoringCadenceSnapshot
+            : TimeSpan.FromSeconds(5);
     }
 
     private volatile bool _isReleased;
+    private int _disposed;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp;
     private readonly DistributedLockOptions _options;
     private LeaseMonitor? _monitor;
+
+    // Snapshotted cadence + per-iteration storage deadline. Avoids re-reading the
+    // interface-cast MonitoringCadence on every iteration (which recomputes ticks * fraction
+    // and allocates) and is constant for the lifetime of this handle.
+    private readonly TimeSpan _monitoringCadenceSnapshot;
+    private readonly TimeSpan _storageDeadlineSnapshot;
 
     // Snapshotted at AttachMonitor time so reads after the monitor's underlying CTS is disposed
     // do not throw ObjectDisposedException. CancellationToken values are valid after the source
@@ -78,16 +94,7 @@ public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.I
 
     TimeSpan LeaseMonitor.ILeaseHandle.LeaseDuration => _leaseDuration;
 
-    TimeSpan LeaseMonitor.ILeaseHandle.MonitoringCadence
-    {
-        get
-        {
-            var fraction = _autoExtend ? _options.AutoExtensionCadenceFraction : _options.PollingCadenceFraction;
-            var ticks = Math.Max(1, (long)(_leaseDuration.Ticks * fraction));
-
-            return TimeSpan.FromTicks(ticks);
-        }
-    }
+    TimeSpan LeaseMonitor.ILeaseHandle.MonitoringCadence => _monitoringCadenceSnapshot;
 
     internal void AttachMonitor(LeaseMonitor monitor)
     {
@@ -152,6 +159,14 @@ public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.I
 
     public async ValueTask DisposeAsync()
     {
+        // Idempotency: matches the LeaseMonitor.DisposeAsync pattern. Re-entry (e.g., a
+        // HandleLostToken callback that disposes the handle while the caller also disposes)
+        // must be a no-op rather than running release/monitor-dispose twice.
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         var isTraceLogLevelEnabled = _logger.IsEnabled(LogLevel.Trace);
 
         if (isTraceLogLevelEnabled)
@@ -209,12 +224,10 @@ public sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor.I
         // Per-iteration deadline: bounds a single storage round-trip so a stuck/blocked
         // storage call (e.g., StackExchange.Redis reconnect storm that ignores its CT) cannot
         // wedge MonitoringTask — and therefore cannot wedge LeaseMonitor.DisposeAsync, which
-        // awaits that task. Capped at min(5s, cadence). On deadline trip we classify as
-        // Unknown (transient) and let the safety net self-promote on repeated misses.
-        var cadence = ((LeaseMonitor.ILeaseHandle)this).MonitoringCadence;
-        var deadline = cadence.TotalSeconds < 5.0 ? cadence : TimeSpan.FromSeconds(5);
-
-        using var deadlineSource = _timeProvider.CreateCancellationTokenSource(deadline);
+        // awaits that task. Capped at min(5s, cadence) and snapshotted at construction. On
+        // deadline trip we classify as Unknown (transient) and let the safety net self-promote
+        // on repeated misses.
+        using var deadlineSource = _timeProvider.CreateCancellationTokenSource(_storageDeadlineSnapshot);
         using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             deadlineSource.Token
@@ -270,7 +283,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Renewing lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewing(this ILogger _logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewing(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 2,
@@ -278,7 +291,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Unable to renew lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewFailed(this ILogger _logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewFailed(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 3,
@@ -286,7 +299,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Debug,
         Message = "Renewed lock {Resource} ({LockId})"
     )]
-    public static partial void LogDisposableLockRenewed(this ILogger _logger, string resource, string lockId);
+    public static partial void LogDisposableLockRenewed(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 4,
@@ -295,7 +308,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Releasing lock: R={Resource} Id={LockId} after {Duration:g}"
     )]
     public static partial void LogDisposableLockReleasing(
-        this ILogger _logger,
+        this ILogger logger,
         string resource,
         string lockId,
         TimeSpan duration
@@ -307,7 +320,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposing lock: R={Resource} Id={LockId}"
     )]
-    public static partial void LogDisposableLockDisposing(this ILogger _logger, string resource, string lockId);
+    public static partial void LogDisposableLockDisposing(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 6,
@@ -316,7 +329,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Unable to release lock: R={Resource} Id={LockId}"
     )]
     public static partial void LogDisposableLockReleaseFailed(
-        this ILogger _logger,
+        this ILogger logger,
         Exception exception,
         string resource,
         string lockId
@@ -328,7 +341,7 @@ internal static partial class DisposableDistributedLockLog
         Level = LogLevel.Trace,
         Message = "Disposed lock: R={Resource} Id={LockId}"
     )]
-    public static partial void LogDisposableLockDisposed(this ILogger _logger, string resource, string lockId);
+    public static partial void LogDisposableLockDisposed(this ILogger logger, string resource, string lockId);
 
     [LoggerMessage(
         EventId = 8,
@@ -337,7 +350,7 @@ internal static partial class DisposableDistributedLockLog
         Message = "Unable to dispose lease monitor before releasing lock: R={Resource} Id={LockId}"
     )]
     public static partial void LogDisposableLockMonitorDisposeFailed(
-        this ILogger _logger,
+        this ILogger logger,
         Exception exception,
         string resource,
         string lockId

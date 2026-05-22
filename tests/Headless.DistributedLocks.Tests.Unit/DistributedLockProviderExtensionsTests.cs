@@ -75,7 +75,10 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         // then
         result.Should().BeTrue();
         workExecuted.Should().BeTrue();
-        await distributedLock.Received(1).ReleaseAsync();
+        // TryUsingAsync uses `await using` so DisposeAsync is invoked (which drains the lease
+        // monitor and then releases the storage row). Asserting on DisposeAsync rather than
+        // ReleaseAsync because the extension no longer calls ReleaseAsync directly.
+        await distributedLock.Received(1).DisposeAsync();
     }
 
     [Fact]

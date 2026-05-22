@@ -177,9 +177,161 @@ public sealed class LeaseMonitorTests : TestBase
         sut.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_exit_monitoring_loop_when_only_reference_is_garbage_collected()
+    {
+        // AC6 — GC abandonment. If a consumer drops the monitor without disposing it, the
+        // loop must observe a dead WeakReference<LeaseMonitor> on its next cadence iteration
+        // and exit. The OnlyOnFaulted continuation MUST NOT capture `this` (otherwise it would
+        // strong-root the monitor for the lifetime of MonitoringTask, defeating this invariant).
+        var handle = new FakeLeaseHandle { LeaseDuration = TimeSpan.FromMinutes(1), MonitoringCadence = TimeSpan.FromSeconds(1) };
+        var monitoringTask = _CreateMonitorAndDropReference(handle);
+
+        // when - force GC then drive a cadence so the loop's WeakReference.TryGetTarget fails.
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+        GC.WaitForPendingFinalizers();
+        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+
+        // then - the loop exits within a bounded wall-clock budget. Generous timeout because
+        // FakeTimeProvider advances do not synchronously resume the loop; it still relies on
+        // the awaiter scheduling. 5 seconds is plenty without making the test flake-prone.
+        await monitoringTask.WaitAsync(TimeSpan.FromSeconds(5));
+        monitoringTask.IsCompleted.Should().BeTrue();
+    }
+
+    private Task _CreateMonitorAndDropReference(FakeLeaseHandle handle)
+    {
+        // Helper isolates the strong-reference scope so the JIT cannot keep the LeaseMonitor
+        // alive in a local on the caller's stack frame across GC.Collect.
+        var monitor = new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+        var task = monitor.MonitoringTask;
+        monitor = null;
+        _ = monitor; // suppress "unused" — intent is to overwrite the local.
+        return task;
+    }
+
+    [Fact]
+    public async Task should_complete_dispose_within_bounded_time_when_handle_call_blocks()
+    {
+        // AC7 — disposal timing. A blocking RenewOrValidateLeaseAsync must not strand
+        // DisposeAsync; the loop's cancellation token must propagate so the blocking call
+        // unblocks promptly.
+        using var blockSignal = new CancellationTokenSource();
+        var handle = new BlockingLeaseHandle(blockSignal.Token);
+        var sut = _CreateMonitor(handle);
+
+        // Trigger an iteration that will block inside RenewOrValidateLeaseAsync.
+        sut.TriggerImmediateValidation();
+        await _DrainUntilAsync(() => handle.IsBlocking);
+
+        // when
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await sut.DisposeAsync();
+        stopwatch.Stop();
+
+        // then - generous 500ms bound. Spec aims for ~100ms but CI variability matters; this
+        // budget catches an actual deadlock or unbounded wait while remaining stable in CI.
+        stopwatch.ElapsedMilliseconds.Should().BeLessThan(500);
+        handle.ExitedBeforeRelease.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_self_mark_lost_when_held_streak_followed_by_single_unknown()
+    {
+        // Regression for the "Held resets leaseTimestamp too" fix (issue #6). Without it, a
+        // long Held streak in polling mode would let the safety-net elapsed window grow even
+        // though storage repeatedly confirmed ownership. After enough Held probes, a single
+        // transient Unknown would then trip the safety net on the FOLLOWING iteration — a
+        // false-positive Lost when ownership was never actually in question.
+        //
+        // With the fix, Held resets leaseTimestamp on every probe, so the elapsed window
+        // starts fresh after each confirmed-ownership signal. A single subsequent Unknown
+        // cannot accumulate enough elapsed time to trip the safety net.
+        //
+        // Use a long cadence so the cadence timer never fires inside the test window — we
+        // drive iterations only via TriggerImmediateValidation to keep the sequence deterministic.
+        var handle = new FakeLeaseHandle
+        {
+            LeaseDuration = TimeSpan.FromSeconds(10),
+            MonitoringCadence = TimeSpan.FromSeconds(10),
+        };
+        for (var i = 0; i < 3; i++)
+        {
+            handle.Enqueue(LeaseMonitor.LeaseState.Held);
+        }
+        handle.Enqueue(new TimeoutException("transient"));
+
+        await using var sut = _CreateMonitor(handle);
+
+        // Drive three Held probes, advancing the clock so each carries a leaseLifetime that
+        // would individually exceed the lease window if the prior Held had not reset it. The
+        // advance happens AFTER the iteration was triggered and observed, but BEFORE we
+        // probe the safety-net check on the next iteration.
+        await _RunIterationAndWait(sut, handle, expectedCount: 1);
+        _timeProvider.Advance(TimeSpan.FromSeconds(9));
+        await _RunIterationAndWait(sut, handle, expectedCount: 2);
+        _timeProvider.Advance(TimeSpan.FromSeconds(9));
+        await _RunIterationAndWait(sut, handle, expectedCount: 3);
+
+        // Modest advance, then the Unknown probe. Total elapsed since the LAST Held reset is
+        // small, so the safety net should NOT fire.
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        await _RunIterationAndWait(sut, handle, expectedCount: 4);
+
+        sut.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
+    {
+        sut.TriggerImmediateValidation();
+        await _DrainUntilAsync(() => handle.InvocationCount >= expectedCount);
+    }
+
     private LeaseMonitor _CreateMonitor(FakeLeaseHandle handle)
     {
         return new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+    }
+
+    private LeaseMonitor _CreateMonitor(LeaseMonitor.ILeaseHandle handle)
+    {
+        return new LeaseMonitor(handle, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
+    }
+
+    private sealed class BlockingLeaseHandle : LeaseMonitor.ILeaseHandle
+    {
+        private readonly CancellationToken _externalAbort;
+        public string Resource => "blocking-resource";
+        public string LockId => "blocking-lock";
+        public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
+        public TimeSpan MonitoringCadence => TimeSpan.FromSeconds(5);
+        public bool IsBlocking { get; private set; }
+        public bool ExitedBeforeRelease { get; private set; }
+
+        public BlockingLeaseHandle(CancellationToken externalAbort)
+        {
+            _externalAbort = externalAbort;
+        }
+
+        public async Task<LeaseMonitor.LeaseState> RenewOrValidateLeaseAsync(CancellationToken cancellationToken)
+        {
+            IsBlocking = true;
+
+            try
+            {
+                // Block until the disposal token (passed by the monitor loop) cancels.
+                using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _externalAbort);
+                await Task.Delay(Timeout.Infinite, linked.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                ExitedBeforeRelease = true;
+                throw;
+            }
+
+            return LeaseMonitor.LeaseState.Held;
+        }
     }
 
     private static async Task _DrainUntilAsync(Func<bool> condition)

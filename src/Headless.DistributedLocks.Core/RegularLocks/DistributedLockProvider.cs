@@ -735,10 +735,10 @@ public sealed class DistributedLockProvider(
 
         if (monitorLease)
         {
-            throw new ArgumentException(
-                "Lease monitoring requires a finite timeUntilExpires value; pass a TimeSpan instead of Timeout.InfiniteTimeSpan.",
-                nameof(timeUntilExpires)
-            );
+            // Lease monitoring requires a finite timeUntilExpires; null encodes the
+            // Timeout.InfiniteTimeSpan sentinel here. Use Argument.IsNotNull to surface
+            // the framework's standard ArgumentNullException with paramName set.
+            Argument.IsNotNull(timeUntilExpires, paramName: nameof(timeUntilExpires));
         }
 
         return Timeout.InfiniteTimeSpan;
@@ -906,10 +906,12 @@ public sealed class DistributedLockProvider(
         monitors.TryRemove(lockId, out _);
         logger.LogLeaseMonitorDeregistered(resource, lockId);
 
-        if (monitors.IsEmpty)
-        {
-            _activeMonitors.TryRemove(resource, out _);
-        }
+        // Intentionally do NOT TryRemove the outer dict entry when the inner is empty:
+        // an `IsEmpty` + `TryRemove` pair is not atomic on ConcurrentDictionary, and a
+        // racing registration could repopulate the inner map between the two calls,
+        // leaving us with a removed-but-still-referenced inner map. Dead WeakReferences
+        // are cleared opportunistically in _NudgeActiveMonitors, and the GC reclaims
+        // empty per-resource maps naturally once no future acquire hits that resource.
     }
 
     private void _NudgeActiveMonitors(string resource)
@@ -930,11 +932,6 @@ public sealed class DistributedLockProvider(
             }
 
             monitors.TryRemove(lockId, out _);
-        }
-
-        if (monitors.IsEmpty)
-        {
-            _activeMonitors.TryRemove(resource, out _);
         }
     }
 

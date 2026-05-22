@@ -44,28 +44,58 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             _disposalSource.Token
         );
 
+        // Continuation state holds strong refs to the CTS and logger so the static continuation
+        // lambda below does NOT capture `this` — capturing `this` would strong-root the monitor
+        // for the lifetime of MonitoringTask and defeat the WeakReference<LeaseMonitor>
+        // GC-abandonment invariant (consumers that drop the handle without disposing rely on
+        // the loop noticing the dead weak ref and exiting).
+        var continuationState = new FaultContinuationState(
+            _handleLostSource,
+            _logger,
+            leaseHandle.Resource,
+            leaseHandle.LockId
+        );
+
         MonitoringTask = Task.Run(() => _MonitoringLoopAsync(loopState));
 
         _ = MonitoringTask.ContinueWith(
-            (task, state) =>
+            static (task, state) =>
             {
-                var loopState = (MonitoringLoopState)state!;
+                var faultState = (FaultContinuationState)state!;
 
                 // Fail-safe FIRST: a faulted monitor cannot keep providing liveness signals, so
                 // signal loss to consumers via HandleLostToken before doing anything that could
-                // itself throw (e.g., a misbehaving logger).
+                // itself throw (e.g., a misbehaving logger). Catch both ObjectDisposedException
+                // (CTS already disposed during teardown) and AggregateException (a registered
+                // HandleLostToken callback threw — Cancel() wraps the failures).
                 try
                 {
-                    _handleLostSource.Cancel();
+                    faultState.HandleLostSource.Cancel();
                 }
                 catch (ObjectDisposedException)
                 {
                     // DisposeAsync already disposed the CTS — fault arrived during/after teardown.
                 }
+                catch (AggregateException aggregate)
+                {
+                    // A registered HandleLostToken callback threw. The original fault is still
+                    // logged below; log the aggregated callback failures defensively so they are
+                    // not silently swallowed.
+                    try
+                    {
+                        faultState.Logger.LogLeaseMonitorFaulted(aggregate, faultState.Resource, faultState.LockId);
+                    }
+#pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
+                    catch
+                    {
+                        // Intentionally empty.
+                    }
+#pragma warning restore ERP022, CA1031
+                }
 
                 try
                 {
-                    loopState.Logger.LogLeaseMonitorFaulted(task.Exception!, loopState.Resource, loopState.LockId);
+                    faultState.Logger.LogLeaseMonitorFaulted(task.Exception!, faultState.Resource, faultState.LockId);
                 }
 #pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
                 catch
@@ -74,12 +104,22 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 }
 #pragma warning restore ERP022, CA1031
             },
-            loopState,
+            continuationState,
             CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
         );
     }
+
+    // Strong-ref state for the OnlyOnFaulted continuation. Kept separate from MonitoringLoopState
+    // (which holds a WeakReference<LeaseMonitor>) so the continuation can fire even after the
+    // monitor instance has been GC'd — the CTS and logger are what the fail-safe needs.
+    private sealed record FaultContinuationState(
+        CancellationTokenSource HandleLostSource,
+        ILogger Logger,
+        string Resource,
+        string LockId
+    );
 
     private readonly AsyncAutoResetEvent _nudgeSignal;
 
@@ -142,9 +182,10 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private async Task<LeaseState> _RunIterationAsync(TimeSpan leaseLifetime)
     {
         // Safety-net self-promotion: only when prior probes were transient (Unknown).
-        // A confirmed Held/Renewed from storage MUST NOT trip the safety net — that would
-        // produce a false-positive Lost in polling mode where Held repeats indefinitely
-        // and leaseTimestamp is only reset on Renewed.
+        // A confirmed Held/Renewed from storage MUST NOT trip the safety net — both reset
+        // leaseTimestamp in the monitoring loop, so a long Held streak in polling mode never
+        // crosses the safety-net threshold. Only Unknown (transient) leaves leaseTimestamp
+        // unchanged, allowing the elapsed window to accumulate.
         if (leaseLifetime > _leaseDuration && State == LeaseState.Unknown)
         {
             _SetState(LeaseState.Lost);
@@ -240,7 +281,10 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             var leaseLifetime = state.TimeProvider.GetElapsedTime(leaseTimestamp);
             var nextState = await monitor._RunIterationAsync(leaseLifetime).ConfigureAwait(false);
 
-            if (nextState == LeaseState.Renewed)
+            // Both Renewed (auto-extend success) and Held (polling-mode positive ownership confirmation)
+            // are positive ownership signals from storage and reset the safety-net window. Unknown
+            // (transient) does NOT reset — that's the signal the safety net is designed to catch.
+            if (nextState is LeaseState.Renewed or LeaseState.Held)
             {
                 leaseTimestamp = state.TimeProvider.GetTimestamp();
             }
