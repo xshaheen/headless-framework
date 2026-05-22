@@ -61,7 +61,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     private static ConsumerContext _MakeConsumerContext(MediumMessage medium)
     {
         var descriptor = new ConsumerExecutorDescriptor
-        {
+        { IntentType = IntentType.Bus,
             MethodInfo = typeof(RecordingInfrastructureTests).GetMethod(
                 nameof(_MakeConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static,

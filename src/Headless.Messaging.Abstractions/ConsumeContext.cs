@@ -11,6 +11,7 @@ namespace Headless.Messaging;
 /// This base type is used by object-typed consume middleware that should apply to every message type.
 /// Use <see cref="ConsumeContext{TMessage}"/> when the middleware or consumer needs strongly-typed payload access.
 /// </remarks>
+[PublicAPI]
 public record ConsumeContext
 {
     private CancellationToken _cancellationToken;
@@ -252,7 +253,7 @@ public record ConsumeContext
     /// dispatch path, and each call observes the matching <see cref="IntentType"/> value.
     /// </para>
     /// </remarks>
-    public IntentType IntentType { get; init; } = IntentType.Bus;
+    public required IntentType IntentType { get; init; }
 }
 
 /// <summary>
@@ -269,6 +270,7 @@ public record ConsumeContext
 /// </list>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public record ConsumeContext<TMessage> : ConsumeContext
     where TMessage : class
 {

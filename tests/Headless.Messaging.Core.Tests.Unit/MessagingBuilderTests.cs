@@ -212,6 +212,13 @@ public sealed class MessagingBuilderTests
         // then
         provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
+        // Intent-split surface — both direct and outbox-backed publishers resolve under the
+        // split contracts. The legacy IScheduledPublisher/IOutboxPublisher are kept registered
+        // transitionally; once removed (Plan 003/004) the new contracts are the only public path.
+        provider.GetRequiredService<IBus>().Should().NotBeNull();
+        provider.GetRequiredService<IQueue>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxQueue>().Should().NotBeNull();
         provider.GetRequiredService<IScheduledPublisher>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxPublisher>().Should().NotBeNull();
     }

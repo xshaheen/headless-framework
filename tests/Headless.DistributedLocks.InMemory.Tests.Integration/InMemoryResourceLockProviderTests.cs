@@ -13,7 +13,7 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
     protected override IDistributedLockProvider GetLockProvider()
     {
         var storage = new CacheDistributedLockStorage(_cache);
-        var outboxPublisher = Substitute.For<IOutboxPublisher>();
+        var outboxPublisher = Substitute.For<IOutboxBus>();
         return new DistributedLockProvider(
             storage,
             outboxPublisher,

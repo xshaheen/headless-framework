@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher? outboxPublisher,
+    IOutboxBus? outboxPublisher,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
@@ -23,7 +23,7 @@ public sealed class DistributedLockProvider(
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
+    private readonly IOutboxBus? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`.
@@ -675,8 +675,8 @@ public sealed class DistributedLockProvider(
         return activity;
     }
 
-    private static IOutboxPublisher? _ConfigureOutboxPublisher(
-        IOutboxPublisher? outboxPublisher,
+    private static IOutboxBus? _ConfigureOutboxPublisher(
+        IOutboxBus? outboxPublisher,
         ILogger<DistributedLockProvider> logger
     )
     {

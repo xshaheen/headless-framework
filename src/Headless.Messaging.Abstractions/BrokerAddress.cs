@@ -10,7 +10,7 @@ namespace Headless.Messaging.Transport;
 /// The <c>ToString()</c> method formats the address as "Name$Endpoint", which can be parsed back using the string constructor.
 /// </remarks>
 [PublicAPI]
-public struct BrokerAddress : IEquatable<BrokerAddress>
+public readonly struct BrokerAddress : IEquatable<BrokerAddress>
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="BrokerAddress"/> struct by parsing a combined address string.
@@ -56,14 +56,14 @@ public struct BrokerAddress : IEquatable<BrokerAddress>
     }
 
     /// <summary>
-    /// Gets or sets the broker type name (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
+    /// Gets the broker type name (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
     /// </summary>
-    public string Name { get; set; }
+    public string Name { get; init; }
 
     /// <summary>
-    /// Gets or sets the network endpoint or connection address of the broker.
+    /// Gets the network endpoint or connection address of the broker.
     /// </summary>
-    public string Endpoint { get; set; }
+    public string Endpoint { get; init; }
 
     /// <summary>
     /// Returns the string representation of the broker address in the format "Name$Endpoint".
