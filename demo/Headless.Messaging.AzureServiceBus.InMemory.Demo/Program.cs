@@ -45,7 +45,7 @@ var app = builder.Build();
 
 app.MapGet(
     "/entity-created-for-integration",
-    async (IOutboxPublisher publisher) =>
+    async (IOutboxBus publisher) =>
     {
         var message = new EntityCreatedForIntegration(Guid.NewGuid());
         await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityCreatedForIntegration) });
@@ -54,7 +54,7 @@ app.MapGet(
 
 app.MapGet(
     "/entity-deleted-for-integration",
-    async (IOutboxPublisher publisher) =>
+    async (IOutboxBus publisher) =>
     {
         var message = new EntityDeletedForIntegration(Guid.NewGuid());
         await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityDeletedForIntegration) });
@@ -63,7 +63,7 @@ app.MapGet(
 
 app.MapGet(
     "/entity-created",
-    async (IOutboxPublisher publisher) =>
+    async (IOutboxBus publisher) =>
     {
         var message = new EntityCreated(Guid.NewGuid());
         await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityCreated) });
@@ -72,7 +72,7 @@ app.MapGet(
 
 app.MapGet(
     "/entity-deleted",
-    async (IOutboxPublisher publisher) =>
+    async (IOutboxBus publisher) =>
     {
         var message = new EntityDeleted(Guid.NewGuid());
         await publisher.PublishAsync(message, new PublishOptions { Topic = nameof(EntityDeleted) });

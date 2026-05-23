@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.RedisPubSub, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.RedisPubSub, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -25,15 +25,31 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-    - [None. This is an abstractions package.](#none-this-is-an-abstractions-package)
-- [Headless.Messaging.Core](#headlessmessagingcore)
+- [Headless.Messaging.Bus.Abstractions](#headlessmessagingbusabstractions)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
+- [Headless.Messaging.Queue.Abstractions](#headlessmessagingqueueabstractions)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
+- [Headless.Messaging.Core](#headlessmessagingcore)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
     - [Publisher Options](#publisher-options)
-        - [IOutboxPublisher (Reliable Delivery)](#ioutboxpublisher-reliable-delivery)
-        - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
+        - [Bus Publishers](#bus-publishers)
+        - [Queue Publishers](#queue-publishers)
+        - [Legacy Migration](#legacy-migration)
         - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
     - [Configuration](#configuration-1)
         - [Retry Policy](#retry-policy)
@@ -228,13 +244,13 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-17)
     - [Dependencies](#dependencies-17)
     - [Side Effects](#side-effects-17)
-- [Appendix: Deferred to Phase 2](#appendix-deferred-to-phase-2)
+- [Appendix: Future Work](#appendix-future-work)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
 
 ## Quick Orientation
 
-Always install four packages together: **Abstractions + Core + one transport + one storage**.
+For applications, install **Core + one transport + one storage**. `Messaging.Core` brings the shared, bus, and queue abstractions transitively; install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only for library packages that expose messaging contracts without hosting the runtime.
 
 **Transports** (pick one):
 
@@ -264,7 +280,6 @@ Always install four packages together: **Abstractions + Core + one transport + o
 **Minimal production setup:**
 
 ```
-dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.RabbitMq
 dotnet add package Headless.Messaging.PostgreSql
@@ -273,7 +288,6 @@ dotnet add package Headless.Messaging.PostgreSql
 **Minimal dev/testing setup:**
 
 ```
-dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.InMemory
 dotnet add package Headless.Messaging.InMemoryStorage
@@ -283,15 +297,16 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 ## Agent Instructions
 
-- **Install pattern**: Always install `Messaging.Abstractions` + `Messaging.Core` + exactly one transport + exactly one storage. Missing any of these causes runtime failures.
+- **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Core brings shared/bus/queue abstractions transitively for applications.
+- **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
 - **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
-- **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
-- **One publish shape**: `IDirectPublisher` and `IOutboxPublisher` both use `PublishAsync(message, options, cancellationToken)`. Prefer mappings or conventions for topics, and use `PublishOptions` only for explicit overrides.
+- **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
+- **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
 - **Outbox intent is durable**: Storage rows carry `IntentType`; retry drainers dispatch bus rows through `IBusTransport` and queue rows through `IQueueTransport`. A persisted row whose intent has no registered transport is terminally failed and the drainer continues.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
@@ -302,7 +317,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
-- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
+- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic through the durable bus path with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
@@ -330,7 +345,7 @@ These matrices summarize the current Phase 1 surface for each transport and stor
 How to read each column:
 
 - **Bus transport / Queue transport** — whether the package registers `IBusTransport` and/or `IQueueTransport`.
-- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through the framework's outbox-backed `IScheduledPublisher` regardless of transport.
+- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through `IOutboxBus` / `IOutboxQueue` with `PublishOptions.Delay` / `EnqueueOptions.Delay`.
 - **Ordering shape** — the strongest guarantee the broker offers within the named scope. The framework's outbox preserves publish order within a transaction; everything beyond that is broker semantics.
 - **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
 - **Broker reject** — what `IConsumerClient.RejectAsync` actually does. "no-op" means the transport cannot signal rejection back to the broker; persisted-retry pickup is the only path to re-delivery.
@@ -355,22 +370,18 @@ Internal-wiring asymmetries (for example, `Headless.Messaging.SqlServer` additio
 
 # Headless.Messaging.Abstractions
 
-Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
+Shared contracts for type-safe message payloads, consumer handlers, envelopes, headers, and publish options.
 
 ## Problem Solved
 
-Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling transactional outbox patterns for guaranteed message delivery.
+Provides standardized contracts for libraries that need to define message shapes or consumers without taking a runtime dependency on `Headless.Messaging.Core`.
 
 ## Key Features
 
-- **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
-- **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
-- **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
-- **Scheduled Publishing**: `IScheduledPublisher` for delayed message delivery (bound to the same instance as `IOutboxPublisher`)
-- **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
-- **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
-- **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
-- **Multi-Type Consumers**: Single consumer can handle multiple message types
+- **Type-Safe Consumption**: `IConsume<TMessage>` with `ConsumeContext<TMessage>` for compile-time verification.
+- **Shared Envelope Contracts**: message IDs, correlation IDs, timestamps, headers, tenant IDs, and topic names.
+- **Publish Options**: `PublishOptions`, `EnqueueOptions`, callback routing, delay, and tenant fields.
+- **Intent Metadata**: `IntentType` distinguishes bus broadcast from queue point-to-point work in storage, dashboard, and telemetry.
 - **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods (DIM) for backpressure — idempotent, backward compatible
 
 ## Installation
@@ -382,7 +393,9 @@ dotnet add package Headless.Messaging.Abstractions
 ## Quick Start
 
 ```csharp
-// Define message consumer
+// Contract library: define a message and consumer without bootstrapping Core.
+public sealed record OrderPlacedEvent(long OrderId, decimal Total);
+
 public sealed class OrderPlacedHandler(
     IOrderRepository orders,
     ILogger<OrderPlacedHandler> logger) : IConsume<OrderPlacedEvent>
@@ -399,55 +412,24 @@ public sealed class OrderPlacedHandler(
         await orders.CreateAsync(context.Message, cancellationToken);
     }
 }
-
-// Register consumers
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.SubscribeFromAssemblyContaining<Program>();
-    options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
-});
-
-// Publish with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher)
-{
-    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
-    {
-        // Publish transactionally with database changes
-        await publisher.PublishAsync(
-            new OrderPlacedEvent
-            {
-                OrderId = order.Id,
-                Total = order.Total
-            },
-            new PublishOptions { Topic = "orders.placed" },
-            ct);
-    }
-}
-
-// Publish directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
-{
-    public async Task TrackAsync(MetricEvent metric, CancellationToken ct)
-    {
-        // Topic resolved from WithTopicMapping<MetricEvent>()
-        await publisher.PublishAsync(metric, ct);
-    }
-}
 ```
+
+Applications install `Headless.Messaging.Core` plus one transport and one storage package to register consumers and publish messages. Libraries that expose publisher-facing contracts should reference `Headless.Messaging.Bus.Abstractions` for `IBus` / `IOutboxBus`, or `Headless.Messaging.Queue.Abstractions` for `IQueue` / `IOutboxQueue`.
 
 ## Envelope
 
-The current Phase 1 publish surface exposes three publisher interfaces in `Headless.Messaging.Abstractions`:
+The current publish surface separates delivery intent from durability:
 
-- `IDirectPublisher` — fire-and-forget, transport-direct delivery. No outbox involvement.
-- `IOutboxPublisher` — durable, transactional delivery. The publish writes to storage; a background drainer hands the row to the transport once the ambient transaction commits.
-- `IScheduledPublisher` — delayed delivery via `PublishDelayAsync<T>(TimeSpan, ...)`. Bound to the same singleton as `IOutboxPublisher`, so scheduled publishing inherits the outbox's durability and tenant integrity. Broker-native scheduling is a separate concept — see [Provider Capabilities](#provider-capabilities) for which transports natively delay delivery.
+- `IBus` — direct broadcast publish/subscribe delivery through `IBusTransport`.
+- `IOutboxBus` — durable broadcast delivery; the publish writes to storage and a background drainer dispatches via `IBusTransport`.
+- `IQueue` — direct point-to-point delivery through `IQueueTransport`.
+- `IOutboxQueue` — durable point-to-point delivery; the enqueue writes to storage and a background drainer dispatches via `IQueueTransport`.
 
-> **Deferred to Phase 2 (#232).** The send-versus-broadcast intent split (`ISendPublisher`, `IBroadcastPublisher`) and the `DeliveryKind` envelope metadata are scheduled for the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for the full deferred list.
+Outbox rows carry `IntentType.Bus` or `IntentType.Queue`, so retry drainers, dashboard projections, consume contexts, and telemetry preserve the caller's selected intent. Legacy publisher contracts remain as migration compatibility shims; new code should not depend on them.
 
 ### Reserved Wire Headers
 
-Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through `PublishOptions.Headers` is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use the typed `PublishOptions` properties or the `TimeSpan delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through options headers is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use typed options properties such as `PublishOptions.Delay` or `EnqueueOptions.Delay`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
 
 | Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
 |---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
@@ -458,7 +440,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 | `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
 | `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
 | `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
-| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from the `delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
+| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from `PublishOptions.Delay` or `EnqueueOptions.Delay`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
 | `TenantId`          | `headless-tenant-id`           | rule     | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — enforced by its own four-case rule, NOT the reserved-set rejection. See Strict Publish Tenancy below. |
 | `Group`             | `headless-msg-group`           | no       | framework    | Active consumer group; injected on consume, never on publish.                                            |
 | `ExecutionInstanceId` | `headless-exec-instance-id`  | no       | framework    | Identifier of the application instance that produced / consumed the message.                             |
@@ -517,7 +499,107 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Side Effects
 
-## None. This is an abstractions package.
+None. This package registers no services.
+
+---
+
+# Headless.Messaging.Bus.Abstractions
+
+Broadcast publisher contracts for Headless Messaging.
+
+## Problem Solved
+
+Gives application code a compile-time bus surface for publish/subscribe delivery where every matching subscriber group receives its own copy of a message.
+
+## Key Features
+
+- `IBus` publishes directly to the configured bus transport.
+- `IOutboxBus` persists messages first, then drains them through the configured bus transport.
+- `PublishOptions.Delay` schedules delayed outbox bus delivery.
+- Every bus publish carries `IntentType.Bus` through storage, tracing, dashboard projections, and consume context.
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Bus.Abstractions
+```
+
+## Quick Start
+
+```csharp
+public sealed class OrderEvents(IOutboxBus bus)
+{
+    public Task PublishAsync(OrderPlaced message, CancellationToken cancellationToken)
+    {
+        return bus.PublishAsync(
+            message,
+            new PublishOptions { Topic = "orders.placed" },
+            cancellationToken);
+    }
+}
+```
+
+## Configuration
+
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`.
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+
+## Side Effects
+
+None. This package registers no services.
+
+---
+
+# Headless.Messaging.Queue.Abstractions
+
+Point-to-point publisher contracts for Headless Messaging.
+
+## Problem Solved
+
+Gives application code a compile-time queue surface for work-queue delivery where exactly one competing worker handles each message.
+
+## Key Features
+
+- `IQueue` enqueues directly to the configured queue transport.
+- `IOutboxQueue` persists messages first, then drains them through the configured queue transport.
+- `EnqueueOptions.Delay` schedules delayed outbox queue delivery.
+- Every queue enqueue carries `IntentType.Queue` through storage, tracing, dashboard projections, and consume context.
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Queue.Abstractions
+```
+
+## Quick Start
+
+```csharp
+public sealed class ImportJobs(IOutboxQueue queue)
+{
+    public Task EnqueueAsync(ImportRequested message, CancellationToken cancellationToken)
+    {
+        return queue.EnqueueAsync(
+            message,
+            new EnqueueOptions { Topic = "imports.requested" },
+            cancellationToken);
+    }
+}
+```
+
+## Configuration
+
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`.
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+
+## Side Effects
+
+None. This package registers no services.
 
 # Headless.Messaging.Core
 
@@ -568,8 +650,8 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Publish messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+// Publish broadcast messages with outbox (reliable delivery)
+public sealed class OrderService(IOutboxBus publisher, IOutboxTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
@@ -582,65 +664,59 @@ public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction 
     }
 }
 
-// Publish messages directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
+// Enqueue point-to-point work directly (fire-and-forget)
+public sealed class ImportService(IQueue queue)
 {
-    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        // Bypasses outbox - sent directly to transport
-        await publisher.PublishAsync(metric, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
     }
 }
 ```
 
 ## Publisher Options
 
-> **Deferred to Phase 2 (#232).** The Phase 1 surface listed below — `IOutboxPublisher`, `IDirectPublisher`, and `IScheduledPublisher` (covered in the [Envelope](#envelope) section) — does not split publish intent into send-one and broadcast-many variants. `ISendPublisher` / `IBroadcastPublisher` and the `DeliveryKind` envelope metadata land in the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2).
+### Bus Publishers
 
-### IOutboxPublisher (Reliable Delivery)
+Use `IBus` for transport-direct broadcast and `IOutboxBus` for durable broadcast:
 
-Use `IOutboxPublisher` for messages that must not be lost:
-
-- **Transactional**: Messages are stored in database before sending
-- **At-least-once**: Automatic retries with configurable backoff
-- **Delayed delivery**: Schedule messages for future delivery
-- **Ordering**: Preserves publish order within transactions
-- **Durable intent**: Stored rows preserve bus/queue intent; retry pickup routes to the matching transport instead of relying on the current publisher facade.
-
-### IDirectPublisher (Fire-and-Forget)
-
-Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+- `IBus.PublishAsync(...)` sends immediately through `IBusTransport`.
+- `IOutboxBus.PublishAsync(...)` writes to storage first and drains later through `IBusTransport`.
+- `PublishOptions.Delay` schedules durable bus delivery when used with `IOutboxBus`.
+- Bus messages carry `IntentType.Bus` and emit `headless.messaging.intent = "bus"`.
 
 ```csharp
-// Configure topic mapping
-options.WithTopicMapping<MetricEvent>("metrics.events");
-
-// Inject and publish
-public sealed class MetricsPublisher(IDirectPublisher publisher)
+public sealed class OrderEvents(IOutboxBus bus)
 {
-    public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
+    public Task PublishAsync(OrderPlaced message, CancellationToken ct)
     {
-        // Sent immediately to transport, no persistence
-        await publisher.PublishAsync(metric, ct);
-
-        // With custom headers (using Headers constants)
-        var headers = new Dictionary<string, string?>
-        {
-            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
-        };
-        await publisher.PublishAsync(metric, headers, ct);
+        return bus.PublishAsync(message, new PublishOptions { Topic = "orders.placed" }, ct);
     }
 }
 ```
 
-**Characteristics:**
+### Queue Publishers
 
-- **No persistence**: Messages bypass outbox storage
-- **Lower latency**: Direct transport send without database round-trip
-- **No retries**: Transport failures throw immediately
-- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
+Use `IQueue` for transport-direct point-to-point delivery and `IOutboxQueue` for durable point-to-point delivery:
 
-**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+- `IQueue.EnqueueAsync(...)` sends immediately through `IQueueTransport`.
+- `IOutboxQueue.EnqueueAsync(...)` writes to storage first and drains later through `IQueueTransport`.
+- `EnqueueOptions.Delay` schedules durable queue delivery when used with `IOutboxQueue`.
+- Queue messages carry `IntentType.Queue` and emit `headless.messaging.intent = "queue"`.
+
+```csharp
+public sealed class ImportJobs(IOutboxQueue queue)
+{
+    public Task EnqueueAsync(ImportRequested message, CancellationToken ct)
+    {
+        return queue.EnqueueAsync(message, new EnqueueOptions { Topic = "imports.requested" }, ct);
+    }
+}
+```
+
+### Legacy Migration
+
+Legacy publisher contracts remain as compatibility shims. Move old direct publish calls to `IBus` or `IQueue`, old durable publish calls to `IOutboxBus` or `IOutboxQueue`, and old delayed publish calls to `PublishOptions.Delay` / `EnqueueOptions.Delay` on the matching outbox interface.
 
 ### Callback Headers (Async Response Routing)
 
@@ -670,7 +746,7 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 **Constraints:**
 
 - `CallbackName` is a reserved header — cannot be set via `PublishOptions.Headers`
-- Response delivery uses `IOutboxPublisher`, so a storage provider must be configured
+- Response delivery uses the durable bus path, so a storage provider must be configured
 - The caller does NOT await the response — this is async message chaining, not RPC
 
 ## Configuration
@@ -1360,6 +1436,7 @@ builder.Services.AddOpenTelemetry()
         {
             o.EnableMetrics = true;
             o.SuppressTenantIdTag = false;   // set true in shared-backend scenarios
+            o.SuppressIntentTags = false;    // set true to omit intent and destination-kind tags
             o.SuppressRetryCountTag = false; // set true to omit headless.messaging.retry_count
             o.AddEnricher(new MyCustomEnricher());
         })
@@ -1385,12 +1462,13 @@ public sealed class MyCustomEnricher : IActivityTagEnricher
 }
 ```
 
-`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
+`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `IntentType`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
 
 **Ordering.** Built-in enrichers run first in this fixed order, each gated by its suppression option:
 
 1. `TenantIdTagEnricher` — emits `headless.messaging.tenant_id` (gated by `SuppressTenantIdTag`).
-2. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
+2. `IntentTagEnricher` — emits `headless.messaging.intent` and `messaging.destination.kind` (gated by `SuppressIntentTags`).
+3. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
 
 Custom enrichers registered via `AddEnricher(...)` are appended after the built-ins, in insertion order. The enricher list is snapshotted at `AddMessagingInstrumentation` time; calls to `AddEnricher` afterwards are ignored.
 
@@ -1402,7 +1480,7 @@ Custom enrichers registered via `AddEnricher(...)` are appended after the built-
 
 - `messaging.*` — OpenTelemetry messaging semantic conventions.
 - `server.*` — broker / destination addressing.
-- `headless.messaging.*` — framework ground truth (`tenant_id`, `retry_count`, duration metrics).
+- `headless.messaging.*` — framework ground truth (`intent`, `tenant_id`, `retry_count`, duration metrics).
 - `exception.*` — OTel exception convention emitted at activity stop.
 
 Use an application- or product-scoped namespace such as `app.<feature>.<field>` for custom tags.
@@ -1415,6 +1493,8 @@ The `MessagingTags` static class exposes built-in tag names as public constants 
 
 | Constant                              | Wire tag                                       | Emitted on                                | Suppression                |
 |---------------------------------------|------------------------------------------------|-------------------------------------------|----------------------------|
+| `MessagingTags.Intent`                | `headless.messaging.intent`                    | every messaging span (`bus` / `queue`)    | `SuppressIntentTags`       |
+| `MessagingTags.DestinationKind`       | `messaging.destination.kind`                   | every messaging span (`topic` / `queue`)  | `SuppressIntentTags`       |
 | `MessagingTags.TenantId`              | `headless.messaging.tenant_id`                 | every span when the message has a tenant  | `SuppressTenantIdTag`      |
 | `MessagingTags.RetryCount`            | `headless.messaging.retry_count`               | subscriber-invoke spans when `RetryCount > 0` | `SuppressRetryCountTag` |
 | `MessagingTags.PersistenceDurationMs` | `headless.messaging.persistence.duration_ms`   | persist activity success event            | — (always emitted)         |
@@ -2486,16 +2566,14 @@ None. Recording decorators wrap the existing transport and pipeline at DI regist
 
 ---
 
-# Appendix: Deferred to Phase 2
+# Appendix: Future Work
 
-The following items are intentionally NOT part of the current Phase 1 surface. Inline `> **Deferred to Phase 2 …**` callouts throughout the doc point readers here. None of these names are valid current behavior — code that targets them today will not compile.
+The following items are intentionally NOT part of the current surface. None of these names are valid current behavior — code that targets them today will not compile.
 
 | Item                                          | Tracked in                                                              | Scope                                                                                                              |
 |-----------------------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| Send / broadcast publisher intent split       | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New `ISendPublisher` and `IBroadcastPublisher` interfaces replacing the single `PublishAsync` shape per intent.    |
-| `DeliveryKind` envelope metadata              | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New envelope field marking send vs broadcast intent on the wire; consumed by publish/consume telemetry.            |
-| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring the Phase 2 outbox decorator model.                                            |
-| Rename / migration guide                      | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Concrete migration steps from `IDirectPublisher` / `IOutboxPublisher` to the Phase 2 send/broadcast surface.       |
+| NATS JetStream queue scope                    | [#233](https://github.com/xshaheen/headless-framework/issues/233)       | Dedicated JetStream follow-up for queue durability and scope decisions beyond the current NATS naming support.      |
+| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring a future outbox decorator model.                                               |
 | Typed-behavior pipeline decision              | [#218](https://github.com/xshaheen/headless-framework/issues/218)       | RFC on whether `IPublishBehavior<T>` / `IConsumeBehavior<T>` exist alongside the current filter pipeline.          |
 
-This appendix is the consolidated index, not a written guide. The carry-forward rule for Phase 2 is that #232 / #218 own the implementation and the migration prose; this doc is updated in the same change that lands the rename.
+This appendix is the consolidated index, not a written guide. The carry-forward rule is that future implementation and migration prose update this doc in the same change.

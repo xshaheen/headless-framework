@@ -11,8 +11,7 @@ namespace Demo.Controllers;
 
 [Route("api/[controller]")]
 public class ValuesController(
-    IOutboxPublisher producer,
-    IScheduledPublisher scheduler,
+    IOutboxBus producer,
     IOutboxTransaction outboxTransaction
 ) : Controller
 {
@@ -44,10 +43,9 @@ public class ValuesController(
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await scheduler.PublishDelayAsync(
-            TimeSpan.FromSeconds(delaySeconds),
+        await producer.PublishAsync(
             new Person { Id = 123, Name = "Bar" },
-            new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
+            new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
@@ -67,10 +65,9 @@ public class ValuesController(
                 transaction: (DbTransaction?)transaction.DbTransaction
             );
 
-            await scheduler.PublishDelayAsync(
-                TimeSpan.FromSeconds(delaySeconds),
+            await producer.PublishAsync(
                 new Person { Id = 123, Name = "Bar" },
-                new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
+                new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
             );
         }
 
@@ -94,10 +91,9 @@ public class ValuesController(
                 transaction: (DbTransaction?)transaction.DbTransaction
             );
 
-            await scheduler.PublishDelayAsync(
-                TimeSpan.FromSeconds(5),
+            await producer.PublishAsync(
                 person,
-                new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
+                new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(5) }
             );
 
             await ((DbTransaction)transaction.DbTransaction!).CommitAsync();

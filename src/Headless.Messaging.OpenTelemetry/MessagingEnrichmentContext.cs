@@ -36,6 +36,12 @@ public readonly struct MessagingEnrichmentContext
     public string? MessageName { get; init; }
 
     /// <summary>
+    /// Delivery intent associated with the span. <see cref="IntentType.Bus"/> means broadcast
+    /// pub/sub; <see cref="IntentType.Queue"/> means point-to-point work-queue delivery.
+    /// </summary>
+    public IntentType IntentType { get; init; }
+
+    /// <summary>
     /// Tenant ID extracted from the <c>headless-tenant-id</c> wire header, or
     /// <see langword="null"/> when the header is absent.
     /// </summary>

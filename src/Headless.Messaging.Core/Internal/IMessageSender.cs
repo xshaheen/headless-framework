@@ -113,7 +113,12 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var transport = selected.Transport.GetValueOrDefault();
-        var tracingTimestamp = _TracingBefore(transportMsg, transport.BrokerAddress, cancellationToken);
+        var tracingTimestamp = _TracingBefore(
+            transportMsg,
+            message.IntentType,
+            transport.BrokerAddress,
+            cancellationToken
+        );
 
         using var publishCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownToken);
         publishCts.CancelAfter(_options.TransportPublishTimeout);
@@ -123,12 +128,12 @@ internal sealed class MessageSender : IMessageSender
         {
             await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, transportMsg, transport.BrokerAddress, cancellationToken);
+            _TracingAfter(tracingTimestamp, transportMsg, message.IntentType, transport.BrokerAddress, cancellationToken);
 
             return (RetryDecision.Stop, OperateResult.Success);
         }
 
-        _TracingError(tracingTimestamp, transportMsg, transport.BrokerAddress, result, cancellationToken);
+        _TracingError(tracingTimestamp, transportMsg, message.IntentType, transport.BrokerAddress, result, cancellationToken);
 
         var decision = await _SetFailedState(
                 message,
@@ -366,7 +371,12 @@ internal sealed class MessageSender : IMessageSender
 
     #region tracing
 
-    private long? _TracingBefore(TransportMessage message, BrokerAddress broker, CancellationToken cancellationToken)
+    private long? _TracingBefore(
+        TransportMessage message,
+        IntentType intentType,
+        BrokerAddress broker,
+        CancellationToken cancellationToken
+    )
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -378,6 +388,7 @@ internal sealed class MessageSender : IMessageSender
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 CancellationToken = cancellationToken,
             };
 
@@ -392,6 +403,7 @@ internal sealed class MessageSender : IMessageSender
     private void _TracingAfter(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         BrokerAddress broker,
         CancellationToken cancellationToken
     )
@@ -405,6 +417,7 @@ internal sealed class MessageSender : IMessageSender
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 CancellationToken = cancellationToken,
             };
@@ -416,6 +429,7 @@ internal sealed class MessageSender : IMessageSender
     private void _TracingError(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         BrokerAddress broker,
         OperateResult result,
         CancellationToken cancellationToken
@@ -432,6 +446,7 @@ internal sealed class MessageSender : IMessageSender
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
                 CancellationToken = cancellationToken,

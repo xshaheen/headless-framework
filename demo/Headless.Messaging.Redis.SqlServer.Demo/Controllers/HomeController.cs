@@ -5,12 +5,12 @@ namespace Demo.Controllers;
 
 [ApiController]
 [Route("[controller]/[action]")]
-public class HomeController(IOutboxPublisher publisher) : ControllerBase
+public class HomeController(IOutboxQueue publisher) : ControllerBase
 {
     [HttpGet]
     public async Task Publish([FromQuery] string message = "test-message")
     {
-        await publisher.PublishAsync(new Person { Age = 11, Name = "James" }, new PublishOptions { Topic = message });
+        await publisher.EnqueueAsync(new Person { Age = 11, Name = "James" }, new EnqueueOptions { Topic = message });
     }
 }
 

@@ -60,6 +60,8 @@ public sealed class PublishedMessageEndpointTests : TestBase
         var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, object?>>();
         payload.Should().ContainKey("storageId");
         payload.Should().ContainKey("messageId");
+        payload.Should().ContainKey("intentType");
+        ((JsonElement)payload["intentType"]!).GetInt32().Should().Be((int)IntentType.Bus);
     }
 
     [Fact]
@@ -84,7 +86,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
-    public async Task PublishedList_should_preserve_pagination_metadata_and_map_identity_fields()
+    public async Task PublishedList_should_bind_intent_filter_and_project_intent_with_pagination_metadata()
     {
         // given
         var result = new IndexPage<MessageView>(
@@ -95,6 +97,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                     MessageId = "logical-pub-123",
                     Version = "v1",
                     Name = "orders.created",
+                    IntentType = IntentType.Queue,
                     Content = "{\"key\":\"value\"}",
                     Added = new DateTime(2026, 03, 24, 10, 00, 00, DateTimeKind.Utc),
                     Retries = 2,
@@ -116,7 +119,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20");
+        var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20&intentType=Queue");
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -132,6 +135,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
         item.GetProperty("storageId").GetString().Should().Be("123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
+        item.GetProperty("intentType").GetInt32().Should().Be((int)IntentType.Queue);
 
         await _monitoringApi
             .Received(1)
@@ -139,6 +143,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
                 Arg.Is<MessageQuery>(query =>
                     query.MessageType == MessageType.Publish
                     && query.StatusName == "Succeeded"
+                    && query.IntentType == IntentType.Queue
                     && query.CurrentPage == 1
                     && query.PageSize == 20
                 ),

@@ -612,7 +612,7 @@ internal sealed class ConsumerRegister(
                     _logger.MessageReceived(safeMessageId, safeMessageName);
                 }
 
-                tracingTimestamp = _TracingBefore(transportMessage, _serverAddress, hostShutdownToken);
+                tracingTimestamp = _TracingBefore(transportMessage, intentType, _serverAddress, hostShutdownToken);
 
                 var name = transportMessage.GetName();
 
@@ -631,7 +631,7 @@ internal sealed class ConsumerRegister(
                             $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
-                        _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, ex, hostShutdownToken);
+                        _TracingError(tracingTimestamp, transportMessage, intentType, client.BrokerAddress, ex, hostShutdownToken);
 
                         throw ex;
                     }
@@ -766,7 +766,7 @@ internal sealed class ConsumerRegister(
                         _options.RetryPolicy.MaxPersistedRetries
                     );
 
-                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress, hostShutdownToken);
+                    _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
                 }
                 else
                 {
@@ -784,7 +784,7 @@ internal sealed class ConsumerRegister(
                     );
                     mediumMessage.Origin = message;
 
-                    _TracingAfter(tracingTimestamp, transportMessage, _serverAddress, hostShutdownToken);
+                    _TracingAfter(tracingTimestamp, transportMessage, intentType, _serverAddress, hostShutdownToken);
 
                     await _dispatcher.EnqueueToExecute(mediumMessage, executor, CancellationToken.None);
                     probeOutcomeTransferred = true;
@@ -798,7 +798,7 @@ internal sealed class ConsumerRegister(
 
                 await client.RejectAsync(sender);
 
-                _TracingError(tracingTimestamp, transportMessage, client.BrokerAddress, e, hostShutdownToken);
+                _TracingError(tracingTimestamp, transportMessage, intentType, client.BrokerAddress, e, hostShutdownToken);
             }
             finally
             {
@@ -977,7 +977,12 @@ internal sealed class ConsumerRegister(
 
     #region Tracing
 
-    private long? _TracingBefore(TransportMessage message, BrokerAddress broker, CancellationToken cancellationToken)
+    private long? _TracingBefore(
+        TransportMessage message,
+        IntentType intentType,
+        BrokerAddress broker,
+        CancellationToken cancellationToken
+    )
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.BeforeConsume))
         {
@@ -987,6 +992,7 @@ internal sealed class ConsumerRegister(
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 CancellationToken = cancellationToken,
             };
 
@@ -1001,6 +1007,7 @@ internal sealed class ConsumerRegister(
     private void _TracingAfter(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         BrokerAddress broker,
         CancellationToken cancellationToken
     )
@@ -1015,6 +1022,7 @@ internal sealed class ConsumerRegister(
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 CancellationToken = cancellationToken,
             };
@@ -1026,6 +1034,7 @@ internal sealed class ConsumerRegister(
     private void _TracingError(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         BrokerAddress broker,
         Exception ex,
         CancellationToken cancellationToken
@@ -1041,6 +1050,7 @@ internal sealed class ConsumerRegister(
                 Operation = message.GetName(),
                 BrokerAddress = broker,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
                 CancellationToken = cancellationToken,

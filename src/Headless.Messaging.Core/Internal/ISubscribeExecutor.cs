@@ -94,6 +94,7 @@ internal sealed class SubscribeExecutor(
                 _TracingError(
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                     message.Origin,
+                    message.IntentType,
                     method: null,
                     exception,
                     retryCount: 0,
@@ -422,6 +423,7 @@ internal sealed class SubscribeExecutor(
         var consumerContext = new ConsumerContext(descriptor, message);
         var tracingTimestamp = _TracingBefore(
             message.Origin,
+            message.IntentType,
             descriptor.MethodInfo,
             message.Retries,
             cancellationToken
@@ -430,7 +432,14 @@ internal sealed class SubscribeExecutor(
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo, message.Retries, cancellationToken);
+            _TracingAfter(
+                tracingTimestamp,
+                message.Origin,
+                message.IntentType,
+                descriptor.MethodInfo,
+                message.Retries,
+                cancellationToken
+            );
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
@@ -465,6 +474,7 @@ internal sealed class SubscribeExecutor(
                 _TracingError(
                     tracingTimestamp,
                     message.Origin,
+                    message.IntentType,
                     descriptor.MethodInfo,
                     e,
                     message.Retries,
@@ -482,6 +492,7 @@ internal sealed class SubscribeExecutor(
             _TracingError(
                 tracingTimestamp,
                 message.Origin,
+                message.IntentType,
                 descriptor.MethodInfo,
                 e,
                 message.Retries,
@@ -496,6 +507,7 @@ internal sealed class SubscribeExecutor(
 
     private long? _TracingBefore(
         Message message,
+        IntentType intentType,
         MethodInfo method,
         int retryCount,
         CancellationToken cancellationToken
@@ -508,6 +520,7 @@ internal sealed class SubscribeExecutor(
                 OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
+                IntentType = intentType,
                 MethodInfo = method,
                 RetryCount = retryCount,
                 CancellationToken = cancellationToken,
@@ -524,6 +537,7 @@ internal sealed class SubscribeExecutor(
     private void _TracingAfter(
         long? tracingTimestamp,
         Message message,
+        IntentType intentType,
         MethodInfo method,
         int retryCount,
         CancellationToken cancellationToken
@@ -541,6 +555,7 @@ internal sealed class SubscribeExecutor(
                 OperationTimestamp = now,
                 Operation = message.GetName(),
                 Message = message,
+                IntentType = intentType,
                 MethodInfo = method,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 RetryCount = retryCount,
@@ -554,6 +569,7 @@ internal sealed class SubscribeExecutor(
     private void _TracingError(
         long? tracingTimestamp,
         Message message,
+        IntentType intentType,
         MethodInfo? method,
         Exception ex,
         int retryCount,
@@ -572,6 +588,7 @@ internal sealed class SubscribeExecutor(
             OperationTimestamp = now,
             Operation = message.GetName(),
             Message = message,
+            IntentType = intentType,
             MethodInfo = method,
             ElapsedTimeMs = now - tracingTimestamp,
             Exception = ex,

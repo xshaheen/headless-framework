@@ -39,7 +39,7 @@ internal sealed class DirectPublisher(
             innerPublish: (middlewareOptions, _, ct) =>
             {
                 var publishRequest = _publishRequestFactory.Create(contentObj, middlewareOptions);
-                return _SendAsync(publishRequest.Message, ct);
+                return _SendAsync(publishRequest.Message, publishRequest.IntentType, ct);
             },
             // DirectPublisher always commits to the wire inside the pipeline; PublishingContext.IsTransactional
             // remains false because rollback semantics do not apply.
@@ -48,7 +48,7 @@ internal sealed class DirectPublisher(
         );
     }
 
-    private async Task _SendAsync(Message message, CancellationToken cancellationToken)
+    private async Task _SendAsync(Message message, IntentType intentType, CancellationToken cancellationToken)
     {
         TransportMessage transportMsg;
         try
@@ -57,24 +57,24 @@ internal sealed class DirectPublisher(
         }
         catch (Exception e)
         {
-            _TracingErrorSerialization(message, e, cancellationToken);
+            _TracingErrorSerialization(message, intentType, e, cancellationToken);
             throw;
         }
 
         long? tracingTimestamp = null;
         try
         {
-            tracingTimestamp = _TracingBeforeSend(transportMsg, cancellationToken);
+            tracingTimestamp = _TracingBeforeSend(transportMsg, intentType, cancellationToken);
 
             var result = await _transport.SendAsync(transportMsg, cancellationToken).ConfigureAwait(false);
 
             if (!result.Succeeded)
             {
-                _TracingErrorSend(tracingTimestamp, transportMsg, result, cancellationToken);
+                _TracingErrorSend(tracingTimestamp, transportMsg, intentType, result, cancellationToken);
                 throw new PublisherSentFailedException(result.ToString(), result.Exception);
             }
 
-            _TracingAfterSend(tracingTimestamp, transportMsg, cancellationToken);
+            _TracingAfterSend(tracingTimestamp, transportMsg, intentType, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -85,7 +85,7 @@ internal sealed class DirectPublisher(
         {
             try
             {
-                _TracingErrorSend(tracingTimestamp, transportMsg, e, cancellationToken);
+                _TracingErrorSend(tracingTimestamp, transportMsg, intentType, e, cancellationToken);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -100,7 +100,7 @@ internal sealed class DirectPublisher(
 
     #region Tracing
 
-    private long? _TracingBeforeSend(TransportMessage message, CancellationToken cancellationToken)
+    private long? _TracingBeforeSend(TransportMessage message, IntentType intentType, CancellationToken cancellationToken)
     {
         MessageEventCounterSource.Log.WritePublishMetrics();
 
@@ -112,6 +112,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
+                IntentType = intentType,
                 CancellationToken = cancellationToken,
             };
 
@@ -126,6 +127,7 @@ internal sealed class DirectPublisher(
     private void _TracingAfterSend(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         CancellationToken cancellationToken
     )
     {
@@ -138,6 +140,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 CancellationToken = cancellationToken,
             };
@@ -149,6 +152,7 @@ internal sealed class DirectPublisher(
     private void _TracingErrorSend(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         OperateResult result,
         CancellationToken cancellationToken
     )
@@ -164,6 +168,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 Exception = ex,
                 CancellationToken = cancellationToken,
@@ -176,6 +181,7 @@ internal sealed class DirectPublisher(
     private void _TracingErrorSend(
         long? tracingTimestamp,
         TransportMessage message,
+        IntentType intentType,
         Exception exception,
         CancellationToken cancellationToken
     )
@@ -190,6 +196,7 @@ internal sealed class DirectPublisher(
                 Operation = message.GetName(),
                 BrokerAddress = _transport.BrokerAddress,
                 TransportMessage = message,
+                IntentType = intentType,
                 ElapsedTimeMs = tracingTimestamp.HasValue ? now - tracingTimestamp.Value : null,
                 Exception = exception,
                 CancellationToken = cancellationToken,
@@ -199,7 +206,12 @@ internal sealed class DirectPublisher(
         }
     }
 
-    private void _TracingErrorSerialization(Message message, Exception exception, CancellationToken cancellationToken)
+    private void _TracingErrorSerialization(
+        Message message,
+        IntentType intentType,
+        Exception exception,
+        CancellationToken cancellationToken
+    )
     {
         if (_DiagnosticListener.IsEnabled(MessageDiagnosticListenerNames.ErrorPublishMessageStore))
         {
@@ -208,6 +220,7 @@ internal sealed class DirectPublisher(
                 OperationTimestamp = _NowUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
+                IntentType = intentType,
                 Exception = exception,
                 CancellationToken = cancellationToken,
             };

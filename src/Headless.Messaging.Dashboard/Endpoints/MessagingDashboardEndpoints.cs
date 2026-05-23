@@ -307,6 +307,7 @@ public static class MessagingDashboardEndpoints
                 StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
+                message.IntentType,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -333,6 +334,7 @@ public static class MessagingDashboardEndpoints
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 Group = message.Origin.GetGroup(),
+                message.IntentType,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -431,6 +433,7 @@ public static class MessagingDashboardEndpoints
         IServiceProvider sp,
         string? name = null,
         string? content = null,
+        IntentType? intentType = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -445,6 +448,7 @@ public static class MessagingDashboardEndpoints
             MessageType = MessageType.Publish,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
+            IntentType = intentType,
             StatusName = status,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -460,6 +464,7 @@ public static class MessagingDashboardEndpoints
         string? name = null,
         string? group = null,
         string? content = null,
+        IntentType? intentType = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -475,6 +480,7 @@ public static class MessagingDashboardEndpoints
             Group = group ?? string.Empty,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
+            IntentType = intentType,
             StatusName = status,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -527,6 +533,7 @@ public static class MessagingDashboardEndpoints
             message.MessageId,
             message.Group,
             message.Name,
+            message.IntentType,
             message.Content,
             message.Added,
             message.ExpiresAt,

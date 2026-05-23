@@ -8,9 +8,9 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 ## Key Features
 
-- **Outbox Publisher**: Transactional message publishing with database consistency
-- **Scheduled Publisher**: Delayed message delivery through the configured scheduler pipeline
-- **Unified Publish Contract**: `IDirectPublisher` and `IOutboxPublisher` share the same `PublishAsync(message, options, ct)` surface
+- **Intent-Specific Publishers**: `IBus` / `IOutboxBus` for broadcast and `IQueue` / `IOutboxQueue` for point-to-point delivery
+- **Outbox Delivery**: Transactional message publishing with database consistency
+- **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
 - **Consumer Management**: `AddHeadlessMessaging(...)`, `Subscribe*()`, `AddBusConsumer(...)`, `AddQueueConsumer(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
@@ -58,27 +58,26 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Publish messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+// Publish broadcast messages with outbox (reliable delivery)
+public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
         await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
         {
-            await publisher.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
+            await bus.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
             await dbContext.SaveChangesAsync(ct);
             await dbTransaction.CommitAsync(ct);
         }
     }
 }
 
-// Publish messages directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
+// Enqueue point-to-point work directly (fire-and-forget)
+public sealed class ImportService(IQueue queue)
 {
-    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        // Bypasses outbox - sent directly to transport
-        await publisher.PublishAsync(metric, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
     }
 }
 ```
@@ -108,57 +107,39 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 ## Publisher Options
 
-### IOutboxPublisher (Reliable Delivery)
+### Bus Publishers
 
-Use `IOutboxPublisher` for messages that must not be lost:
+Use bus publishers for broadcast publish/subscribe delivery:
 
-- **Transactional**: Messages are stored in database before sending
-- **At-least-once**: Automatic retries with configurable backoff
-- **Ordering**: Preserves publish order within transactions
-- **Two identities**: durable providers generate an internal numeric storage ID for retries and operator actions while `PublishOptions.MessageId` remains a logical string capped at `PublishOptions.MessageIdMaxLength` characters
+- `IBus` sends directly to an `IBusTransport`.
+- `IOutboxBus` stores first, then dispatches through an `IBusTransport`.
+- `PublishOptions.Delay` is honored by `IOutboxBus` and ignored by `IBus`.
+- Stored rows and consume contexts carry `IntentType.Bus`.
 
-### IScheduledPublisher (Delayed Delivery)
+### Queue Publishers
 
-Use `IScheduledPublisher` when publish timing is part of the use case:
+Use queue publishers for point-to-point competing-worker delivery:
 
-- **Delayed delivery**: Schedule messages for future delivery
-- **Shared message model**: Uses the same message payloads and `PublishOptions`
-- **Composable**: Current core implementation uses the outbox pipeline under the hood
+- `IQueue` sends directly to an `IQueueTransport`.
+- `IOutboxQueue` stores first, then dispatches through an `IQueueTransport`.
+- `EnqueueOptions.Delay` is honored by `IOutboxQueue` and ignored by `IQueue`.
+- Stored rows and consume contexts carry `IntentType.Queue`.
 
-### IDirectPublisher (Fire-and-Forget)
+### Migration Notes
 
-Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+Legacy publisher contracts are still registered for compatibility, but new code should use intent-specific contracts:
 
 ```csharp
-// Configure topic mapping
-options.WithTopicMapping<MetricEvent>("metrics.events");
-
-// Inject and publish
-public sealed class MetricsPublisher(IDirectPublisher publisher)
+public sealed class MetricsPublisher(IBus bus)
 {
     public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
     {
-        // Sent immediately to transport, no persistence
-        await publisher.PublishAsync(metric, ct);
-
-        var options = new PublishOptions
-        {
-            CorrelationId = Guid.NewGuid().ToString(),
-            TenantId = "demo",
-        };
-        await publisher.PublishAsync(metric, options, ct);
+        await bus.PublishAsync(metric, new PublishOptions { Topic = "metrics.events" }, ct);
     }
 }
 ```
 
-**Characteristics:**
-
-- **No persistence**: Messages bypass outbox storage
-- **Lower latency**: Direct transport send without database round-trip
-- **No retries**: Transport failures throw immediately
-- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
-
-**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+Move old `IDirectPublisher` calls to `IBus` or `IQueue`, old durable `IOutboxPublisher` calls to `IOutboxBus` or `IOutboxQueue`, and old `IScheduledPublisher.PublishDelayAsync(...)` calls to `IOutboxBus.PublishAsync(..., new PublishOptions { Delay = delay })` or `IOutboxQueue.EnqueueAsync(..., new EnqueueOptions { Delay = delay })`.
 
 ## Runtime Delegates
 

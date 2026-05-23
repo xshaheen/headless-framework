@@ -6,7 +6,7 @@ namespace Demo.Controllers;
 
 [Authorize]
 [Route("api/[controller]")]
-public sealed class ValuesController(IOutboxPublisher publisher) : Controller
+public sealed class ValuesController(IOutboxBus publisher) : Controller
 {
     private const string _MyTopic = "sample.dashboard.auth";
 

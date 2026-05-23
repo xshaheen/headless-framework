@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
@@ -13,6 +15,7 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 
 namespace Tests;
 
@@ -176,6 +179,35 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
+    public async Task bus_publish_should_request_bus_intent_from_factory_and_trace_prepared_intent()
+    {
+        // given
+        var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
+        publishRequestFactory
+            .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Bus)
+            .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Queue));
+
+        var transport = new CapturingBusTransport();
+        using var diagnostics = new CapturingDiagnosticObserver();
+        var bus = _CreateBus(transport, publishRequestFactory);
+
+        // when
+        await bus.PublishAsync(new TestMessage(), cancellationToken: AbortToken);
+
+        // then
+        _ = publishRequestFactory
+            .Received(1)
+            .Create(
+                Arg.Any<TestMessage>(),
+                Arg.Any<PublishOptions?>(),
+                Arg.Is<TimeSpan?>(delay => delay == null),
+                IntentType.Bus
+            );
+        transport.LastMessage!.Value.GetName().Should().Be("events.prepared");
+        diagnostics.BeforePublishData.Should().BeOfType<MessageEventDataPubSend>().Which.IntentType.Should().Be(IntentType.Queue);
+    }
+
+    [Fact]
     public async Task queue_enqueue_should_throw_publisher_sent_failed_when_transport_reports_failure()
     {
         // given
@@ -189,35 +221,78 @@ public sealed class MessagingIntentSplitTests : TestBase
         await act.Should().ThrowAsync<PublisherSentFailedException>();
     }
 
-    private static IBus _CreateBus(IBusTransport transport)
+    [Fact]
+    public async Task queue_enqueue_should_request_queue_intent_from_factory_and_trace_prepared_intent()
+    {
+        // given
+        var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
+        publishRequestFactory
+            .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Queue)
+            .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Bus));
+
+        var transport = new CapturingQueueTransport();
+        using var diagnostics = new CapturingDiagnosticObserver();
+        var queue = _CreateQueue(transport, publishRequestFactory);
+
+        // when
+        await queue.EnqueueAsync(new TestMessage(), cancellationToken: AbortToken);
+
+        // then
+        _ = publishRequestFactory
+            .Received(1)
+            .Create(
+                Arg.Any<TestMessage>(),
+                Arg.Any<PublishOptions?>(),
+                Arg.Is<TimeSpan?>(delay => delay == null),
+                IntentType.Queue
+            );
+        transport.LastMessage!.Value.GetName().Should().Be("jobs.prepared");
+        diagnostics.BeforePublishData.Should().BeOfType<MessageEventDataPubSend>().Which.IntentType.Should().Be(IntentType.Bus);
+    }
+
+    private static IBus _CreateBus(IBusTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
     {
         var optionsAccessor = Options.Create(new MessagingOptions());
         var serializer = new JsonUtf8Serializer(optionsAccessor);
-        var publishRequestFactory = new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
-            TimeProvider.System,
-            optionsAccessor,
-            new NullCurrentTenant()
-        );
+        publishRequestFactory ??= _CreatePublishRequestFactory(optionsAccessor);
         var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
 
         return new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
-    private static IQueue _CreateQueue(IQueueTransport transport)
+    private static IQueue _CreateQueue(IQueueTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
     {
         var optionsAccessor = Options.Create(new MessagingOptions());
         var serializer = new JsonUtf8Serializer(optionsAccessor);
-        var publishRequestFactory = new MessagePublishRequestFactory(
+        publishRequestFactory ??= _CreatePublishRequestFactory(optionsAccessor);
+        var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
+
+        return new Queue(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
+    }
+
+    private static IMessagePublishRequestFactory _CreatePublishRequestFactory(IOptions<MessagingOptions> optionsAccessor) =>
+        new MessagePublishRequestFactory(
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()
         );
-        var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
 
-        return new Queue(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
-    }
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string topic, IntentType intentType) =>
+        new()
+        {
+            Topic = topic,
+            PublishAt = DateTime.UtcNow,
+            Message = new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString(),
+                    [Headers.MessageName] = topic,
+                },
+                new TestMessage()
+            ),
+            IntentType = intentType,
+        };
 
     [Fact]
     public void descriptor_comparer_should_treat_bus_and_queue_with_same_topic_group_as_distinct()
@@ -332,5 +407,77 @@ public sealed class MessagingIntentSplitTests : TestBase
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CapturingBusTransport : IBusTransport
+    {
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public TransportMessage? LastMessage { get; private set; }
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            LastMessage = message;
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CapturingQueueTransport : IQueueTransport
+    {
+        public BrokerAddress BrokerAddress { get; } = new("Test", "localhost");
+
+        public TransportMessage? LastMessage { get; private set; }
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+        {
+            LastMessage = message;
+            return Task.FromResult(OperateResult.Success);
+        }
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class CapturingDiagnosticObserver
+        : IObserver<DiagnosticListener>,
+            IObserver<KeyValuePair<string, object?>>,
+            IDisposable
+    {
+        private readonly IDisposable _allListenersSubscription;
+        private IDisposable? _listenerSubscription;
+
+        public object? BeforePublishData { get; private set; }
+
+        public CapturingDiagnosticObserver()
+        {
+            _allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
+        }
+
+        public void OnNext(DiagnosticListener value)
+        {
+            if (string.Equals(value.Name, MessageDiagnosticListenerNames.DiagnosticListenerName, StringComparison.Ordinal))
+            {
+                _listenerSubscription = value.Subscribe(this, IsBeforePublish);
+            }
+        }
+
+        public void OnNext(KeyValuePair<string, object?> value)
+        {
+            BeforePublishData = value.Value;
+        }
+
+        public void OnError(Exception error) { }
+
+        public void OnCompleted() { }
+
+        public void Dispose()
+        {
+            _listenerSubscription?.Dispose();
+            _allListenersSubscription.Dispose();
+        }
+
+        private static bool IsBeforePublish(string eventName, object? _, object? __) =>
+            string.Equals(eventName, MessageDiagnosticListenerNames.BeforePublish, StringComparison.Ordinal);
     }
 }

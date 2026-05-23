@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(IOutboxPublisher producer) : Controller
+public class ValuesController(IOutboxBus producer) : Controller
 {
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()

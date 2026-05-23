@@ -9,8 +9,7 @@ namespace Demo.Controllers;
 
 [Route("api/[controller]")]
 public class ValuesController(
-    IOutboxPublisher producer,
-    IScheduledPublisher scheduler,
+    IOutboxQueue producer,
     IOutboxTransaction outboxTransaction
 ) : Controller
 {
@@ -31,10 +30,9 @@ public class ValuesController(
     [Route("~/delay/{delaySeconds:int}")]
     public async Task<IActionResult> Delay(int delaySeconds)
     {
-        await scheduler.PublishDelayAsync(
-            TimeSpan.FromSeconds(delaySeconds),
-            DateTime.UtcNow,
-            new PublishOptions { Topic = "sample.kafka.postgrsql" }
+        await producer.EnqueueAsync(
+            new KafkaMessage(DateTime.UtcNow),
+            new EnqueueOptions { Topic = "sample.kafka.postgrsql", Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
@@ -43,7 +41,7 @@ public class ValuesController(
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }
@@ -61,12 +59,15 @@ public class ValuesController(
                 transaction: (IDbTransaction?)transaction.DbTransaction
             );
 
-            await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+            await producer.EnqueueAsync(
+                new KafkaMessage(DateTime.UtcNow),
+                new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+            );
 
             await transaction.CommitAsync();
         }
 
-        await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { Topic = "sample.kafka.postgrsql" });
 
         return Ok();
     }
@@ -80,7 +81,10 @@ public class ValuesController(
 
             await dbContext.SaveChangesAsync();
 
-            await producer.PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.kafka.postgrsql" });
+            await producer.EnqueueAsync(
+                new KafkaMessage(DateTime.UtcNow),
+                new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+            );
 
             await dbContext.Database.CommitTransactionAsync();
         }

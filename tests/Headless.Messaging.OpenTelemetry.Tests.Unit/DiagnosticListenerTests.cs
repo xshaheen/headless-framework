@@ -6,6 +6,7 @@ using Headless.Messaging;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.OpenTelemetry;
+using Headless.Messaging.OpenTelemetry.Internal;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -132,6 +133,35 @@ public sealed class DiagnosticListenerTests : TestBase
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
                     c.Kind == MessagingEventKind.Persist && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Bus
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public void should_call_enrichers_with_queue_intent_when_persist_event_is_received()
+    {
+        // given
+        var enricher = Substitute.For<IActivityTagEnricher>();
+        var listener = new DiagnosticListener([enricher]);
+        using var activityListener = _CreateActivityListener();
+        var eventData = _CreatePubStoreEventData("order.created");
+        eventData.IntentType = IntentType.Queue;
+
+        // when
+        listener.OnNext(
+            new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublishMessageStore, eventData)
+        );
+
+        // then
+        _ = enricher
+            .Received()
+            .Enrich(
+                Arg.Any<Activity>(),
+                Arg.Is<MessagingEnrichmentContext>(c =>
+                    c.Kind == MessagingEventKind.Persist && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Queue
                 ),
                 Arg.Any<CancellationToken>()
             );
@@ -213,9 +243,33 @@ public sealed class DiagnosticListenerTests : TestBase
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
                     c.Kind == MessagingEventKind.Publish && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Theory]
+    [InlineData(IntentType.Bus, "bus", "topic")]
+    [InlineData(IntentType.Queue, "queue", "queue")]
+    public void should_emit_intent_tags_when_publish_event_is_received(
+        IntentType intentType,
+        string expectedIntent,
+        string expectedDestinationKind
+    )
+    {
+        // given
+        var listener = new DiagnosticListener([new IntentTagEnricher()]);
+        using var activityListener = _CreateActivityListener();
+        var eventData = _CreatePubSendEventData("order.created");
+        eventData.IntentType = intentType;
+
+        // when
+        listener.OnNext(new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforePublish, eventData));
+
+        // then
+        Activity.Current?.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
+        Activity.Current?.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
     }
 
     [Fact]
@@ -237,9 +291,33 @@ public sealed class DiagnosticListenerTests : TestBase
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
                     c.Kind == MessagingEventKind.Consume && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Theory]
+    [InlineData(IntentType.Bus, "bus", "topic")]
+    [InlineData(IntentType.Queue, "queue", "queue")]
+    public void should_emit_intent_tags_when_consume_event_is_received(
+        IntentType intentType,
+        string expectedIntent,
+        string expectedDestinationKind
+    )
+    {
+        // given
+        var listener = new DiagnosticListener([new IntentTagEnricher()]);
+        using var activityListener = _CreateActivityListener();
+        var eventData = _CreateSubStoreEventData("order.created");
+        eventData.IntentType = intentType;
+
+        // when
+        listener.OnNext(new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforeConsume, eventData));
+
+        // then
+        Activity.Current?.GetTagItem(MessagingTags.Intent).Should().Be(expectedIntent);
+        Activity.Current?.GetTagItem(MessagingTags.DestinationKind).Should().Be(expectedDestinationKind);
     }
 
     [Fact]
@@ -263,6 +341,35 @@ public sealed class DiagnosticListenerTests : TestBase
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
                     c.Kind == MessagingEventKind.SubscriberInvoke && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Bus
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public void should_call_enrichers_with_queue_intent_when_subscriber_invoke_event_is_received()
+    {
+        // given
+        var enricher = Substitute.For<IActivityTagEnricher>();
+        var listener = new DiagnosticListener([enricher]);
+        using var activityListener = _CreateActivityListener();
+        var eventData = _CreateSubExecuteEventData("order.created", retryCount: 0);
+        eventData.IntentType = IntentType.Queue;
+
+        // when
+        listener.OnNext(
+            new KeyValuePair<string, object?>(MessageDiagnosticListenerNames.BeforeSubscriberInvoke, eventData)
+        );
+
+        // then
+        _ = enricher
+            .Received()
+            .Enrich(
+                Arg.Any<Activity>(),
+                Arg.Is<MessagingEnrichmentContext>(c =>
+                    c.Kind == MessagingEventKind.SubscriberInvoke && c.MessageName == "order.created"
+                    && c.IntentType == IntentType.Queue
                 ),
                 Arg.Any<CancellationToken>()
             );
