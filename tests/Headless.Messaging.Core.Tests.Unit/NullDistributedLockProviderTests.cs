@@ -109,6 +109,45 @@ public sealed class NullDistributedLockProviderTests
     }
 
     [Fact]
+    public async Task should_report_handle_as_unmonitored_when_monitoring_is_requested()
+    {
+        // given
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
+
+        // when
+        var handle = await sut.TryAcquireAsync(
+            "test.resource",
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor }
+        );
+
+        // then
+        handle.Should().NotBeNull();
+        handle!.IsMonitored.Should().BeFalse();
+        handle.HandleLostToken.Should().Be(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_reject_infinite_ttl_when_monitoring_is_enabled()
+    {
+        // given
+        var sut = new NullDistributedLockProvider(TimeProvider.System);
+
+        // when
+        var act = async () =>
+            await sut.TryAcquireAsync(
+                "test.resource",
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = Timeout.InfiniteTimeSpan,
+                    Monitoring = LockMonitoringMode.Monitor,
+                }
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+    }
+
+    [Fact]
     public async Task should_throw_OperationCanceledException_when_provider_RenewAsync_token_is_already_cancelled()
     {
         // given

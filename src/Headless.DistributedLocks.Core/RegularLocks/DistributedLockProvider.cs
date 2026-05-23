@@ -36,6 +36,8 @@ public sealed class DistributedLockProvider(
         StringComparer.Ordinal
     );
 
+    private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
+
     private readonly Lock _resetEventLock = new();
 
     ILogger IHaveLogger.Logger => logger;
@@ -78,47 +80,41 @@ public sealed class DistributedLockProvider(
 
     public async Task<IDistributedLock> AcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
-        _ValidateAcquireTimeout(acquireTimeout);
-
-        var acquired = await TryAcquireAsync(
-                resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var acquired = await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false);
 
         if (acquired is not null)
         {
             return acquired;
         }
 
-        throw acquireTimeout == TimeSpan.Zero
+        throw options?.AcquireTimeout == TimeSpan.Zero
             ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
             : new LockAcquisitionTimeoutException(resource);
     }
 
     public async Task<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
-        _ValidateAcquireTimeout(acquireTimeout);
+        options ??= new DistributedLockAcquireOptions();
+        _ValidateAcquireTimeout(options.AcquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
-        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        var timeUntilExpires = _NormalizeTimeUntilExpires(options.TimeUntilExpires);
+        var acquireTimeout = options.AcquireTimeout;
+        var releaseOnDispose = options.ReleaseOnDispose;
+        var monitoring = options.Monitoring;
+        var monitorLease = monitoring != LockMonitoringMode.None;
+        var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
+        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
@@ -141,6 +137,9 @@ public sealed class DistributedLockProvider(
                     timeUntilExpires,
                     timestamp,
                     releaseOnDispose,
+                    monitorLease,
+                    autoExtend,
+                    leaseDuration,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -264,14 +263,14 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(
+        return _CreateLockHandle(
             resource,
             lockId,
+            leaseDuration,
             timeWaitedForLock,
-            this,
             releaseOnDispose,
-            timeProvider,
-            logger
+            monitorLease,
+            autoExtend
         );
     }
 
@@ -281,6 +280,9 @@ public sealed class DistributedLockProvider(
         TimeSpan? timeUntilExpires,
         long timestamp,
         bool releaseOnDispose,
+        bool monitorLease,
+        bool autoExtend,
+        TimeSpan leaseDuration,
         CancellationToken callerToken
     )
     {
@@ -347,15 +349,53 @@ public sealed class DistributedLockProvider(
             logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
         }
 
-        return new DisposableDistributedLock(
+        return _CreateLockHandle(
             resource,
             lockId,
+            leaseDuration,
+            timeWaitedForLock,
+            releaseOnDispose,
+            monitorLease,
+            autoExtend
+        );
+    }
+
+    private DisposableDistributedLock _CreateLockHandle(
+        string resource,
+        string lockId,
+        TimeSpan leaseDuration,
+        TimeSpan timeWaitedForLock,
+        bool releaseOnDispose,
+        bool monitorLease,
+        bool autoExtend
+    )
+    {
+        var handle = new DisposableDistributedLock(
+            resource,
+            lockId,
+            leaseDuration,
             timeWaitedForLock,
             this,
             releaseOnDispose,
+            autoExtend,
+            options,
             timeProvider,
+            _DeregisterMonitor,
             logger
         );
+
+        if (!monitorLease)
+        {
+            return handle;
+        }
+
+#pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
+        var monitor = new LeaseMonitor(handle, timeProvider, logger);
+#pragma warning restore CA2000
+        _monitorRegistry.Register(resource, lockId, monitor);
+        handle.AttachMonitor(monitor);
+
+        return handle;
     }
 
     private ResetEventWithRefCount _IncrementResetEvent(string resource)
@@ -482,6 +522,26 @@ public sealed class DistributedLockProvider(
 
         var removed = observedAttemptSucceeded || lastResult;
 
+        if (removed)
+        {
+            // Deregister after confirmed storage removal but before publishing the outbox
+            // message. If release fails or retries are still in progress, the monitor must
+            // remain visible so lease-loss detection continues for the still-held lock.
+            var monitor = _monitorRegistry.TryDeregister(resource, lockId);
+
+            if (monitor is not null)
+            {
+                try
+                {
+                    await monitor.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    logger.LogLeaseMonitorFaulted(exception, resource, lockId);
+                }
+            }
+        }
+
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
         if (removed && _outboxPublisher is not null)
@@ -531,6 +591,23 @@ public sealed class DistributedLockProvider(
                     return await storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).ConfigureAwait(false);
                 },
                 (_storage, resource, lockId, timeUntilExpires),
+                cancellationToken
+            )
+            .AsTask();
+    }
+
+    #endregion
+
+    #region Lease validation
+
+    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+
+        return _queryPipeline
+            .ExecuteAsync(
+                static async (state, ct) => await state._storage.GetAsync(state.resource, ct).ConfigureAwait(false),
+                (_storage, resource),
                 cancellationToken
             )
             .AsTask();
@@ -646,6 +723,24 @@ public sealed class DistributedLockProvider(
         return timeUntilExpires is null ? DefaultTimeUntilExpires
             : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
             : Argument.IsPositive(timeUntilExpires.Value);
+    }
+
+    private static TimeSpan _RequireFiniteLeaseDuration(TimeSpan? timeUntilExpires, bool monitorLease)
+    {
+        if (timeUntilExpires is { } leaseDuration)
+        {
+            return leaseDuration;
+        }
+
+        if (monitorLease)
+        {
+            throw new ArgumentException(
+                "Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                nameof(timeUntilExpires)
+            );
+        }
+
+        return Timeout.InfiniteTimeSpan;
     }
 
     private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
@@ -785,6 +880,23 @@ public sealed class DistributedLockProvider(
         {
             autoResetEvent.Target.Set();
         }
+
+        _monitorRegistry.NudgeActive(message.Resource);
+    }
+
+    private void _DeregisterMonitor(string resource, string lockId)
+    {
+        _ = _monitorRegistry.TryDeregister(resource, lockId);
+    }
+
+    internal int GetActiveMonitorCount(string resource)
+    {
+        return _monitorRegistry.GetMonitorCount(resource);
+    }
+
+    internal int GetActiveMonitorResourceCount()
+    {
+        return _monitorRegistry.GetResourceCount();
     }
 
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)

@@ -359,31 +359,23 @@ internal static class IdempotencyTestApp
 
         public async Task<IDistributedLock> AcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
-            return await TryAcquireAsync(
-                        resource,
-                        timeUntilExpires,
-                        acquireTimeout,
-                        releaseOnDispose,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false)
+            return await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false)
                 ?? throw new LockAcquisitionTimeoutException(resource);
         }
 
         public async Task<IDistributedLock?> TryAcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
+            var timeUntilExpires = options?.TimeUntilExpires;
+            var acquireTimeout = options?.AcquireTimeout;
+
             if (BeforeAcquireAsync is not null)
             {
                 await BeforeAcquireAsync(resource, timeUntilExpires, acquireTimeout, cancellationToken)
@@ -424,28 +416,15 @@ internal static class IdempotencyTestApp
             }
         }
 
-        public Task<IDistributedLock?> TryAcquireAsync(
-            string resource,
-            TimeSpan? timeUntilExpires,
-            TimeSpan? acquireTimeout,
-            CancellationToken cancellationToken
-        )
-        {
-            return TryAcquireAsync(
-                resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose: true,
-                cancellationToken: cancellationToken
-            );
-        }
-
         public Task<bool> RenewAsync(
             string resource,
             string lockId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
+
+        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
 
         public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -644,6 +623,10 @@ internal static class IdempotencyTestApp
         public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
+
+        public bool IsMonitored => false;
 
         public Task ReleaseAsync()
         {

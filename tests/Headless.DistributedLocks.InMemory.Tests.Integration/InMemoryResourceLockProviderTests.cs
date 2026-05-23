@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Cache;
@@ -96,4 +98,12 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
 
     [Fact]
     public override Task should_get_active_locks_count() => base.should_get_active_locks_count();
+
+    [Fact]
+    public override Task should_expose_none_handle_lost_token_without_monitoring() =>
+        base.should_expose_none_handle_lost_token_without_monitoring();
+
+    [Fact]
+    public override Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke() =>
+        base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
 }

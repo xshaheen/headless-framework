@@ -42,9 +42,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 $"tus-file-lock-{fileId}",
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -58,9 +56,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
         _distributedLockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(distributedLock);
@@ -77,9 +73,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
             .Received(1)
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
     }

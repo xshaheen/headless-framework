@@ -131,9 +131,12 @@ public sealed class DynamicSettingDefinitionStore(
             await distributedLockProvider
                 .TryAcquireAsync(
                     resource: _options.CrossApplicationsCommonLockKey,
-                    timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
-                    acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                    cancellationToken: cancellationToken
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                        AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                    },
+                    cancellationToken
                 )
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException(
@@ -193,9 +196,12 @@ public sealed class DynamicSettingDefinitionStore(
         await using var applicationDistributedLock = await distributedLockProvider
             .TryAcquireAsync(
                 _appSaveLockKey,
-                timeUntilExpires: _options.ApplicationSaveLockExpiration,
-                acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-                cancellationToken: cancellationToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.ApplicationSaveLockExpiration,
+                    AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
+                },
+                cancellationToken
             )
             .ConfigureAwait(false);
 
@@ -222,9 +228,12 @@ public sealed class DynamicSettingDefinitionStore(
             await distributedLockProvider
                 .TryAcquireAsync(
                     _options.CrossApplicationsCommonLockKey,
-                    timeUntilExpires: 10.Minutes(),
-                    acquireTimeout: 5.Minutes(),
-                    cancellationToken: cancellationToken
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = 10.Minutes(),
+                        AcquireTimeout = 5.Minutes(),
+                    },
+                    cancellationToken
                 )
                 .ConfigureAwait(false)
             ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static Settings!"); // It will re-try

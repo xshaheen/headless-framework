@@ -349,9 +349,12 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return await LockProvider
                 .TryAcquireAsync(
                     resource,
-                    timeUntilExpires: _GetLockTtl(),
-                    acquireTimeout: TimeSpan.Zero,
-                    cancellationToken: context.CancellationToken
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = _GetLockTtl(),
+                        AcquireTimeout = TimeSpan.Zero,
+                    },
+                    context.CancellationToken
                 )
                 .ConfigureAwait(false);
         }
