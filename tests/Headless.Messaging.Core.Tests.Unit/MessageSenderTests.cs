@@ -43,6 +43,18 @@ public sealed class MessageSenderTests : TestBase
         };
     }
 
+    private static TransportMessage _CreateTransportMessage()
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = Guid.NewGuid().ToString(),
+                [Headers.MessageName] = "test.topic",
+            },
+            ReadOnlyMemory<byte>.Empty
+        );
+    }
+
     private static MessageSender _CreateSender(
         IDataStorage storage,
         ISerializer serializer,
@@ -123,10 +135,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -186,10 +195,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -253,10 +259,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -319,10 +322,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -395,10 +395,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -472,10 +469,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(false));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -561,10 +555,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -655,10 +646,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -701,10 +689,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -752,10 +737,7 @@ public sealed class MessageSenderTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>())
             .Returns(
                 ValueTask.FromResult(
-                    new TransportMessage(
-                        new Dictionary<string, string?>(StringComparer.Ordinal),
-                        ReadOnlyMemory<byte>.Empty
-                    )
+                    _CreateTransportMessage()
                 )
             );
 
@@ -802,10 +784,7 @@ public sealed class MessageSenderTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>())
             .Returns(
                 ValueTask.FromResult(
-                    new TransportMessage(
-                        new Dictionary<string, string?>(StringComparer.Ordinal),
-                        ReadOnlyMemory<byte>.Empty
-                    )
+                    _CreateTransportMessage()
                 )
             );
 

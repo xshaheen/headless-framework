@@ -188,7 +188,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Queue));
 
         var transport = new CapturingBusTransport();
-        using var diagnostics = new CapturingDiagnosticObserver();
+        using var diagnostics = new CapturingDiagnosticObserver("events.prepared");
         var bus = _CreateBus(transport, publishRequestFactory);
 
         // when
@@ -231,7 +231,7 @@ public sealed class MessagingIntentSplitTests : TestBase
             .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Bus));
 
         var transport = new CapturingQueueTransport();
-        using var diagnostics = new CapturingDiagnosticObserver();
+        using var diagnostics = new CapturingDiagnosticObserver("jobs.prepared");
         var queue = _CreateQueue(transport, publishRequestFactory);
 
         // when
@@ -445,12 +445,14 @@ public sealed class MessagingIntentSplitTests : TestBase
             IDisposable
     {
         private readonly IDisposable _allListenersSubscription;
+        private readonly string _expectedMessageName;
         private IDisposable? _listenerSubscription;
 
         public object? BeforePublishData { get; private set; }
 
-        public CapturingDiagnosticObserver()
+        public CapturingDiagnosticObserver(string expectedMessageName)
         {
+            _expectedMessageName = expectedMessageName;
             _allListenersSubscription = DiagnosticListener.AllListeners.Subscribe(this);
         }
 
@@ -464,7 +466,10 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         public void OnNext(KeyValuePair<string, object?> value)
         {
-            BeforePublishData = value.Value;
+            if (value.Value is MessageEventDataPubSend eventData && eventData.TransportMessage.GetName() == _expectedMessageName)
+            {
+                BeforePublishData = eventData;
+            }
         }
 
         public void OnError(Exception error) { }

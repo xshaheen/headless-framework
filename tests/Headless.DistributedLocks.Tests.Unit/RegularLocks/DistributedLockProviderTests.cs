@@ -23,7 +23,7 @@ public sealed class DistributedLockProviderTests : TestBase
     private DistributedLockProvider _CreateProvider(
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
-        IOutboxPublisher? outboxPublisher = null,
+        IOutboxBus? outboxPublisher = null,
         ILogger<DistributedLockProvider>? logger = null,
         bool useNullOutboxPublisher = false
     )
@@ -556,9 +556,11 @@ public sealed class DistributedLockProviderTests : TestBase
         return false; // Unreachable — Task.Delay throws OperationCanceledException on cancellation.
     }
 
-    private async Task _DrainContinuationsAsync(Task acquireTask, int maxYields = 500)
+    private async Task _DrainContinuationsAsync(Task acquireTask)
     {
-        for (var i = 0; i < maxYields && !acquireTask.IsCompleted; i++)
+        var deadline = DateTime.UtcNow.AddSeconds(2);
+
+        while (!acquireTask.IsCompleted && DateTime.UtcNow < deadline)
         {
             await Task.Yield();
         }
