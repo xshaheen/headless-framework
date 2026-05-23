@@ -99,6 +99,26 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_disable_monitoring_for_infinite_expiration()
+    {
+        // given
+        const string fileId = "test-file";
+        var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider);
+
+        // when
+        await sut.Lock();
+
+        // then
+        await _distributedLockProvider
+            .Received(1)
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Is<DistributedLockAcquireOptions?>(o => o != null && o.Monitoring == LockMonitoringMode.None),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_use_zero_acquire_timeout()
     {
         // given

@@ -109,7 +109,7 @@ public sealed class NullDistributedLockProviderTests
     }
 
     [Fact]
-    public async Task should_reflect_monitoring_option_on_acquired_handle()
+    public async Task should_report_handle_as_unmonitored_when_monitoring_is_requested()
     {
         // given
         var sut = new NullDistributedLockProvider(TimeProvider.System);
@@ -122,7 +122,7 @@ public sealed class NullDistributedLockProviderTests
 
         // then
         handle.Should().NotBeNull();
-        handle!.IsMonitored.Should().BeTrue();
+        handle!.IsMonitored.Should().BeFalse();
         handle.HandleLostToken.Should().Be(CancellationToken.None);
     }
 

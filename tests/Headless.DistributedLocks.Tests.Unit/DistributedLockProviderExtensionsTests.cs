@@ -8,20 +8,24 @@ namespace Tests;
 public sealed class DistributedLockProviderExtensionsTests : TestBase
 {
     [Fact]
-    public async Task should_release_handle_through_distributed_lock()
+    public async Task should_release_handle_through_provider()
     {
         // given
         var provider = Substitute.For<IDistributedLockProvider>();
         var distributedLock = Substitute.For<IDistributedLock>();
+        distributedLock.Resource.Returns("resource");
+        distributedLock.LockId.Returns("lock-id");
+        using var cts = new CancellationTokenSource();
+        provider.ReleaseAsync("resource", "lock-id", cts.Token).Returns(Task.CompletedTask);
 
         // when
-        await provider.ReleaseAsync(distributedLock);
+        await provider.ReleaseAsync(distributedLock, cts.Token);
 
         // then
-        await distributedLock.Received(1).ReleaseAsync();
+        await distributedLock.DidNotReceive().ReleaseAsync();
         await provider
-            .DidNotReceive()
-            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+            .Received(1)
+            .ReleaseAsync("resource", "lock-id", cts.Token);
     }
 
     [Fact]

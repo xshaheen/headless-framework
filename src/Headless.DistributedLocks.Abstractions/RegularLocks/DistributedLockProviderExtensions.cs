@@ -12,9 +12,8 @@ public static class DistributedLockProviderExtensions
         public Task ReleaseAsync(IDistributedLock distributedLock, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(provider);
-            cancellationToken.ThrowIfCancellationRequested();
 
-            return distributedLock.ReleaseAsync();
+            return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LockId, cancellationToken);
         }
 
         /// <summary>

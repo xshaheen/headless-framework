@@ -25,9 +25,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock>(
-            new NullDistributedLock(resource, timeProvider, _IsMonitoringRequested(options))
-        );
+        return Task.FromResult<IDistributedLock>(new NullDistributedLock(resource, timeProvider));
     }
 
     public Task<IDistributedLock?> TryAcquireAsync(
@@ -39,9 +37,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock?>(
-            new NullDistributedLock(resource, timeProvider, _IsMonitoringRequested(options))
-        );
+        return Task.FromResult<IDistributedLock?>(new NullDistributedLock(resource, timeProvider));
     }
 
     public Task<bool> RenewAsync(
@@ -111,11 +107,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return options is { Monitoring: not LockMonitoringMode.None };
     }
 
-    private sealed class NullDistributedLock(
-        string resource,
-        TimeProvider timeProvider,
-        bool isMonitored
-    ) : IDistributedLock
+    private sealed class NullDistributedLock(string resource, TimeProvider timeProvider) : IDistributedLock
     {
         private int _renewalCount;
 
@@ -131,7 +123,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
         public CancellationToken HandleLostToken => CancellationToken.None;
 
-        public bool IsMonitored { get; } = isMonitored;
+        public bool IsMonitored => false;
 
         public Task ReleaseAsync()
         {

@@ -262,32 +262,27 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             return;
         }
 
-        // Cancel asynchronously off the loop thread so that any synchronous callbacks (e.g.,
-        // disposing or releasing the handle) do not deadlock awaiting the loop thread's exit.
-        _ = Task.Run(() =>
+        try
+        {
+            _handleLostSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Disposed concurrently; treat as already-cancelled.
+        }
+        catch (AggregateException aggregate)
         {
             try
             {
-                _handleLostSource.Cancel();
+                _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LockId);
             }
-            catch (ObjectDisposedException)
-            {
-                // Disposed concurrently; treat as already-cancelled.
-            }
-            catch (AggregateException aggregate)
-            {
-                try
-                {
-                    _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LockId);
-                }
 #pragma warning disable ERP022, CA1031 // Defensive: best-effort log from detached cancellation task.
-                catch
-                {
-                    // Intentionally empty.
-                }
-#pragma warning restore ERP022, CA1031
+            catch
+            {
+                // Intentionally empty.
             }
-        });
+#pragma warning restore ERP022, CA1031
+        }
     }
 
     private static async Task _MonitoringLoopAsync(MonitoringLoopState state)

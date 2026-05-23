@@ -949,10 +949,35 @@ public sealed class DistributedLockProvider(
 
     internal int GetActiveMonitorCount(string resource)
     {
-        return _activeMonitors.TryGetValue(resource, out var bucket) ? bucket.GetMonitorCount() : 0;
+        if (!_activeMonitors.TryGetValue(resource, out var bucket))
+        {
+            return 0;
+        }
+
+        var count = bucket.GetMonitorCount(out var removeBucket);
+
+        if (removeBucket)
+        {
+            _TryRemoveMonitorBucket(resource, bucket);
+        }
+
+        return count;
     }
 
-    internal int GetActiveMonitorResourceCount() => _activeMonitors.Count;
+    internal int GetActiveMonitorResourceCount()
+    {
+        foreach (var (resource, bucket) in _activeMonitors)
+        {
+            _ = bucket.GetMonitorCount(out var removeBucket);
+
+            if (removeBucket)
+            {
+                _TryRemoveMonitorBucket(resource, bucket);
+            }
+        }
+
+        return _activeMonitors.Count;
+    }
 
     private void _TryRemoveMonitorBucket(string resource, MonitorBucket bucket)
     {
@@ -1062,11 +1087,37 @@ public sealed class DistributedLockProvider(
             }
         }
 
-        public int GetMonitorCount()
+        public int GetMonitorCount(out bool removeBucket)
         {
             lock (_syncRoot)
             {
-                return _isRemoved ? 0 : _monitors.Count;
+                if (_isRemoved)
+                {
+                    removeBucket = false;
+                    return 0;
+                }
+
+                List<string>? deadKeys = null;
+                foreach (var (id, weakReference) in _monitors)
+                {
+                    if (!weakReference.TryGetTarget(out _))
+                    {
+                        deadKeys ??= [];
+                        deadKeys.Add(id);
+                    }
+                }
+
+                if (deadKeys is not null)
+                {
+                    foreach (var id in deadKeys)
+                    {
+                        _monitors.Remove(id);
+                    }
+                }
+
+                removeBucket = _MarkRemovedIfEmpty();
+
+                return _monitors.Count;
             }
         }
 

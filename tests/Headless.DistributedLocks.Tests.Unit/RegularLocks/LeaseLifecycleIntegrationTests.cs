@@ -138,13 +138,44 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
 
-        // when - simulate TTL expiry by removing the storage row, then advance time.
-        _storage.RemoveLock(options.KeyPrefix + resource);
+        // when - advance beyond the real storage TTL and confirm storage expires it.
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
+        (await provider.GetLockIdAsync(resource, AbortToken)).Should().BeNull();
+        (await provider.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
+
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
         await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
 
         // then
         handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_remove_empty_monitor_bucket_after_abandoned_handle_is_collected()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        await _AcquireMonitoredHandleAndDropReference(provider, resource);
+
+        provider.GetActiveMonitorCount(resource).Should().Be(1);
+        provider.GetActiveMonitorResourceCount().Should().Be(1);
+
+        // when
+        for (var i = 0; i < 20 && provider.GetActiveMonitorResourceCount() != 0; i++)
+        {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            _timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await Task.Yield();
+        }
+
+        // then
+        provider.GetActiveMonitorCount(resource).Should().Be(0);
+        provider.GetActiveMonitorResourceCount().Should().Be(0);
     }
 
     [Fact]
@@ -400,6 +431,21 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedLockProvider>()
         );
+    }
+
+    private static async Task _AcquireMonitoredHandleAndDropReference(DistributedLockProvider provider, string resource)
+    {
+        var handle = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+            }
+        );
+        handle.Should().NotBeNull();
+        handle = null;
+        _ = handle;
     }
 
     private static async Task _DrainUntilAsync(Func<bool> condition)

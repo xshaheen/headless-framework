@@ -399,6 +399,40 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_observe_late_successful_probe_after_iteration_deadline()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var probe = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var callCount = 0;
+        _lockProvider
+            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref callCount);
+                return probe.Task;
+            });
+        var sut = _CreateLock(resource, lockId);
+
+        // when - first iteration times out before storage replies.
+        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        await Task.Yield();
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5));
+
+        probe.SetResult(lockId);
+        var secondResult = await ((LeaseMonitor.ILeaseHandle)sut)
+            .RenewOrValidateLeaseAsync(CancellationToken.None)
+            .WaitAsync(TimeSpan.FromSeconds(5));
+
+        // then - the completed single-flight result is consumed once instead of being discarded.
+        firstResult.Should().Be(LeaseMonitor.LeaseState.Unknown);
+        secondResult.Should().Be(LeaseMonitor.LeaseState.Held);
+        callCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_calculate_locked_duration()
     {
         // given

@@ -359,10 +359,7 @@ public sealed class LeaseMonitorTests : TestBase
         var disposeTask = Task.CompletedTask;
         sut.HandleLostToken.Register(() =>
         {
-            // Synchronously start disposal on the callback thread.
-            // Under synchronous Cancel(), this runs on the loop thread, causing deadlock.
-            // Under asynchronous Cancel() via Task.Run, this runs on a ThreadPool thread
-            // and completes cleanly.
+            // Start disposal from the callback without blocking the monitor loop thread.
             disposeTask = Task.Run(async () => await sut.DisposeAsync());
             callbackInvoked.TrySetResult();
         });

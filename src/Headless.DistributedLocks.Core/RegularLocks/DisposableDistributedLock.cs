@@ -248,6 +248,8 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
 
                 _ = pending.Exception;
                 _pendingLeaseProbe = null;
+
+                return pending;
             }
 
             var leaseProbe = _RunStorageLeaseProbeAsync(cancellationToken);
