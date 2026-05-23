@@ -60,6 +60,8 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
     private readonly long _timestamp;
     private readonly DistributedLockOptions _options;
     private LeaseMonitor? _monitor;
+    private readonly Lock _leaseProbeLock = new();
+    private Task<LeaseMonitor.LeaseState>? _pendingLeaseProbe;
 
     // Snapshotted cadence + per-iteration storage deadline. Avoids re-reading the
     // interface-cast MonitoringCadence on every iteration (which recomputes ticks * fraction
@@ -153,6 +155,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
                 _logger.LogDisposableLockReleasing(Resource, LockId, elapsed);
             }
 
+            await _StopMonitorAsync().ConfigureAwait(false);
             await _lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
         }
     }
@@ -176,21 +179,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
 
         try
         {
-            if (_monitor is not null)
-            {
-                try
-                {
-                    await _monitor.DisposeAsync().ConfigureAwait(false);
-                }
-                catch (Exception e)
-                {
-                    _logger.LogDisposableLockMonitorDisposeFailed(e, Resource, LockId);
-                }
-                finally
-                {
-                    _deregisterMonitor?.Invoke(Resource, LockId);
-                }
-            }
+            await _StopMonitorAsync().ConfigureAwait(false);
 
             if (_releaseOnDispose)
             {
@@ -227,50 +216,118 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         // awaits that task. Capped at min(5s, cadence) and snapshotted at construction. On
         // deadline trip we classify as Unknown (transient) and let the safety net self-promote
         // on repeated misses.
-        using var deadlineSource = _timeProvider.CreateCancellationTokenSource(_storageDeadlineSnapshot);
-        using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            deadlineSource.Token
-        );
+        var leaseProbe = _GetOrStartLeaseProbe(cancellationToken);
 
         try
         {
-            if (_autoExtend)
-            {
-                var renewed = await _lockProvider
-                    .RenewAsync(Resource, LockId, _leaseDuration, linkedSource.Token)
-                    .ConfigureAwait(false);
-
-                if (renewed)
-                {
-                    Interlocked.Increment(ref _renewalCount);
-                    return LeaseMonitor.LeaseState.Renewed;
-                }
-
-                // Disambiguate: RenewAsync returns false for both fence mismatch and transient
-                // retry-exhaustion. Probe ownership before declaring Lost — a transient renewal
-                // failure must not cancel HandleLostToken when storage still confirms ownership.
-                var currentLockIdAfterRenew = await _lockProvider
-                    .GetLockIdAsync(Resource, linkedSource.Token)
-                    .ConfigureAwait(false);
-
-                return string.Equals(currentLockIdAfterRenew, LockId, StringComparison.Ordinal)
-                    ? LeaseMonitor.LeaseState.Unknown
-                    : LeaseMonitor.LeaseState.Lost;
-            }
-
-            var currentLockId = await _lockProvider
-                .GetLockIdAsync(Resource, linkedSource.Token)
+            return await _WithStorageDeadlineAsync(
+                    leaseProbe,
+                    _storageDeadlineSnapshot,
+                    _timeProvider,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
-
-            return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
-                ? LeaseMonitor.LeaseState.Held
-                : LeaseMonitor.LeaseState.Lost;
         }
-        catch (OperationCanceledException) when (deadlineSource.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        catch (TimeoutException)
         {
             // Per-iteration deadline fired without caller cancellation — surface as transient.
             return LeaseMonitor.LeaseState.Unknown;
+        }
+    }
+
+    private Task<LeaseMonitor.LeaseState> _GetOrStartLeaseProbe(CancellationToken cancellationToken)
+    {
+        lock (_leaseProbeLock)
+        {
+            if (_pendingLeaseProbe is { } pending)
+            {
+                if (!pending.IsCompleted)
+                {
+                    return pending;
+                }
+
+                _ = pending.Exception;
+                _pendingLeaseProbe = null;
+            }
+
+            var leaseProbe = _RunStorageLeaseProbeAsync(cancellationToken);
+            _pendingLeaseProbe = leaseProbe;
+            _ = leaseProbe.ContinueWith(
+                static task => _ = task.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default
+            );
+
+            return leaseProbe;
+        }
+    }
+
+    private async Task<LeaseMonitor.LeaseState> _RunStorageLeaseProbeAsync(CancellationToken cancellationToken)
+    {
+        if (_autoExtend)
+        {
+            var renewed = await _lockProvider
+                .RenewAsync(Resource, LockId, _leaseDuration, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (renewed)
+            {
+                Interlocked.Increment(ref _renewalCount);
+                return LeaseMonitor.LeaseState.Renewed;
+            }
+
+            // Disambiguate: RenewAsync returns false for both fence mismatch and transient
+            // retry-exhaustion. Probe ownership before declaring Lost — a transient renewal
+            // failure must not cancel HandleLostToken when storage still confirms ownership.
+            var currentLockIdAfterRenew = await _lockProvider
+                .GetLockIdAsync(Resource, cancellationToken)
+                .ConfigureAwait(false);
+
+            return string.Equals(currentLockIdAfterRenew, LockId, StringComparison.Ordinal)
+                ? LeaseMonitor.LeaseState.Unknown
+                : LeaseMonitor.LeaseState.Lost;
+        }
+
+        var currentLockId = await _lockProvider
+            .GetLockIdAsync(Resource, cancellationToken)
+            .ConfigureAwait(false);
+
+        return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
+            ? LeaseMonitor.LeaseState.Held
+            : LeaseMonitor.LeaseState.Lost;
+    }
+
+    private static async Task<T> _WithStorageDeadlineAsync<T>(
+        Task<T> operation,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        return await operation.WaitAsync(timeout, timeProvider, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask _StopMonitorAsync()
+    {
+        var monitor = Interlocked.Exchange(ref _monitor, null);
+
+        if (monitor is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await monitor.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.LogDisposableLockMonitorDisposeFailed(e, Resource, LockId);
+        }
+        finally
+        {
+            _deregisterMonitor?.Invoke(Resource, LockId);
         }
     }
 }

@@ -36,6 +36,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
         handle!.HandleLostToken.Should().Be(CancellationToken.None);
         provider.GetActiveMonitorCount(resource).Should().Be(0);
+        provider.GetActiveMonitorResourceCount().Should().Be(0);
     }
 
     [Fact]
@@ -60,9 +61,11 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
         handle!.HandleLostToken.Should().NotBe(CancellationToken.None);
         provider.GetActiveMonitorCount(resource).Should().Be(1);
+        provider.GetActiveMonitorResourceCount().Should().Be(1);
 
         await handle.DisposeAsync();
         provider.GetActiveMonitorCount(resource).Should().Be(0);
+        provider.GetActiveMonitorResourceCount().Should().Be(0);
     }
 
     [Fact]
@@ -315,10 +318,12 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // historically nudge the still-alive monitor for that resource.
         await provider.ReleaseAsync(resource, handle!.LockId, AbortToken);
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LockId));
-        await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        await _DrainUntilAsync(() => provider.GetActiveMonitorCount(resource) == 0);
 
-        // then - HandleLostToken stays unfired (self-release deregistered the monitor first).
+        // then - HandleLostToken stays unfired after a monitor cadence opportunity.
         handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        provider.GetActiveMonitorCount(resource).Should().Be(0);
 
         await handle.DisposeAsync();
     }
@@ -367,11 +372,14 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
 
-        // when - foreign party takes over the row; advance the clock past a cadence interval.
+        // when - foreign party takes over the row; advance the clock past cadence intervals.
         _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
-        _timeProvider.Advance(TimeSpan.FromSeconds(6));
 
-        await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
+        for (var i = 0; i < 10 && !handle!.HandleLostToken.IsCancellationRequested; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(6));
+            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+        }
 
         // then - polling cadence alone (no nudge) was sufficient to detect loss.
         handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();

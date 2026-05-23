@@ -25,6 +25,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _RemoveIfExpired(key);
         var entry = new LockEntry(lockId, ttl.HasValue ? _UtcNow().Add(ttl.Value) : null);
         var added = _locks.TryAdd(key, entry);
         return ValueTask.FromResult(added);
@@ -39,7 +40,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_locks.TryGetValue(key, out var existing) || existing.LockId != expectedId)
+        if (!_TryGetLiveEntry(key, out var existing) || existing.LockId != expectedId)
         {
             return ValueTask.FromResult(false);
         }
@@ -56,7 +57,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_locks.TryGetValue(key, out var existing) || existing.LockId != expectedId)
+        if (!_TryGetLiveEntry(key, out var existing) || existing.LockId != expectedId)
         {
             return ValueTask.FromResult(false);
         }
@@ -68,7 +69,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (!_locks.TryGetValue(key, out var entry) || entry.Expiration is null)
+        if (!_TryGetLiveEntry(key, out var entry) || entry.Expiration is null)
         {
             return ValueTask.FromResult<TimeSpan?>(null);
         }
@@ -80,13 +81,13 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(_locks.ContainsKey(key));
+        return ValueTask.FromResult(_TryGetLiveEntry(key, out _));
     }
 
     public ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return ValueTask.FromResult(_locks.TryGetValue(key, out var entry) ? entry.LockId : null);
+        return ValueTask.FromResult(_TryGetLiveEntry(key, out var entry) ? entry.LockId : null);
     }
 
     public ValueTask<IReadOnlyDictionary<string, string>> GetAllByPrefixAsync(
@@ -95,6 +96,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _PruneExpired();
         var result = _locks
             .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
             .ToDictionary(kv => kv.Key, kv => kv.Value.LockId, StringComparer.Ordinal);
@@ -108,6 +110,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _PruneExpired();
         var result = _locks
             .Where(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal))
             .ToDictionary(
@@ -129,6 +132,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _PruneExpired();
         var count = string.IsNullOrEmpty(prefix)
             ? (long)_locks.Count
             : _locks.Count(kv => kv.Key.StartsWith(prefix, StringComparison.Ordinal));
@@ -150,4 +154,38 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     }
 
     private sealed record LockEntry(string LockId, DateTime? Expiration);
+
+    private bool _TryGetLiveEntry(string key, out LockEntry entry)
+    {
+        if (_locks.TryGetValue(key, out entry!) && !_IsExpired(entry))
+        {
+            return true;
+        }
+
+        _RemoveIfExpired(key);
+        entry = null!;
+
+        return false;
+    }
+
+    private void _PruneExpired()
+    {
+        foreach (var key in _locks.Keys)
+        {
+            _RemoveIfExpired(key);
+        }
+    }
+
+    private void _RemoveIfExpired(string key)
+    {
+        if (_locks.TryGetValue(key, out var entry) && _IsExpired(entry))
+        {
+            _locks.TryRemove(key, out _);
+        }
+    }
+
+    private bool _IsExpired(LockEntry entry)
+    {
+        return entry.Expiration is { } expiration && expiration <= _UtcNow();
+    }
 }

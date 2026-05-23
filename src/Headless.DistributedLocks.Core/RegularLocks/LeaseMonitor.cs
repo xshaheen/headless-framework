@@ -18,7 +18,17 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private readonly TimeSpan _leaseDuration;
     private readonly Lock _syncLock = new();
     private int _disposed;
-    private LeaseState State { get; set; } = LeaseState.Held;
+    private LeaseState _state = LeaseState.Held;
+    private LeaseState State
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _state;
+            }
+        }
+    }
 
     public LeaseMonitor(ILeaseHandle leaseHandle, TimeProvider timeProvider, ILogger logger)
     {
@@ -181,6 +191,11 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
     private async Task<LeaseState> _RunIterationAsync(TimeSpan leaseLifetime)
     {
+        if (_disposalSource.IsCancellationRequested)
+        {
+            return State;
+        }
+
         // Safety-net self-promotion: only when prior probes were transient (Unknown).
         // A confirmed Held/Renewed from storage MUST NOT trip the safety net — both reset
         // leaseTimestamp in the monitoring loop, so a long Held streak in polling mode never
@@ -208,6 +223,11 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             nextState = LeaseState.Unknown;
         }
 
+        if (_disposalSource.IsCancellationRequested)
+        {
+            return State;
+        }
+
         _SetState(nextState);
 
         return nextState;
@@ -216,42 +236,58 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private void _SetState(LeaseState nextState)
     {
         bool shouldCancel;
+        LeaseState previousState;
 
         lock (_syncLock)
         {
-            if (State == LeaseState.Lost)
+            if (_state == LeaseState.Lost)
             {
                 return;
             }
 
-            if (State == nextState)
+            if (_state == nextState)
             {
                 return;
             }
 
-            _logger.LogLeaseMonitorStateChanged(_leaseHandle.Resource, _leaseHandle.LockId, State, nextState);
-            State = nextState;
+            previousState = _state;
+            _state = nextState;
             shouldCancel = nextState == LeaseState.Lost;
         }
+
+        _logger.LogLeaseMonitorStateChanged(_leaseHandle.Resource, _leaseHandle.LockId, previousState, nextState);
 
         if (!shouldCancel)
         {
             return;
         }
 
-        // Cancel synchronously rather than via Task.Run. A HandleLostToken callback that disposes
-        // the handle would otherwise self-await via DisposeAsync → await _cancellationTask, where
-        // _cancellationTask is the Task.Run running the callback that's calling DisposeAsync.
-        // Cancel() is contracted (per IDistributedLock.HandleLostToken docs) as observability;
-        // consumers MUST NOT run blocking work inline in callbacks.
-        try
+        // Cancel asynchronously off the loop thread so that any synchronous callbacks (e.g.,
+        // disposing or releasing the handle) do not deadlock awaiting the loop thread's exit.
+        _ = Task.Run(() =>
         {
-            _handleLostSource.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-            // Disposed concurrently; treat as already-cancelled.
-        }
+            try
+            {
+                _handleLostSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposed concurrently; treat as already-cancelled.
+            }
+            catch (AggregateException aggregate)
+            {
+                try
+                {
+                    _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LockId);
+                }
+#pragma warning disable ERP022, CA1031 // Defensive: best-effort log from detached cancellation task.
+                catch
+                {
+                    // Intentionally empty.
+                }
+#pragma warning restore ERP022, CA1031
+            }
+        });
     }
 
     private static async Task _MonitoringLoopAsync(MonitoringLoopState state)
@@ -261,12 +297,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         while (!state.DisposalToken.IsCancellationRequested)
         {
             using var cadenceSource = state.TimeProvider.CreateCancellationTokenSource(state.Cadence);
-            using var linkedSource = CancellationTokenSource.CreateLinkedTokenSource(
-                cadenceSource.Token,
-                state.DisposalToken
-            );
-
-            await state.NudgeSignal.SafeWaitAsync(linkedSource.Token).ConfigureAwait(false);
+            await state.NudgeSignal.SafeWaitAsync(cadenceSource.Token).ConfigureAwait(false);
 
             if (state.DisposalToken.IsCancellationRequested)
             {
@@ -332,7 +363,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 internal static partial class LeaseMonitorLog
 {
     [LoggerMessage(
-        EventId = 1,
+        EventId = 30,
         EventName = "LeaseMonitorStateChanged",
         Level = LogLevel.Debug,
         Message = "Lease monitor state changed: R={Resource} Id={LockId} {PreviousState} -> {NextState}"
@@ -346,7 +377,7 @@ internal static partial class LeaseMonitorLog
     );
 
     [LoggerMessage(
-        EventId = 2,
+        EventId = 31,
         EventName = "LeaseMonitorValidationUnknown",
         Level = LogLevel.Debug,
         Message = "Lease monitor validation failed transiently: R={Resource} Id={LockId}"
@@ -359,7 +390,7 @@ internal static partial class LeaseMonitorLog
     );
 
     [LoggerMessage(
-        EventId = 3,
+        EventId = 32,
         EventName = "LeaseMonitorFaulted",
         Level = LogLevel.Error,
         Message = "Lease monitor loop faulted: R={Resource} Id={LockId}"

@@ -8,6 +8,23 @@ namespace Tests;
 public sealed class DistributedLockProviderExtensionsTests : TestBase
 {
     [Fact]
+    public async Task should_release_handle_through_distributed_lock()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLockProvider>();
+        var distributedLock = Substitute.For<IDistributedLock>();
+
+        // when
+        await provider.ReleaseAsync(distributedLock);
+
+        // then
+        await distributedLock.Received(1).ReleaseAsync();
+        await provider
+            .DidNotReceive()
+            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_return_false_when_lock_not_acquired()
     {
         // given
@@ -119,6 +136,95 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                     && o.Monitoring == LockMonitoringMode.None
                 ),
                 cancellationToken
+            );
+    }
+
+    [Fact]
+    public async Task should_pass_options_to_sync_try_using_and_force_monitoring_off()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLockProvider>();
+        var distributedLock = Substitute.For<IDistributedLock>();
+        provider
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+        var workExecuted = false;
+        var options = new DistributedLockAcquireOptions
+        {
+            TimeUntilExpires = TimeSpan.FromSeconds(10),
+            AcquireTimeout = TimeSpan.FromSeconds(2),
+            ReleaseOnDispose = false,
+            Monitoring = LockMonitoringMode.Monitor,
+        };
+
+        // when
+        var result = await provider.TryUsingAsync(
+            "resource",
+            () => workExecuted = true,
+            options,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        workExecuted.Should().BeTrue();
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                "resource",
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null
+                    && o.TimeUntilExpires == options.TimeUntilExpires
+                    && o.AcquireTimeout == options.AcquireTimeout
+                    && o.ReleaseOnDispose
+                    && o.Monitoring == LockMonitoringMode.None
+                ),
+                AbortToken
+            );
+    }
+
+    [Fact]
+    public async Task should_pass_options_to_sync_state_try_using()
+    {
+        // given
+        var provider = Substitute.For<IDistributedLockProvider>();
+        var distributedLock = Substitute.For<IDistributedLock>();
+        provider
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+        var observedState = 0;
+
+        // when
+        var result = await provider.TryUsingAsync(
+            "resource",
+            42,
+            state => observedState = state,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromSeconds(10) },
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        observedState.Should().Be(42);
+        await provider
+            .Received(1)
+            .TryAcquireAsync(
+                "resource",
+                Arg.Is<DistributedLockAcquireOptions?>(o =>
+                    o != null
+                    && o.TimeUntilExpires == TimeSpan.FromSeconds(10)
+                    && o.ReleaseOnDispose
+                    && o.Monitoring == LockMonitoringMode.None
+                ),
+                AbortToken
             );
     }
 

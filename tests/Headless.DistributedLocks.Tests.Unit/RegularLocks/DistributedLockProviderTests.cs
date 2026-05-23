@@ -882,6 +882,41 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_keep_monitor_registered_when_release_fails()
+    {
+        // given
+        var storage = Substitute.For<IDistributedLockStorage>();
+        storage
+            .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        storage
+            .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("release failed"));
+        var provider = _CreateProvider(storage: storage);
+        var resource = Faker.Random.AlphaNumeric(10);
+        var handle = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(10),
+                Monitoring = LockMonitoringMode.Monitor,
+                ReleaseOnDispose = false,
+            },
+            AbortToken
+        );
+        handle.Should().NotBeNull();
+
+        // when
+        var act = async () => await provider.ReleaseAsync(resource, handle!.LockId, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        provider.GetActiveMonitorCount(resource).Should().Be(1);
+
+        await handle!.DisposeAsync();
+    }
+
+    [Fact]
     public async Task should_publish_lock_released_message()
     {
         // given

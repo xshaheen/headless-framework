@@ -36,8 +36,7 @@ public sealed class DistributedLockProvider(
         StringComparer.Ordinal
     );
 
-    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, WeakReference<LeaseMonitor>>>
-        _activeMonitors = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, MonitorBucket> _activeMonitors = new(StringComparer.Ordinal);
 
     private readonly Lock _resetEventLock = new();
 
@@ -490,12 +489,6 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        // Deregister the monitor BEFORE publishing the outbox message. Otherwise the outbox
-        // consumer's _NudgeActiveMonitors would wake the still-registered monitor for the
-        // released lockId — the monitor probes storage, sees the row gone (because we just
-        // removed it), and declares Lost. That's a spurious signal on a self-release.
-        _DeregisterMonitor(resource, lockId);
-
         logger.LogReleaseStarted(resource, lockId);
 
         // If a transient exception fires AFTER storage has already deleted the row but BEFORE
@@ -528,6 +521,26 @@ public sealed class DistributedLockProvider(
             .ConfigureAwait(false);
 
         var removed = observedAttemptSucceeded || lastResult;
+
+        if (removed)
+        {
+            // Deregister after confirmed storage removal but before publishing the outbox
+            // message. If release fails or retries are still in progress, the monitor must
+            // remain visible so lease-loss detection continues for the still-held lock.
+            var monitor = _TryDeregisterMonitor(resource, lockId);
+
+            if (monitor is not null)
+            {
+                try
+                {
+                    await monitor.DisposeAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception)
+                {
+                    logger.LogLeaseMonitorFaulted(exception, resource, lockId);
+                }
+            }
+        }
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
@@ -873,57 +886,201 @@ public sealed class DistributedLockProvider(
 
     private void _RegisterMonitor(string resource, string lockId, LeaseMonitor monitor)
     {
-        var monitors = _activeMonitors.GetOrAdd(
-            resource,
-            static _ => new ConcurrentDictionary<string, WeakReference<LeaseMonitor>>(StringComparer.Ordinal)
-        );
+        while (true)
+        {
+            var bucket = _activeMonitors.GetOrAdd(resource, static _ => new MonitorBucket());
 
-        monitors[lockId] = new WeakReference<LeaseMonitor>(monitor);
-        logger.LogLeaseMonitorRegistered(resource, lockId);
+            if (bucket.TryRegister(lockId, monitor))
+            {
+                logger.LogLeaseMonitorRegistered(resource, lockId);
+
+                return;
+            }
+
+            _TryRemoveMonitorBucket(resource, bucket);
+        }
     }
 
     private void _DeregisterMonitor(string resource, string lockId)
     {
-        if (!_activeMonitors.TryGetValue(resource, out var monitors))
+        _TryDeregisterMonitor(resource, lockId);
+    }
+
+    private LeaseMonitor? _TryDeregisterMonitor(string resource, string lockId)
+    {
+        if (!_activeMonitors.TryGetValue(resource, out var bucket))
         {
-            return;
+            return null;
         }
 
-        monitors.TryRemove(lockId, out _);
-        logger.LogLeaseMonitorDeregistered(resource, lockId);
+        if (bucket.TryDeregister(lockId, out var monitor, out var removeBucket))
+        {
+            logger.LogLeaseMonitorDeregistered(resource, lockId);
+        }
 
-        // Intentionally do NOT TryRemove the outer dict entry when the inner is empty:
-        // an `IsEmpty` + `TryRemove` pair is not atomic on ConcurrentDictionary, and a
-        // racing registration could repopulate the inner map between the two calls,
-        // leaving us with a removed-but-still-referenced inner map. Dead WeakReferences
-        // are cleared opportunistically in _NudgeActiveMonitors, and the GC reclaims
-        // empty per-resource maps naturally once no future acquire hits that resource.
+        if (removeBucket)
+        {
+            _TryRemoveMonitorBucket(resource, bucket);
+        }
+
+        return monitor;
     }
 
     private void _NudgeActiveMonitors(string resource)
     {
-        if (!_activeMonitors.TryGetValue(resource, out var monitors))
+        if (!_activeMonitors.TryGetValue(resource, out var bucket))
         {
             return;
         }
 
-        foreach (var (lockId, weakReference) in monitors)
+        var liveMonitors = bucket.GetLiveMonitorsForNudge(out var removeBucket);
+
+        if (removeBucket)
         {
-            if (weakReference.TryGetTarget(out var monitor))
-            {
-                monitor.TriggerImmediateValidation();
-                logger.LogLeaseMonitorNudged(resource, lockId);
+            _TryRemoveMonitorBucket(resource, bucket);
+        }
 
-                continue;
-            }
-
-            monitors.TryRemove(lockId, out _);
+        foreach (var (lockId, monitor) in liveMonitors)
+        {
+            monitor.TriggerImmediateValidation();
+            logger.LogLeaseMonitorNudged(resource, lockId);
         }
     }
 
     internal int GetActiveMonitorCount(string resource)
     {
-        return _activeMonitors.TryGetValue(resource, out var monitors) ? monitors.Count : 0;
+        return _activeMonitors.TryGetValue(resource, out var bucket) ? bucket.GetMonitorCount() : 0;
+    }
+
+    internal int GetActiveMonitorResourceCount() => _activeMonitors.Count;
+
+    private void _TryRemoveMonitorBucket(string resource, MonitorBucket bucket)
+    {
+        var pair = new KeyValuePair<string, MonitorBucket>(resource, bucket);
+        ((ICollection<KeyValuePair<string, MonitorBucket>>)_activeMonitors).Remove(pair);
+    }
+
+    private sealed class MonitorBucket
+    {
+        private readonly Lock _syncRoot = new();
+
+        private readonly Dictionary<string, WeakReference<LeaseMonitor>> _monitors = new(StringComparer.Ordinal);
+
+        private bool _isRemoved;
+
+        public bool TryRegister(string lockId, LeaseMonitor monitor)
+        {
+            lock (_syncRoot)
+            {
+                if (_isRemoved)
+                {
+                    return false;
+                }
+
+                // Proactive clean-up of dead weak references to prevent memory leak of abandoned locks
+                List<string>? deadKeys = null;
+                foreach (var (id, weakReference) in _monitors)
+                {
+                    if (!weakReference.TryGetTarget(out _))
+                    {
+                        deadKeys ??= new List<string>();
+                        deadKeys.Add(id);
+                    }
+                }
+
+                if (deadKeys is not null)
+                {
+                    foreach (var id in deadKeys)
+                    {
+                        _monitors.Remove(id);
+                    }
+                }
+
+                _monitors[lockId] = new WeakReference<LeaseMonitor>(monitor);
+                return true;
+            }
+        }
+
+        public bool TryDeregister(string lockId, out LeaseMonitor? monitor, out bool removeBucket)
+        {
+            lock (_syncRoot)
+            {
+                if (_isRemoved)
+                {
+                    monitor = null;
+                    removeBucket = false;
+                    return false;
+                }
+
+                monitor = _monitors.Remove(lockId, out var weakReference) && weakReference.TryGetTarget(out var target)
+                    ? target
+                    : null;
+                removeBucket = _MarkRemovedIfEmpty();
+
+                return true;
+            }
+        }
+
+        public List<(string LockId, LeaseMonitor Monitor)> GetLiveMonitorsForNudge(out bool removeBucket)
+        {
+            lock (_syncRoot)
+            {
+                if (_isRemoved)
+                {
+                    removeBucket = false;
+                    return [];
+                }
+
+                List<string>? deadKeys = null;
+                List<(string LockId, LeaseMonitor Monitor)>? liveMonitors = null;
+
+                foreach (var (lockId, weakReference) in _monitors)
+                {
+                    if (weakReference.TryGetTarget(out var monitor))
+                    {
+                        liveMonitors ??= [];
+                        liveMonitors.Add((lockId, monitor));
+                    }
+                    else
+                    {
+                        deadKeys ??= new List<string>();
+                        deadKeys.Add(lockId);
+                    }
+                }
+
+                if (deadKeys is not null)
+                {
+                    foreach (var id in deadKeys)
+                    {
+                        _monitors.Remove(id);
+                    }
+                }
+
+                removeBucket = _MarkRemovedIfEmpty();
+
+                return liveMonitors ?? [];
+            }
+        }
+
+        public int GetMonitorCount()
+        {
+            lock (_syncRoot)
+            {
+                return _isRemoved ? 0 : _monitors.Count;
+            }
+        }
+
+        private bool _MarkRemovedIfEmpty()
+        {
+            if (_monitors.Count > 0)
+            {
+                return false;
+            }
+
+            _isRemoved = true;
+
+            return true;
+        }
     }
 
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)

@@ -96,6 +96,19 @@ public sealed class LeaseMonitorTests : TestBase
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    [Theory]
+    [InlineData(true, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(false, false, true)]
+    public void should_throw_argument_null_exception_on_constructor_null_parameters(bool nullHandle, bool nullTimeProvider, bool nullLogger)
+    {
+        var handle = nullHandle ? null : new FakeLeaseHandle();
+        var timeProvider = nullTimeProvider ? null : _timeProvider;
+        var logger = nullLogger ? null : LoggerFactory.CreateLogger(nameof(LeaseMonitor));
+        var act = () => new LeaseMonitor(handle!, timeProvider!, logger!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
     [Fact]
     public async Task should_not_self_mark_lost_when_polling_returns_held_past_lease_window()
     {
@@ -332,6 +345,38 @@ public sealed class LeaseMonitorTests : TestBase
 
             return LeaseMonitor.LeaseState.Held;
         }
+    }
+
+    [Fact]
+    public async Task should_not_deadlock_when_callback_disposes_monitor()
+    {
+        // given
+        var handle = new FakeLeaseHandle();
+        handle.Enqueue(LeaseMonitor.LeaseState.Lost);
+        var sut = _CreateMonitor(handle);
+
+        var callbackInvoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposeTask = Task.CompletedTask;
+        sut.HandleLostToken.Register(() =>
+        {
+            // Synchronously start disposal on the callback thread.
+            // Under synchronous Cancel(), this runs on the loop thread, causing deadlock.
+            // Under asynchronous Cancel() via Task.Run, this runs on a ThreadPool thread
+            // and completes cleanly.
+            disposeTask = Task.Run(async () => await sut.DisposeAsync());
+            callbackInvoked.TrySetResult();
+        });
+
+        // when
+        sut.TriggerImmediateValidation();
+
+        // Wait for the callback to be invoked.
+        await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // then
+        // The dispose task should complete quickly without hanging/deadlocking.
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        sut.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 
     private static async Task _DrainUntilAsync(Func<bool> condition)

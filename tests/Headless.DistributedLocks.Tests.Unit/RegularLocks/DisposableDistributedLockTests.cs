@@ -98,6 +98,7 @@ public sealed class DisposableDistributedLockTests : TestBase
 
         // then
         token.Should().Be(CancellationToken.None);
+        sut.IsMonitored.Should().BeFalse();
     }
 
     [Fact]
@@ -134,6 +135,44 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_stop_monitor_on_explicit_release_without_signaling_loss()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var deregisterCount = 0;
+        var sut = _CreateLock(
+            resource,
+            lockId,
+            deregisterMonitor: (actualResource, actualLockId) =>
+            {
+                actualResource.Should().Be(resource);
+                actualLockId.Should().Be(lockId);
+                Interlocked.Increment(ref deregisterCount);
+            }
+        );
+        var monitor = new LeaseMonitor(
+            (LeaseMonitor.ILeaseHandle)sut,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
+        sut.AttachMonitor(monitor);
+        sut.IsMonitored.Should().BeTrue();
+        var handleLostToken = sut.HandleLostToken;
+
+        // when
+        await sut.ReleaseAsync();
+        _timeProvider.Advance(TimeSpan.FromSeconds(20));
+
+        // then
+        sut.IsMonitored.Should().BeFalse();
+        monitor.MonitoringTask.IsCompleted.Should().BeTrue();
+        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        deregisterCount.Should().Be(1);
+        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_route_auto_extend_lease_validation_to_renew()
     {
         // given
@@ -147,6 +186,7 @@ public sealed class DisposableDistributedLockTests : TestBase
 
         // then
         result.Should().Be(LeaseMonitor.LeaseState.Renewed);
+        sut.RenewalCount.Should().Be(1);
         await _lockProvider
             .Received(1)
             .RenewAsync(resource, lockId, TimeSpan.FromSeconds(10), Arg.Any<CancellationToken>());
@@ -287,6 +327,78 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_dispose_monitor_when_storage_ignores_cancellation()
+    {
+        // given - storage operation never completes and ignores the provided token. DisposeAsync
+        // must still drain the monitor after the TimeProvider-backed deadline fires.
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var validationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _lockProvider
+            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                validationStarted.TrySetResult();
+                var blocked = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                return blocked.Task;
+            });
+        var sut = _CreateLock(resource, lockId);
+        var monitor = new LeaseMonitor(
+            (LeaseMonitor.ILeaseHandle)sut,
+            _timeProvider,
+            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
+        );
+        sut.AttachMonitor(monitor);
+        monitor.TriggerImmediateValidation();
+        await validationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // when
+        var disposeTask = sut.DisposeAsync().AsTask();
+        await Task.Yield();
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+
+        // then
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        monitor.MonitoringTask.IsCompleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_not_start_parallel_monitor_probes_when_storage_ignores_cancellation()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var callCount = 0;
+        _lockProvider
+            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref callCount);
+                var blocked = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+                return blocked.Task;
+            });
+        var sut = _CreateLock(resource, lockId);
+
+        // when
+        var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        await Task.Yield();
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var second = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        await Task.Yield();
+        _timeProvider.Advance(TimeSpan.FromSeconds(10));
+        var secondResult = await second.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // then
+        firstResult.Should().Be(LeaseMonitor.LeaseState.Unknown);
+        secondResult.Should().Be(LeaseMonitor.LeaseState.Unknown);
+        callCount.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_calculate_locked_duration()
     {
         // given
@@ -310,7 +422,8 @@ public sealed class DisposableDistributedLockTests : TestBase
         string lockId,
         TimeSpan? timeWaitedForLock = null,
         bool releaseOnDispose = true,
-        bool autoExtend = false
+        bool autoExtend = false,
+        Action<string, string>? deregisterMonitor = null
     )
     {
         return new DisposableDistributedLock(
@@ -323,7 +436,7 @@ public sealed class DisposableDistributedLockTests : TestBase
             autoExtend,
             new DistributedLockOptions(),
             _timeProvider,
-            deregisterMonitor: null,
+            deregisterMonitor,
             LoggerFactory.CreateLogger(nameof(DisposableDistributedLock))
         );
     }

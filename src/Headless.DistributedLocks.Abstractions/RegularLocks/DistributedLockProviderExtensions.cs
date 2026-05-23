@@ -11,7 +11,10 @@ public static class DistributedLockProviderExtensions
         /// <summary>Releases a resource lock for <paramref name="distributedLock"/>.</summary>
         public Task ReleaseAsync(IDistributedLock distributedLock, CancellationToken cancellationToken = default)
         {
-            return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LockId, cancellationToken);
+            ArgumentNullException.ThrowIfNull(provider);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return distributedLock.ReleaseAsync();
         }
 
         /// <summary>
@@ -190,6 +193,21 @@ public static class DistributedLockProviderExtensions
             {
                 TimeUntilExpires = timeUntilExpires,
                 AcquireTimeout = acquireTimeout,
+            };
+
+            return await provider.TryUsingAsync(resource, work, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
+        public async Task<bool> TryUsingAsync(
+            string resource,
+            Action work,
+            DistributedLockAcquireOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            options = (options ?? new DistributedLockAcquireOptions()) with
+            {
                 ReleaseOnDispose = true,
                 Monitoring = LockMonitoringMode.None,
             };
@@ -222,6 +240,22 @@ public static class DistributedLockProviderExtensions
             {
                 TimeUntilExpires = timeUntilExpires,
                 AcquireTimeout = acquireTimeout,
+            };
+
+            return await provider.TryUsingAsync(resource, state, work, options, cancellationToken).ConfigureAwait(false);
+        }
+
+        /// <inheritdoc cref="TryUsingAsync{TState}(IDistributedLockProvider,string,TState,Action{TState},TimeSpan?,TimeSpan?,CancellationToken)"/>
+        public async Task<bool> TryUsingAsync<TState>(
+            string resource,
+            TState state,
+            Action<TState> work,
+            DistributedLockAcquireOptions? options,
+            CancellationToken cancellationToken = default
+        )
+        {
+            options = (options ?? new DistributedLockAcquireOptions()) with
+            {
                 ReleaseOnDispose = true,
                 Monitoring = LockMonitoringMode.None,
             };

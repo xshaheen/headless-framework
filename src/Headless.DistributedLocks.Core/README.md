@@ -19,7 +19,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
-- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 1`) for programmatic log filtering. `GetActiveMonitorCount` is `internal` and intended for tests only.
+- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
 ## Installation
 

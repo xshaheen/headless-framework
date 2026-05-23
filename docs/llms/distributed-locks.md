@@ -90,7 +90,7 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 Lock monitoring is opt-in per acquire call via `DistributedLockAcquireOptions.Monitoring` (a `LockMonitoringMode` enum). `Monitoring = LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. With `LockMonitoringMode.None` (default), `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
 
-Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 1`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
+Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 30`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
 
 Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `TimeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
@@ -106,7 +106,7 @@ Choose based on the storage you already operate and the safety category.
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
-| `Headless.DistributedLocks.Cache` | You already use `ICache` and the cache is distributed for multi-instance apps. | The app cache is in-memory and you need cross-instance coordination. | Reuses cache infrastructure but inherits that cache provider's consistency and availability behavior. |
+| `Headless.DistributedLocks.Cache` | You already use `ICache` and the cache is distributed for multi-instance apps. | The app cache is in-memory, or the cache provider serves stale local reads such as `HybridCache` and you need lease monitoring or auto-extension. | Reuses cache infrastructure but inherits that cache provider's consistency and availability behavior. |
 | `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks with atomic acquire/release scripts. | You need correctness locks for protected state mutations. | Requires `IConnectionMultiplexer` and Redis script loading, but avoids routing lock operations through a generic cache abstraction. |
 
 ---
@@ -273,7 +273,8 @@ Stores lock records through `ICache` so applications can reuse an existing cache
 
 - `CacheDistributedLockStorage` implements `IDistributedLockStorage`.
 - Uses cache TTL for lock expiration.
-- Works with memory, Redis, hybrid, or custom cache providers through `ICache`.
+- Works with memory, Redis, or custom cache providers through `ICache`.
+- Do not use `HybridCache` for monitored or auto-extending leases; local L1 reads can outlive the distributed lock TTL and hide lease loss.
 
 ### Installation
 
@@ -295,6 +296,8 @@ builder.Services.AddDistributedLock<CacheDistributedLockStorage>(options =>
 ### Configuration
 
 No storage-specific configuration. Configure the selected `ICache` provider and `DistributedLockOptions`.
+
+Avoid `HybridCache` for `LockMonitoringMode.Monitor` and `LockMonitoringMode.AutoExtend`. Lease validation reads the current lock id through `ICache`; `HybridCache` may satisfy that read from its local L1 cache even after the distributed TTL has expired. Use `Headless.DistributedLocks.Redis` for monitored Redis-backed locks, or use a cache provider whose reads are distributed and TTL-accurate.
 
 ### Dependencies
 

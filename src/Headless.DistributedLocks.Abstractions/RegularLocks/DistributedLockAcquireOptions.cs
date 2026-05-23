@@ -21,6 +21,6 @@ public sealed record DistributedLockAcquireOptions
     /// <summary><see langword="true"/> (default) to release the lock when the handle is disposed; <see langword="false"/> to require explicit <see cref="IDistributedLock.ReleaseAsync"/>. Use <see langword="false"/> when the caller needs to bound release time with their own <see cref="CancellationToken"/>.</summary>
     public bool ReleaseOnDispose { get; init; } = true;
 
-    /// <summary>Controls whether and how the lease is monitored for liveness. See <see cref="LockMonitoringMode"/> for per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and <see cref="LockMonitoringMode.AutoExtend"/> require a finite <see cref="TimeUntilExpires"/>; combining either with <see cref="Timeout.InfiniteTimeSpan"/> (or omitting <see cref="TimeUntilExpires"/>) throws <see cref="ArgumentException"/>.</summary>
+    /// <summary>Controls whether and how the lease is monitored for liveness. See <see cref="LockMonitoringMode"/> for per-value behavior. <see cref="LockMonitoringMode.Monitor"/> and <see cref="LockMonitoringMode.AutoExtend"/> require a finite lease duration; <see langword="null"/> uses the provider default, while <see cref="Timeout.InfiniteTimeSpan"/> throws <see cref="ArgumentException"/>.</summary>
     public LockMonitoringMode Monitoring { get; init; } = LockMonitoringMode.None;
 }
