@@ -433,6 +433,34 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_replay_successful_probe_after_it_was_observed()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var currentLockId = lockId;
+        var callCount = 0;
+        _lockProvider
+            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref callCount);
+                return Task.FromResult<string?>(currentLockId);
+            });
+        var sut = _CreateLock(resource, lockId);
+
+        // when
+        var firstResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+        currentLockId = "foreign-lock";
+        var secondResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
+
+        // then - the second probe must hit storage again instead of replaying stale Held.
+        firstResult.Should().Be(LeaseMonitor.LeaseState.Held);
+        secondResult.Should().Be(LeaseMonitor.LeaseState.Lost);
+        callCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task should_calculate_locked_duration()
     {
         // given

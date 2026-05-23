@@ -217,21 +217,37 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         // deadline trip we classify as Unknown (transient) and let the safety net self-promote
         // on repeated misses.
         var leaseProbe = _GetOrStartLeaseProbe(cancellationToken);
+        var clearCompletedProbe = false;
 
         try
         {
-            return await _WithStorageDeadlineAsync(
+            var result = await _WithStorageDeadlineAsync(
                     leaseProbe,
                     _storageDeadlineSnapshot,
                     _timeProvider,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+            clearCompletedProbe = true;
+
+            return result;
         }
         catch (TimeoutException)
         {
             // Per-iteration deadline fired without caller cancellation — surface as transient.
             return LeaseMonitor.LeaseState.Unknown;
+        }
+        catch
+        {
+            clearCompletedProbe = true;
+            throw;
+        }
+        finally
+        {
+            if (clearCompletedProbe)
+            {
+                _ClearLeaseProbeIfCurrent(leaseProbe);
+            }
         }
     }
 
@@ -262,6 +278,17 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
             );
 
             return leaseProbe;
+        }
+    }
+
+    private void _ClearLeaseProbeIfCurrent(Task<LeaseMonitor.LeaseState> leaseProbe)
+    {
+        lock (_leaseProbeLock)
+        {
+            if (ReferenceEquals(_pendingLeaseProbe, leaseProbe))
+            {
+                _pendingLeaseProbe = null;
+            }
         }
     }
 

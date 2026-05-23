@@ -18,6 +18,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private readonly TimeSpan _leaseDuration;
     private readonly Lock _syncLock = new();
     private int _disposed;
+    private Task? _handleLostCancellationTask;
+    [ThreadStatic]
+    private static bool s_isCancelingHandleLost;
     private LeaseState _state = LeaseState.Held;
     private LeaseState State
     {
@@ -149,6 +152,8 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             return;
         }
 
+        var disposeHandleLostSource = !s_isCancelingHandleLost;
+
         try
         {
             await _disposalSource.CancelAsync().ConfigureAwait(false);
@@ -181,11 +186,22 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             }
 
 #pragma warning restore VSTHRD003
+
+            var handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
+
+            if (handleLostCancellationTask is not null && !s_isCancelingHandleLost)
+            {
+                await handleLostCancellationTask.ConfigureAwait(false);
+            }
         }
         finally
         {
             _disposalSource.Dispose();
-            _handleLostSource.Dispose();
+
+            if (disposeHandleLostSource)
+            {
+                _handleLostSource.Dispose();
+            }
         }
     }
 
@@ -262,6 +278,15 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             return;
         }
 
+        var cancellationTask = new Task(_CancelHandleLostSource);
+        Volatile.Write(ref _handleLostCancellationTask, cancellationTask);
+        cancellationTask.Start(TaskScheduler.Default);
+    }
+
+    private void _CancelHandleLostSource()
+    {
+        s_isCancelingHandleLost = true;
+
         try
         {
             _handleLostSource.Cancel();
@@ -282,6 +307,15 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 // Intentionally empty.
             }
 #pragma warning restore ERP022, CA1031
+        }
+        finally
+        {
+            s_isCancelingHandleLost = false;
+
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                _handleLostSource.Dispose();
+            }
         }
     }
 

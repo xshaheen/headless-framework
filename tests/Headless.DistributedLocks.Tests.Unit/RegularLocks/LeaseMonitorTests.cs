@@ -356,12 +356,12 @@ public sealed class LeaseMonitorTests : TestBase
         var sut = _CreateMonitor(handle);
 
         var callbackInvoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var disposeTask = Task.CompletedTask;
+        var callbackCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sut.HandleLostToken.Register(() =>
         {
-            // Start disposal from the callback without blocking the monitor loop thread.
-            disposeTask = Task.Run(async () => await sut.DisposeAsync());
             callbackInvoked.TrySetResult();
+            sut.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            callbackCompleted.TrySetResult();
         });
 
         // when
@@ -371,8 +371,8 @@ public sealed class LeaseMonitorTests : TestBase
         await callbackInvoked.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
         // then
-        // The dispose task should complete quickly without hanging/deadlocking.
-        await disposeTask.WaitAsync(TimeSpan.FromSeconds(5));
+        // Synchronous callback disposal should complete without hanging/deadlocking.
+        await callbackCompleted.Task.WaitAsync(TimeSpan.FromSeconds(5));
         sut.MonitoringTask.IsCompleted.Should().BeTrue();
     }
 
