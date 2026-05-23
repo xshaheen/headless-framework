@@ -10,6 +10,7 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class LockHandleLostException : DistributedLockException
 {
+    /// <summary>Initializes an exception with the default lost-handle message.</summary>
     public LockHandleLostException(string resource, string lockId)
         : this(
             Argument.IsNotNullOrWhiteSpace(resource),
@@ -17,6 +18,7 @@ public sealed class LockHandleLostException : DistributedLockException
             $"Distributed lock handle '{lockId}' for resource '{resource}' was lost."
         ) { }
 
+    /// <summary>Initializes an exception with a custom lost-handle message.</summary>
     public LockHandleLostException(string resource, string lockId, string? message)
         : base(message)
     {
@@ -24,6 +26,7 @@ public sealed class LockHandleLostException : DistributedLockException
         LockId = Argument.IsNotNullOrWhiteSpace(lockId);
     }
 
+    /// <summary>Initializes an exception with a custom lost-handle message and inner cause.</summary>
     public LockHandleLostException(string resource, string lockId, string? message, Exception? innerException)
         : base(message, innerException)
     {

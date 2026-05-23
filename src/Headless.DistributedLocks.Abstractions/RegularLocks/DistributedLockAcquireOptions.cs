@@ -12,7 +12,7 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed record DistributedLockAcquireOptions
 {
-    /// <summary>How long the storage row should be considered held before the lease expires. <see langword="null"/> uses the provider's default (typically infinite for fire-and-forget, or whatever the configured baseline is).</summary>
+    /// <summary>How long the storage row should be considered held before the lease expires. <see langword="null"/> uses the provider's finite default (20 minutes for the built-in providers). <see cref="Timeout.InfiniteTimeSpan"/> disables expiration only when monitoring is disabled; monitored modes require a finite lease duration.</summary>
     public TimeSpan? TimeUntilExpires { get; init; }
 
     /// <summary>Maximum time to wait for the lock to become available before <see cref="IDistributedLockProvider.AcquireAsync"/> throws or <see cref="IDistributedLockProvider.TryAcquireAsync"/> returns null. <see langword="null"/> uses the provider's default.</summary>

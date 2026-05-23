@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -11,7 +13,7 @@ public static class DistributedLockProviderExtensions
         /// <summary>Releases a resource lock for <paramref name="distributedLock"/>.</summary>
         public Task ReleaseAsync(IDistributedLock distributedLock, CancellationToken cancellationToken = default)
         {
-            ArgumentNullException.ThrowIfNull(provider);
+            Argument.IsNotNull(provider);
 
             return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LockId, cancellationToken);
         }

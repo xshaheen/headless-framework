@@ -5,6 +5,7 @@ using FluentValidation;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+[PublicAPI]
 public sealed class DistributedLockOptions
 {
     /// <summary>Resource lock key prefix.</summary>

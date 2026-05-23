@@ -19,8 +19,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private readonly Lock _syncLock = new();
     private int _disposed;
     private Task? _handleLostCancellationTask;
-    [ThreadStatic]
-    private static bool s_isCancelingHandleLost;
     private LeaseState _state = LeaseState.Held;
     private LeaseState State
     {
@@ -152,7 +150,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             return;
         }
 
-        var disposeHandleLostSource = !s_isCancelingHandleLost;
+        var handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
+        var disposeHandleLostSource =
+            handleLostCancellationTask is null || Task.CurrentId != handleLostCancellationTask.Id;
 
         try
         {
@@ -187,9 +187,9 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
 #pragma warning restore VSTHRD003
 
-            var handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
+            handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
 
-            if (handleLostCancellationTask is not null && !s_isCancelingHandleLost)
+            if (handleLostCancellationTask is not null && Task.CurrentId != handleLostCancellationTask.Id)
             {
                 await handleLostCancellationTask.ConfigureAwait(false);
             }
@@ -217,7 +217,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         // leaseTimestamp in the monitoring loop, so a long Held streak in polling mode never
         // crosses the safety-net threshold. Only Unknown (transient) leaves leaseTimestamp
         // unchanged, allowing the elapsed window to accumulate.
-        if (leaseLifetime > _leaseDuration && State == LeaseState.Unknown)
+        if (leaseLifetime >= _leaseDuration && State == LeaseState.Unknown)
         {
             _SetState(LeaseState.Lost);
             return LeaseState.Lost;
@@ -285,8 +285,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
     private void _CancelHandleLostSource()
     {
-        s_isCancelingHandleLost = true;
-
         try
         {
             _handleLostSource.Cancel();
@@ -310,8 +308,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         }
         finally
         {
-            s_isCancelingHandleLost = false;
-
             if (Volatile.Read(ref _disposed) != 0)
             {
                 _handleLostSource.Dispose();

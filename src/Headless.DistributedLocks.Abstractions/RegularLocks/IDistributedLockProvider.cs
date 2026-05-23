@@ -81,7 +81,11 @@ public interface IDistributedLockProvider
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the current lock id for a specified <paramref name="resource"/>, or null when it is not locked.</summary>
+    /// <summary>
+    /// Gets the current lock id for a specified <paramref name="resource"/>, or null when it is not locked.
+    /// This is an inspection/read primitive; it does not renew the lease. Consumers that already hold a
+    /// monitored handle should prefer <see cref="IDistributedLock.HandleLostToken"/> for lease-loss signals.
+    /// </summary>
     Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>

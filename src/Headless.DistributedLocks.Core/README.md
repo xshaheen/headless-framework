@@ -19,7 +19,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
-- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. `GetActiveMonitorCount` is `internal` and intended for tests only.
+- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. Structured fields are `Resource`, `LockId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
 ## Installation
 
@@ -52,6 +52,20 @@ options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
 Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per call by passing a `DistributedLockAcquireOptions` instance to `AcquireAsync(...)` or `TryAcquireAsync(...)`. Set `Monitoring = LockMonitoringMode.Monitor` for `HandleLostToken` loss detection and `Monitoring = LockMonitoringMode.AutoExtend` for background renewal.
+
+Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:
+
+```csharp
+await using var lease = await lockProvider.AcquireAsync(
+    "orders:123",
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(5),
+        Monitoring = LockMonitoringMode.AutoExtend,
+    },
+    ct
+);
+```
 
 ## Dependencies
 

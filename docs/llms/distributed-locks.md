@@ -64,6 +64,8 @@ Use `IDistributedLockProvider` when only one worker should own a named resource 
 - Per-call configuration is bundled into `DistributedLockAcquireOptions` (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`). Omit the argument to use defaults; use `with` expressions to derive variants.
 - Always `await using` the returned lock when `ReleaseOnDispose` is `true` (the default); set `ReleaseOnDispose = false` only when ownership is deliberately transferred and the caller will release explicitly.
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLock.HandleLostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
+- Use `GetLockIdAsync(resource)` for operational inspection only; it reads the current lock id and does not renew the lease. If you already hold a monitored handle, observe `HandleLostToken` instead of polling `GetLockIdAsync`.
+- Synchronous `TryUsingAsync(..., Action ...)` overloads force `LockMonitoringMode.None` because synchronous delegates cannot observe a lease-lost cancellation token.
 - Do not use distributed locks as rate limiters. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + community Redis (distributed) — the framework does not ship a rate-limiting package.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis and cache locks are efficiency locks, not transaction-coupled correctness locks.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
@@ -90,7 +92,7 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 Lock monitoring is opt-in per acquire call via `DistributedLockAcquireOptions.Monitoring` (a `LockMonitoringMode` enum). `Monitoring = LockMonitoringMode.Monitor` starts a background lease monitor and makes `IDistributedLock.HandleLostToken` cancel when validation detects the stored lock id changed, disappeared, or the lease lifetime exceeds the requested TTL after repeated unknown validation results. With `LockMonitoringMode.None` (default), `HandleLostToken` is `CancellationToken.None` and `IDistributedLock.IsMonitored` is `false`.
 
-Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 30`, name `LeaseMonitorStateChanged`) for programmatic log filtering. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
+Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not exposed as a public API; they are visible through the `LeaseMonitorStateChanged` log event (`EventId = 30`, name `LeaseMonitorStateChanged`) for programmatic log filtering. The structured fields are `Resource`, `LockId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` on the provider is `internal` and intended for test/diagnostic use only.
 
 Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `TimeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
@@ -125,7 +127,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
-- `GetLockIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring.
+- `GetLockIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring. `GetLockIdAsync` does not renew a lease; monitored holders should use `HandleLostToken` for lease-loss observation.
 
 ### Design Notes
 
@@ -133,6 +135,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
 - `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
 - `HandleLostToken` is an observability signal. Consumer code decides whether to stop, compensate, or throw `LockHandleLostException`.
+- `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
 ### Installation
 
@@ -240,6 +243,20 @@ await lockProvider.AcquireAsync(
         TimeUntilExpires = TimeSpan.FromMinutes(5),
         AcquireTimeout = TimeSpan.FromSeconds(10),
         Monitoring = LockMonitoringMode.Monitor,
+    },
+    ct
+);
+```
+
+Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:
+
+```csharp
+await using var lease = await lockProvider.AcquireAsync(
+    "orders:123",
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(5),
+        Monitoring = LockMonitoringMode.AutoExtend,
     },
     ct
 );

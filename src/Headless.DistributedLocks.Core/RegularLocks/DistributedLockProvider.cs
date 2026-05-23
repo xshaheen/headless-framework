@@ -36,7 +36,7 @@ public sealed class DistributedLockProvider(
         StringComparer.Ordinal
     );
 
-    private readonly ConcurrentDictionary<string, MonitorBucket> _activeMonitors = new(StringComparer.Ordinal);
+    private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
 
     private readonly Lock _resetEventLock = new();
 
@@ -734,10 +734,10 @@ public sealed class DistributedLockProvider(
 
         if (monitorLease)
         {
-            // Lease monitoring requires a finite timeUntilExpires; null encodes the
-            // Timeout.InfiniteTimeSpan sentinel here. Use Argument.IsNotNull to surface
-            // the framework's standard ArgumentNullException with paramName set.
-            Argument.IsNotNull(timeUntilExpires, paramName: nameof(timeUntilExpires));
+            throw new ArgumentException(
+                "Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                nameof(timeUntilExpires)
+            );
         }
 
         return Timeout.InfiniteTimeSpan;
@@ -886,252 +886,32 @@ public sealed class DistributedLockProvider(
 
     private void _RegisterMonitor(string resource, string lockId, LeaseMonitor monitor)
     {
-        while (true)
-        {
-            var bucket = _activeMonitors.GetOrAdd(resource, static _ => new MonitorBucket());
-
-            if (bucket.TryRegister(lockId, monitor))
-            {
-                logger.LogLeaseMonitorRegistered(resource, lockId);
-
-                return;
-            }
-
-            _TryRemoveMonitorBucket(resource, bucket);
-        }
+        _monitorRegistry.Register(resource, lockId, monitor);
     }
 
     private void _DeregisterMonitor(string resource, string lockId)
     {
-        _TryDeregisterMonitor(resource, lockId);
+        _monitorRegistry.Deregister(resource, lockId);
     }
 
     private LeaseMonitor? _TryDeregisterMonitor(string resource, string lockId)
     {
-        if (!_activeMonitors.TryGetValue(resource, out var bucket))
-        {
-            return null;
-        }
-
-        if (bucket.TryDeregister(lockId, out var monitor, out var removeBucket))
-        {
-            logger.LogLeaseMonitorDeregistered(resource, lockId);
-        }
-
-        if (removeBucket)
-        {
-            _TryRemoveMonitorBucket(resource, bucket);
-        }
-
-        return monitor;
+        return _monitorRegistry.TryDeregister(resource, lockId);
     }
 
     private void _NudgeActiveMonitors(string resource)
     {
-        if (!_activeMonitors.TryGetValue(resource, out var bucket))
-        {
-            return;
-        }
-
-        var liveMonitors = bucket.GetLiveMonitorsForNudge(out var removeBucket);
-
-        if (removeBucket)
-        {
-            _TryRemoveMonitorBucket(resource, bucket);
-        }
-
-        foreach (var (lockId, monitor) in liveMonitors)
-        {
-            monitor.TriggerImmediateValidation();
-            logger.LogLeaseMonitorNudged(resource, lockId);
-        }
+        _monitorRegistry.NudgeActive(resource);
     }
 
     internal int GetActiveMonitorCount(string resource)
     {
-        if (!_activeMonitors.TryGetValue(resource, out var bucket))
-        {
-            return 0;
-        }
-
-        var count = bucket.GetMonitorCount(out var removeBucket);
-
-        if (removeBucket)
-        {
-            _TryRemoveMonitorBucket(resource, bucket);
-        }
-
-        return count;
+        return _monitorRegistry.GetMonitorCount(resource);
     }
 
     internal int GetActiveMonitorResourceCount()
     {
-        foreach (var (resource, bucket) in _activeMonitors)
-        {
-            _ = bucket.GetMonitorCount(out var removeBucket);
-
-            if (removeBucket)
-            {
-                _TryRemoveMonitorBucket(resource, bucket);
-            }
-        }
-
-        return _activeMonitors.Count;
-    }
-
-    private void _TryRemoveMonitorBucket(string resource, MonitorBucket bucket)
-    {
-        var pair = new KeyValuePair<string, MonitorBucket>(resource, bucket);
-        ((ICollection<KeyValuePair<string, MonitorBucket>>)_activeMonitors).Remove(pair);
-    }
-
-    private sealed class MonitorBucket
-    {
-        private readonly Lock _syncRoot = new();
-
-        private readonly Dictionary<string, WeakReference<LeaseMonitor>> _monitors = new(StringComparer.Ordinal);
-
-        private bool _isRemoved;
-
-        public bool TryRegister(string lockId, LeaseMonitor monitor)
-        {
-            lock (_syncRoot)
-            {
-                if (_isRemoved)
-                {
-                    return false;
-                }
-
-                // Proactive clean-up of dead weak references to prevent memory leak of abandoned locks
-                List<string>? deadKeys = null;
-                foreach (var (id, weakReference) in _monitors)
-                {
-                    if (!weakReference.TryGetTarget(out _))
-                    {
-                        deadKeys ??= new List<string>();
-                        deadKeys.Add(id);
-                    }
-                }
-
-                if (deadKeys is not null)
-                {
-                    foreach (var id in deadKeys)
-                    {
-                        _monitors.Remove(id);
-                    }
-                }
-
-                _monitors[lockId] = new WeakReference<LeaseMonitor>(monitor);
-                return true;
-            }
-        }
-
-        public bool TryDeregister(string lockId, out LeaseMonitor? monitor, out bool removeBucket)
-        {
-            lock (_syncRoot)
-            {
-                if (_isRemoved)
-                {
-                    monitor = null;
-                    removeBucket = false;
-                    return false;
-                }
-
-                monitor = _monitors.Remove(lockId, out var weakReference) && weakReference.TryGetTarget(out var target)
-                    ? target
-                    : null;
-                removeBucket = _MarkRemovedIfEmpty();
-
-                return true;
-            }
-        }
-
-        public List<(string LockId, LeaseMonitor Monitor)> GetLiveMonitorsForNudge(out bool removeBucket)
-        {
-            lock (_syncRoot)
-            {
-                if (_isRemoved)
-                {
-                    removeBucket = false;
-                    return [];
-                }
-
-                List<string>? deadKeys = null;
-                List<(string LockId, LeaseMonitor Monitor)>? liveMonitors = null;
-
-                foreach (var (lockId, weakReference) in _monitors)
-                {
-                    if (weakReference.TryGetTarget(out var monitor))
-                    {
-                        liveMonitors ??= [];
-                        liveMonitors.Add((lockId, monitor));
-                    }
-                    else
-                    {
-                        deadKeys ??= new List<string>();
-                        deadKeys.Add(lockId);
-                    }
-                }
-
-                if (deadKeys is not null)
-                {
-                    foreach (var id in deadKeys)
-                    {
-                        _monitors.Remove(id);
-                    }
-                }
-
-                removeBucket = _MarkRemovedIfEmpty();
-
-                return liveMonitors ?? [];
-            }
-        }
-
-        public int GetMonitorCount(out bool removeBucket)
-        {
-            lock (_syncRoot)
-            {
-                if (_isRemoved)
-                {
-                    removeBucket = false;
-                    return 0;
-                }
-
-                List<string>? deadKeys = null;
-                foreach (var (id, weakReference) in _monitors)
-                {
-                    if (!weakReference.TryGetTarget(out _))
-                    {
-                        deadKeys ??= [];
-                        deadKeys.Add(id);
-                    }
-                }
-
-                if (deadKeys is not null)
-                {
-                    foreach (var id in deadKeys)
-                    {
-                        _monitors.Remove(id);
-                    }
-                }
-
-                removeBucket = _MarkRemovedIfEmpty();
-
-                return _monitors.Count;
-            }
-        }
-
-        private bool _MarkRemovedIfEmpty()
-        {
-            if (_monitors.Count > 0)
-            {
-                return false;
-            }
-
-            _isRemoved = true;
-
-            return true;
-        }
+        return _monitorRegistry.GetResourceCount();
     }
 
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)

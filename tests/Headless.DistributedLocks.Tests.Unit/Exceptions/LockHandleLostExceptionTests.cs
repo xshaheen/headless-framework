@@ -49,4 +49,17 @@ public sealed class LockHandleLostExceptionTests : TestBase
         // then
         exception.Should().BeAssignableTo<DistributedLockException>();
     }
+
+    [Fact]
+    public void should_preserve_inner_exception()
+    {
+        // given
+        var cause = new InvalidOperationException("inner");
+
+        // when
+        var exception = new LockHandleLostException("resource", "lock-id", "message", cause);
+
+        // then
+        exception.InnerException.Should().BeSameAs(cause);
+    }
 }

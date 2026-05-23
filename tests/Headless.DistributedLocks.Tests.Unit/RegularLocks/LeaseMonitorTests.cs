@@ -60,7 +60,7 @@ public sealed class LeaseMonitorTests : TestBase
     }
 
     [Fact]
-    public async Task should_self_mark_lost_when_unknown_lifetime_exceeds_lease_duration()
+    public async Task should_self_mark_lost_when_unknown_lifetime_reaches_lease_duration()
     {
         // given
         var handle = new FakeLeaseHandle();
@@ -70,7 +70,7 @@ public sealed class LeaseMonitorTests : TestBase
         // when
         sut.TriggerImmediateValidation();
         await _DrainUntilAsync(() => handle.InvocationCount == 1);
-        _timeProvider.Advance(TimeSpan.FromSeconds(11));
+        _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
         await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
 
@@ -113,7 +113,7 @@ public sealed class LeaseMonitorTests : TestBase
     public async Task should_not_self_mark_lost_when_polling_returns_held_past_lease_window()
     {
         // given - polling mode (no auto-extend) where every iteration returns Held.
-        // The safety net "leaseLifetime > _leaseDuration => Lost" must only fire from Unknown,
+        // The safety net "leaseLifetime >= _leaseDuration => Lost" must only fire from Unknown,
         // not from Held returned by storage confirming continued ownership.
         var handle = new FakeLeaseHandle();
         for (var i = 0; i < 7; i++)

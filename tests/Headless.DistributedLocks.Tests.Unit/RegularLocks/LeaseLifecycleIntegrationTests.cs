@@ -86,13 +86,19 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
         _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+        var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var lostRegistration = handle!
+            .HandleLostToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), lostSignal);
 
         // when
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
-        await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
+        await lostSignal.Task.WaitAsync(TimeSpan.FromMilliseconds(500));
+        stopwatch.Stop();
 
         // then
         handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
     }
 
     [Fact]
