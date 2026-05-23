@@ -28,11 +28,6 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
         }
     }
 
-    public void Deregister(string resource, string lockId)
-    {
-        _ = TryDeregister(resource, lockId);
-    }
-
     public LeaseMonitor? TryDeregister(string resource, string lockId)
     {
         if (!_activeMonitors.TryGetValue(resource, out var bucket))
@@ -93,6 +88,8 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
 
     public int GetResourceCount()
     {
+        var count = 0;
+
         foreach (var (resource, bucket) in _activeMonitors)
         {
             _ = bucket.GetMonitorCount(out var removeBucket);
@@ -100,10 +97,13 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
             if (removeBucket)
             {
                 _TryRemoveBucket(resource, bucket);
+                continue;
             }
+
+            count++;
         }
 
-        return _activeMonitors.Count;
+        return count;
     }
 
     private void _TryRemoveBucket(string resource, MonitorBucket bucket)

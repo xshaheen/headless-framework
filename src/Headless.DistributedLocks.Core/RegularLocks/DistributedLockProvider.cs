@@ -392,7 +392,7 @@ public sealed class DistributedLockProvider(
 #pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
         var monitor = new LeaseMonitor(handle, timeProvider, logger);
 #pragma warning restore CA2000
-        _RegisterMonitor(resource, lockId, monitor);
+        _monitorRegistry.Register(resource, lockId, monitor);
         handle.AttachMonitor(monitor);
 
         return handle;
@@ -527,7 +527,7 @@ public sealed class DistributedLockProvider(
             // Deregister after confirmed storage removal but before publishing the outbox
             // message. If release fails or retries are still in progress, the monitor must
             // remain visible so lease-loss detection continues for the still-held lock.
-            var monitor = _TryDeregisterMonitor(resource, lockId);
+            var monitor = _monitorRegistry.TryDeregister(resource, lockId);
 
             if (monitor is not null)
             {
@@ -881,27 +881,12 @@ public sealed class DistributedLockProvider(
             autoResetEvent.Target.Set();
         }
 
-        _NudgeActiveMonitors(message.Resource);
-    }
-
-    private void _RegisterMonitor(string resource, string lockId, LeaseMonitor monitor)
-    {
-        _monitorRegistry.Register(resource, lockId, monitor);
+        _monitorRegistry.NudgeActive(message.Resource);
     }
 
     private void _DeregisterMonitor(string resource, string lockId)
     {
-        _monitorRegistry.Deregister(resource, lockId);
-    }
-
-    private LeaseMonitor? _TryDeregisterMonitor(string resource, string lockId)
-    {
-        return _monitorRegistry.TryDeregister(resource, lockId);
-    }
-
-    private void _NudgeActiveMonitors(string resource)
-    {
-        _monitorRegistry.NudgeActive(resource);
+        _ = _monitorRegistry.TryDeregister(resource, lockId);
     }
 
     internal int GetActiveMonitorCount(string resource)
