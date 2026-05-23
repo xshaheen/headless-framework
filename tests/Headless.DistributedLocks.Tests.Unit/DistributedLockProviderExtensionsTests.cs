@@ -15,17 +15,16 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         var distributedLock = Substitute.For<IDistributedLock>();
         distributedLock.Resource.Returns("resource");
         distributedLock.LockId.Returns("lock-id");
-        using var cts = new CancellationTokenSource();
-        provider.ReleaseAsync("resource", "lock-id", cts.Token).Returns(Task.CompletedTask);
+        provider.ReleaseAsync("resource", "lock-id", AbortToken).Returns(Task.CompletedTask);
 
         // when
-        await provider.ReleaseAsync(distributedLock, cts.Token);
+        await provider.ReleaseAsync(distributedLock, AbortToken);
 
         // then
         await distributedLock.DidNotReceive().ReleaseAsync();
         await provider
             .Received(1)
-            .ReleaseAsync("resource", "lock-id", cts.Token);
+            .ReleaseAsync("resource", "lock-id", AbortToken);
     }
 
     [Fact]
@@ -112,8 +111,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         const string resource = "test-resource";
         var timeUntilExpires = TimeSpan.FromMinutes(10);
         var acquireTimeout = TimeSpan.FromSeconds(5);
-        using var cts = new CancellationTokenSource();
-        var cancellationToken = cts.Token;
+        var cancellationToken = AbortToken;
 
         // when
         await provider.TryUsingAsync(
