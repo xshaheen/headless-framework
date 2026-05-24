@@ -8,7 +8,8 @@ namespace Headless.Messaging.Transactions;
 /// Buffers stored outbox messages until the ambient transaction is committed.
 /// </summary>
 /// <remarks>
-/// Custom <see cref="IOutboxTransaction" /> implementations that are used with <see cref="IOutboxPublisher" />
+/// Custom <see cref="IOutboxTransaction" /> implementations that are used with <see cref="IOutboxBus" />
+/// or <see cref="IOutboxQueue" />
 /// should also implement this contract so persisted messages can be tracked and flushed on commit.
 /// </remarks>
 public interface IOutboxMessageBuffer

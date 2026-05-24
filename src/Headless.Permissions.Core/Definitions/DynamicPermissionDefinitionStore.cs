@@ -34,7 +34,7 @@ public sealed class DynamicPermissionDefinitionStore(
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
     IDistributedLockProvider distributedLockProvider,
-    IDirectPublisher messagePublisher,
+    IBus messagePublisher,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<PermissionManagementOptions> optionsAccessor,
@@ -339,7 +339,7 @@ public sealed class DynamicPermissionDefinitionStore(
                 Permissions = [.. newPermissions.Select(x => x.Name), .. updatedPermissions.Select(x => x.Name)],
             };
 
-            await messagePublisher.PublishAsync(message, cancellationToken);
+            await messagePublisher.PublishAsync(message, cancellationToken: cancellationToken);
         }
 
         await distributedCache.UpsertAsync(

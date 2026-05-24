@@ -126,7 +126,7 @@ public sealed class TypeSafePublishApiTests
         // when
         await using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
 
         // then - Mapping is available for type-safe publishing
         options.TopicMappings.Should().ContainKey(typeof(OrderCreated));
@@ -135,30 +135,30 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public void should_share_primary_publish_contract_between_direct_and_outbox_publishers()
+    public void should_expose_intent_specific_publish_contracts()
     {
-        typeof(IDirectPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
-        typeof(IOutboxPublisher).GetInterfaces().Should().Contain(typeof(IMessagePublisher));
-        typeof(IOutboxPublisher)
+        typeof(IBus)
             .GetMethods()
             .Should()
-            .NotContain(method => method.Name == nameof(IScheduledPublisher.PublishDelayAsync));
-        typeof(IScheduledPublisher)
+            .ContainSingle(method => method.Name == nameof(IBus.PublishAsync) && method.IsGenericMethod);
+        typeof(IOutboxBus)
             .GetMethods()
             .Should()
-            .ContainSingle(method =>
-                method.Name == nameof(IScheduledPublisher.PublishDelayAsync) && method.IsGenericMethod
-            );
-        typeof(IMessagePublisher)
+            .ContainSingle(method => method.Name == nameof(IOutboxBus.PublishAsync) && method.IsGenericMethod);
+        typeof(IQueue)
             .GetMethods()
             .Should()
-            .ContainSingle(method => method.Name == nameof(IMessagePublisher.PublishAsync) && method.IsGenericMethod);
+            .ContainSingle(method => method.Name == nameof(IQueue.EnqueueAsync) && method.IsGenericMethod);
+        typeof(IOutboxQueue)
+            .GetMethods()
+            .Should()
+            .ContainSingle(method => method.Name == nameof(IOutboxQueue.EnqueueAsync) && method.IsGenericMethod);
     }
 
     [Fact]
     public void should_not_expose_mutable_outbox_publisher_state()
     {
-        var publicPropertyNames = typeof(IOutboxPublisher).GetProperties().Select(property => property.Name).ToList();
+        var publicPropertyNames = typeof(IOutboxBus).GetProperties().Select(property => property.Name).ToList();
 
         publicPropertyNames.Should().NotContain("ServiceProvider");
         publicPropertyNames.Should().NotContain("Transaction");
@@ -168,7 +168,7 @@ public sealed class TypeSafePublishApiTests
     public void should_provide_helpful_error_message_format()
     {
         // This test documents the expected error message format when topic mapping is missing
-        // The actual error is thrown by OutboxPublisher._GetTopicNameFromMapping<T>()
+        // The actual error is thrown by MessagePublishRequestFactory._GetTopicNameFromMapping<T>()
 
         const string expectedErrorPattern =
             "No topic mapping found for message type 'OrderCreated'*WithTopicMapping<OrderCreated>*";
@@ -192,7 +192,7 @@ public sealed class TypeSafePublishApiTests
         });
 
         await using var provider = services.BuildServiceProvider();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var accessor = provider.GetRequiredService<IOutboxTransactionAccessor>();
         var transaction = new TestOutboxTransaction { DbTransaction = new object() };
         accessor.Current = transaction;

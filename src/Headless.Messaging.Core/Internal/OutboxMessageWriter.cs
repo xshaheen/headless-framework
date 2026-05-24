@@ -9,14 +9,14 @@ using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class OutboxPublisher(
+internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
     IOutboxTransactionAccessor transactionAccessor,
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
-) : IOutboxPublisher, IScheduledPublisher
+)
 {
     // ReSharper disable once InconsistentNaming
     private static DiagnosticListener DiagnosticListener { get; } =

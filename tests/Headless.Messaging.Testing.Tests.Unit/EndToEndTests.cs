@@ -103,7 +103,7 @@ public sealed class EndToEndTests : TestBase
         });
 
         // when
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-001", 99.99m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-001", 99.99m), cancellationToken: AbortToken);
         var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
@@ -129,7 +129,7 @@ public sealed class EndToEndTests : TestBase
         });
 
         // when
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-002", 50m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-002", 50m), cancellationToken: AbortToken);
         var faulted = await harness.WaitForFaulted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
@@ -158,10 +158,10 @@ public sealed class EndToEndTests : TestBase
         });
 
         // Publish a non-target message first
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("other", 1m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("other", 1m), cancellationToken: AbortToken);
 
         // Publish the target message
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("target", 200m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("target", 200m), cancellationToken: AbortToken);
 
         // when — wait for specifically the "target" order
         var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(
@@ -212,7 +212,7 @@ public sealed class EndToEndTests : TestBase
         });
 
         // when — publish only in harness1
-        await harness1.Publisher.PublishAsync(new OrderCreatedEvent("H1-ORD", 10m), AbortToken);
+        await harness1.Publisher.PublishAsync(new OrderCreatedEvent("H1-ORD", 10m), cancellationToken: AbortToken);
         await harness1.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — harness2 should be untouched
@@ -241,7 +241,7 @@ public sealed class EndToEndTests : TestBase
         });
 
         // when
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-INJ", 75m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-INJ", 75m), cancellationToken: AbortToken);
         await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — the mock was invoked with the correct order ID
@@ -448,8 +448,8 @@ public sealed class EndToEndTests : TestBase
         var harness = sp.GetRequiredService<MessagingTestHarness>();
 
         // when
-        var publisher = sp.GetRequiredService<IMessagePublisher>();
-        await publisher.PublishAsync(new OrderCreatedEvent("HOSTED-1", 42m), AbortToken);
+        var publisher = sp.GetRequiredService<IBus>();
+        await publisher.PublishAsync(new OrderCreatedEvent("HOSTED-1", 42m), cancellationToken: AbortToken);
         var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — harness observes messages through the same container
@@ -481,7 +481,7 @@ public sealed class EndToEndTests : TestBase
         });
 
         // when
-        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), AbortToken);
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), cancellationToken: AbortToken);
         var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — observation captures the exhausted message and its exception
@@ -525,7 +525,7 @@ public sealed class EndToEndTests : TestBase
         try
         {
             // when
-            await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-HANG", 1m), AbortToken);
+            await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-HANG", 1m), cancellationToken: AbortToken);
             var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the observation arrived even though the user callback is still parked

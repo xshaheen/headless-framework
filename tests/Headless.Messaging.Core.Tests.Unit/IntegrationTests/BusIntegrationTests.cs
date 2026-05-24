@@ -10,14 +10,14 @@ using Microsoft.Extensions.Logging;
 namespace Tests.IntegrationTests;
 
 /// <summary>
-/// Integration tests verifying IDirectPublisher works with real InMemory transport.
+/// Integration tests verifying IBus works with real InMemory transport.
 /// These tests verify end-to-end message flow from publishing to consumption.
 /// </summary>
 /// <remarks>
 /// These tests use static state to capture messages because the DI container creates
 /// its own consumer instances. This is the standard pattern used across the codebase.
 /// </remarks>
-public sealed class IDirectPublisherIntegrationTests : TestBase
+public sealed class IBusIntegrationTests : TestBase
 {
     public override ValueTask InitializeAsync()
     {
@@ -88,10 +88,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("test-value-123"), cancellationToken: AbortToken);
+        await bus.PublishAsync(new DirectTestMessage("test-value-123"), cancellationToken: AbortToken);
 
         // Wait for the message to be consumed
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -122,10 +122,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when - PublishAsync uses the mapped topic, not the type name
-        await directPublisher.PublishAsync(new DirectTestMessage("mapping-test"), cancellationToken: AbortToken);
+        await bus.PublishAsync(new DirectTestMessage("mapping-test"), cancellationToken: AbortToken);
 
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -156,10 +156,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("fanout"), cancellationToken: AbortToken);
+        await bus.PublishAsync(new DirectTestMessage("fanout"), cancellationToken: AbortToken);
 
         var primaryReceived = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
         var analyticsReceived = await DirectAnalyticsConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
@@ -192,10 +192,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("prefixed-value"), cancellationToken: AbortToken);
+        await bus.PublishAsync(new DirectTestMessage("prefixed-value"), cancellationToken: AbortToken);
 
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -224,7 +224,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         var customHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -232,7 +232,7 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         };
 
         // when
-        await directPublisher.PublishAsync(
+        await bus.PublishAsync(
             new DirectTestMessage("header-test"),
             new PublishOptions { Headers = customHeaders, CorrelationId = "correlation-123" },
             AbortToken
@@ -269,10 +269,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when
-        await directPublisher.PublishAsync(
+        await bus.PublishAsync(
             new DirectTestMessage("tenant-set-value"),
             new PublishOptions { TenantId = "acme" },
             AbortToken
@@ -309,10 +309,10 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when
-        await directPublisher.PublishAsync(new DirectTestMessage("no-tenant-value"), cancellationToken: AbortToken);
+        await bus.PublishAsync(new DirectTestMessage("no-tenant-value"), cancellationToken: AbortToken);
 
         var received = await DirectTestConsumerWithHeaders.WaitForContextAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -347,12 +347,12 @@ public sealed class IDirectPublisherIntegrationTests : TestBase
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
-        var directPublisher = scope.ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
         // when - send multiple messages
         for (var i = 0; i < messageCount; i++)
         {
-            await directPublisher.PublishAsync(new DirectTestMessage($"message-{i}"), cancellationToken: AbortToken);
+            await bus.PublishAsync(new DirectTestMessage($"message-{i}"), cancellationToken: AbortToken);
         }
 
         // Wait for all messages

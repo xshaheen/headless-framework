@@ -455,7 +455,7 @@ internal sealed class SubscribeExecutor(
                 }
 
                 await provider
-                    .GetRequiredService<IOutboxPublisher>()
+                    .GetRequiredService<IOutboxBus>()
                     .PublishAsync(
                         ret.Result,
                         new PublishOptions { Topic = ret.CallbackName, Headers = ret.CallbackHeader },

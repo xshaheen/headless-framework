@@ -108,10 +108,7 @@ public static class SetupMessaging
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<IBus, Bus>();
         services.TryAddSingleton<IQueue, Queue>();
-        services.TryAddSingleton<OutboxPublisher>();
-        services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
-        services.TryAddSingleton<IScheduledPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
-        services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
+        services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IOutboxBus, OutboxBus>();
         services.TryAddSingleton<IOutboxQueue, OutboxQueue>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();

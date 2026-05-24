@@ -2,7 +2,7 @@
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class OutboxBus(OutboxPublisher publisher) : IOutboxBus
+internal sealed class OutboxBus(OutboxMessageWriter publisher) : IOutboxBus
 {
     public Task PublishAsync<T>(
         T? contentObj,

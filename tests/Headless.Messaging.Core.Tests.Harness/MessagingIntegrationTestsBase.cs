@@ -60,10 +60,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     protected IBootstrapper Bootstrapper => ServiceProvider.GetRequiredService<IBootstrapper>();
 
     /// <summary>Gets the publisher for sending messages.</summary>
-    protected IOutboxPublisher Publisher => ServiceProvider.GetRequiredService<IOutboxPublisher>();
-
-    /// <summary>Gets the scheduler-aware publisher for delayed messages.</summary>
-    protected IScheduledPublisher ScheduledPublisher => ServiceProvider.GetRequiredService<IScheduledPublisher>();
+    protected IOutboxBus Publisher => ServiceProvider.GetRequiredService<IOutboxBus>();
 
     /// <summary>Gets the data storage for message persistence.</summary>
     protected IDataStorage DataStorage => ServiceProvider.GetRequiredService<IDataStorage>();
@@ -71,8 +68,8 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     /// <summary>Gets the consumer registry for discovering registered consumers.</summary>
     protected IConsumerRegistry ConsumerRegistry => ServiceProvider.GetRequiredService<IConsumerRegistry>();
 
-    /// <summary>Gets the direct publisher for transport-only readiness probes.</summary>
-    protected IDirectPublisher DirectPublisher => ServiceProvider.GetRequiredService<IDirectPublisher>();
+    /// <summary>Gets the bus for transport-only readiness probes.</summary>
+    protected IBus Bus => ServiceProvider.GetRequiredService<IBus>();
 
     /// <summary>Gets the resolved messaging options for prefix-aware assertions.</summary>
     protected MessagingOptions MessagingOptions =>
@@ -355,10 +352,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var startTime = DateTimeOffset.UtcNow;
 
         // when
-        await ScheduledPublisher.PublishDelayAsync(
-            TimeSpan.FromSeconds(2),
+        await Publisher.PublishAsync(
             message,
-            new PublishOptions { Topic = "test-message" },
+            new PublishOptions { Topic = "test-message", Delay = TimeSpan.FromSeconds(2) },
             AbortToken
         );
 
@@ -409,7 +405,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
             lastMessageId = probe.Id;
 
-            await DirectPublisher.PublishAsync(probe, new PublishOptions { Topic = topic }, AbortToken);
+            await Bus.PublishAsync(probe, new PublishOptions { Topic = topic }, AbortToken);
 
             var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
             if (received && subscriber.ReceivedMessages.Any(message => message.Id == probe.Id))

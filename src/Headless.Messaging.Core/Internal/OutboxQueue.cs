@@ -2,7 +2,7 @@
 
 namespace Headless.Messaging.Internal;
 
-internal sealed class OutboxQueue(OutboxPublisher publisher) : IOutboxQueue
+internal sealed class OutboxQueue(OutboxMessageWriter publisher) : IOutboxQueue
 {
     public Task EnqueueAsync<T>(
         T? contentObj,

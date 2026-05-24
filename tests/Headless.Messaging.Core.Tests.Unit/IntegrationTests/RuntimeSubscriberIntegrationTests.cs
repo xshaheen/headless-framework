@@ -14,7 +14,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         await using var provider = await _CreateStartedProviderAsync();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var middlewareProbe = provider.GetRequiredService<RecordingConsumeMiddlewareProbe>();
         var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
 
@@ -44,7 +44,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
     {
         await using var provider = await _CreateStartedProviderAsync();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var probe = provider.GetRequiredService<BlockingRuntimeProbe>();
 
         var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
@@ -82,7 +82,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         await using var provider = _CreateProvider(blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
 
         var bootstrapTask = bootstrapper.BootstrapAsync(AbortToken);

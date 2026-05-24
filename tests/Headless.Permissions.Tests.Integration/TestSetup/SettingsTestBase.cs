@@ -47,7 +47,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddSingleton(Substitute.For<IDirectPublisher>());
+        services.AddSingleton(Substitute.For<IBus>());
         services.AddServiceProviderLocalMessagePublisher();
 
         // Messages

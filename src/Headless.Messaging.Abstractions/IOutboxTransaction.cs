@@ -16,7 +16,7 @@ namespace Headless.Messaging;
 /// </list>
 /// Applications typically obtain an instance of this interface through dependency injection and associate it
 /// with a database transaction before publishing messages within that transaction.
-/// When the transaction is used with <see cref="IOutboxPublisher" /> and an ambient database transaction is present,
+/// When the transaction is used with <c>IOutboxBus</c> or <c>IOutboxQueue</c> and an ambient database transaction is present,
 /// the runtime implementation should also support buffered stored messages so they can be flushed on commit.
 /// </remarks>
 public interface IOutboxTransaction : IDisposable, IAsyncDisposable

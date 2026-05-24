@@ -45,7 +45,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             optionsAccessor,
             new NullCurrentTenant()
         );
-        var publisher = new DirectPublisher(
+        var publisher = new Bus(
             serializer,
             transport,
             publishRequestFactory,
@@ -56,7 +56,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
 
-        // then — DirectPublisher always commits to the wire; rollback has no semantic
+        // then — Bus always commits to the wire; rollback has no semantic
         observed.Captured.Should().BeFalse();
     }
 
@@ -72,7 +72,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: false, ambientTransaction: true);
+        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: true);
 
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
@@ -92,7 +92,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: true, ambientTransaction: true);
+        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: true, ambientTransaction: true);
 
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
@@ -112,7 +112,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxPublisher(pipeline, autoCommit: false, ambientTransaction: false);
+        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: false);
 
         // when
         await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
@@ -121,7 +121,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         observed.Captured.Should().BeFalse();
     }
 
-    private static (OutboxPublisher publisher, TestOutboxTransaction? tx) _BuildOutboxPublisher(
+    private static (OutboxMessageWriter publisher, TestOutboxTransaction? tx) _BuildOutboxMessageWriter(
         IPublishMiddlewarePipeline pipeline,
         bool autoCommit,
         bool ambientTransaction
@@ -175,7 +175,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             accessor.Current = tx;
         }
 
-        var outbox = new OutboxPublisher(
+        var outbox = new OutboxMessageWriter(
             storage,
             dispatcher,
             publishRequestFactory,
@@ -208,7 +208,7 @@ internal sealed class TransactionalCapture
     public bool Captured { get; set; }
 }
 
-internal sealed class RecordingTransport : ITransport
+internal sealed class RecordingTransport : IBusTransport
 {
     private readonly ConcurrentBag<TransportMessage> _sent = [];
 

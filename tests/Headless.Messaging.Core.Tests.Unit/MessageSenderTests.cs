@@ -72,8 +72,8 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
-        services.AddSingleton<IBusTransport>(new LegacyBusTransportAdapter(transport));
-        services.AddSingleton<IQueueTransport>(new LegacyQueueTransportAdapter(transport));
+        services.AddSingleton<IBusTransport>(new TestBusTransportAdapter(transport));
+        services.AddSingleton<IQueueTransport>(new TestQueueTransportAdapter(transport));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
@@ -811,6 +811,26 @@ public sealed class MessageSenderTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         busTransport.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync)).Should().Be(0);
+    }
+
+    private sealed class TestBusTransportAdapter(ITransport transport) : IBusTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
+    }
+
+    private sealed class TestQueueTransportAdapter(ITransport transport) : IQueueTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
     }
 
     private sealed class ScopedMarker;

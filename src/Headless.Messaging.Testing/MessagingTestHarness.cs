@@ -132,8 +132,6 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         _DecoratePipeline(services, store);
         _DecorateOnExhausted(services, store);
 
-        services.TryAddSingleton<IMessagePublisher>(sp => sp.GetRequiredService<IDirectPublisher>());
-
         // Register the harness itself — does NOT own the ServiceProvider.
         services.AddSingleton(sp => new MessagingTestHarness(sp, store, ownsSp: false));
     }
@@ -367,8 +365,17 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // Service access
     // -------------------------------------------------------------------------
 
-    /// <summary>Returns a publisher backed by the in-memory transport.</summary>
-    public IMessagePublisher Publisher => ServiceProvider.GetRequiredService<IMessagePublisher>();
+    /// <summary>Returns a bus publisher backed by the in-memory transport.</summary>
+    public IBus Publisher => ServiceProvider.GetRequiredService<IBus>();
+
+    /// <summary>Returns a queue publisher backed by the in-memory transport.</summary>
+    public IQueue Queue => ServiceProvider.GetRequiredService<IQueue>();
+
+    /// <summary>Returns a durable bus publisher backed by the in-memory outbox.</summary>
+    public IOutboxBus OutboxBus => ServiceProvider.GetRequiredService<IOutboxBus>();
+
+    /// <summary>Returns a durable queue publisher backed by the in-memory outbox.</summary>
+    public IOutboxQueue OutboxQueue => ServiceProvider.GetRequiredService<IOutboxQueue>();
 
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
