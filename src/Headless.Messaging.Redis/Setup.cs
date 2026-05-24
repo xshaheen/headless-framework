@@ -41,16 +41,43 @@ public static class SetupRedisMessaging
             return setup;
         }
 
+        /// <summary>
+        /// Use Redis Pub/Sub as the bus (fan-out) transport with default options.
+        /// </summary>
+        /// <remarks>
+        /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// to handle or record failed dispatches.
+        /// </remarks>
         public MessagingSetupBuilder UseRedisPubSub()
         {
             return setup.UseRedisPubSub(_ => { });
         }
 
+        /// <summary>
+        /// Use Redis Pub/Sub as the bus (fan-out) transport with the given connection string.
+        /// </summary>
+        /// <param name="connection">A StackExchange.Redis comma-delimited configuration string.</param>
+        /// <remarks>
+        /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// to handle or record failed dispatches.
+        /// </remarks>
         public MessagingSetupBuilder UseRedisPubSub(string connection)
         {
             return setup.UseRedisPubSub(opt => opt.Configuration = ConfigurationOptions.Parse(connection));
         }
 
+        /// <summary>
+        /// Use Redis Pub/Sub as the bus (fan-out) transport.
+        /// </summary>
+        /// <param name="configure">Configures <see cref="RedisPubSubOptions"/>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <remarks>
+        /// <b>At-most-once delivery:</b> Redis Pub/Sub drops messages when no subscriber is connected at publish
+        /// time and provides no built-in retry or dead-letter support. Configure <see cref="RedisPubSubOptions.OnDispatchFailed"/>
+        /// to handle or record failed dispatches.
+        /// </remarks>
         public MessagingSetupBuilder UseRedisPubSub(Action<RedisPubSubOptions> configure)
         {
             Argument.IsNotNull(configure);
@@ -110,8 +137,7 @@ public static class SetupRedisMessaging
         }
     }
 
-    private sealed class RedisPubSubOptionsExtension(Action<RedisPubSubOptions> configure)
-        : IMessagesOptionsExtension
+    private sealed class RedisPubSubOptionsExtension(Action<RedisPubSubOptions> configure) : IMessagesOptionsExtension
     {
         private readonly Action<RedisPubSubOptions> _configure = Argument.IsNotNull(configure);
 

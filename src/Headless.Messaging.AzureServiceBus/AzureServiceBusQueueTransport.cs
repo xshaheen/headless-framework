@@ -15,8 +15,7 @@ internal sealed class AzureServiceBusQueueTransport(
     IOptions<AzureServiceBusOptions> busOptions
 ) : IQueueTransport
 {
-    private readonly SemaphoreSlim _connectionLock = new(1, 1);
-    private readonly ConcurrentDictionary<string, ServiceBusSender?> _senders = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
     private ServiceBusClient? _client;
 
     public BrokerAddress BrokerAddress =>
@@ -30,7 +29,7 @@ internal sealed class AzureServiceBusQueueTransport(
         try
         {
             var queueName = transportMessage.GetName();
-            var sender = _GetSender(queueName);
+            var sender = _GetSender(queueName).Value;
             var message = AzureServiceBusMessageBuilder.Build(transportMessage, busOptions.Value.EnableSessions);
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
@@ -51,43 +50,27 @@ internal sealed class AzureServiceBusQueueTransport(
 
     public async ValueTask DisposeAsync()
     {
-        _connectionLock.Dispose();
-
         if (_client is not null)
         {
             await _client.DisposeAsync().ConfigureAwait(false);
         }
     }
 
-    private ServiceBusSender _GetSender(string queueName)
+    private Lazy<ServiceBusSender> _GetSender(string queueName)
     {
-        if (_senders.TryGetValue(queueName, out var sender) && sender is not null)
-        {
-            return sender;
-        }
-
-        _connectionLock.Wait();
-
-        try
-        {
-            if (_senders.TryGetValue(queueName, out sender) && sender is not null)
-            {
-                return sender;
-            }
-
-            _client ??= busOptions.Value.TokenCredential is not null
-                ? new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential)
-                : new ServiceBusClient(busOptions.Value.ConnectionString);
-
-            var newSender = _client.CreateSender(queueName);
-            _senders.AddOrUpdate(queueName, newSender, (_, _) => newSender);
-
-            return newSender;
-        }
-        finally
-        {
-            _connectionLock.Release();
-        }
+        return _senders.GetOrAdd(
+            queueName,
+            name => new Lazy<ServiceBusSender>(
+                () =>
+                {
+                    _client ??= busOptions.Value.TokenCredential is not null
+                        ? new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential)
+                        : new ServiceBusClient(busOptions.Value.ConnectionString);
+                    return _client.CreateSender(name);
+                },
+                LazyThreadSafetyMode.ExecutionAndPublication
+            )
+        );
     }
 }
 

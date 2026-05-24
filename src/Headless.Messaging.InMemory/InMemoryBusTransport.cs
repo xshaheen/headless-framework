@@ -11,7 +11,8 @@ namespace Headless.Messaging.InMemory;
 /// Transport implementation for in-memory message bus fan-out.
 /// </summary>
 internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBusTransport> logger)
-    : IBusTransport, ITransport
+    : IBusTransport,
+        ITransport
 {
     private readonly ILogger _logger = logger;
 
@@ -26,26 +27,19 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
     /// <param name="message">The transport message to send.</param>
     /// <param name="cancellationToken">Token to cancel the send operation.</param>
     /// <returns>A task that returns the operation result.</returns>
-    public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var messageName = message.GetName();
+        var result = await InMemoryTransportCore
+            .SendCoreAsync(message, queue.SendBus, cancellationToken)
+            .ConfigureAwait(false);
 
-            queue.SendBus(message);
-            var messageName = message.GetName();
+        if (result.Succeeded)
+        {
             _logger.BusMessagePublished(messageName);
-            return Task.FromResult(OperateResult.Success);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            var wrapperEx = new PublisherSentFailedException(e.Message, e);
-            return Task.FromResult(OperateResult.Failed(wrapperEx));
-        }
+
+        return result;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -53,10 +47,6 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
 
 internal static partial class InMemoryBusTransportLog
 {
-    [LoggerMessage(
-        EventId = 3002,
-        Level = LogLevel.Debug,
-        Message = "Bus message [{MessageName}] has been published."
-    )]
+    [LoggerMessage(EventId = 3002, Level = LogLevel.Debug, Message = "Bus message [{MessageName}] has been published.")]
     public static partial void BusMessagePublished(this ILogger logger, string messageName);
 }

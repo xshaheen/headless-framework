@@ -28,7 +28,9 @@ internal sealed class RedisPubSubConnectionProvider(IOptions<RedisPubSubOptions>
         try
         {
 #pragma warning disable CA1508 // Justification: other threads can initialize it while waiting for the lock.
-            _connection ??= await ConnectionMultiplexer.ConnectAsync(optionsAccessor.Value.Configuration!).ConfigureAwait(false);
+            _connection ??= await ConnectionMultiplexer
+                .ConnectAsync(optionsAccessor.Value.Configuration!)
+                .ConfigureAwait(false);
 #pragma warning restore CA1508
             return _connection;
         }

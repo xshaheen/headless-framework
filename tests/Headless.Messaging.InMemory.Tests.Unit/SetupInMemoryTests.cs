@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Xml.Linq;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using System.Xml.Linq;
 
 namespace Tests;
 
@@ -122,7 +122,9 @@ public sealed class SetupInMemoryTests : TestBase
             .ToList();
 
         // then
-        projectReferences.Should().Contain(@"..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj");
+        projectReferences
+            .Should()
+            .Contain(@"..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj");
         projectReferences
             .Should()
             .Contain(@"..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj");

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -135,11 +136,14 @@ internal sealed class RedisPubSubConsumerClient(
 
     private async Task _DispatchAsync(ChannelMessage channelMessage)
     {
+        TransportMessage message = default;
+        var messageDeserialized = false;
         try
         {
             await _pauseGate.WaitIfPausedAsync(CancellationToken.None).ConfigureAwait(false);
 
-            var message = RedisPubSubEnvelope.Deserialize(channelMessage.Message!);
+            message = RedisPubSubEnvelope.Deserialize(channelMessage.Message!);
+            messageDeserialized = true;
             message.Headers[Headers.Group] = groupName;
 
             if (OnMessageCallback is not null)
@@ -150,9 +154,23 @@ internal sealed class RedisPubSubConsumerClient(
         catch (Exception ex)
         {
             logger.RedisPubSubMessageDispatchFailed(ex, channelMessage.Channel.ToString());
+            MessageEventCounterSource.Log.WritePubSubDispatchFailureMetric();
             OnLogCallback?.Invoke(
                 new LogMessageEventArgs { LogType = MqLogType.ExceptionReceived, Reason = ex.Message }
             );
+
+            var onDispatchFailed = options.Value.OnDispatchFailed;
+            if (onDispatchFailed is not null)
+            {
+                try
+                {
+                    await onDispatchFailed(ex, messageDeserialized ? message : null).ConfigureAwait(false);
+                }
+                catch (Exception callbackEx)
+                {
+                    logger.RedisPubSubDispatchFailedCallbackFailed(callbackEx, channelMessage.Channel.ToString());
+                }
+            }
         }
     }
 }
@@ -164,5 +182,20 @@ internal static partial class RedisPubSubConsumerClientLog
         Level = LogLevel.Error,
         Message = "Redis Pub/Sub message dispatch failed for channel {Channel}."
     )]
-    public static partial void RedisPubSubMessageDispatchFailed(this ILogger logger, Exception exception, string channel);
+    public static partial void RedisPubSubMessageDispatchFailed(
+        this ILogger logger,
+        Exception exception,
+        string channel
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        Level = LogLevel.Warning,
+        Message = "Redis Pub/Sub OnDispatchFailed callback threw an exception for channel {Channel}."
+    )]
+    public static partial void RedisPubSubDispatchFailedCallbackFailed(
+        this ILogger logger,
+        Exception exception,
+        string channel
+    );
 }

@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -77,20 +77,22 @@ public sealed class InMemoryBusTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        received.Should().BeEquivalentTo(
-            new Dictionary<string, int>(StringComparer.Ordinal)
-            {
-                ["group-1"] = 1,
-                ["group-2"] = 1,
-                ["group-3"] = 1,
-            }
-        );
+        received
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, int>(StringComparer.Ordinal)
+                {
+                    ["group-1"] = 1,
+                    ["group-2"] = 1,
+                    ["group-3"] = 1,
+                }
+            );
     }
 
     [Fact]
-    public async Task should_return_failed_result_when_no_bus_subscriber()
+    public async Task should_return_success_when_no_bus_subscriber()
     {
-        // given
+        // given — no subscriber registered; real-broker semantics: publish-without-subscriber is a no-op
         var queueLogger = Substitute.For<ILogger<MemoryQueue>>();
         var transportLogger = Substitute.For<ILogger<InMemoryBusTransport>>();
         await using var transport = new InMemoryBusTransport(new MemoryQueue(queueLogger), transportLogger);
@@ -98,9 +100,8 @@ public sealed class InMemoryBusTransportTests : TestBase
         // when
         var result = await transport.SendAsync(_CreateTestMessage("msg-1", "unsubscribed-topic"), AbortToken);
 
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        // then — message is silently dropped; transport reports success (the send itself did not fail)
+        result.Succeeded.Should().BeTrue();
     }
 
     private static async Task _ListenAsync(InMemoryConsumerClient client, CancellationToken cancellationToken)

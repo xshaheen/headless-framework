@@ -105,19 +105,14 @@ public sealed class MemoryQueueTests : TestBase
     }
 
     [Fact]
-    public async Task should_throw_when_no_group_subscribed_to_topic()
+    public async Task should_silently_drop_message_when_no_group_subscribed_to_topic()
     {
-        // given
+        // given — no subscriber registered; SendBus matches real-broker no-op semantics (no throw)
         var message = _CreateTestMessage("msg-1", "unsubscribed-topic");
 
-        // when
+        // when / then — must not throw
         var action = () => _queue.SendBus(message);
-
-        // then
-        action
-            .Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*Cannot find the corresponding group for unsubscribed-topic*");
+        action.Should().NotThrow();
     }
 
     [Fact]
@@ -226,7 +221,9 @@ public sealed class MemoryQueueTests : TestBase
         // when - send messages concurrently
         var sendTasks = Enumerable
             .Range(0, messageCount)
-            .Select(i => Task.Run(() => _queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-topic")), AbortToken));
+            .Select(i =>
+                Task.Run(() => _queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-topic")), AbortToken)
+            );
 
         await Task.WhenAll(sendTasks);
         _ = await Task.WhenAny(tcs.Task, Task.Delay(30000, AbortToken));
@@ -341,9 +338,9 @@ public sealed class MemoryQueueTests : TestBase
         // when - unsubscribe the consumer
         _queue.Unsubscribe(IntentType.Bus, "test-group", _consumerClient);
 
-        // then - the topic binding is removed with the final client
+        // then - the topic binding is removed with the final client; send is a silent no-op
         var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Cannot find the corresponding group*");
+        act.Should().NotThrow();
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
 

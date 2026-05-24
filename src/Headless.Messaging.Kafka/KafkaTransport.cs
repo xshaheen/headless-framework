@@ -7,7 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Kafka;
 
-internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPool connectionPool) : IQueueTransport
+internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPool connectionPool)
+    : IQueueTransport
 {
     private readonly ILogger _logger = logger;
 

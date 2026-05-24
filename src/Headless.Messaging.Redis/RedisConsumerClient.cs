@@ -49,16 +49,18 @@ internal sealed class RedisConsumerClient(
         return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
     }
 
-    public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
+    public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        _ = _ListeningForMessagesAsync(timeout, cancellationToken);
+        _ObserveBackgroundHandler(_ListeningForMessagesAsync(timeout, cancellationToken));
 
-        while (true)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            cancellationToken.WaitHandle.WaitOne(timeout);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
         }
-        // ReSharper disable once FunctionNeverReturns
+        catch (OperationCanceledException)
+        {
+            // Shutdown requested — exit cleanly.
+        }
     }
 
     public async ValueTask CommitAsync(object? sender)
@@ -115,7 +117,7 @@ internal sealed class RedisConsumerClient(
         //Once we consumed our history, we can start getting new messages.
         var newMsgs = redis.PollStreamsLatestMessagesAsync(_topics, groupId, timeout, cancellationToken);
 
-        _ = _ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken);
+        _ObserveBackgroundHandler(_ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken));
     }
 
     private async Task _ConsumeMessages(

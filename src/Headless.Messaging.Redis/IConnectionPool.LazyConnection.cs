@@ -10,8 +10,12 @@ namespace Headless.Messaging.Redis;
 public class AsyncLazyRedisConnection(
     MessagingRedisOptions redisOptions,
     ILogger<AsyncLazyRedisConnection> logger,
-    TimeProvider? timeProvider = null
-) : Lazy<Task<RedisConnection>>(() => _ConnectAsync(redisOptions, logger, timeProvider ?? TimeProvider.System))
+    TimeProvider? timeProvider = null,
+    CancellationToken cancellationToken = default
+)
+    : Lazy<Task<RedisConnection>>(() =>
+        _ConnectAsync(redisOptions, logger, timeProvider ?? TimeProvider.System, cancellationToken)
+    )
 {
     public RedisConnection? CreatedConnection => IsValueCreated ? Value.GetAwaiter().GetResult() : null;
 
@@ -23,7 +27,8 @@ public class AsyncLazyRedisConnection(
     private static async Task<RedisConnection> _ConnectAsync(
         MessagingRedisOptions redisOptions,
         ILogger<AsyncLazyRedisConnection> logger,
-        TimeProvider timeProvider
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
     )
     {
         var attempt = 1;
@@ -44,7 +49,7 @@ public class AsyncLazyRedisConnection(
             {
                 logger.LogRedisConnectionAttemptFailed(attempt);
 
-                await timeProvider.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+                await timeProvider.Delay(TimeSpan.FromSeconds(2), cancellationToken).ConfigureAwait(false);
 
                 ++attempt;
             }

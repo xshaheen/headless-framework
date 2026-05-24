@@ -19,7 +19,14 @@ internal sealed class RedisPubSubConsumerClientFactory(
         try
         {
             return Task.FromResult<IConsumerClient>(
-                new RedisPubSubConsumerClient(groupName, groupConcurrent, connectionProvider, options, logger, timeProvider)
+                new RedisPubSubConsumerClient(
+                    groupName,
+                    groupConcurrent,
+                    connectionProvider,
+                    options,
+                    logger,
+                    timeProvider
+                )
             );
         }
         catch (Exception e)

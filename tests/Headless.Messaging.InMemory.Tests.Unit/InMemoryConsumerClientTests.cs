@@ -236,9 +236,9 @@ public sealed class InMemoryConsumerClientTests : TestBase
         // when
         await client.DisposeAsync();
 
-        // then - sending to the topic should fail because the disposed client removed the binding
+        // then - disposed client removes the binding; send is a silent no-op (real-broker semantics)
         var act = () => queue.SendBus(_CreateTestMessage("msg-1", "dispose-topic"));
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Cannot find the corresponding group*");
+        act.Should().NotThrow();
         await Task.Delay(100, AbortToken);
         receivedMessage.Should().BeNull();
     }

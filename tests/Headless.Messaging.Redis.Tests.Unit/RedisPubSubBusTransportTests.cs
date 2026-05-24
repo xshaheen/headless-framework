@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Redis;
 using Headless.Testing.Tests;
-using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
@@ -48,9 +48,7 @@ public sealed class RedisPubSubBusTransportTests : TestBase
         var subscriber = Substitute.For<ISubscriber>();
         connection.GetSubscriber().Returns(subscriber);
         connectionProvider.ConnectAsync().Returns(_ReturnConnectionAsync(connection));
-        subscriber
-            .PublishAsync(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>())
-            .Returns(1L);
+        subscriber.PublishAsync(Arg.Any<RedisChannel>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>()).Returns(1L);
 
         var logger = Substitute.For<ILogger<RedisPubSubBusTransport>>();
         await using var transport = new RedisPubSubBusTransport(connectionProvider, _Options, logger);

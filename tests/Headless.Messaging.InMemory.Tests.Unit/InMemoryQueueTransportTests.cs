@@ -100,18 +100,16 @@ public sealed class InMemoryQueueTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_failed_result_when_no_subscriber()
+    public async Task should_return_success_when_no_subscriber()
     {
-        // given
+        // given — no subscriber registered; real-broker semantics: publish-without-subscriber is a no-op
         var message = _CreateTestMessage("msg-1", "unsubscribed-topic");
 
         // when
         var result = await _transport.SendAsync(message);
 
-        // then
-        result.Succeeded.Should().BeFalse();
-        result.Exception.Should().NotBeNull();
-        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        // then — message is silently dropped; transport reports success (the send itself did not fail)
+        result.Succeeded.Should().BeTrue();
     }
 
     [Fact]

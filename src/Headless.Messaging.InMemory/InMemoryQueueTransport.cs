@@ -10,7 +10,8 @@ namespace Headless.Messaging.InMemory;
 /// <summary>
 /// Transport implementation for in-memory message queue.
 /// </summary>
-internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemoryQueueTransport> logger) : IQueueTransport
+internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemoryQueueTransport> logger)
+    : IQueueTransport
 {
     private readonly ILogger _logger = logger;
 
@@ -25,26 +26,19 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
     /// <param name="message">The transport message to send.</param>
     /// <param name="cancellationToken">Token to cancel the send operation.</param>
     /// <returns>A task that returns the operation result.</returns>
-    public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var messageName = message.GetName();
+        var result = await InMemoryTransportCore
+            .SendCoreAsync(message, queue.SendQueue, cancellationToken)
+            .ConfigureAwait(false);
 
-            queue.SendQueue(message);
-            var messageName = message.GetName();
+        if (result.Succeeded)
+        {
             _logger.QueueMessagePublished(messageName);
-            return Task.FromResult(OperateResult.Success);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            var wrapperEx = new PublisherSentFailedException(e.Message, e);
-            return Task.FromResult(OperateResult.Failed(wrapperEx));
-        }
+
+        return result;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

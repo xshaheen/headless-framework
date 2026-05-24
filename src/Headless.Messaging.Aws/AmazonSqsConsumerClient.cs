@@ -237,7 +237,9 @@ internal sealed class AmazonSqsConsumerClient(
 
         try
         {
-            await _sqsClient!.ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3).ConfigureAwait(false);
+            await _sqsClient!
+                .ChangeMessageVisibilityAsync(inflight.QueueUrl, inflight.ReceiptHandle, 3)
+                .ConfigureAwait(false);
         }
         catch (MessageNotInflightException ex)
         {
@@ -307,7 +309,9 @@ internal sealed class AmazonSqsConsumerClient(
                 if (intentType == IntentType.Bus && string.IsNullOrWhiteSpace(_queueUrl))
                 {
                     // Create or get existing queue URL asynchronously
-                    var queueResponse = await _sqsClient!.CreateQueueAsync(groupId.ToSqsCreateQueueRequest()).ConfigureAwait(false);
+                    var queueResponse = await _sqsClient!
+                        .CreateQueueAsync(groupId.ToSqsCreateQueueRequest())
+                        .ConfigureAwait(false);
                     _queueUrl = queueResponse.QueueUrl;
                 }
             }
@@ -327,11 +331,7 @@ internal sealed class AmazonSqsConsumerClient(
                 KeyValuePair<string, Amazon.SQS.Model.MessageAttributeValue>,
                 string,
                 string?
-            >(
-                x => x.Key,
-                x => x.Value.StringValue,
-                StringComparer.Ordinal
-            );
+            >(x => x.Key, x => x.Value.StringValue, StringComparer.Ordinal);
 
             return (headers, sqsMessage.Body);
         }

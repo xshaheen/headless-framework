@@ -103,7 +103,10 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         _SetSqsClient(transport, sqsClient);
 
         var message = new TransportMessage(
-            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "order.created" },
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "order.created",
+            },
             body: "test"u8.ToArray()
         );
 

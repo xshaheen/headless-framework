@@ -18,11 +18,7 @@ internal sealed class AzureServiceBusConsumerClientFactory(
         return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
     }
 
-    public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        IntentType intentType
-    )
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
         // Bus groups are Azure subscriptions. Queue groups are framework-local
         // handler selectors; their broker entity names are validated on SubscribeAsync.

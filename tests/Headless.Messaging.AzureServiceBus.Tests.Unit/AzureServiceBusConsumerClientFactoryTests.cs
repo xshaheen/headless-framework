@@ -70,12 +70,7 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var loggerFactory = Substitute.For<ILoggerFactory>();
         loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
 
-        var options = Options.Create(
-            new AzureServiceBusOptions
-            {
-                ConnectionString = "InvalidConnectionString",
-            }
-        );
+        var options = Options.Create(new AzureServiceBusOptions { ConnectionString = "InvalidConnectionString" });
         var serviceProvider = new ServiceCollection().BuildServiceProvider();
         var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
         var groupName = new string('a', 80);

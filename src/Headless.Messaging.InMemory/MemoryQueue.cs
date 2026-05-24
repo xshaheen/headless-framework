@@ -14,8 +14,10 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     private readonly Lock _lock = new();
 
     private readonly Dictionary<(IntentType IntentType, string Topic), List<string>> _topicGroups = [];
-    private readonly Dictionary<(IntentType IntentType, string GroupId), List<InMemoryConsumerClient>> _consumerClients =
-        [];
+    private readonly Dictionary<
+        (IntentType IntentType, string GroupId),
+        List<InMemoryConsumerClient>
+    > _consumerClients = [];
     private readonly Dictionary<(IntentType IntentType, string GroupId), int> _nextClientIndexes = [];
     private readonly Dictionary<string, int> _nextQueueGroupIndexes = [];
 
@@ -128,35 +130,34 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     /// <summary>
     /// Sends a transport message to all subscribed bus consumer groups.
+    /// When no subscriber is registered for the topic the message is silently dropped (no-op),
+    /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>
-    /// <exception cref="InvalidOperationException">Thrown when no consumer group has subscribed to the message topic</exception>
     public void SendBus(TransportMessage message)
     {
         var name = message.GetName();
         lock (_lock)
         {
-            if (_topicGroups.TryGetValue((IntentType.Bus, name), out var groupList))
+            if (!_topicGroups.TryGetValue((IntentType.Bus, name), out var groupList))
             {
-                foreach (var groupId in groupList)
-                {
-                    _TryDeliverToGroup(IntentType.Bus, groupId, message);
-                }
+                logger.NoSubscribersBus(name);
+                return;
             }
-            else
+
+            foreach (var groupId in groupList)
             {
-                throw new InvalidOperationException(
-                    $"Cannot find the corresponding group for {name}. Have you subscribed?"
-                );
+                _TryDeliverToGroup(IntentType.Bus, groupId, message);
             }
         }
     }
 
     /// <summary>
     /// Sends a transport message to one subscribed queue consumer group.
+    /// When no subscriber is registered for the topic the message is silently dropped (no-op),
+    /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>
-    /// <exception cref="InvalidOperationException">Thrown when no consumer group has subscribed to the message topic</exception>
     public void SendQueue(TransportMessage message)
     {
         var name = message.GetName();
@@ -164,9 +165,8 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         {
             if (!_topicGroups.TryGetValue((IntentType.Queue, name), out var groupList) || groupList.Count == 0)
             {
-                throw new InvalidOperationException(
-                    $"Cannot find the corresponding group for {name}. Have you subscribed?"
-                );
+                logger.NoSubscribersQueue(name);
+                return;
             }
 
             var startIndex = _nextQueueGroupIndexes.TryGetValue(name, out var index) ? index : 0;
@@ -182,9 +182,8 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
                 }
             }
 
-            throw new InvalidOperationException(
-                $"Cannot find an active consumer client for {name}. Have you subscribed?"
-            );
+            // All groups have no active clients — drop silently (matches real-broker semantics).
+            logger.NoActiveConsumerQueue(name);
         }
     }
 
@@ -221,4 +220,25 @@ internal static partial class MemoryQueueLog
         Message = "Removed consumer client from InMemory! --> Group: {GroupId}"
     )]
     public static partial void ConsumerRemoved(this ILogger logger, string groupId);
+
+    [LoggerMessage(
+        EventId = 3008,
+        Level = LogLevel.Warning,
+        Message = "No bus subscriber registered for topic '{TopicName}'. Message dropped (no-op)."
+    )]
+    public static partial void NoSubscribersBus(this ILogger logger, string topicName);
+
+    [LoggerMessage(
+        EventId = 3009,
+        Level = LogLevel.Warning,
+        Message = "No queue subscriber registered for topic '{TopicName}'. Message dropped (no-op)."
+    )]
+    public static partial void NoSubscribersQueue(this ILogger logger, string topicName);
+
+    [LoggerMessage(
+        EventId = 3010,
+        Level = LogLevel.Warning,
+        Message = "No active consumer client for queue topic '{TopicName}'. Message dropped (no-op)."
+    )]
+    public static partial void NoActiveConsumerQueue(this ILogger logger, string topicName);
 }

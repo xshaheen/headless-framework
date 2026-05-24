@@ -6,5 +6,5 @@ namespace Headless.Messaging.Redis;
 
 internal interface IRedisConnectionPool
 {
-    Task<IConnectionMultiplexer> ConnectAsync();
+    Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default);
 }

@@ -245,9 +245,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         await snsClient
             .Received(1)
             .PublishAsync(
-                Arg.Is<PublishRequest>(r =>
-                    r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"
-                ),
+                Arg.Is<PublishRequest>(r => r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"),
                 Arg.Any<CancellationToken>()
             );
     }

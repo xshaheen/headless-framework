@@ -163,7 +163,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     [Fact]
     public void should_use_topic_queue_for_queue_intent()
     {
-        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", IntentType.Queue).Should().Be("orders.created");
+        RabbitMqConsumerClient
+            .GetQueueName("workers", "orders.created", IntentType.Queue)
+            .Should()
+            .Be("orders.created");
     }
 
     [Fact]

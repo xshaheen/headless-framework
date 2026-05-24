@@ -17,11 +17,7 @@ internal sealed class RabbitMqConsumerClientFactory(
         return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
     }
 
-    public async Task<IConsumerClient> CreateAsync(
-        string groupName,
-        byte groupConcurrent,
-        IntentType intentType
-    )
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
         try
         {

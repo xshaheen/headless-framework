@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
 using Amazon.SimpleNotificationService.Model;
 using Amazon.SQS.Model;
+using Headless.Checks;
 
 namespace Headless.Messaging.Aws;
 

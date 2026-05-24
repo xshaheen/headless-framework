@@ -146,7 +146,7 @@ public sealed class AzureServiceBusQueueTransportTests
             "_senders",
             BindingFlags.NonPublic | BindingFlags.Instance
         )!;
-        var senders = (ConcurrentDictionary<string, ServiceBusSender?>)field.GetValue(transport)!;
-        senders[queueName] = sender;
+        var senders = (ConcurrentDictionary<string, Lazy<ServiceBusSender>>)field.GetValue(transport)!;
+        senders[queueName] = new Lazy<ServiceBusSender>(() => sender);
     }
 }

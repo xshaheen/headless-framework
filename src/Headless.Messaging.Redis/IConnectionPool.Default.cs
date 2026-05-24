@@ -40,7 +40,7 @@ internal class RedisConnectionPool : IRedisConnectionPool, IDisposable
         GC.SuppressFinalize(this);
     }
 
-    public async Task<IConnectionMultiplexer> ConnectAsync()
+    public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
         if (QuietConnection == null)
         {

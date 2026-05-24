@@ -60,7 +60,10 @@ internal sealed class AmazonSqsQueueTransport(
             {
                 request.MessageGroupId = message.GetGroup() ?? "default";
 
-                if (message.Headers.TryGetValue(Headers.MessageId, out var messageId) && !string.IsNullOrWhiteSpace(messageId))
+                if (
+                    message.Headers.TryGetValue(Headers.MessageId, out var messageId)
+                    && !string.IsNullOrWhiteSpace(messageId)
+                )
                 {
                     request.MessageDeduplicationId = messageId;
                 }
@@ -92,11 +95,11 @@ internal sealed class AmazonSqsQueueTransport(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _semaphore.Dispose();
         _sqsClient?.Dispose();
-        await ValueTask.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
     private async Task<string> _GetOrCreateQueueUrlAsync(string queueName, CancellationToken cancellationToken)
@@ -117,7 +120,9 @@ internal sealed class AmazonSqsQueueTransport(
 
             _sqsClient ??= AwsClientFactory.CreateSqsClient(sqsOptionsAccessor.Value);
             var response = queueName.IsAwsFifoName()
-                ? await _sqsClient.CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken).ConfigureAwait(false)
+                ? await _sqsClient
+                    .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
+                    .ConfigureAwait(false)
                 : await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
             _queueUrlMaps[queueName] = response.QueueUrl;
 

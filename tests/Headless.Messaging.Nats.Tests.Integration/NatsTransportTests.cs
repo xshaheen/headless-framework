@@ -58,7 +58,8 @@ public sealed class NatsTransportTests : TransportTestsBase
     }
 
     protected override IQueueTransport GetQueueTransport() =>
-        GetBusTransport() as IQueueTransport ?? throw new InvalidOperationException("NATS transport must support queue intent.");
+        GetBusTransport() as IQueueTransport
+        ?? throw new InvalidOperationException("NATS transport must support queue intent.");
 
     protected override async ValueTask DisposeAsyncCore()
     {

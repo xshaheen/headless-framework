@@ -50,7 +50,10 @@ internal sealed class AmazonSnsBusTransport(
                 {
                     request.MessageGroupId = message.GetGroup() ?? "default";
 
-                    if (message.Headers.TryGetValue(Headers.MessageId, out var messageId) && !string.IsNullOrWhiteSpace(messageId))
+                    if (
+                        message.Headers.TryGetValue(Headers.MessageId, out var messageId)
+                        && !string.IsNullOrWhiteSpace(messageId)
+                    )
                     {
                         request.MessageDeduplicationId = messageId;
                     }
@@ -126,14 +129,6 @@ internal sealed class AmazonSnsBusTransport(
                 } while (!string.IsNullOrEmpty(nextToken));
             }
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception e)
-        {
-            _logger.LogInitSnsTopicsFailed(e);
-        }
         finally
         {
             _semaphore.Release();
@@ -151,7 +146,9 @@ internal sealed class AmazonSnsBusTransport(
         }
 
         var response = topicName.IsAwsFifoName()
-            ? await _snsClient!.CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), cancellationToken).ConfigureAwait(false)
+            ? await _snsClient!
+                .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), cancellationToken)
+                .ConfigureAwait(false)
             : await _snsClient!.CreateTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrEmpty(response.TopicArn))
@@ -225,12 +222,4 @@ internal static partial class AmazonSnsBusTransportLog
         Message = "Can't be found SNS topics for [{NormalizeForAws}]"
     )]
     public static partial void LogSnsTopicNotFound(this ILogger logger, string normalizeForAws);
-
-    [LoggerMessage(
-        EventId = 3,
-        EventName = "InitSnsTopicsFailed",
-        Level = LogLevel.Error,
-        Message = "Init topics from aws sns error!"
-    )]
-    public static partial void LogInitSnsTopicsFailed(this ILogger logger, Exception exception);
 }

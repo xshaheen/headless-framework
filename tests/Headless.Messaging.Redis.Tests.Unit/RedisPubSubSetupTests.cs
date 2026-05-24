@@ -55,7 +55,9 @@ public sealed class RedisPubSubSetupTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
-            setup.UseRedisPubSub(options => options.Configuration = ConfigurationOptions.Parse("redis.example.com:6380"))
+            setup.UseRedisPubSub(options =>
+                options.Configuration = ConfigurationOptions.Parse("redis.example.com:6380")
+            )
         );
 
         // when
