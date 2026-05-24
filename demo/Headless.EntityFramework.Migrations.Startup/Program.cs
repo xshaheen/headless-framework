@@ -41,12 +41,14 @@ addInMemoryDistributedLock(builder.Services);
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
-builder
-    .Services.AddPermissionsManagementCore()
-    .AddPermissionsManagementDbContextStorage(options =>
-    {
-        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
-    });
+builder.Services.AddDbContextFactory<PermissionsMigrationDbContext>(options =>
+    options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
+);
+
+builder.Services.AddPermissionsManagementCore().AddHeadlessPermissions(setup =>
+{
+    setup.UseEntityFramework<PermissionsMigrationDbContext>();
+});
 
 builder.Services.AddDbContextFactory<SettingsMigrationDbContext>(options =>
     options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
@@ -95,5 +97,17 @@ internal sealed class SettingsMigrationDbContext(
     {
         base.OnModelCreating(modelBuilder);
         modelBuilder.AddHeadlessSettings(storageOptions.Value);
+    }
+}
+
+internal sealed class PermissionsMigrationDbContext(
+    DbContextOptions<PermissionsMigrationDbContext> options,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
     }
 }

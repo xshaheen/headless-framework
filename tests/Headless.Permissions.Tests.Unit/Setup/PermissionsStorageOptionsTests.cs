@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Permissions;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -26,12 +27,16 @@ public sealed class PermissionsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(options =>
+        services.AddHeadlessPermissions(setup =>
         {
-            options.Schema = schema;
-            options.PermissionGrantsTableName = grantsTable;
-            options.PermissionDefinitionsTableName = definitionsTable;
-            options.PermissionGroupDefinitionsTableName = groupDefinitionsTable;
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = schema;
+                options.PermissionGrantsTableName = grantsTable;
+                options.PermissionDefinitionsTableName = definitionsTable;
+                options.PermissionGroupDefinitionsTableName = groupDefinitionsTable;
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PermissionsStorageOptions>>();
@@ -48,12 +53,16 @@ public sealed class PermissionsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(options =>
+        services.AddHeadlessPermissions(setup =>
         {
-            options.Schema = "custom_permissions";
-            options.PermissionGrantsTableName = "tbl_permission_grants";
-            options.PermissionDefinitionsTableName = "tbl_permission_definitions";
-            options.PermissionGroupDefinitionsTableName = "tbl_permission_group_definitions";
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = "custom_permissions";
+                options.PermissionGrantsTableName = "tbl_permission_grants";
+                options.PermissionDefinitionsTableName = "tbl_permission_definitions";
+                options.PermissionGroupDefinitionsTableName = "tbl_permission_group_definitions";
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PermissionsStorageOptions>>();
@@ -74,7 +83,7 @@ public sealed class PermissionsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>();
+        services.AddHeadlessPermissions(setup => setup.UseEntityFramework<OptionsTestDbContext>());
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<PermissionsStorageOptions>>();
 
@@ -88,4 +97,6 @@ public sealed class PermissionsStorageOptionsTests
         resolved.PermissionDefinitionsTableName.Should().Be("PermissionDefinitions");
         resolved.PermissionGroupDefinitionsTableName.Should().Be("PermissionGroupDefinitions");
     }
+
+    private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);
 }

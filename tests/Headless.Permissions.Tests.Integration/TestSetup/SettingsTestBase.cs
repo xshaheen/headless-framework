@@ -10,6 +10,7 @@ using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Tests.TestSetup;
@@ -64,13 +65,28 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         // Resource Lock
         services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
-        services
-            .AddPermissionsManagementCore()
-            .AddPermissionsManagementDbContextStorage(
-                options => options.UseNpgsql(Fixture.SqlConnectionString),
-                ConfigurePermissionsStorage
-            );
+        services.AddDbContextFactory<PermissionsTestDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+
+        services.AddPermissionsManagementCore().AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureStorage(ConfigurePermissionsStorage);
+            setup.UseEntityFramework<PermissionsTestDbContext>();
+        });
     }
 
     protected virtual void ConfigurePermissionsStorage(PermissionsStorageOptions options) { }
+
+    protected sealed class PermissionsTestDbContext(
+        DbContextOptions<PermissionsTestDbContext> options,
+        IOptions<PermissionsStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+        }
+    }
 }

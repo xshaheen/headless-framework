@@ -11,7 +11,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add permissions management core
 // Note: In a real application, you would also call:
-// builder.Services.AddPermissionsManagementDbContextStorage(...)
+// builder.Services.AddHeadlessPermissions(...)
 // to configure the database storage
 builder.Services.AddPermissionsManagementCore();
 

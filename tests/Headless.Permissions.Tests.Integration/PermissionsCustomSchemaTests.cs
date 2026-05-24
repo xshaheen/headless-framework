@@ -94,13 +94,17 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     {
         // given
         var services = new ServiceCollection();
-        services.AddDbContextFactory<SharedPermissionsDbContext>(options =>
+        services.AddDbContextFactory<SharedPermissionsContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
-        services.AddPermissionsManagementDbContextStorage<SharedPermissionsDbContext>(ConfigurePermissionsStorage);
+        services.AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureStorage(ConfigurePermissionsStorage);
+            setup.UseEntityFramework<SharedPermissionsContext>();
+        });
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
-            .GetRequiredService<IDbContextFactory<SharedPermissionsDbContext>>()
+            .GetRequiredService<IDbContextFactory<SharedPermissionsContext>>()
             .CreateDbContextAsync(AbortToken);
 
         // when
@@ -120,104 +124,6 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
     }
 
-    [Fact]
-    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
-    {
-        // given
-        var factory = new PermissionsStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(
-            new PermissionsStorageOptions
-            {
-                Schema = "permissions_a",
-                PermissionGrantsTableName = "PermissionGrants",
-                PermissionDefinitionsTableName = "PermissionDefinitions",
-                PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
-            }
-        );
-        var contextB = _BuildContextWithOptions(
-            new PermissionsStorageOptions
-            {
-                Schema = "permissions_b",
-                PermissionGrantsTableName = "PermissionGrants",
-                PermissionDefinitionsTableName = "PermissionDefinitions",
-                PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions",
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().NotBe(keyB);
-        keyA.Should().Be(factory.Create(contextA, designTime: false));
-    }
-
-    [Fact]
-    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
-    {
-        // given
-        var factory = new PermissionsStorageModelCacheKeyFactory();
-        var optionsValues = new PermissionsStorageOptions
-        {
-            Schema = "shared",
-            PermissionGrantsTableName = "Grants",
-            PermissionDefinitionsTableName = "Definitions",
-            PermissionGroupDefinitionsTableName = "Groups",
-        };
-        var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(
-            new PermissionsStorageOptions
-            {
-                Schema = optionsValues.Schema,
-                PermissionGrantsTableName = optionsValues.PermissionGrantsTableName,
-                PermissionDefinitionsTableName = optionsValues.PermissionDefinitionsTableName,
-                PermissionGroupDefinitionsTableName = optionsValues.PermissionGroupDefinitionsTableName,
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().Be(keyB);
-    }
-
-    [Fact]
-    public void should_distinguish_designtime_in_model_cache_key()
-    {
-        // given
-        var factory = new PermissionsStorageModelCacheKeyFactory();
-        var context = _BuildContextWithOptions(new PermissionsStorageOptions());
-
-        // when
-        var runtimeKey = factory.Create(context, designTime: false);
-        var designTimeKey = factory.Create(context, designTime: true);
-
-        // then
-        runtimeKey.Should().NotBe(designTimeKey);
-    }
-
-    private static PermissionsDbContext _BuildContextWithOptions(PermissionsStorageOptions storageOptions)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(Options.Create(storageOptions));
-        var sp = services.BuildServiceProvider();
-
-        var dbOptions = new DbContextOptionsBuilder<PermissionsDbContext>()
-            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
-            .UseApplicationServiceProvider(sp)
-            .Options;
-
-        return new PermissionsDbContext(dbOptions)
-        {
-            PermissionGrants = null!,
-            PermissionDefinitions = null!,
-            PermissionGroupDefinitions = null!,
-        };
-    }
-
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -230,7 +136,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     private async Task _RecreateCustomTablesAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
-        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<PermissionsDbContext>>();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<PermissionsTestDbContext>>();
         await using var db = await factory.CreateDbContextAsync(AbortToken);
 
         await db.Database.ExecuteSqlRawAsync($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE""", AbortToken);
@@ -272,21 +178,15 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private sealed class SharedPermissionsDbContext(DbContextOptions<SharedPermissionsDbContext> options)
-        : DbContext(options),
-            IPermissionsDbContext
+    private sealed class SharedPermissionsContext(
+        DbContextOptions<SharedPermissionsContext> options,
+        IOptions<PermissionsStorageOptions> storageOptions
+    ) : DbContext(options)
     {
-        public DbSet<PermissionGrantRecord> PermissionGrants => Set<PermissionGrantRecord>();
-
-        public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
-
-        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions =>
-            Set<PermissionGroupDefinitionRecord>();
-
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddPermissionsConfiguration(this);
+            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
         }
     }
 

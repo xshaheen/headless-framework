@@ -37,7 +37,7 @@ builder.Services.AddPermissionsManagementCore(options =>
 builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 
 // Add storage (e.g., Entity Framework)
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 ### Authorization Requirement

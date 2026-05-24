@@ -1,63 +1,96 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Hosting.Storage;
+using Headless.Permissions;
+using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
-namespace Headless.Permissions;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class EntityFrameworkPermissionsSetup
+public static class SetupPermissions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction,
-            Action<PermissionsStorageOptions>? configureStorage = null
+        public HeadlessPermissionsBuilder AddHeadlessPermissions(Action<HeadlessPermissionsSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessPermissionsSetupBuilder(services);
+            configure(setup);
+
+            return _RegisterCorePermissionsServices(services, setup);
+        }
+
+        private static HeadlessPermissionsBuilder _RegisterCorePermissionsServices(
+            IServiceCollection serviceCollection,
+            HeadlessPermissionsSetupBuilder setup
         )
         {
-            services.AddPooledDbContextFactory<PermissionsDbContext>(options =>
+            if (setup.Extensions.Count != 1)
             {
-                setupAction(options);
-                options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+                throw new InvalidOperationException(
+                    setup.Extensions.Count == 0
+                        ? "Headless.Permissions requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                        : "Headless.Permissions requires exactly one storage provider. Multiple storage providers were configured."
+                );
+            }
+
+            serviceCollection.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(options =>
+            {
+                options.Schema = setup.StorageOptions.Schema;
+                options.PermissionGrantsTableName = setup.StorageOptions.PermissionGrantsTableName;
+                options.PermissionDefinitionsTableName = setup.StorageOptions.PermissionDefinitionsTableName;
+                options.PermissionGroupDefinitionsTableName = setup.StorageOptions.PermissionGroupDefinitionsTableName;
             });
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
 
-            return services;
+            foreach (var extension in setup.Extensions)
+            {
+                extension.AddServices(serviceCollection);
+            }
+
+            return new HeadlessPermissionsBuilder(serviceCollection);
         }
+    }
+}
 
-        public IServiceCollection AddPermissionsManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
-            Action<PermissionsStorageOptions>? configureStorage = null
-        )
+[PublicAPI]
+public static class SetupPermissionsEntityFramework
+{
+    extension(HeadlessPermissionsSetupBuilder setup)
+    {
+        public HeadlessPermissionsSetupBuilder UseEntityFramework<TContext>()
+            where TContext : DbContext
         {
-            services.AddPooledDbContextFactory<PermissionsDbContext>(
-                (provider, options) =>
-                {
-                    setupAction(provider, options);
-                    options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
-                }
+            setup.RegisterExtension(new EntityFrameworkPermissionsOptionsExtension(typeof(TContext)));
+
+            return setup;
+        }
+    }
+
+    private sealed class EntityFrameworkPermissionsOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.TryAddSingleton(
+                typeof(IPermissionGrantRepository),
+                typeof(EfPermissionGrantRepository<>).MakeGenericType(dbContextType)
             );
-            services.AddPermissionsManagementDbContextStorage<PermissionsDbContext>(configureStorage);
-
-            return services;
-        }
-
-        public IServiceCollection AddPermissionsManagementDbContextStorage<TContext>(
-            Action<PermissionsStorageOptions>? configureStorage = null
-        )
-            where TContext : DbContext, IPermissionsDbContext
-        {
-            services.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(configureStorage);
-            services.AddSingleton<IPermissionGrantRepository, EfPermissionGrantRepository<TContext>>();
-
-            services.AddSingleton<
-                IPermissionDefinitionRecordRepository,
-                EfPermissionDefinitionRecordRepository<TContext>
-            >();
-
-            return services;
+            services.TryAddSingleton(
+                typeof(IPermissionDefinitionRecordRepository),
+                typeof(EfPermissionDefinitionRecordRepository<>).MakeGenericType(dbContextType)
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(
+                    typeof(IHostedService),
+                    typeof(PermissionsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
+                )
+            );
         }
     }
 }

@@ -11,7 +11,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ILocalMessagePublisher localPublisher
 ) : IPermissionGrantRepository
-    where TContext : DbContext, IPermissionsDbContext
+    where TContext : DbContext
 {
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
@@ -23,7 +23,9 @@ public sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
-            .PermissionGrants.OrderBy(x => x.Id)
+            .Set<PermissionGrantRecord>()
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(
                 s => s.Name == name && s.ProviderName == providerName && s.ProviderKey == providerKey,
                 cancellationToken
@@ -39,7 +41,9 @@ public sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
-            .PermissionGrants.Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
+            .Set<PermissionGrantRecord>()
+            .AsNoTracking()
+            .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);
     }
 
@@ -53,7 +57,9 @@ public sealed class EfPermissionGrantRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
-            .PermissionGrants.Where(s =>
+            .Set<PermissionGrantRecord>()
+            .AsNoTracking()
+            .Where(s =>
                 names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
             )
             .ToListAsync(cancellationToken);
@@ -63,7 +69,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.PermissionGrants.Add(permissionGrant);
+        db.Set<PermissionGrantRecord>().Add(permissionGrant);
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -74,7 +80,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.PermissionGrants.AddRange(permissionGrants);
+        db.Set<PermissionGrantRecord>().AddRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -82,7 +88,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.PermissionGrants.Remove(permissionGrant);
+        db.Set<PermissionGrantRecord>().Remove(permissionGrant);
         await db.SaveChangesAsync(cancellationToken);
 
         await localPublisher.PublishAsync(
@@ -98,7 +104,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.PermissionGrants.RemoveRange(permissionGrants);
+        db.Set<PermissionGrantRecord>().RemoveRange(permissionGrants);
         await db.SaveChangesAsync(cancellationToken);
 
         foreach (var permissionGrant in permissionGrants)
