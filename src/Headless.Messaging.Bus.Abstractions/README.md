@@ -38,7 +38,7 @@ Use `IBus` only when transport-direct, fire-and-forget delivery is acceptable. U
 
 ## Configuration
 
-None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`.
+None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`; without that provider, `IBus` and `IOutboxBus` are not registered.
 
 ## Dependencies
 

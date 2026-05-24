@@ -107,6 +107,8 @@ public sealed class ImportService(IQueue queue)
 
 ## Publisher Options
 
+Publisher services are registered only when their matching transport capability exists: `IBus` / `IOutboxBus` require `IBusTransport`, and `IQueue` / `IOutboxQueue` require `IQueueTransport`. If a custom registration exposes a publisher without the matching transport, messaging bootstrap fails before the host starts.
+
 ### Bus Publishers
 
 Use bus publishers for broadcast publish/subscribe delivery:

@@ -332,20 +332,28 @@ internal sealed class Bootstrapper(
 
         var consumerRequiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
         var consumerRequiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
+        var registeredServices = serviceProvider.GetService<IServiceCollection>();
+        var publisherRequiresBus = _HasService<IBus>(registeredServices) || _HasService<IOutboxBus>(registeredServices);
+        var publisherRequiresQueue = _HasService<IQueue>(registeredServices) || _HasService<IOutboxQueue>(registeredServices);
 
         _RequireTransportFor<IBusTransport>(
             "bus",
-            consumerRequiresBus,
+            consumerRequiresBus || publisherRequiresBus,
             consumerSide: consumerRequiresBus,
-            publisherSide: false
+            publisherSide: publisherRequiresBus
         );
 
         _RequireTransportFor<IQueueTransport>(
             "queue",
-            consumerRequiresQueue,
+            consumerRequiresQueue || publisherRequiresQueue,
             consumerSide: consumerRequiresQueue,
-            publisherSide: false
+            publisherSide: publisherRequiresQueue
         );
+    }
+
+    private static bool _HasService<TService>(IServiceCollection? services)
+    {
+        return services?.Any(static descriptor => descriptor.ServiceType == typeof(TService)) == true;
     }
 
     private void _RequireTransportFor<TTransport>(string intent, bool required, bool consumerSide, bool publisherSide)

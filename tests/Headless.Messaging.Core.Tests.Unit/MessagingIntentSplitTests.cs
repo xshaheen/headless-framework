@@ -202,6 +202,80 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
+    public void add_headless_messaging_should_register_only_queue_publishers_for_queue_only_transport()
+    {
+        var services = new ServiceCollection();
+
+        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new QueueOnlyMessagingExtension()));
+
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IQueue));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IBus));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
+    }
+
+    [Fact]
+    public void add_headless_messaging_should_register_only_bus_publishers_for_bus_only_transport()
+    {
+        var services = new ServiceCollection();
+
+        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new BusOnlyMessagingExtension()));
+
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IBus));
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IOutboxBus));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IQueue));
+        services.Should().NotContain(descriptor => descriptor.ServiceType == typeof(IOutboxQueue));
+    }
+
+    [Fact]
+    public async Task bootstrap_should_fail_when_bus_publisher_is_registered_without_bus_transport()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new QueueOnlyMessagingExtension()));
+        services.AddSingleton(Substitute.For<IBus>());
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = new Bootstrapper(
+            [],
+            new NoOpStorageInitializer(),
+            provider,
+            Options.Create(new MessagingOptions()),
+            NullLogger<IBootstrapper>.Instance
+        );
+
+        var act = () => bootstrapper.BootstrapAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*IBusTransport*available*");
+    }
+
+    [Fact]
+    public async Task bootstrap_should_fail_when_queue_publisher_is_registered_without_queue_transport()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup => setup.RegisterExtension(new BusOnlyMessagingExtension()));
+        services.AddSingleton(Substitute.For<IQueue>());
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = new Bootstrapper(
+            [],
+            new NoOpStorageInitializer(),
+            provider,
+            Options.Create(new MessagingOptions()),
+            NullLogger<IBootstrapper>.Instance
+        );
+
+        var act = () => bootstrapper.BootstrapAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*IQueueTransport*available*");
+    }
+
+    [Fact]
     public async Task bus_publish_should_throw_publisher_sent_failed_when_transport_reports_failure()
     {
         // given
@@ -420,6 +494,28 @@ public sealed class MessagingIntentSplitTests : TestBase
         public string GetPublishedTableName() => "published";
 
         public string GetReceivedTableName() => "received";
+    }
+
+    private sealed class QueueOnlyMessagingExtension : IMessagesOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton(new MessageQueueMarkerService("QueueOnly"));
+            services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
+            services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+            services.AddSingleton<IQueueTransport, CapturingQueueTransport>();
+        }
+    }
+
+    private sealed class BusOnlyMessagingExtension : IMessagesOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.AddSingleton(new MessageQueueMarkerService("BusOnly"));
+            services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
+            services.AddSingleton<IStorageInitializer, NoOpStorageInitializer>();
+            services.AddSingleton<IBusTransport, CapturingBusTransport>();
+        }
     }
 
     private sealed class FailingBusTransport : IBusTransport

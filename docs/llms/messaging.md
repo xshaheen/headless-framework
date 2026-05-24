@@ -298,6 +298,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
 - **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
+- **Publisher services are capability-gated**: Core registers `IBus` / `IOutboxBus` only when a provider registers `IBusTransport`, and registers `IQueue` / `IOutboxQueue` only when a provider registers `IQueueTransport`. A manually registered publisher without its matching transport fails during messaging bootstrap.
 - **Outbox intent is durable**: Storage rows carry `IntentType`; retry drainers dispatch bus rows through `IBusTransport` and queue rows through `IQueueTransport`. A persisted row whose intent has no registered transport is terminally failed and the drainer continues.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
@@ -416,7 +417,7 @@ The current publish surface separates delivery intent from durability:
 - `IQueue` — direct point-to-point delivery through `IQueueTransport`.
 - `IOutboxQueue` — durable point-to-point delivery; the enqueue writes to storage and a background drainer dispatches via `IQueueTransport`.
 
-Outbox rows carry `IntentType.Bus` or `IntentType.Queue`, so retry drainers, dashboard projections, consume contexts, and telemetry preserve the caller's selected intent. Legacy publisher contracts remain as migration compatibility shims; new code should not depend on them.
+Outbox rows carry `IntentType.Bus` or `IntentType.Queue`, so retry drainers, dashboard projections, consume contexts, and telemetry preserve the caller's selected intent. Publisher registrations are transport-gated: bus publishers require `IBusTransport`, and queue publishers require `IQueueTransport`.
 
 ### Reserved Wire Headers
 
@@ -532,7 +533,7 @@ public sealed class OrderEvents(IOutboxBus bus)
 
 ## Configuration
 
-None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`.
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`; without that provider, `IBus` and `IOutboxBus` are not registered.
 
 ## Dependencies
 
@@ -582,7 +583,7 @@ public sealed class ImportJobs(IOutboxQueue queue)
 
 ## Configuration
 
-None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`.
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`; without that provider, `IQueue` and `IOutboxQueue` are not registered.
 
 ## Dependencies
 

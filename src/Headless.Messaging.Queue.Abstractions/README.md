@@ -38,7 +38,7 @@ Use `IQueue` only when transport-direct, fire-and-forget delivery is acceptable.
 
 ## Configuration
 
-None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`.
+None in this package. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`; without that provider, `IQueue` and `IOutboxQueue` are not registered.
 
 ## Dependencies
 

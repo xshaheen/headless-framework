@@ -106,11 +106,7 @@ public static class SetupMessaging
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
-        services.TryAddSingleton<IBus, Bus>();
-        services.TryAddSingleton<IQueue, Queue>();
         services.TryAddSingleton<OutboxMessageWriter>();
-        services.TryAddSingleton<IOutboxBus, OutboxBus>();
-        services.TryAddSingleton<IOutboxQueue, OutboxQueue>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
 
@@ -173,6 +169,8 @@ public static class SetupMessaging
             serviceExtension.AddServices(services);
         }
 
+        _RegisterPublisherServicesForAvailableTransports(services);
+
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
@@ -197,6 +195,26 @@ public static class SetupMessaging
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
         return new MessagingBuilder(services, options);
+    }
+
+    private static void _RegisterPublisherServicesForAvailableTransports(IServiceCollection services)
+    {
+        if (_HasService<IBusTransport>(services))
+        {
+            services.TryAddSingleton<IBus, Bus>();
+            services.TryAddSingleton<IOutboxBus, OutboxBus>();
+        }
+
+        if (_HasService<IQueueTransport>(services))
+        {
+            services.TryAddSingleton<IQueue, Queue>();
+            services.TryAddSingleton<IOutboxQueue, OutboxQueue>();
+        }
+    }
+
+    private static bool _HasService<TService>(IServiceCollection services)
+    {
+        return services.Any(static descriptor => descriptor.ServiceType == typeof(TService));
     }
 
     /// <summary>
