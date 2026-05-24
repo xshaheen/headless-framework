@@ -30,7 +30,7 @@ public sealed class TestConsumer<TMessage> : IConsume<TMessage>
     public bool IsEmpty => _receivedContexts.IsEmpty;
 
     /// <summary>
-    /// Best-effort drain of captured state. Concurrent <see cref="Consume"/> calls
+    /// Best-effort drain of captured state. Concurrent <see cref="ConsumeAsync"/> calls
     /// may still enqueue while draining; callers should ensure no publishers are active.
     /// </summary>
     public void Clear()

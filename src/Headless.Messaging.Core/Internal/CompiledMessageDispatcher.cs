@@ -52,7 +52,7 @@ public interface IMessageDispatcher
     /// Thrown when no consumer is registered for the specified message type.
     /// </exception>
     /// <exception cref="Exception">
-    /// Any exception thrown by the consumer's <see cref="IConsume{TMessage}.Consume"/> method
+    /// Any exception thrown by the consumer's <see cref="IConsume{TMessage}.ConsumeAsync"/> method
     /// is propagated to allow retry/DLQ logic to handle the failure.
     /// </exception>
     /// <remarks>

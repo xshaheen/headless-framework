@@ -23,7 +23,7 @@ namespace Headless.Messaging;
 /// <item><description>A new DI scope is created for the delivery</description></item>
 /// <item><description>The consumer instance is resolved from that scope</description></item>
 /// <item><description><see cref="OnStartingAsync"/> is called (if the consumer implements this interface)</description></item>
-/// <item><description><see cref="IConsume{TMessage}.Consume"/> is invoked</description></item>
+/// <item><description><see cref="IConsume{TMessage}.ConsumeAsync"/> is invoked</description></item>
 /// <item><description><see cref="OnStoppingAsync"/> is called in a <c>finally</c> block (if the consumer implements this interface)</description></item>
 /// <item><description>The DI scope is disposed</description></item>
 /// </list>
@@ -93,7 +93,7 @@ public interface IConsumerLifecycle
     ValueTask OnStartingAsync(CancellationToken cancellationToken);
 
     /// <summary>
-    /// Called after the current message finishes processing, even when <see cref="IConsume{TMessage}.Consume"/> throws.
+    /// Called after the current message finishes processing, even when <see cref="IConsume{TMessage}.ConsumeAsync"/> throws.
     /// Use this to clean up per-dispatch resources, flush buffers, or perform delivery-scoped teardown.
     /// </summary>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the shutdown operation.</param>

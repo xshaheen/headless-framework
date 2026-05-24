@@ -126,17 +126,20 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
 
     public override int GetHashCode()
     {
-        var hash = new HashCode();
-        hash.Add(Body.Length);
-        hash.Add(Headers.Count);
+        // Equals is order-independent (TryGetValue per key); GetHashCode must also be
+        // order-independent so the equality contract holds for dictionaries with the same
+        // content but different insertion order. XOR is commutative, so pair hashes can be
+        // accumulated in any traversal order without affecting the final value.
+        var pairHash = 0;
 
         foreach (var pair in Headers)
         {
-            hash.Add(pair.Key, StringComparer.Ordinal);
-            hash.Add(pair.Value, StringComparer.Ordinal);
+            var keyHash = StringComparer.Ordinal.GetHashCode(pair.Key);
+            var valueHash = pair.Value is null ? 0 : StringComparer.Ordinal.GetHashCode(pair.Value);
+            pairHash ^= HashCode.Combine(keyHash, valueHash);
         }
 
-        return hash.ToHashCode();
+        return HashCode.Combine(Body.Length, Headers.Count, pairHash);
     }
 
     public static bool operator ==(TransportMessage left, TransportMessage right)

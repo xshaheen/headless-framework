@@ -356,13 +356,7 @@ public static class MessagingDashboardEndpoints
 
         if (storageIds.Length > _MaxBulkActionSize)
         {
-            return Results.UnprocessableEntity(
-                new
-                {
-                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
-                    maxBulkSize = _MaxBulkActionSize,
-                }
-            );
+            return _BulkTooLarge();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
@@ -413,13 +407,7 @@ public static class MessagingDashboardEndpoints
 
         if (storageIds.Length > _MaxBulkActionSize)
         {
-            return Results.UnprocessableEntity(
-                new
-                {
-                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
-                    maxBulkSize = _MaxBulkActionSize,
-                }
-            );
+            return _BulkTooLarge();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
@@ -437,13 +425,7 @@ public static class MessagingDashboardEndpoints
 
         if (storageIds.Length > _MaxBulkActionSize)
         {
-            return Results.UnprocessableEntity(
-                new
-                {
-                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
-                    maxBulkSize = _MaxBulkActionSize,
-                }
-            );
+            return _BulkTooLarge();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
@@ -494,13 +476,7 @@ public static class MessagingDashboardEndpoints
 
         if (storageIds.Length > _MaxBulkActionSize)
         {
-            return Results.UnprocessableEntity(
-                new
-                {
-                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
-                    maxBulkSize = _MaxBulkActionSize,
-                }
-            );
+            return _BulkTooLarge();
         }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
@@ -638,6 +614,17 @@ public static class MessagingDashboardEndpoints
             mapped.HasNext,
             Totals = mapped.TotalItems,
         };
+    }
+
+    private static IResult _BulkTooLarge()
+    {
+        return Results.UnprocessableEntity(
+            new
+            {
+                error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                maxBulkSize = _MaxBulkActionSize,
+            }
+        );
     }
 
     private static async ValueTask<long[]?> _ReadStorageIdsAsync(HttpContext httpContext)
