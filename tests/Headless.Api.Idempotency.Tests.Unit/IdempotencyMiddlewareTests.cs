@@ -720,11 +720,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         var lockAcquired = false;
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 lockAcquired = true;
@@ -781,11 +777,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var dlock = Substitute.For<IDistributedLock>();
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
 
         var middleware = _CreateMiddlewareWithLock(cache, lockProvider);
@@ -824,11 +816,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns((IDistributedLock?)null);
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
@@ -880,11 +868,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var dlock = Substitute.For<IDistributedLock>();
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
@@ -929,11 +913,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var dlock = Substitute.For<IDistributedLock>();
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
@@ -977,11 +957,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var dlock = Substitute.For<IDistributedLock>();
         var lockProvider = Substitute.For<IDistributedLockProvider>();
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
+
 namespace Headless.Messaging.Transport;
 
 /// <summary>
@@ -14,4 +16,19 @@ public interface IConsumerClientFactory
     /// <param name="groupConcurrent">The maximum number of concurrent messages to consume.</param>
     /// <returns>A task that represents the asynchronous operation. The task result contains the created <see cref="IConsumerClient"/> instance.</returns>
     Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent);
+}
+
+/// <summary>
+/// Factory interface for providers that can create consumer clients scoped to a bus or queue intent.
+/// </summary>
+public interface IIntentAwareConsumerClientFactory : IConsumerClientFactory
+{
+    /// <summary>
+    /// Asynchronously creates a new <see cref="IConsumerClient"/> instance for the requested intent.
+    /// </summary>
+    /// <param name="groupName">The name of the message group.</param>
+    /// <param name="groupConcurrent">The maximum number of concurrent messages to consume.</param>
+    /// <param name="intentType">The bus or queue intent this consumer client should consume.</param>
+    /// <returns>A task that represents the asynchronous operation. The task result contains the created <see cref="IConsumerClient"/> instance.</returns>
+    Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType);
 }

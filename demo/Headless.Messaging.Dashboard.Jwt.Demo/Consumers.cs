@@ -8,7 +8,7 @@ namespace Demo;
 /// </summary>
 public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) : IConsume<OrderCreated>
 {
-    public async ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {
@@ -25,7 +25,7 @@ public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) :
 
 public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer> logger) : IConsume<OrderCreated>
 {
-    public async ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
     {
         // ~25% failure rate — simulates notification gateway flakiness
         if (Random.Shared.Next(4) == 0)
@@ -50,7 +50,7 @@ public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer>
 
 public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> logger) : IConsume<PaymentProcessed>
 {
-    public async ValueTask Consume(ConsumeContext<PaymentProcessed> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<PaymentProcessed> context, CancellationToken cancellationToken)
     {
         // ~20% failure rate — simulates payment reconciliation issues
         if (Random.Shared.Next(5) == 0)
@@ -83,7 +83,7 @@ public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> l
 
 public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logger) : IConsume<UserRegistered>
 {
-    public async ValueTask Consume(ConsumeContext<UserRegistered> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<UserRegistered> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {
@@ -100,7 +100,7 @@ public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logge
 
 public sealed class InventoryUpdatedConsumer(ILogger<InventoryUpdatedConsumer> logger) : IConsume<InventoryUpdated>
 {
-    public async ValueTask Consume(ConsumeContext<InventoryUpdated> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<InventoryUpdated> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {

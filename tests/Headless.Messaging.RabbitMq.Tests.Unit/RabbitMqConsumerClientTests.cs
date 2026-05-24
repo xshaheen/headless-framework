@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -151,6 +152,21 @@ public sealed class RabbitMqConsumerClientTests : TestBase
         await _channel
             .Received(1)
             .QueueBindAsync("test-group", "test.exchange", "topic3", null, false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public void should_use_group_queue_for_bus_intent()
+    {
+        RabbitMqConsumerClient.GetQueueName("workers", "orders.created", IntentType.Bus).Should().Be("workers");
+    }
+
+    [Fact]
+    public void should_use_topic_queue_for_queue_intent()
+    {
+        RabbitMqConsumerClient
+            .GetQueueName("workers", "orders.created", IntentType.Queue)
+            .Should()
+            .Be("orders.created");
     }
 
     [Fact]

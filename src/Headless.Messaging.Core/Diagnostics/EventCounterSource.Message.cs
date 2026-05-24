@@ -12,6 +12,7 @@ public class MessageEventCounterSource : EventSource
     private IncrementingEventCounter? _publishPerSecondCounter;
     private IncrementingEventCounter? _consumePerSecondCounter;
     private IncrementingEventCounter? _subscriberInvokePerSecondCounter;
+    private IncrementingEventCounter? _pubSubDispatchFailuresCounter;
 
     private EventCounter? _invokeCounter;
 
@@ -53,6 +54,15 @@ public class MessageEventCounterSource : EventSource
                 DisplayName = "Invoke Subscriber Elapsed Time",
                 DisplayUnits = "ms",
             };
+
+            _pubSubDispatchFailuresCounter ??= new IncrementingEventCounter(
+                MessageDiagnosticListenerNames.PubSubDispatchFailures,
+                this
+            )
+            {
+                DisplayName = "Pub/Sub Dispatch Failure Rate",
+                DisplayRateTimeScale = TimeSpan.FromSeconds(1),
+            };
         }
     }
 
@@ -76,16 +86,23 @@ public class MessageEventCounterSource : EventSource
         _invokeCounter?.WriteMetric(elapsedMs);
     }
 
+    public void WritePubSubDispatchFailureMetric()
+    {
+        _pubSubDispatchFailuresCounter?.Increment();
+    }
+
     protected override void Dispose(bool disposing)
     {
         _publishPerSecondCounter?.Dispose();
         _consumePerSecondCounter?.Dispose();
         _subscriberInvokePerSecondCounter?.Dispose();
+        _pubSubDispatchFailuresCounter?.Dispose();
         _invokeCounter?.Dispose();
 
         _publishPerSecondCounter = null;
         _consumePerSecondCounter = null;
         _subscriberInvokePerSecondCounter = null;
+        _pubSubDispatchFailuresCounter = null;
         _invokeCounter = null;
 
         base.Dispose(disposing);

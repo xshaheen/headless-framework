@@ -4,16 +4,17 @@
     <RootNamespace>Headless.Messaging</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Messaging.AmazonSQS" />
-    <InternalsVisibleTo Include="Headless.Messaging.AwsSqs" />
+    <InternalsVisibleTo Include="Headless.Messaging.Aws" />
     <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard" />
-    <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue" />
+    <InternalsVisibleTo Include="Headless.Messaging.InMemory" />
     <InternalsVisibleTo Include="Headless.Messaging.Kafka" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar" />
     <InternalsVisibleTo Include="Headless.Messaging.RabbitMq" />
-    <InternalsVisibleTo Include="Headless.Messaging.RedisStreams" />
+    <InternalsVisibleTo Include="Headless.Messaging.Redis" />
+    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Messaging.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemoryStorage" />
@@ -22,10 +23,12 @@
     <InternalsVisibleTo Include="Headless.Messaging.Testing" />
     <InternalsVisibleTo Include="Headless.Messaging.Testing.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Messaging.InMemoryQueue.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.InMemory.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Integration" />
-    <InternalsVisibleTo Include="Headless.Messaging.RedisStreams.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Redis.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
@@ -40,6 +43,8 @@
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
   </ItemGroup>
 </Project>

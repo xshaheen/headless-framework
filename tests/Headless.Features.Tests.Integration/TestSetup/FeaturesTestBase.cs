@@ -53,7 +53,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
         // Cache

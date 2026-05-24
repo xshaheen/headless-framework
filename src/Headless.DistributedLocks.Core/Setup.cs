@@ -103,7 +103,7 @@ public static class AddDistributedLockExtensions
             // register two distinct lambdas resolving against the same concrete type.
             services.TryAddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
                 storageFactory(provider),
-                provider.GetService<IOutboxPublisher>(),
+                provider.GetService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
@@ -117,10 +117,10 @@ public static class AddDistributedLockExtensions
             // wake-up signal (the consumer always receives the real DistributedLockProvider).
             services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
 
-            // Startup-time hook that warns when IOutboxPublisher is registered AFTER
+            // Startup-time hook that warns when IOutboxBus is registered AFTER
             // AddDistributedLock(...). The consumer registration block below only runs at
             // registration time; a later AddMessages(...) call silently skips push wake-ups
-            // and the existing LogOutboxPublisherAbsent warning would NOT fire (publisher is
+            // and the existing LogOutboxBusAbsent warning would NOT fire (outbox bus is
             // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<
@@ -129,14 +129,14 @@ public static class AddDistributedLockExtensions
                 >()
             );
 
-            // Only register the lock-released consumer when an IOutboxPublisher is available; the
+            // Only register the lock-released consumer when an IOutboxBus is available; the
             // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
-            // which themselves only get published via the outbox path. Without IOutboxPublisher no
+            // which themselves only get published via the outbox path. Without IOutboxBus no
             // such messages ever flow, so the consumer registration is dead weight.
-            if (services.Any(d => d.ServiceType == typeof(IOutboxPublisher)))
+            if (services.Any(d => d.ServiceType == typeof(IOutboxBus)))
             {
                 services
-                    .AddConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
+                    .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
                         "headless.locks.released"
                     )
                     .Concurrency(1);

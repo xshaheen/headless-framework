@@ -172,11 +172,11 @@ public static partial class RegularLockLoggerExtensions
 
     [LoggerMessage(
         EventId = 16,
-        EventName = "OutboxPublisherAbsent",
+        EventName = "OutboxBusAbsent",
         Level = LogLevel.Warning,
-        Message = "No IOutboxPublisher registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
+        Message = "No IOutboxBus registered; lock-release wake-ups will fall back to polling backoff. Register Headless.Messaging for push-based latency."
     )]
-    public static partial void LogOutboxPublisherAbsent(this ILogger logger);
+    public static partial void LogOutboxBusAbsent(this ILogger logger);
 
     [LoggerMessage(
         EventId = 17,
@@ -195,7 +195,7 @@ public static partial class RegularLockLoggerExtensions
         EventId = 18,
         EventName = "LockReleasedConsumerMissing",
         Level = LogLevel.Warning,
-        Message = "IOutboxPublisher is registered but the DistributedLockReleased consumer is not — AddDistributedLock(...) was called before AddMessages(...). Push wake-ups for lock release are silently disabled; waiters will fall back to polling. Reorder registration so messaging is added first, or re-register AddDistributedLock after AddMessages."
+        Message = "IOutboxBus is registered but the DistributedLockReleased consumer is not — AddDistributedLock(...) was called before AddMessages(...). Push wake-ups for lock release are silently disabled; waiters will fall back to polling. Reorder registration so messaging is added first, or re-register AddDistributedLock after AddMessages."
     )]
     public static partial void LogLockReleasedConsumerMissing(this ILogger logger);
 

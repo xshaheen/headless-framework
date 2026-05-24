@@ -6,6 +6,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.RegularLocks;
 
+// ReSharper disable AccessToModifiedClosure
 public sealed class DisposableDistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
@@ -151,11 +152,7 @@ public sealed class DisposableDistributedLockTests : TestBase
                 Interlocked.Increment(ref deregisterCount);
             }
         );
-        var monitor = new LeaseMonitor(
-            (LeaseMonitor.ILeaseHandle)sut,
-            _timeProvider,
-            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
-        );
+        var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         sut.AttachMonitor(monitor);
         sut.IsMonitored.Should().BeTrue();
         var handleLostToken = sut.HandleLostToken;
@@ -199,9 +196,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // but ownership probe via GetLockIdAsync still shows our LockId — i.e., we still own it.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 
@@ -218,9 +213,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given - autoExtend handle whose RenewAsync returns false and probe shows a different owner.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 
@@ -237,9 +230,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given - autoExtend handle whose RenewAsync returns false and probe shows nothing.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 
@@ -275,8 +266,8 @@ public sealed class DisposableDistributedLockTests : TestBase
         var lockId = Faker.Random.Guid().ToString();
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
         var sut = _CreateLock(resource, lockId);
-        var monitor = new LeaseMonitor(
-            (LeaseMonitor.ILeaseHandle)sut,
+        await using var monitor = new LeaseMonitor(
+            sut,
             _timeProvider,
             LoggerFactory.CreateLogger(nameof(LeaseMonitor))
         );
@@ -344,11 +335,7 @@ public sealed class DisposableDistributedLockTests : TestBase
                 return blocked.Task;
             });
         var sut = _CreateLock(resource, lockId);
-        var monitor = new LeaseMonitor(
-            (LeaseMonitor.ILeaseHandle)sut,
-            _timeProvider,
-            LoggerFactory.CreateLogger(nameof(LeaseMonitor))
-        );
+        var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         sut.AttachMonitor(monitor);
         monitor.TriggerImmediateValidation();
         await validationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -447,7 +434,7 @@ public sealed class DisposableDistributedLockTests : TestBase
                 Interlocked.Increment(ref callCount);
                 return Task.FromResult<string?>(currentLockId);
             });
-        var sut = _CreateLock(resource, lockId);
+        await using var sut = _CreateLock(resource, lockId);
 
         // when
         var firstResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);

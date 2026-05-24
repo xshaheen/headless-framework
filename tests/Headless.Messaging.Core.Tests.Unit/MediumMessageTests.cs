@@ -28,6 +28,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = storageId,
             Origin = message,
             Content = content,
+            IntentType = IntentType.Bus,
         };
 
         // then
@@ -45,6 +46,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
 
         // then
@@ -63,6 +65,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = addedTime,
         };
 
@@ -79,6 +82,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
 
         // then
@@ -97,6 +101,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
             ExpiresAt = expiresAt,
         };
 
@@ -113,6 +118,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
 
         // then
@@ -128,6 +134,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Retries = 5,
         };
 
@@ -144,6 +151,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Retries = 0,
         };
 
@@ -163,6 +171,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
         var newAddedTime = DateTime.UtcNow;
 
@@ -182,6 +191,7 @@ public sealed class MediumMessageTests : TestBase
             StorageId = 1L,
             Origin = new Message(),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
         var expiresAt = DateTime.UtcNow.AddHours(1);
 

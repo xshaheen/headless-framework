@@ -80,7 +80,7 @@ public static class SetupMessaging
 
         configure(setup);
 
-        // Discover consumers registered via AddConsumer<TConsumer, TMessage>()
+        // Discover consumers registered via AddBusConsumer/AddQueueConsumer.
         _DiscoverConsumersFromDI(services, setup, registry);
 
         return _RegisterCoreMessagingServices(services, setup);
@@ -92,7 +92,11 @@ public static class SetupMessaging
     )
     {
         var options = setup.Options;
-        services.AddSingleton(_ => services);
+        // Register the service collection itself so the bootstrapper can introspect registered descriptors
+        // at startup (e.g., to detect whether IBus/IQueue publishers were gated in). This is intentional:
+        // the bootstrapper is framework-internal and uses it only for read-only discovery — not as a
+        // runtime factory service locator.
+        services.TryAddSingleton(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
@@ -106,10 +110,7 @@ public static class SetupMessaging
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
-        services.TryAddSingleton<OutboxPublisher>();
-        services.TryAddSingleton<IOutboxPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
-        services.TryAddSingleton<IScheduledPublisher>(sp => sp.GetRequiredService<OutboxPublisher>());
-        services.TryAddSingleton<IDirectPublisher, DirectPublisher>();
+        services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
         services.TryAddSingleton<IRuntimeSubscriber, RuntimeSubscriber>();
 
@@ -172,23 +173,20 @@ public static class SetupMessaging
             serviceExtension.AddServices(services);
         }
 
+        _RegisterPublisherServicesForAvailableTransports(services);
+
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
-        services.Configure<MessagingOptions, MessagingOptionsValidator>(opt =>
-        {
-            options.CopyTo(opt);
-        });
+        services.Configure<MessagingOptions, MessagingOptionsValidator>(options.CopyTo);
 
         // Register and validate circuit breaker and retry processor options via DI pipeline
         services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
-        {
-            options.CircuitBreaker.CopyTo(cb);
-        });
+            options.CircuitBreaker.CopyTo(cb)
+        );
         services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
-        {
-            options.RetryProcessor.CopyTo(rp);
-        });
+            options.RetryProcessor.CopyTo(rp)
+        );
 
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();
@@ -198,8 +196,29 @@ public static class SetupMessaging
         return new MessagingBuilder(services, options);
     }
 
+    private static void _RegisterPublisherServicesForAvailableTransports(IServiceCollection services)
+    {
+        // Scan the service collection at registration time (extensions have already run) to determine
+        // which transports are present. This gates publisher registration to transport capability so that
+        // a queue-only setup never registers IBus/IOutboxBus descriptors and vice-versa.
+        var hasBusTransport = services.Any(d => d.ServiceType == typeof(IBusTransport));
+        var hasQueueTransport = services.Any(d => d.ServiceType == typeof(IQueueTransport));
+
+        if (hasBusTransport)
+        {
+            services.TryAddSingleton<IBus>(sp => ActivatorUtilities.CreateInstance<Bus>(sp));
+            services.TryAddSingleton<IOutboxBus>(sp => ActivatorUtilities.CreateInstance<OutboxBus>(sp));
+        }
+
+        if (hasQueueTransport)
+        {
+            services.TryAddSingleton<IQueue>(sp => ActivatorUtilities.CreateInstance<Queue>(sp));
+            services.TryAddSingleton<IOutboxQueue>(sp => ActivatorUtilities.CreateInstance<OutboxQueue>(sp));
+        }
+    }
+
     /// <summary>
-    /// Discovers and registers consumer metadata instances added via AddConsumer extension method.
+    /// Discovers and registers consumer metadata instances added via AddBusConsumer/AddQueueConsumer extension methods.
     /// Also applies any per-consumer circuit breaker overrides carried on the metadata.
     /// </summary>
     private static void _DiscoverConsumersFromDI(
@@ -226,7 +245,10 @@ public static class SetupMessaging
             // Apply per-consumer circuit breaker overrides inline
             if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
             {
-                setup.CircuitBreakerRegistry.Register(resolved.Group, resolved.CircuitBreakerOverride);
+                setup.CircuitBreakerRegistry.Register(
+                    CircuitBreakerGroupKeys.For(resolved),
+                    resolved.CircuitBreakerOverride
+                );
             }
         }
     }
@@ -239,7 +261,8 @@ public static class SetupMessaging
             metadata.Topic,
             metadata.Group,
             metadata.Concurrency,
-            metadata.HandlerId
+            metadata.HandlerId,
+            metadata.IntentType
         );
 
         // CreateConsumerMetadata normalizes topic/group but doesn't carry over builder-only

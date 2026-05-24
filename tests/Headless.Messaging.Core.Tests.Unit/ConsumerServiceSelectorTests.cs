@@ -37,7 +37,7 @@ public sealed class ConsumerServiceSelectorTests
         var descriptor = candidates[0];
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
-        descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<>.Consume));
+        descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<>.ConsumeAsync));
         descriptor.TopicName.Should().Be("test.topic");
     }
 
@@ -332,7 +332,7 @@ public sealed record SelectorTestMessage(string Id);
 
 public sealed class SelectorTestConsumer : IConsume<SelectorTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -340,7 +340,7 @@ public sealed class SelectorTestConsumer : IConsume<SelectorTestMessage>
 
 public sealed class AnotherSelectorConsumer : IConsume<SelectorTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<SelectorTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

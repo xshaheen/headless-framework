@@ -11,13 +11,21 @@ internal sealed class AzureServiceBusConsumerClientFactory(
     ILoggerFactory loggerFactory,
     IOptions<AzureServiceBusOptions> asbOptions,
     IServiceProvider serviceProvider
-) : IConsumerClientFactory
+) : IIntentAwareConsumerClientFactory
 {
-    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
-        // Validate at the boundary so an invalid group name surfaces as a clear ArgumentException
-        // at registration time instead of a wrapped Azure SDK failure deep inside ConnectAsync.
-        AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+    }
+
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    {
+        // Bus groups are Azure subscriptions. Queue groups are framework-local
+        // handler selectors; their broker entity names are validated on SubscribeAsync.
+        if (intentType == IntentType.Bus)
+        {
+            AzureServiceBusConsumerClient.CheckValidSubscriptionName(groupName);
+        }
 
         try
         {
@@ -26,7 +34,8 @@ internal sealed class AzureServiceBusConsumerClientFactory(
                 groupName,
                 groupConcurrent,
                 asbOptions,
-                serviceProvider
+                serviceProvider,
+                intentType
             );
 
             await client.ConnectAsync().ConfigureAwait(false);

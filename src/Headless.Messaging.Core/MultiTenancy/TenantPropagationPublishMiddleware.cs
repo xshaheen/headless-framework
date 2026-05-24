@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.MultiTenancy;
 
-/// <summary>Stamps <see cref="PublishOptions.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
+/// <summary>Stamps <see cref="MessagePublishOptionsBase.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
 [PublicAPI]
 public sealed class TenantPropagationPublishMiddleware(
     ICurrentTenant currentTenant,
@@ -33,14 +33,24 @@ public sealed class TenantPropagationPublishMiddleware(
                 return;
             }
 
-            if (ambientTenantId.Length > PublishOptions.TenantIdMaxLength)
+            if (ambientTenantId.Length > MessagePublishOptionsBase.TenantIdMaxLength)
             {
                 logger?.AmbientTenantPropagationDropped(ambientTenantId.Length);
                 await next().ConfigureAwait(false);
                 return;
             }
 
-            context.WithOptions((context.Options ?? new PublishOptions()) with { TenantId = ambientTenantId });
+            // Stamp TenantId on a concrete options record that matches the publish intent so
+            // downstream middleware and the factory receive the correct derived type.
+            MessagePublishOptionsBase stamped = context.IntentType switch
+            {
+                IntentType.Queue => (context.Options as EnqueueOptions ?? new EnqueueOptions()) with
+                {
+                    TenantId = ambientTenantId,
+                },
+                _ => (context.Options as PublishOptions ?? new PublishOptions()) with { TenantId = ambientTenantId },
+            };
+            context.WithOptions(stamped);
         }
 
         await next().ConfigureAwait(false);

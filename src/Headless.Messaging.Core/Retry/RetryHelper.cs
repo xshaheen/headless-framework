@@ -312,6 +312,7 @@ internal static class RetryHelper
                     ServiceProvider = dispatchServices,
                     MessageType = messageType,
                     Message = message.Origin,
+                    IntentType = message.IntentType,
                     Exception = exception,
                     StorageId = message.StorageId,
                     RetryCount = message.Retries,

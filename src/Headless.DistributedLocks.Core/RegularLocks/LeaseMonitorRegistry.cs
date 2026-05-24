@@ -146,9 +146,10 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                     return false;
                 }
 
-                monitor = _monitors.Remove(lockId, out var weakReference) && weakReference.TryGetTarget(out var target)
-                    ? target
-                    : null;
+                monitor =
+                    _monitors.Remove(lockId, out var weakReference) && weakReference.TryGetTarget(out var target)
+                        ? target
+                        : null;
                 removeBucket = _MarkRemovedIfEmpty();
 
                 return true;

@@ -95,10 +95,7 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
     {
         if (_IsMonitoringRequested(options) && options?.TimeUntilExpires == Timeout.InfiniteTimeSpan)
         {
-            throw new ArgumentException(
-                "Lease monitoring requires a finite time until expiration.",
-                nameof(options)
-            );
+            throw new ArgumentException("Lease monitoring requires a finite time until expiration.", nameof(options));
         }
     }
 

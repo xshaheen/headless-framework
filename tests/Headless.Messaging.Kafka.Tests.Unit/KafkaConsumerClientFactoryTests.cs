@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Kafka;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,5 +76,19 @@ public sealed class KafkaConsumerClientFactoryTests : TestBase
         client.BrokerAddress.Name.Should().Be("kafka");
         client.BrokerAddress.Endpoint.Should().Be("localhost:9092");
         await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_reject_bus_consumer_intent()
+    {
+        // given
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var factory = new KafkaConsumerClientFactory(_options, serviceProvider);
+
+        // when
+        var act = async () => await factory.CreateAsync("test-group", 1, IntentType.Bus);
+
+        // then
+        await act.Should().ThrowAsync<NotSupportedException>();
     }
 }

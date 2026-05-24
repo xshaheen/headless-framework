@@ -67,10 +67,13 @@ internal sealed class ConfigurePostgreSqlOptions(IServiceScopeFactory serviceSco
             return;
         }
 
-        if (Helper.IsUsingType<IOutboxPublisher>(options.DbContextType))
+        if (
+            Helper.IsUsingType<IOutboxBus>(options.DbContextType)
+            || Helper.IsUsingType<IOutboxQueue>(options.DbContextType)
+        )
         {
             throw new InvalidOperationException(
-                "We detected that you are using IOutboxPublisher in DbContext, please change the configuration to use the storage extension directly to avoid circular references! eg:  x.UsePostgreSql()"
+                "We detected that you are using IOutboxBus or IOutboxQueue in DbContext, please change the configuration to use the storage extension directly to avoid circular references! eg:  x.UsePostgreSql()"
             );
         }
 

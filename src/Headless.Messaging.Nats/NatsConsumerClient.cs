@@ -17,7 +17,8 @@ internal sealed class NatsConsumerClient(
     byte groupConcurrent,
     IOptions<MessagingNatsOptions> options,
     IServiceProvider serviceProvider,
-    Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null
+    Func<string, ConsumerConfig, CancellationToken, Task<INatsJSConsumer>>? consumerFactory = null,
+    IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
     private readonly Lock _receiveLock = new();
@@ -119,6 +120,13 @@ internal sealed class NatsConsumerClient(
         return subjects;
     }
 
+    internal static string BuildDurableName(string groupName, string subject, IntentType intentType)
+    {
+        return intentType == IntentType.Queue
+            ? Helper.Normalized("queue-" + subject)
+            : Helper.Normalized(groupName + "-" + subject);
+    }
+
     public ValueTask SubscribeAsync(IEnumerable<string> topics)
     {
         Argument.IsNotNull(topics);
@@ -140,7 +148,7 @@ internal sealed class NatsConsumerClient(
 
             foreach (var subject in streamGroup)
             {
-                var durableName = Helper.Normalized(groupName + "-" + subject);
+                var durableName = BuildDurableName(groupName, subject, intentType);
 
                 var consumerConfig = new ConsumerConfig(durableName)
                 {
@@ -484,12 +492,17 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.ResumeAsync())
+        if (!_pauseGate.IsPaused)
         {
             return;
         }
 
         _ResetReceiveToken();
+
+        if (!await _pauseGate.ResumeAsync())
+        {
+            return;
+        }
     }
 
     public async ValueTask DisposeAsync()

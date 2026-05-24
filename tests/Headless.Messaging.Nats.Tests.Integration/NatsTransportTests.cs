@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Capabilities;
@@ -9,15 +9,9 @@ using Tests.Capabilities;
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsTransportTests : TransportTestsBase
+public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
 {
-    private readonly NatsFixture _fixture;
     private INatsConnectionPool? _connectionPool;
-
-    public NatsTransportTests(NatsFixture fixture)
-    {
-        _fixture = fixture;
-    }
 
     public override async ValueTask InitializeAsync()
     {
@@ -27,7 +21,7 @@ public sealed class NatsTransportTests : TransportTestsBase
         // Create a catch-all stream for test subjects.
         // TransportTestsBase uses single-token subjects ("TestMessage", "TestMessageName").
         // NATS "*" matches any single token at one level.
-        await _fixture.EnsureStreamAsync("TEST", "*");
+        await fixture.EnsureStreamAsync("TEST", "*");
     }
 
     protected override TransportCapabilities Capabilities =>
@@ -41,12 +35,12 @@ public sealed class NatsTransportTests : TransportTestsBase
             SupportsHeaders = true,
         };
 
-    protected override ITransport GetTransport()
+    protected override IBusTransport GetBusTransport()
     {
         var natsOptions = Options.Create(
             new MessagingNatsOptions
             {
-                Servers = _fixture.ConnectionString,
+                Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
                 ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
             }
@@ -56,6 +50,10 @@ public sealed class NatsTransportTests : TransportTestsBase
 
         return new NatsTransport(NullLogger<NatsTransport>.Instance, _connectionPool);
     }
+
+    protected override IQueueTransport GetQueueTransport() =>
+        GetBusTransport() as IQueueTransport
+        ?? throw new InvalidOperationException("NATS transport must support queue intent.");
 
     protected override async ValueTask DisposeAsyncCore()
     {

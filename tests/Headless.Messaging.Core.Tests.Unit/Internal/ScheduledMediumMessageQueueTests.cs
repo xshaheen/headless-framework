@@ -106,6 +106,7 @@ public sealed class ScheduledMediumMessageQueueTests
                 null
             ),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
     }
 

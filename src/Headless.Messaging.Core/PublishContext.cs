@@ -16,13 +16,15 @@ public abstract class PublishContext
     private protected PublishContext(
         object? content,
         Type messageType,
-        PublishOptions? options,
+        IntentType intentType,
+        MessagePublishOptionsBase? options,
         TimeSpan? delayTime,
         CancellationToken cancellationToken
     )
     {
         Content = content;
         MessageType = Argument.IsNotNull(messageType);
+        IntentType = intentType;
         OptionsCore = options;
         DelayTimeCore = delayTime;
         Headers = new MessageHeader(
@@ -40,6 +42,12 @@ public abstract class PublishContext
     /// <summary>Gets the runtime message type being published.</summary>
     public Type MessageType { get; }
 
+    /// <summary>
+    /// Gets the publish intent for this operation (<see cref="IntentType.Bus"/> or <see cref="IntentType.Queue"/>).
+    /// Available to middleware to make intent-aware decisions without inspecting the concrete options type.
+    /// </summary>
+    public IntentType IntentType { get; }
+
     /// <summary>Gets the currently active cancellation token for this publish operation.</summary>
     public CancellationToken CancellationToken { get; private set; }
 
@@ -49,25 +57,28 @@ public abstract class PublishContext
     /// <summary>Gets the currently selected topic override, if any.</summary>
     public string? Topic { get; private set; }
 
-    /// <summary>Gets the current publish options for this operation.</summary>
-    public PublishOptions? Options => OptionsCore;
+    /// <summary>
+    /// Gets the current publish options for this operation.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
+    /// </summary>
+    public MessagePublishOptionsBase? Options => OptionsCore;
 
     /// <summary>Gets the scheduled delay for this operation. <see langword="null"/> means immediate publish.</summary>
     public TimeSpan? DelayTime => DelayTimeCore;
 
-    private protected PublishOptions? OptionsCore { get; set; }
+    private protected MessagePublishOptionsBase? OptionsCore { get; set; }
 
     private protected TimeSpan? DelayTimeCore { get; set; }
 
     /// <summary>Replaces the active cancellation token for downstream middleware and the inner publisher.</summary>
-    public void WithCancellationToken(CancellationToken cancellationToken)
+    public void SetCancellationToken(CancellationToken cancellationToken)
     {
         _ThrowIfCompleted();
         CancellationToken = cancellationToken;
     }
 
     /// <summary>Replaces the active publish options before the inner publisher runs.</summary>
-    public void WithOptions(PublishOptions? options)
+    public void WithOptions(MessagePublishOptionsBase? options)
     {
         _ThrowIfCompleted();
         OptionsCore = options;
@@ -81,7 +92,7 @@ public abstract class PublishContext
         DelayTimeCore = delayTime;
     }
 
-    private protected void RefreshOptionSnapshot(PublishOptions? options)
+    private protected void RefreshOptionSnapshot(MessagePublishOptionsBase? options)
     {
         Headers = new MessageHeader(
             options?.Headers is null
@@ -115,12 +126,13 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     /// <summary>Initializes a new instance of the <see cref="PublishingContext{TMessage}"/> class.</summary>
     public PublishingContext(
         TMessage? content,
-        PublishOptions? options,
+        IntentType intentType,
+        MessagePublishOptionsBase? options,
         TimeSpan? delayTime,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     )
-        : base(content, typeof(TMessage), options, delayTime, cancellationToken)
+        : base(content, typeof(TMessage), intentType, options, delayTime, cancellationToken)
     {
         IsTransactional = isTransactional;
     }
@@ -130,8 +142,9 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
 
     /// <summary>
     /// Gets or sets the current publish options before the inner publisher runs.
+    /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
     /// </summary>
-    public new PublishOptions? Options
+    public new MessagePublishOptionsBase? Options
     {
         get => OptionsCore;
         set { WithOptions(value); }

@@ -23,14 +23,14 @@ internal sealed class InMemoryDataStorage(
 
     public ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
 
-    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?).
+    // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, IntentType).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
     // StoreReceivedExceptionMessageAsync is then O(1) via TryGetValue instead of an O(N) scan
     // over the whole received-message map. Updated in lockstep with every code path that inserts
     // into or removes from ReceivedMessages. ValueTuple's default equality uses ordinal string
     // equality for each component, matching the SQL providers' BINARY-collation key semantics.
     private readonly ConcurrentDictionary<
-        (string Version, string MessageId, string? Group),
+        (string Version, string MessageId, string? Group, IntentType IntentType),
         long
     > _receivedIdentityIndex = new();
 
@@ -171,7 +171,7 @@ internal sealed class InMemoryDataStorage(
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
-        Message content,
+        MediumMessage message,
         object? dbTransaction = null,
         CancellationToken cancellationToken = default
     )
@@ -179,11 +179,12 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         var added = timeProvider.GetUtcNow().UtcDateTime;
-        var message = new MediumMessage
+        var stored = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
-            Origin = content,
-            Content = serializer.Serialize(content),
+            Origin = message.Origin,
+            Content = serializer.Serialize(message.Origin),
+            IntentType = message.IntentType,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace),
@@ -191,23 +192,43 @@ internal sealed class InMemoryDataStorage(
             Retries = 0,
         };
 
-        PublishedMessages[message.StorageId] = new MemoryMessage
+        PublishedMessages[stored.StorageId] = new MemoryMessage
         {
-            StorageId = message.StorageId,
+            StorageId = stored.StorageId,
             Name = name,
-            Origin = message.Origin,
-            Content = message.Content,
-            Retries = message.Retries,
-            Added = message.Added,
-            ExpiresAt = message.ExpiresAt,
-            NextRetryAt = message.NextRetryAt,
-            LockedUntil = message.LockedUntil,
+            Origin = stored.Origin,
+            Content = stored.Content,
+            IntentType = stored.IntentType,
+            Retries = stored.Retries,
+            Added = stored.Added,
+            ExpiresAt = stored.ExpiresAt,
+            NextRetryAt = stored.NextRetryAt,
+            LockedUntil = stored.LockedUntil,
             StatusName = StatusName.Scheduled,
             Version = messagingOptions.Value.Version,
         };
 
-        return ValueTask.FromResult(message);
+        return ValueTask.FromResult(stored);
     }
+
+    public ValueTask<MediumMessage> StoreMessageAsync(
+        string name,
+        Message content,
+        object? dbTransaction = null,
+        CancellationToken cancellationToken = default
+    ) =>
+        StoreMessageAsync(
+            name,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = content,
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            dbTransaction,
+            cancellationToken
+        );
 
     public ValueTask<bool> StoreReceivedExceptionMessageAsync(
         string name,
@@ -217,18 +238,42 @@ internal sealed class InMemoryDataStorage(
         CancellationToken cancellationToken = default
     )
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
         var origin =
             serializer.Deserialize(content)
             ?? throw new InvalidOperationException("Failed to deserialize received exception message content.");
 
-        var messageId = origin.GetId();
+        return StoreReceivedExceptionMessageAsync(
+            name,
+            group,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = origin,
+                Content = content,
+                IntentType = IntentType.Bus,
+            },
+            exceptionInfo,
+            cancellationToken
+        );
+    }
+
+    public ValueTask<bool> StoreReceivedExceptionMessageAsync(
+        string name,
+        string group,
+        MediumMessage message,
+        string? exceptionInfo = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var content = string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content;
+        var messageId = message.Origin.GetId();
         var version = messagingOptions.Value.Version;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
         var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
-        var indexKey = (version, messageId, (string?)group);
+        var indexKey = (version, messageId, (string?)group, message.IntentType);
 
         // Upsert on (Version, MessageId, Group) — mirrors the SQL providers' MERGE / ON CONFLICT
         // semantics so broker redelivery doesn't accumulate duplicate rows. The terminal-row guard
@@ -290,9 +335,10 @@ internal sealed class InMemoryDataStorage(
             {
                 StorageId = id,
                 Group = group,
-                Origin = origin,
+                Origin = message.Origin,
                 Name = name,
                 Content = content,
+                IntentType = message.IntentType,
                 Retries = retries,
                 Added = now,
                 ExpiresAt = expiresAt,
@@ -311,7 +357,7 @@ internal sealed class InMemoryDataStorage(
     public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
-        Message message,
+        MediumMessage message,
         CancellationToken cancellationToken = default
     )
     {
@@ -319,13 +365,14 @@ internal sealed class InMemoryDataStorage(
         var version = messagingOptions.Value.Version;
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var initialNextRetryAt = added.Add(messagingOptions.Value.RetryPolicy.InitialDispatchGrace);
-        var serialized = serializer.Serialize(message);
+        var origin = message.Origin;
+        var serialized = serializer.Serialize(origin);
 
         // Tolerate missing MessageId header (degenerate test inputs / synthetic payloads): without
         // a MessageId there's no upsert identity to share, so concurrent calls degrade to plain
         // inserts. This matches the SQL providers' MERGE/ON CONFLICT semantics — the constraint
         // is on MessageId, so a NULL MessageId effectively opts out of dedupe.
-        var hasMessageId = message.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null;
+        var hasMessageId = origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null;
 
         if (!hasMessageId)
         {
@@ -333,7 +380,7 @@ internal sealed class InMemoryDataStorage(
             return ValueTask.FromResult(inserted);
         }
 
-        var indexKey = (version, messageId!, (string?)group);
+        var indexKey = (version, messageId!, (string?)group, message.IntentType);
 
         // R3 — extend the same lock + check-then-insert/update pattern from
         // StoreReceivedExceptionMessageAsync to the non-exception path. Before R3 two concurrent
@@ -376,6 +423,7 @@ internal sealed class InMemoryDataStorage(
                             StorageId = existing.StorageId,
                             Origin = existing.Origin,
                             Content = existing.Content,
+                            IntentType = existing.IntentType,
                             Added = existing.Added,
                             ExpiresAt = existing.ExpiresAt,
                             NextRetryAt = existing.NextRetryAt,
@@ -404,8 +452,9 @@ internal sealed class InMemoryDataStorage(
                 var leaseActive = existing.LockedUntil is not null && existing.LockedUntil > nowUtc;
                 if (!leaseActive)
                 {
-                    existing.Origin = message;
+                    existing.Origin = message.Origin;
                     existing.Content = serialized;
+                    existing.IntentType = message.IntentType;
                     existing.Retries = 0;
                     existing.Added = added;
                     existing.ExpiresAt = null;
@@ -421,6 +470,7 @@ internal sealed class InMemoryDataStorage(
                         StorageId = existing.StorageId,
                         Origin = existing.Origin,
                         Content = existing.Content,
+                        IntentType = existing.IntentType,
                         Added = existing.Added,
                         ExpiresAt = existing.ExpiresAt,
                         NextRetryAt = existing.NextRetryAt,
@@ -436,10 +486,29 @@ internal sealed class InMemoryDataStorage(
         }
     }
 
-    private MediumMessage _InsertNewReceivedRow(
+    public ValueTask<MediumMessage> StoreReceivedMessageAsync(
         string name,
         string group,
         Message message,
+        CancellationToken cancellationToken = default
+    ) =>
+        StoreReceivedMessageAsync(
+            name,
+            group,
+            new MediumMessage
+            {
+                StorageId = 0,
+                Origin = message,
+                Content = string.Empty,
+                IntentType = IntentType.Bus,
+            },
+            cancellationToken
+        );
+
+    private MediumMessage _InsertNewReceivedRow(
+        string name,
+        string group,
+        MediumMessage message,
         string serialized,
         DateTime added,
         DateTime initialNextRetryAt,
@@ -449,8 +518,9 @@ internal sealed class InMemoryDataStorage(
         var mdMessage = new MediumMessage
         {
             StorageId = longIdGenerator.Create(),
-            Origin = message,
+            Origin = message.Origin,
             Content = serialized,
+            IntentType = message.IntentType,
             Added = added,
             ExpiresAt = null,
             NextRetryAt = initialNextRetryAt,
@@ -462,6 +532,7 @@ internal sealed class InMemoryDataStorage(
         {
             StorageId = mdMessage.StorageId,
             Origin = mdMessage.Origin,
+            IntentType = mdMessage.IntentType,
             Group = group,
             Name = name,
             Content = mdMessage.Content,
@@ -616,6 +687,7 @@ internal sealed class InMemoryDataStorage(
             LockedUntil = m.LockedUntil,
             Retries = m.Retries,
             ExceptionInfo = m.ExceptionInfo,
+            IntentType = m.IntentType,
         };
 
     private static ValueTask<bool> _LeaseAsync(
@@ -667,6 +739,27 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(0);
     }
 
+    public ValueTask<int> DeleteReceivedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var deleted = 0;
+
+        foreach (var id in ids)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (ReceivedMessages.TryRemove(id, out var removed))
+            {
+                _RemoveFromIdentityIndex(removed);
+                deleted++;
+            }
+        }
+
+        return ValueTask.FromResult(deleted);
+    }
+
     private void _RemoveFromIdentityIndex(MemoryMessage removed)
     {
         // Same tolerance as the insert path: only attempt the index removal when MessageId is
@@ -676,7 +769,7 @@ internal sealed class InMemoryDataStorage(
         // shutdown cleanup of degenerate test inputs.
         if (removed.Origin.Headers.TryGetValue(Headers.MessageId, out var messageId) && messageId is not null)
         {
-            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group), out _);
+            _receivedIdentityIndex.TryRemove((removed.Version, messageId, removed.Group, removed.IntentType), out _);
         }
     }
 
@@ -685,6 +778,26 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         var deleteResult = PublishedMessages.TryRemove(id, out _);
         return ValueTask.FromResult(deleteResult ? 1 : 0);
+    }
+
+    public ValueTask<int> DeletePublishedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var deleted = 0;
+
+        foreach (var id in ids)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (PublishedMessages.TryRemove(id, out _))
+            {
+                deleted++;
+            }
+        }
+
+        return ValueTask.FromResult(deleted);
     }
 
     public ValueTask ScheduleMessagesOfDelayedAsync(

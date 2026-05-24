@@ -54,7 +54,7 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             {
                 throw new InvalidOperationException(
                     "Duplicate consumer registration detected for topic/group identity: "
-                        + $"topic='{metadata.Topic}', group='{metadata.Group ?? "<default>"}', "
+                        + $"intent='{metadata.IntentType}', topic='{metadata.Topic}', group='{metadata.Group ?? "<default>"}', "
                         + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                         + $"newHandlerId='{metadata.ResolvedHandlerId}'."
                 );
@@ -89,7 +89,7 @@ public sealed class ConsumerRegistry : IConsumerRegistry
                 {
                     throw new InvalidOperationException(
                         "Duplicate consumer registration detected for topic/group identity: "
-                            + $"topic='{newMetadata.Topic}', group='{newMetadata.Group ?? "<default>"}', "
+                            + $"intent='{newMetadata.IntentType}', topic='{newMetadata.Topic}', group='{newMetadata.Group ?? "<default>"}', "
                             + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                             + $"newHandlerId='{newMetadata.ResolvedHandlerId}'."
                     );
@@ -222,6 +222,7 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             if (
                 string.Equals(existing.Topic, candidate.Topic, StringComparison.Ordinal)
                 && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
+                && existing.IntentType == candidate.IntentType
             )
             {
                 return existing;

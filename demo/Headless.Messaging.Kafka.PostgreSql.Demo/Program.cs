@@ -1,4 +1,5 @@
 using Demo;
+using Demo.Controllers;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -14,10 +15,10 @@ builder.Services.AddDbContext<AppDbContext>(
     }
 );
 
+builder.Services.AddQueueConsumer<KafkaMessageConsumer, KafkaMessage>("sample.kafka.postgrsql");
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.SubscribeFromAssembly(typeof(Program).Assembly);
-
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
     setup.UsePostgreSql(AppConstants.DbConnectionString);

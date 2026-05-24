@@ -6,6 +6,7 @@ namespace Headless.Messaging;
 /// Defines the standard header names used in messaging.
 /// These headers carry metadata and system information that controls message routing, tracking, and processing.
 /// </summary>
+[PublicAPI]
 public static class Headers
 {
     /// <summary>
@@ -59,7 +60,7 @@ public static class Headers
     public const string CallbackName = "headless-callback-name";
 
     /// <summary>
-    /// Multi-tenancy identifier for the message, populated from <see cref="PublishOptions.TenantId"/> at publish time
+    /// Multi-tenancy identifier for the message, populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time
     /// and exposed on <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> at consume time.
     /// </summary>
     /// <remarks>
@@ -67,7 +68,7 @@ public static class Headers
     /// The publish pipeline enforces a strict 4-case integrity policy: a raw write to this key
     /// without a typed property is rejected with <see cref="InvalidOperationException"/>; a raw write
     /// that disagrees with the typed property is also rejected; a raw write that matches the typed
-    /// property is accepted. Use <see cref="PublishOptions.TenantId"/> as the source of truth.
+    /// property is accepted. Use <see cref="MessagePublishOptionsBase.TenantId"/> as the source of truth.
     /// </para>
     /// <para>
     /// Consume-side values are untrusted wire data. The framework does not sanitize the value's
@@ -87,16 +88,16 @@ public static class Headers
 
     /// <summary>
     /// Timestamp indicating when the message was sent/published, in UTC ISO 8601 format.
-    /// Value: "headless-senttime"
+    /// Value: "headless-sent-time"
     /// </summary>
-    public const string SentTime = "headless-senttime";
+    public const string SentTime = "headless-sent-time";
 
     /// <summary>
     /// Timestamp indicating when a delayed message should be published, in UTC ISO 8601 format.
     /// This header is only present for messages scheduled for delayed delivery.
-    /// Value: "headless-delaytime"
+    /// Value: "headless-delay-time"
     /// </summary>
-    public const string DelayTime = "headless-delaytime";
+    public const string DelayTime = "headless-delay-time";
 
     /// <summary>
     /// Exception information if the message processing failed.
@@ -111,4 +112,13 @@ public static class Headers
     /// Value: "traceparent"
     /// </summary>
     public const string TraceParent = "traceparent";
+
+    /// <summary>
+    /// The publish intent of the message, stamped by the framework at publish time.
+    /// Value is the string representation of <c>IntentType</c> (e.g., <c>"Bus"</c> or <c>"Queue"</c>).
+    /// On the consume side the framework warns when the wire value disagrees with the registered
+    /// consumer intent so misconfigured producers surface early.
+    /// Value: "headless-intent"
+    /// </summary>
+    public const string Intent = "headless-intent";
 }

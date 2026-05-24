@@ -23,8 +23,11 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         }
 
         //Check whether the ConsumerExecutorDescriptor' properties are equal.
+        //IntentType is part of the identity: a (Topic, Group) pair under Bus and the same pair
+        //under Queue are two independent subscriptions and must not collapse.
         var ret =
             x.TopicName.Equals(y.TopicName, StringComparison.OrdinalIgnoreCase)
+            && x.IntentType == y.IntentType
             && (
                 (y.GroupName is null && x.GroupName is null)
                 || x.GroupName?.Equals(y.GroupName, StringComparison.OrdinalIgnoreCase) == true
@@ -52,7 +55,7 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         //Get hash code for the TopicName field.
         var hashTopicName = StringComparer.Ordinal.GetHashCode(obj.TopicName);
 
-        //Calculate the hash code.
-        return hashGroup ^ hashTopicName;
+        //Calculate the hash code (IntentType participates so Bus and Queue do not collide).
+        return HashCode.Combine(hashTopicName, hashGroup, obj.IntentType);
     }
 }

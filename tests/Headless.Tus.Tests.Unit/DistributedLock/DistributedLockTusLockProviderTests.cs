@@ -54,11 +54,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
         const string fileId = "test-file";
         var distributedLock = Substitute.For<IDistributedLock>();
         _distributedLockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(distributedLock);
 
         var sut = new DistributedLockTusLockProvider(_distributedLockProvider);

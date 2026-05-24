@@ -82,7 +82,7 @@ static void addInMemoryDistributedLock(IServiceCollection services)
     // Messages
     services.AddHeadlessMessaging(setup =>
     {
-        setup.UseInMemoryMessageQueue();
+        setup.UseInMemory();
         setup.UseInMemoryStorage();
     });
 

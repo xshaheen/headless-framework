@@ -20,6 +20,8 @@ public interface IConnectionChannelPool
 
     Task<IChannel> Rent();
 
+    Task<IChannel> Rent(CancellationToken cancellationToken);
+
     bool Return(IChannel context);
 }
 
@@ -184,8 +186,12 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         return () => factory.CreateConnectionAsync();
     }
 
-    public async Task<IChannel> Rent()
+    public Task<IChannel> Rent() => Rent(CancellationToken.None);
+
+    public async Task<IChannel> Rent(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (_pool.TryDequeue(out var model))
         {
             Interlocked.Decrement(ref _count);
@@ -198,8 +204,21 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         try
         {
             var connection = await GetConnectionAsync().ConfigureAwait(false);
-            model = await connection.CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false));
-            await model.ExchangeDeclareAsync(Exchange, RabbitMqOptions.ExchangeType, true);
+            model = await connection
+                .CreateChannelAsync(new CreateChannelOptions(_isPublishConfirms, false), cancellationToken)
+                .ConfigureAwait(false);
+            await model
+                .ExchangeDeclareAsync(
+                    Exchange,
+                    RabbitMqOptions.ExchangeType,
+                    durable: true,
+                    autoDelete: false,
+                    arguments: null,
+                    passive: false,
+                    noWait: false,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
         }
         catch (Exception e)
         {

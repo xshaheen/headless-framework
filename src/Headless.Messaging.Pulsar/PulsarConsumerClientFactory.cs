@@ -8,7 +8,7 @@ using Pulsar.Client.Api;
 
 namespace Headless.Messaging.Pulsar;
 
-internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
+internal sealed class PulsarConsumerClientFactory : IIntentAwareConsumerClientFactory
 {
     private readonly IConnectionFactory _connection;
     private readonly IOptions<MessagingPulsarOptions> _pulsarOptions;
@@ -30,10 +30,21 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
 
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
     {
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+    }
+
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
+    {
         try
         {
             var client = _connection.RentClient();
-            var consumerClient = new PulsarConsumerClient(_pulsarOptions, client, groupName, groupConcurrent);
+            var consumerClient = new PulsarConsumerClient(
+                _pulsarOptions,
+                client,
+                groupName,
+                groupConcurrent,
+                intentType
+            );
             return Task.FromResult<IConsumerClient>(consumerClient);
         }
         catch (Exception e)

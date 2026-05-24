@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Pulsar;
 using Headless.Messaging.Transport;
@@ -49,7 +50,9 @@ public static class SetupPulsarMessaging
 
             services.Configure<MessagingPulsarOptions, MessagingPulsarOptionsValidator>(configure);
 
-            services.AddSingleton<ITransport, PulsarTransport>();
+            services.AddSingleton<PulsarTransport>();
+            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<PulsarTransport>());
+            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<PulsarTransport>());
             services.AddSingleton<IConsumerClientFactory, PulsarConsumerClientFactory>();
             services.AddSingleton<IConnectionFactory, ConnectionFactory>();
         }

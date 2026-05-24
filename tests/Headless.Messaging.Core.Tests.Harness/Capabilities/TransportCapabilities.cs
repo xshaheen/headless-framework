@@ -16,6 +16,10 @@ public sealed class TransportCapabilities
 
     public bool SupportsDelayedDelivery { get; init; }
 
+    public bool SupportsBusTransport { get; init; } = true;
+
+    public bool SupportsQueueTransport { get; init; } = true;
+
     public bool SupportsBatchSend { get; init; } = true;
 
     public bool SupportsHeaders { get; init; } = true;

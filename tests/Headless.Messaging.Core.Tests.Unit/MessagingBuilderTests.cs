@@ -11,6 +11,8 @@ namespace Tests;
 
 public sealed class MessagingBuilderTests
 {
+    private static string _CircuitKey(IntentType intentType, string group) => $"{intentType:D}:{group}";
+
     [Fact]
     public void should_register_consumers_via_scan()
     {
@@ -201,7 +203,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
 
@@ -210,8 +212,12 @@ public sealed class MessagingBuilderTests
         // then
         provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
-        provider.GetRequiredService<IScheduledPublisher>().Should().NotBeNull();
-        provider.GetRequiredService<IOutboxPublisher>().Should().NotBeNull();
+        // Intent-split surface — both direct and outbox-backed publishers resolve under the
+        // split contracts.
+        provider.GetRequiredService<IBus>().Should().NotBeNull();
+        provider.GetRequiredService<IQueue>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxQueue>().Should().NotBeNull();
     }
 
     [Fact]
@@ -220,14 +226,14 @@ public sealed class MessagingBuilderTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
-        services.AddConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
 
         // when
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.UseInMemoryMessageQueue();
+                messaging.UseInMemory();
                 messaging.UseInMemoryStorage();
                 messaging.UseConventions(conventions =>
                 {
@@ -253,12 +259,12 @@ public sealed class MessagingBuilderTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
+        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
 
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.UseInMemoryMessageQueue();
+            messaging.UseInMemory();
             messaging.UseInMemoryStorage();
             messaging.Options.TopicNamePrefix = "billing";
         });
@@ -580,7 +586,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then — override is registered against the final group name
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 
@@ -604,7 +610,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then
-        cbRegistry.TryGet("my-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(5);
     }
 
@@ -657,7 +663,7 @@ public sealed class MessagingBuilderTests
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
         // then — no stale default-group entry, only the final one
-        cbRegistry.TryGet("final-group", out var opts).Should().BeTrue();
+        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "final-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 }
@@ -670,7 +676,7 @@ public sealed record TestPaymentMessage(string PaymentId, decimal Amount);
 // Test consumer implementations
 public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -678,7 +684,7 @@ public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 
 public sealed class AnotherOrderConsumer : IConsume<TestOrderMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -686,7 +692,7 @@ public sealed class AnotherOrderConsumer : IConsume<TestOrderMessage>
 
 public sealed class TestPaymentConsumer : IConsume<TestPaymentMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -694,12 +700,12 @@ public sealed class TestPaymentConsumer : IConsume<TestPaymentMessage>
 
 public sealed class MultiMessageConsumer : IConsume<TestOrderMessage>, IConsume<TestPaymentMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask Consume(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Headless.Messaging;
 using Headless.Messaging.Transport;
 
 namespace Tests.Transport;
@@ -47,5 +48,18 @@ public sealed class BrokerAddressDisplayTests
     public void format_should_format_dns_endpoints()
     {
         BrokerAddressDisplay.Format(new DnsEndPoint("redis.example.com", 6380)).Should().Be("redis.example.com:6380");
+    }
+
+    [Fact]
+    public void broker_address_should_preserve_endpoint_delimiters_on_round_trip()
+    {
+        // given
+        var address = new BrokerAddress("redis", "localhost:6379?password=a$b");
+
+        // when
+        var parsed = new BrokerAddress(address.ToString());
+
+        // then
+        parsed.Should().Be(address);
     }
 }

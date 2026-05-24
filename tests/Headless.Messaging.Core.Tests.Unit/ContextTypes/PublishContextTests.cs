@@ -13,6 +13,7 @@ public sealed class PublishContextTests : TestBase
         // given
         var context = new PublishingContext<OrderPlaced>(
             new OrderPlaced("order-1"),
+            IntentType.Bus,
             new PublishOptions { CorrelationId = "corr-1" },
             TimeSpan.FromSeconds(1)
         );
@@ -36,6 +37,7 @@ public sealed class PublishContextTests : TestBase
         // given
         var context = new PublishingContext<OrderPlaced>(
             new OrderPlaced("order-1"),
+            IntentType.Bus,
             new PublishOptions { TenantId = "tenant-1" },
             TimeSpan.FromSeconds(1)
         );
@@ -60,16 +62,17 @@ public sealed class PublishContextTests : TestBase
         using var second = new CancellationTokenSource();
         var context = new PublishingContext<OrderPlaced>(
             new OrderPlaced("order-1"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             cancellationToken: first.Token
         );
 
         // when
-        context.WithCancellationToken(second.Token);
+        context.SetCancellationToken(second.Token);
         var observedBeforeCompletion = context.CancellationToken;
         context.MarkCompleted();
-        var act = () => context.WithCancellationToken(first.Token);
+        var act = () => context.SetCancellationToken(first.Token);
 
         // then
         observedBeforeCompletion.Should().Be(second.Token);
@@ -92,6 +95,7 @@ public sealed class PublishContextTests : TestBase
         // when
         var context = new PublishingContext<OrderPlaced>(
             new OrderPlaced("order-1"),
+            IntentType.Bus,
             options,
             delayTime: null,
             isTransactional: true,

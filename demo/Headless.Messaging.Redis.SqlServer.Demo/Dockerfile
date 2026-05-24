@@ -12,7 +12,7 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["src/Directory.Build.props", "src/"]
 COPY ["demo/Headless.Messaging.Redis.SqlServer.Demo/Headless.Messaging.Redis.SqlServer.Demo.csproj", "demo/Headless.Messaging.Redis.SqlServer.Demo/"]
-COPY ["src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj", "src/Headless.Messaging.RedisStreams/"]
+COPY ["src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj", "src/Headless.Messaging.Redis/"]
 COPY ["src/Headless.Messaging/Headless.Messaging.csproj", "src/Headless.Messaging/"]
 COPY ["src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj", "src/Headless.Messaging.SqlServer/"]
 RUN dotnet restore "./demo/Headless.Messaging.Redis.SqlServer.Demo/Headless.Messaging.Redis.SqlServer.Demo.csproj"

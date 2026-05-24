@@ -16,7 +16,8 @@ internal sealed class AzureServiceBusConsumerClient(
     string subscriptionName,
     byte groupConcurrent,
     IOptions<AzureServiceBusOptions> options,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    IntentType intentType = IntentType.Bus
 ) : IConsumerClient
 {
     private readonly AzureServiceBusOptions _asbOptions = Argument.IsNotNull(options.Value);
@@ -30,6 +31,7 @@ internal sealed class AzureServiceBusConsumerClient(
     private ServiceBusAdministrationClient? _administrationClient;
     private ServiceBusClient? _serviceBusClient;
     private ServiceBusProcessorFacade? _serviceBusProcessor;
+    private readonly List<ServiceBusProcessorFacade> _queueProcessors = [];
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -43,6 +45,17 @@ internal sealed class AzureServiceBusConsumerClient(
         Argument.IsNotNull(topics);
 
         await ConnectAsync();
+
+        if (intentType == IntentType.Queue)
+        {
+            foreach (var topic in topics)
+            {
+                CheckValidQueueName(topic);
+                await _EnsureQueueProcessorAsync(topic).ConfigureAwait(false);
+            }
+
+            return;
+        }
 
         if (!_asbOptions.AutoProvision)
         {
@@ -111,19 +124,30 @@ internal sealed class AzureServiceBusConsumerClient(
     {
         await ConnectAsync();
 
-        if (_serviceBusProcessor!.IsSessionProcessor)
-        {
-            _serviceBusProcessor!.ProcessSessionMessageAsync += _serviceBusProcessor_ProcessSessionMessageAsync;
-        }
-        else
-        {
-            _serviceBusProcessor!.ProcessMessageAsync += _serviceBusProcessor_ProcessMessageAsync;
-        }
+        IReadOnlyList<ServiceBusProcessorFacade> processors =
+            intentType == IntentType.Queue ? _queueProcessors : [_serviceBusProcessor!];
 
-        _serviceBusProcessor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
+        foreach (var processor in processors)
+        {
+            if (processor.IsSessionProcessor)
+            {
+                processor.ProcessSessionMessageAsync += _serviceBusProcessor_ProcessSessionMessageAsync;
+            }
+            else
+            {
+                processor.ProcessMessageAsync += _serviceBusProcessor_ProcessMessageAsync;
+            }
+
+            processor.ProcessErrorAsync += _serviceBusProcessor_ProcessErrorAsync;
+        }
 
         await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-        await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+
+        foreach (var processor in processors)
+        {
+            await processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         Volatile.Write(ref _hasStartedProcessing, 1);
         _ready.TrySetResult();
     }
@@ -136,7 +160,7 @@ internal sealed class AzureServiceBusConsumerClient(
     public async ValueTask CommitAsync(object? sender)
     {
         var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
-        if (!_serviceBusProcessor!.AutoCompleteMessages)
+        if (!_asbOptions.AutoCompleteMessages)
         {
             await commitInput.CompleteMessageAsync();
         }
@@ -160,9 +184,9 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        if (_serviceBusProcessor is not null)
+        foreach (var processor in _GetProcessors())
         {
-            await _serviceBusProcessor.StopProcessingAsync(cancellationToken);
+            await processor.StopProcessingAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -180,17 +204,20 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        if (_serviceBusProcessor is null || Volatile.Read(ref _hasStartedProcessing) == 0)
+        if (Volatile.Read(ref _hasStartedProcessing) == 0)
         {
             return;
         }
 
-        if (_serviceBusProcessor.IsProcessing)
+        foreach (var processor in _GetProcessors())
         {
-            return;
-        }
+            if (processor.IsProcessing)
+            {
+                continue;
+            }
 
-        await _serviceBusProcessor.StartProcessingAsync(cancellationToken);
+            await processor.StartProcessingAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -206,6 +233,11 @@ internal sealed class AzureServiceBusConsumerClient(
         if (_serviceBusProcessor is not null)
         {
             await _serviceBusProcessor.DisposeAsync();
+        }
+
+        foreach (var processor in _queueProcessors)
+        {
+            await processor.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_serviceBusClient is not null)
@@ -256,24 +288,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (groupConcurrent > 0)
         {
-            await _semaphore.WaitAsync().ConfigureAwait(false);
-            _ObserveBackgroundHandler(
-                Task.Run(
-                    async () =>
-                    {
-                        try
-                        {
-                            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg))
-                                .ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            _ReleaseSemaphore();
-                        }
-                    },
-                    CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                )
-            );
+            await _semaphore.WaitAsync(arg.CancellationToken).ConfigureAwait(false);
+            try
+            {
+                await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+            }
+            finally
+            {
+                _ReleaseSemaphore();
+            }
         }
         else
         {
@@ -288,33 +311,9 @@ internal sealed class AzureServiceBusConsumerClient(
         await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
     }
 
-    private void _ObserveBackgroundHandler(Task task)
-    {
-        _ = task.ContinueWith(
-            completedTask =>
-            {
-                var exception = completedTask.Exception?.GetBaseException();
-                if (exception is not null)
-                {
-                    OnLogCallback?.Invoke(
-                        new LogMessageEventArgs
-                        {
-                            LogType = MqLogType.ConsumeError,
-                            Reason =
-                                $"Unhandled exception in Azure Service Bus background message handler: {exception}",
-                        }
-                    );
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
-
     public async Task ConnectAsync()
     {
-        if (_serviceBusProcessor != null)
+        if (_serviceBusProcessor != null || (intentType == IntentType.Queue && _serviceBusClient != null))
         {
             return;
         }
@@ -324,7 +323,7 @@ internal sealed class AzureServiceBusConsumerClient(
         try
         {
 #pragma warning disable CA1508 // Justification: other thread can initialize it
-            if (_serviceBusProcessor == null)
+            if (_serviceBusProcessor == null && (intentType != IntentType.Queue || _serviceBusClient == null))
 #pragma warning restore CA1508
             {
                 _serviceBusClient = _asbOptions.TokenCredential is not null
@@ -336,7 +335,11 @@ internal sealed class AzureServiceBusConsumerClient(
                     _administrationClient = _asbOptions.TokenCredential is not null
                         ? new ServiceBusAdministrationClient(_asbOptions.Namespace, _asbOptions.TokenCredential)
                         : new ServiceBusAdministrationClient(_asbOptions.ConnectionString);
+                }
 
+                if (intentType == IntentType.Bus && _asbOptions.AutoProvision)
+                {
+                    var administrationClient = _administrationClient!;
                     var topicConfigs = _asbOptions
                         .CustomProducers.Select(producer =>
                             (topicPaths: producer.TopicPath, subscribe: producer.CreateSubscription)
@@ -347,15 +350,15 @@ internal sealed class AzureServiceBusConsumerClient(
 
                     foreach (var (topicPath, subscribe) in topicConfigs)
                     {
-                        if (!await _administrationClient.TopicExistsAsync(topicPath))
+                        if (!await administrationClient.TopicExistsAsync(topicPath))
                         {
-                            await _administrationClient.CreateTopicAsync(topicPath);
+                            await administrationClient.CreateTopicAsync(topicPath);
                             logger.TopicCreated(topicPath);
                         }
 
                         if (
                             subscribe
-                            && !await _administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
+                            && !await administrationClient.SubscriptionExistsAsync(topicPath, subscriptionName)
                         )
                         {
                             var subscriptionDescription = new CreateSubscriptionOptions(topicPath, subscriptionName)
@@ -367,11 +370,16 @@ internal sealed class AzureServiceBusConsumerClient(
                                 MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
                             };
 
-                            await _administrationClient.CreateSubscriptionAsync(subscriptionDescription);
+                            await administrationClient.CreateSubscriptionAsync(subscriptionDescription);
 
                             logger.SubscriptionCreated(topicPath, subscriptionName);
                         }
                     }
+                }
+
+                if (intentType == IntentType.Queue)
+                {
+                    return;
                 }
 
                 _serviceBusProcessor = !_asbOptions.EnableSessions
@@ -406,6 +414,69 @@ internal sealed class AzureServiceBusConsumerClient(
         finally
         {
             _connectionLock.Release();
+        }
+    }
+
+    private async Task _EnsureQueueProcessorAsync(string queueName)
+    {
+        await ConnectAsync().ConfigureAwait(false);
+
+        if (_asbOptions.AutoProvision && _administrationClient is not null)
+        {
+            if (!await _administrationClient.QueueExistsAsync(queueName).ConfigureAwait(false))
+            {
+                var queueOptions = new CreateQueueOptions(queueName)
+                {
+                    RequiresSession = _asbOptions.EnableSessions,
+                    AutoDeleteOnIdle = _asbOptions.SubscriptionAutoDeleteOnIdle,
+                    LockDuration = _asbOptions.SubscriptionMessageLockDuration,
+                    DefaultMessageTimeToLive = _asbOptions.SubscriptionDefaultMessageTimeToLive,
+                    MaxDeliveryCount = _asbOptions.SubscriptionMaxDeliveryCount,
+                };
+
+                await _administrationClient.CreateQueueAsync(queueOptions).ConfigureAwait(false);
+            }
+        }
+
+        var processor = !_asbOptions.EnableSessions
+            ? new ServiceBusProcessorFacade(
+                serviceBusProcessor: _serviceBusClient!.CreateProcessor(
+                    queueName,
+                    new ServiceBusProcessorOptions
+                    {
+                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
+                        MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
+                    }
+                )
+            )
+            : new ServiceBusProcessorFacade(
+                serviceBusSessionProcessor: _serviceBusClient!.CreateSessionProcessor(
+                    queueName,
+                    new ServiceBusSessionProcessorOptions
+                    {
+                        AutoCompleteMessages = _asbOptions.AutoCompleteMessages,
+                        MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
+                        MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
+                        MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
+                        SessionIdleTimeout = _asbOptions.SessionIdleTimeout,
+                    }
+                )
+            );
+
+        _queueProcessors.Add(processor);
+    }
+
+    private IEnumerable<ServiceBusProcessorFacade> _GetProcessors()
+    {
+        if (_serviceBusProcessor is not null)
+        {
+            yield return _serviceBusProcessor;
+        }
+
+        foreach (var processor in _queueProcessors)
+        {
+            yield return processor;
         }
     }
 
@@ -486,6 +557,49 @@ internal sealed class AzureServiceBusConsumerClient(
                 throw new ArgumentException(
                     $"'{subscriptionName}' contains character '{uriSchemeKey}' which is not allowed because it is reserved in the Uri scheme.",
                     nameof(subscriptionName)
+                );
+            }
+        }
+    }
+
+    internal static void CheckValidQueueName(string queueName)
+    {
+        const string pathDelimiter = "/";
+        const int queueNameMaximumLength = 260;
+        char[] invalidEntityPathCharacters = ['@', '?', '#', '*'];
+
+        if (string.IsNullOrWhiteSpace(queueName))
+        {
+            throw new ArgumentException("Queue name cannot be null or whitespace.", nameof(queueName));
+        }
+
+        var tmpName = queueName.Replace(@"\", pathDelimiter, StringComparison.Ordinal);
+        if (tmpName.Length > queueNameMaximumLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(queueName),
+                $"Queue name '{queueName}' exceeds the '{queueNameMaximumLength}' character limit."
+            );
+        }
+
+        if (
+            tmpName.StartsWith(pathDelimiter, StringComparison.Ordinal)
+            || tmpName.EndsWith(pathDelimiter, StringComparison.Ordinal)
+        )
+        {
+            throw new ArgumentException(
+                $"The queue name cannot contain '/' as prefix or suffix. The supplied value is '{queueName}'.",
+                nameof(queueName)
+            );
+        }
+
+        foreach (var uriSchemeKey in invalidEntityPathCharacters)
+        {
+            if (queueName.Contains(uriSchemeKey, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"'{queueName}' contains character '{uriSchemeKey}' which is not allowed because it is reserved in the Uri scheme.",
+                    nameof(queueName)
                 );
             }
         }

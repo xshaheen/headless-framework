@@ -98,7 +98,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_store_published_message_with_maximum_supported_message_id_length()
     {
         // given
-        var msgId = new string('m', PublishOptions.MessageIdMaxLength);
+        var msgId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, """{"test": "payload"}""");
 
@@ -107,7 +107,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then
         stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
-        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(MessagePublishOptionsBase.MessageIdMaxLength);
     }
 
     [Fact]

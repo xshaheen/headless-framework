@@ -15,6 +15,8 @@ public class MessageView
 
     public required string Name { get; set; }
 
+    public IntentType IntentType { get; set; }
+
     public string? Content { get; set; }
 
     public DateTime Added { get; set; }

@@ -17,6 +17,8 @@ public class MessageEventDataSubStore
 
     public BrokerAddress BrokerAddress { get; set; }
 
+    public IntentType IntentType { get; set; } = IntentType.Bus;
+
     public long? ElapsedTimeMs { get; set; }
 
     public Exception? Exception { get; set; }
@@ -37,6 +39,8 @@ public class MessageEventDataSubExecute
     public required string Operation { get; set; }
 
     public required Message Message { get; set; }
+
+    public IntentType IntentType { get; set; } = IntentType.Bus;
 
     public MethodInfo? MethodInfo { get; set; }
 

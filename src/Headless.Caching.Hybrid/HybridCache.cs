@@ -30,7 +30,7 @@ namespace Headless.Caching;
 public sealed class HybridCache(
     IInMemoryCache l1Cache,
     IDistributedCache l2Cache,
-    IDirectPublisher publisher,
+    IBus publisher,
     HybridCacheOptions options,
     ILogger<HybridCache>? logger = null
 ) : ICache, IAsyncDisposable
@@ -1045,7 +1045,7 @@ public sealed class HybridCache(
     {
         try
         {
-            await publisher.PublishAsync(message, ct).ConfigureAwait(false);
+            await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

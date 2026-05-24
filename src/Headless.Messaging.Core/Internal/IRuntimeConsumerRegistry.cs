@@ -296,6 +296,7 @@ internal sealed class RuntimeConsumerRegistry(
             GroupName = group,
             Concurrency = concurrency,
             HandlerId = handlerId,
+            IntentType = IntentType.Bus,
             Parameters =
             [
                 new ParameterDescriptor

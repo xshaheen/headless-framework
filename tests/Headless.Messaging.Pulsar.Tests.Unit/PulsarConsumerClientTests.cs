@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,18 @@ public sealed class PulsarConsumerClientTests : TestBase
     public PulsarConsumerClientTests()
     {
         _options = Options.Create(new MessagingPulsarOptions { ServiceUrl = "pulsar://localhost:6650" });
+    }
+
+    [Fact]
+    public void GetSubscriptionName_should_use_group_for_bus_intent()
+    {
+        PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Bus).Should().Be("payments");
+    }
+
+    [Fact]
+    public void GetSubscriptionName_should_use_shared_subscription_for_queue_intent()
+    {
+        PulsarConsumerClient.GetSubscriptionName("payments", IntentType.Queue).Should().Be("headless-queue");
     }
 
     [Fact]

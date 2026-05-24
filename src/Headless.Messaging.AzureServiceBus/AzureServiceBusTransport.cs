@@ -11,14 +11,13 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.AzureServiceBus;
 
-internal class AzureServiceBusTransport(
+internal sealed class AzureServiceBusTransport(
     ILogger<AzureServiceBusTransport> logger,
     IOptions<AzureServiceBusOptions> busOptions
-) : ITransport, IServiceBusProducerDescriptorFactory
+) : IBusTransport, IServiceBusProducerDescriptorFactory
 {
-    private readonly SemaphoreSlim _connectionLock = new(1, 1);
     private readonly ILogger _logger = logger;
-    private readonly ConcurrentDictionary<string, ServiceBusSender?> _senders = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<ServiceBusSender>> _senders = new(StringComparer.Ordinal);
     private ServiceBusClient? _client;
 
     /// <summary>
@@ -44,40 +43,12 @@ internal class AzureServiceBusTransport(
         try
         {
             var producer = CreateProducerForMessage(transportMessage);
-            var sender = _GetSenderForProducer(producer);
+            var sender = _GetSenderForProducer(producer).Value;
 
-            var message = new ServiceBusMessage(transportMessage.Body.ToArray())
-            {
-                MessageId = transportMessage.GetId(),
-                Subject = transportMessage.GetName(),
-                CorrelationId = transportMessage.GetCorrelationId(),
-            };
-
-            if (busOptions.Value.EnableSessions || producer.EnableSessions)
-            {
-                transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
-                message.SessionId = string.IsNullOrEmpty(sessionId) ? transportMessage.GetId() : sessionId;
-            }
-
-            if (
-                transportMessage.Headers.TryGetValue(
-                    AzureServiceBusHeaders.ScheduledEnqueueTimeUtc,
-                    out var scheduledEnqueueTimeUtcString
-                )
-                && DateTimeOffset.TryParse(
-                    scheduledEnqueueTimeUtcString,
-                    CultureInfo.InvariantCulture,
-                    out var scheduledEnqueueTimeUtc
-                )
-            )
-            {
-                message.ScheduledEnqueueTime = scheduledEnqueueTimeUtc;
-            }
-
-            foreach (var header in transportMessage.Headers)
-            {
-                message.ApplicationProperties.Add(header.Key, header.Value);
-            }
+            var message = AzureServiceBusMessageBuilder.Build(
+                transportMessage,
+                busOptions.Value.EnableSessions || producer.EnableSessions
+            );
 
             await sender.SendMessageAsync(message, cancellationToken).ConfigureAwait(false);
 
@@ -99,45 +70,29 @@ internal class AzureServiceBusTransport(
     }
 
     /// <summary>
-    /// Gets the Topic Client for the specified producer. If it does not exist, a new one is created and added to the Topic
-    /// Client dictionary.
+    /// Gets the <see cref="ServiceBusSender"/> for the specified producer descriptor, creating it on first access.
+    /// Thread-safe via <see cref="ConcurrentDictionary{TKey,TValue}"/> and <see cref="Lazy{T}"/> double-init protection.
     /// </summary>
-    /// <param name="producerDescriptor"></param>
-    /// <returns>
-    ///     <see cref="ServiceBusSender" />
-    /// </returns>
-    private ServiceBusSender _GetSenderForProducer(IServiceBusProducerDescriptor producerDescriptor)
+    private Lazy<ServiceBusSender> _GetSenderForProducer(IServiceBusProducerDescriptor producerDescriptor)
     {
-        if (_senders.TryGetValue(producerDescriptor.TopicPath, out var sender) && sender != null)
-        {
-            _logger.TopicConnectionExists(producerDescriptor.TopicPath);
-
-            return sender;
-        }
-
-        _connectionLock.Wait();
-
-        try
-        {
-            _client ??= busOptions.Value.TokenCredential is null
-                ? new ServiceBusClient(busOptions.Value.ConnectionString)
-                : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
-
-            var newSender = _client.CreateSender(producerDescriptor.TopicPath);
-            _senders.AddOrUpdate(producerDescriptor.TopicPath, newSender, (_, _) => newSender);
-
-            return newSender;
-        }
-        finally
-        {
-            _connectionLock.Release();
-        }
+        return _senders.GetOrAdd(
+            producerDescriptor.TopicPath,
+            topicPath => new Lazy<ServiceBusSender>(
+                () =>
+                {
+                    _logger.TopicConnectionExists(topicPath);
+                    _client ??= busOptions.Value.TokenCredential is null
+                        ? new ServiceBusClient(busOptions.Value.ConnectionString)
+                        : new ServiceBusClient(busOptions.Value.Namespace, busOptions.Value.TokenCredential);
+                    return _client.CreateSender(topicPath);
+                },
+                LazyThreadSafetyMode.ExecutionAndPublication
+            )
+        );
     }
 
     public async ValueTask DisposeAsync()
     {
-        _connectionLock.Dispose();
-
         if (_client is not null)
         {
             await _client.DisposeAsync();
