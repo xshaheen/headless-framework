@@ -210,8 +210,7 @@
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
         <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
-        <Project Path="src/Headless.Messaging.RedisPubSub/Headless.Messaging.RedisPubSub.csproj" />
-        <Project Path="src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj" />
+        <Project Path="src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj" />
         <Project Path="src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj" />
         <Project Path="src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj" />
     </Folder>
@@ -239,8 +238,7 @@
         <Project Path="tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Integration/Headless.Messaging.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.SqlServer.Tests.Integration/Headless.Messaging.SqlServer.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.Messaging.RedisPubSub.Tests.Unit/Headless.Messaging.RedisPubSub.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.RedisStreams.Tests.Unit/Headless.Messaging.RedisStreams.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Observability/">

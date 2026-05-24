@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.RedisPubSub, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -181,28 +181,20 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
         - [Recommendations](#recommendations-1)
     - [Dependencies](#dependencies-10)
     - [Side Effects](#side-effects-10)
-- [Headless.Messaging.RedisStreams](#headlessmessagingredisstreams)
+- [Headless.Messaging.Redis](#headlessmessagingredis)
     - [Problem Solved](#problem-solved-11)
     - [Key Features](#key-features-11)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-11)
     - [Quick Start](#quick-start-11)
     - [Configuration](#configuration-11)
     - [Dependencies](#dependencies-11)
     - [Side Effects](#side-effects-11)
-- [Headless.Messaging.RedisPubSub](#headlessmessagingredispubsub)
+- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
     - [Problem Solved](#problem-solved-12)
     - [Key Features](#key-features-12)
-    - [Design Notes](#design-notes)
     - [Installation](#installation-12)
     - [Quick Start](#quick-start-12)
-    - [Configuration](#configuration-12)
-    - [Dependencies](#dependencies-12)
-    - [Side Effects](#side-effects-12)
-- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
-    - [Problem Solved](#problem-solved-13)
-    - [Key Features](#key-features-13)
-    - [Installation](#installation-13)
-    - [Quick Start](#quick-start-13)
     - [Configuration](#configuration-13)
     - [Dependencies](#dependencies-13)
     - [Side Effects](#side-effects-13)
@@ -260,8 +252,7 @@ For applications, install **Core + one transport + one storage**. `Messaging.Cor
 - `Headless.Messaging.Aws` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
 - `Headless.Messaging.Nats` -- lightweight cloud-native, JetStream persistence
 - `Headless.Messaging.Pulsar` -- multi-tenant, geo-replicated streaming
-- `Headless.Messaging.RedisStreams` -- sub-millisecond latency, consumer groups
-- `Headless.Messaging.RedisPubSub` -- volatile Redis broadcast for connected subscribers
+- `Headless.Messaging.Redis` -- Redis Streams queues and Redis Pub/Sub broadcast modes
 - `Headless.Messaging.InMemory` -- dev/testing only, zero infrastructure
 
 **Storage** (pick one):
@@ -338,8 +329,8 @@ These matrices summarize the current Phase 1 surface for each transport and stor
 | `Aws`             | yes           | yes             | no                              | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)  | SNS topic, SQS queue, and policy create  |
 | `Kafka`           | no            | yes             | no                              | per-partition with partition key  | yes                      | seek to offset (re-read partition) | auto-create concrete topics              |
 | `Pulsar`          | yes           | yes             | no (`DeliverAfter` not wired)   | per-key when partition key set    | yes                      | `NegativeAcknowledge`              | passthrough (broker auto-creates)        |
-| `RedisStreams`    | no            | yes             | no                              | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)   | passthrough (`XADD` creates on publish)  |
-| `RedisPubSub`     | yes           | no              | no                              | connected subscribers only        | yes                      | **no-op** (volatile delivery)      | passthrough (Redis channel subscription) |
+| `Redis (Streams)` | no            | yes             | no                              | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)   | passthrough (`XADD` creates on publish)  |
+| `Redis (Pub/Sub)` | yes           | no              | no                              | connected subscribers only        | yes                      | **no-op** (volatile delivery)      | passthrough (Redis channel subscription) |
 | `InMemory`        | yes           | yes             | n/a (framework-owned queue)     | FIFO per queue with single thread | yes                      | **no-op** (test transport)         | n/a                                      |
 
 How to read each column:
@@ -2069,108 +2060,65 @@ setup.Options.EnableSubscriberParallelExecute = false; // No parallel execution
 
 ---
 
-# Headless.Messaging.RedisStreams
+## Headless.Messaging.Redis
 
-Redis Streams transport provider for the messaging system.
+Redis transport provider for the messaging system.
 
-## Problem Solved
+### Problem Solved
 
-Enables lightweight, high-performance message streaming using Redis Streams with consumer groups, persistence, and at-least-once delivery guarantees.
+Provides both Redis Streams queue delivery and Redis Pub/Sub broadcast delivery from one package, so applications can choose queue or bus semantics without referencing separate Redis packages.
 
-## Key Features
+### Key Features
 
-- **Redis Streams**: Append-only log structure for message streaming
-- **Consumer Groups**: Load balancing and parallel processing
-- **Persistence**: Durable message storage with configurable retention
-- **Claim Messages**: Automatic reprocessing of unacknowledged messages
-- **Low Latency**: Sub-millisecond message delivery
+- Redis Streams queue transport through `UseRedis(...)`.
+- Redis Pub/Sub bus transport through `UseRedisPubSub(...)`.
+- Consumer groups, acknowledgment, pending-entry claiming, and durable queue delivery for Streams.
+- Volatile broadcast delivery for Pub/Sub to currently connected subscribers.
+- Shared StackExchange.Redis dependency and Redis configuration model.
 
-## Installation
+### Design Notes
+
+Redis Streams and Redis Pub/Sub are different broker semantics behind one package. Use Streams (`UseRedis`) for queue consumers and durable work distribution. Use Pub/Sub (`UseRedisPubSub`) for broadcast events where disconnected subscribers may miss messages.
+
+`IOutboxBus + UseRedisPubSub` persists the framework-side publish until Redis accepts `PUBLISH`; broker-side delivery remains volatile after that handoff. Choose Streams when Redis itself must retain messages for disconnected or competing consumers.
+
+### Installation
 
 ```bash
-dotnet add package Headless.Messaging.RedisStreams
+dotnet add package Headless.Messaging.Redis
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseRedisStreams(redis =>
-    {
-        redis.Configuration = "localhost:6379";
-    });
+    // Queue delivery through Redis Streams.
+    options.UseRedis("localhost:6379");
 
-    options.SubscribeFromAssemblyContaining<Program>();
-});
-```
-
-## Configuration
-
-```csharp
-options.UseRedisStreams(redis =>
-{
-    redis.Configuration = "localhost:6379,ssl=true,password=secret";
-    redis.StreamEntriesCount = 10;
-    redis.ConnectionPoolSize = 10;
-});
-```
-
-## Dependencies
-
-- `Headless.Messaging.Core`
-- `StackExchange.Redis`
-
-## Side Effects
-
-- Creates Redis Streams for each topic
-- Creates consumer groups for message distribution
-- Maintains persistent connections to Redis
-- Periodically claims pending messages for retry
-
----
-
-## Headless.Messaging.RedisPubSub
-
-Redis Pub/Sub bus transport provider for Headless Messaging.
-
-## Problem Solved
-
-Provides low-latency broadcast delivery to subscribers that are connected at publish time. Use it for notifications, cache invalidation, and ephemeral fan-out where replay is not required.
-
-## Key Features
-
-- **Bus-only transport**: Registers `IBusTransport` and does not register `IQueueTransport`.
-- **Volatile delivery**: Offline subscribers miss messages published while disconnected.
-- **Redis channels**: Publishes each message type to a Redis Pub/Sub channel.
-- **Shared Redis options**: Uses native `StackExchange.Redis` `ConfigurationOptions`.
-
-## Design Notes
-
-Redis Pub/Sub has no broker-side queue, consumer group, acknowledgment, or replay model. Choose `Headless.Messaging.RedisStreams` when messages must survive disconnects or be processed by competing workers.
-
-## Installation
-
-```bash
-dotnet add package Headless.Messaging.RedisPubSub
-```
-
-## Quick Start
-
-```csharp
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.UsePostgreSql("connection_string");
-
+    // Broadcast delivery through Redis Pub/Sub.
     options.UseRedisPubSub("localhost:6379");
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
-## Configuration
+### Configuration
+
+`UseRedis(string)` configures Redis Streams queue delivery. For richer options use `UseRedis(Action<MessagingRedisOptions>)`; `MessagingRedisOptions.Configuration` is a StackExchange.Redis `ConfigurationOptions` instance:
+
+```csharp
+options.UseRedis(redis =>
+{
+    redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
+    redis.StreamEntriesCount = 10;
+    redis.ConnectionPoolSize = 10;
+});
+```
+
+`UseRedisPubSub(string)` configures Redis Pub/Sub bus delivery. For richer options use `UseRedisPubSub(Action<RedisPubSubOptions>)`:
 
 ```csharp
 options.UseRedisPubSub(redis =>
@@ -2179,16 +2127,20 @@ options.UseRedisPubSub(redis =>
 });
 ```
 
-## Dependencies
+### Dependencies
 
+- `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Core`
+- `Headless.Messaging.Queue.Abstractions`
 - `StackExchange.Redis`
 
-## Side Effects
+### Side Effects
 
-- Registers a Redis Pub/Sub bus transport.
-- Opens a shared Redis connection multiplexer.
-- Subscribes consumer clients to Redis channels for discovered message types.
+- Registers `IQueueTransport` for Redis Streams when `UseRedis(...)` is called.
+- Registers `IBusTransport` for Redis Pub/Sub when `UseRedisPubSub(...)` is called.
+- Creates Redis Streams and consumer groups for stream topics as needed.
+- Maintains persistent Redis connections.
+- Periodically claims pending stream messages for retry.
 
 ---
 
