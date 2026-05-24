@@ -66,4 +66,32 @@ public sealed class TransportMessageEqualityTests : TestBase
         // then
         left.Equals(right).Should().BeFalse();
     }
+
+    [Fact]
+    public void should_produce_different_hash_when_same_length_body_has_different_content()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["a"] = "1" };
+        var left = new TransportMessage(headers, "abcdefgh"u8.ToArray());
+        var right = new TransportMessage(headers, "abcdefgi"u8.ToArray());
+
+        // then
+        left.Equals(right).Should().BeFalse();
+        // Different content should typically produce different hashes; this guards against
+        // a regression to a length-only body hash that would collide every same-length payload.
+        left.GetHashCode().Should().NotBe(right.GetHashCode());
+    }
+
+    [Fact]
+    public void should_produce_different_hash_when_short_body_content_differs()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["a"] = "1" };
+        var left = new TransportMessage(headers, new byte[] { 0x01, 0x02 });
+        var right = new TransportMessage(headers, new byte[] { 0x03, 0x04 });
+
+        // then
+        left.Equals(right).Should().BeFalse();
+        left.GetHashCode().Should().NotBe(right.GetHashCode());
+    }
 }

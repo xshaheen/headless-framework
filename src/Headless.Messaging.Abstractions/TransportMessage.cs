@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 
@@ -139,7 +140,33 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
             pairHash ^= HashCode.Combine(keyHash, valueHash);
         }
 
-        return HashCode.Combine(Body.Length, Headers.Count, pairHash);
+        // Sample up to 8 bytes of the body (first 4 + last 4) into the hash so messages with
+        // the same length but different content distribute across hash buckets. Equals still
+        // enforces full-span equality; this just sharpens the bucketing.
+        return HashCode.Combine(Body.Length, Headers.Count, pairHash, _SampleBodyHash(Body.Span));
+    }
+
+    private static int _SampleBodyHash(ReadOnlySpan<byte> body)
+    {
+        if (body.Length >= 8)
+        {
+            var head = BinaryPrimitives.ReadInt32LittleEndian(body);
+            var tail = BinaryPrimitives.ReadInt32LittleEndian(body[^4..]);
+            return HashCode.Combine(head, tail);
+        }
+
+        if (body.Length >= 4)
+        {
+            return BinaryPrimitives.ReadInt32LittleEndian(body);
+        }
+
+        var sample = 0;
+        for (var i = 0; i < body.Length; i++)
+        {
+            sample = HashCode.Combine(sample, (int)body[i]);
+        }
+
+        return sample;
     }
 
     public static bool operator ==(TransportMessage left, TransportMessage right)
