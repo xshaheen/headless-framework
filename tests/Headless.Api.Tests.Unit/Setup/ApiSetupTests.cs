@@ -17,7 +17,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.Setup;
 
-public sealed class ApiSetupTests
+public sealed class SetupApiTests
 {
     [Fact]
     public void add_headless_api_should_register_current_tenant_by_default()

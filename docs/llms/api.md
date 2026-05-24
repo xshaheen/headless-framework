@@ -103,7 +103,7 @@ Additional packages:
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()` and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false` and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- Call `ApiSetup.ConfigureGlobalSettings()` before `AddHeadless()` to set regex timeout, FluentValidation, and JWT defaults.
+- `AddHeadless()` invokes `ApiSetup.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
@@ -147,10 +147,8 @@ dotnet add package Headless.Api.ServiceDefaults
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure global settings (regex timeout, FluentValidation, JWT)
-ApiSetup.ConfigureGlobalSettings();
-
-// Register all framework API services + Aspire conventions
+// Register all framework API services + Aspire conventions.
+// Also applies global defaults (regex timeout, FluentValidation, JWT) via ConfigureGlobalSettings().
 builder.AddHeadless();
 
 var app = builder.Build();

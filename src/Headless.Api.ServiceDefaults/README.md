@@ -15,7 +15,6 @@ dotnet add package Headless.Api.ServiceDefaults
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-ApiSetup.ConfigureGlobalSettings();
 builder.AddHeadless();
 
 var app = builder.Build();
