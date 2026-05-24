@@ -92,6 +92,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
                 Arg.Any<string>(),
                 Arg.Any<string>(),
                 Arg.Any<TimeSpan?>(),
+                Arg.Any<TimeSpan?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(true);

@@ -62,5 +62,35 @@ public static class RedisDistributedLockSetup
         }
 
         #endregion
+
+        #region Redis Distributed Reader-Writer Lock
+
+        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
+        public IServiceCollection AddRedisDistributedReaderWriterLock(
+            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
+        )
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction);
+        }
+
+        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
+        public IServiceCollection AddRedisDistributedReaderWriterLock(Action<DistributedLockOptions> optionSetupAction)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction);
+        }
+
+        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
+        public IServiceCollection AddRedisDistributedReaderWriterLock(IConfiguration config)
+        {
+            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config);
+        }
+
+        #endregion
     }
 }

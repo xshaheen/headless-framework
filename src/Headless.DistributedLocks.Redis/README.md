@@ -43,7 +43,7 @@ builder.Services.AddRedisDistributedReaderWriterLock(options =>
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`. Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per lock-acquire call. `LockMonitoringMode` (lease monitoring and auto-extension) is a storage-agnostic provider feature configured through `Headless.DistributedLocks.Core`.
 
-Reader-writer storage creates `{resource}:writer` and `{resource}:readers` Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. Writer-preference blocks new readers while a writer is queued.
+Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed waiting marker) and `{resource}:readers` (HASH of `lockId → expiry-epoch-ms`, with per-entry expiry computed inside Lua via `redis.call('TIME')`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. Writer-preference blocks new readers while a writer is queued; readers running `Monitoring = AutoExtend` may see `HandleLostToken` fire when a writer queues — that signals the reader to drop and reacquire after the writer drains. Marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s).
 
 ## Dependencies
 

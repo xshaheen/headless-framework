@@ -199,51 +199,120 @@ public static class RedisScripts
         return redis.call('get', @key)
         """;
 
-    /// <summary>Atomically acquires a reader lock when no writer or writer-waiting marker exists.</summary>
+    // Reader-set marker suffix shared with the .NET storage layer. Kept inline in each Lua script
+    // (no shared constant — Lua scripts don't compose) so a reviewer can see exactly which value
+    // counts as a writer-waiting placeholder without cross-referencing the C# code.
+
+    /// <summary>
+    /// Atomically acquires a reader lock when no real writer holds the resource and no
+    /// writer-waiting marker is queued.
+    /// </summary>
+    /// <remarks>
+    /// Storage shape: <c>@readerKey</c> is a HASH whose fields are reader lockIds and whose values
+    /// are per-reader expiry epochs in milliseconds. Per-entry expiry (not Redis key TTL) is the
+    /// source of truth for reader liveness; the outer HASH TTL is a generous safety net only.
+    /// </remarks>
     public const string TryAcquireReadLock = """
-        if redis.call('exists', @writerKey) == 1 then
+        local writerValue = redis.call('get', @writerKey)
+        if writerValue ~= false then
           return 0
         end
 
-        redis.call('sadd', @readerKey, @lockId)
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
         if (@expires ~= nil and @expires ~= '') then
+          local expiryMs = nowMs + tonumber(@expires)
+          redis.call('hset', @readerKey, @lockId, tostring(expiryMs))
           local readerTtl = redis.call('pttl', @readerKey)
-          if readerTtl < tonumber(@expires) then
-            redis.call('pexpire', @readerKey, @expires)
+          local safetyTtl = tonumber(@expires) * 2
+          if readerTtl < safetyTtl then
+            redis.call('pexpire', @readerKey, safetyTtl)
           end
+        else
+          redis.call('hset', @readerKey, @lockId, '0')
         end
 
         return 1
         """;
 
-    /// <summary>Atomically extends a reader lock if the lock id is still a reader set member.</summary>
+    /// <summary>
+    /// Atomically extends a reader lock if the caller's lockId is still present in the reader
+    /// HASH and no writer-waiting marker is queued.
+    /// </summary>
+    /// <remarks>
+    /// Refusing to extend while a writer is waiting enforces the writer-preference guarantee: a
+    /// reader running <c>Monitoring = AutoExtend</c> sees <c>Renewed=false</c> when a writer
+    /// queues, which the provider classifies as <c>Lost</c> and fires <c>HandleLostToken</c>.
+    /// </remarks>
     public const string TryExtendReadLock = """
-        if redis.call('sismember', @readerKey, @lockId) == 0 then
+        if redis.call('hexists', @readerKey, @lockId) == 0 then
           return 0
         end
 
+        local writerValue = redis.call('get', @writerKey)
+        if writerValue ~= false then
+          local suffix = ':_WRITERWAITING'
+          if string.sub(writerValue, -string.len(suffix)) == suffix then
+            return 0
+          end
+        end
+
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
         if (@expires ~= nil and @expires ~= '') then
+          local expiryMs = nowMs + tonumber(@expires)
+          redis.call('hset', @readerKey, @lockId, tostring(expiryMs))
           local readerTtl = redis.call('pttl', @readerKey)
-          if readerTtl < tonumber(@expires) then
-            redis.call('pexpire', @readerKey, @expires)
+          local safetyTtl = tonumber(@expires) * 2
+          if readerTtl < safetyTtl then
+            redis.call('pexpire', @readerKey, safetyTtl)
           end
         end
 
         return 1
         """;
 
-    /// <summary>Atomically releases a reader lock id from the reader set.</summary>
+    /// <summary>Atomically releases a reader lock id from the reader HASH.</summary>
     public const string ReleaseReadLock = """
-        return redis.call('srem', @readerKey, @lockId)
+        return redis.call('hdel', @readerKey, @lockId)
         """;
 
-    /// <summary>Atomically acquires a writer lock or plants/refreshes the caller's writer-waiting marker.</summary>
+    /// <summary>
+    /// Atomically acquires a writer lock when there are no live readers and no other writer, or
+    /// plants/refreshes the caller's writer-waiting marker.
+    /// </summary>
+    /// <remarks>
+    /// The plant/refresh branch fires whenever <c>writerValue</c> is missing OR is a string
+    /// ending in <c>:_WRITERWAITING</c> (any owner). This makes the marker collectively
+    /// continuous under multi-writer contention: a second queued writer keeps the marker present
+    /// even if the original queued writer cancels, so readers never sneak in. The marker is
+    /// stored with <c>@markerExpires</c> rather than the lease TTL so an abandoned/cancelled
+    /// writer cannot block readers for the full lease window.
+    /// </remarks>
     public const string TryAcquireWriteLock = """
         local writerValue = redis.call('get', @writerKey)
 
-        if writerValue == false or writerValue == @waitingId then
-          if redis.call('scard', @readerKey) == 0 then
+        local suffix = ':_WRITERWAITING'
+        local markerHeld = writerValue ~= false and string.sub(writerValue, -string.len(suffix)) == suffix
+        local canClaim = writerValue == false or markerHeld
+
+        if canClaim then
+          local nowSecMicro = redis.call('TIME')
+          local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
+          -- Prune any reader entries whose per-entry expiry has passed before checking for live readers.
+          local fields = redis.call('hkeys', @readerKey)
+          for i = 1, #fields do
+            local field = fields[i]
+            local value = redis.call('hget', @readerKey, field)
+            if value and value ~= '0' and tonumber(value) and tonumber(value) <= nowMs then
+              redis.call('hdel', @readerKey, field)
+            end
+          end
+
+          if redis.call('hlen', @readerKey) == 0 then
             if (@expires ~= nil and @expires ~= '') then
               redis.call('set', @writerKey, @lockId, 'PX', @expires)
             else
@@ -252,16 +321,10 @@ public static class RedisScripts
             return 1
           end
 
-          if writerValue ~= false then
-            if (@expires ~= nil and @expires ~= '') then
-              redis.call('pexpire', @writerKey, @expires)
-            end
+          if (@markerExpires ~= nil and @markerExpires ~= '') then
+            redis.call('set', @writerKey, @waitingId, 'PX', @markerExpires)
           else
-            if (@expires ~= nil and @expires ~= '') then
-              redis.call('set', @writerKey, @waitingId, 'PX', @expires)
-            else
-              redis.call('set', @writerKey, @waitingId)
-            end
+            redis.call('set', @writerKey, @waitingId)
           end
         end
 

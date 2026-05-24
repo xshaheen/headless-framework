@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
+using Polly;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -18,18 +19,26 @@ public sealed class DistributedReaderWriterLockProvider(
     ILogger<DistributedReaderWriterLockProvider> logger
 ) : IDistributedReaderWriterLockProvider
 {
-    internal const string WriterWaitingSuffix = ":_WRITERWAITING";
-
-    private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
 
     private readonly ScopedDistributedReaderWriterLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
+    private readonly IOutboxPublisher? _outboxPublisher = DistributedLockCoreHelpers.ConfigureOutboxPublisher(
+        outboxPublisher,
+        logger
+    );
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
+    private readonly TimeSpan _writerWaitingMarkerTtl = options.WriterWaitingMarkerTtl;
+
+    // Long-running release pipeline shared with the mutex provider. Release is a terminal state
+    // write — if the caller's CT fires mid-retry we still want to clean up, so the release path
+    // passes CancellationToken.None when executing the pipeline.
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
+        timeProvider,
+        logger
+    );
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -117,7 +126,10 @@ public sealed class DistributedReaderWriterLockProvider(
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
+            timeUntilExpires,
+            DefaultTimeUntilExpires
+        );
 
         return mode switch
         {
@@ -167,13 +179,31 @@ public sealed class DistributedReaderWriterLockProvider(
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
+        // Release is a terminal-state write. Use CancellationToken.None so the retry pipeline
+        // completes even if the caller's CT fires — the storage-level cleanup is the source of
+        // truth for whether waiters can proceed. Same convention as the mutex provider.
+        var storageRef = _storage;
+        var resourceRef = resource;
+        var lockIdRef = lockId;
         switch (mode)
         {
             case ReaderWriterLockMode.Read:
-                await _storage.ReleaseReadAsync(resource, lockId, cancellationToken).ConfigureAwait(false);
+                await _releasePipeline
+                    .ExecuteAsync(
+                        async ct =>
+                            await storageRef.ReleaseReadAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false),
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
                 break;
             case ReaderWriterLockMode.Write:
-                await _storage.ReleaseWriteAsync(resource, lockId, cancellationToken).ConfigureAwait(false);
+                await _releasePipeline
+                    .ExecuteAsync(
+                        async ct =>
+                            await storageRef.ReleaseWriteAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false),
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
                 break;
             default:
                 throw new InvalidOperationException("Unknown reader-writer lock mode.");
@@ -217,13 +247,16 @@ public sealed class DistributedReaderWriterLockProvider(
     {
         _ValidateResource(resource);
         acquireOptions ??= new DistributedLockAcquireOptions();
-        _ValidateAcquireTimeout(acquireOptions.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateAcquireTimeout(acquireOptions.AcquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var timeUntilExpires = _NormalizeTimeUntilExpires(acquireOptions.TimeUntilExpires);
+        var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
+            acquireOptions.TimeUntilExpires,
+            DefaultTimeUntilExpires
+        );
         var monitorLease = acquireOptions.Monitoring != LockMonitoringMode.None;
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
-        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
+        var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var acquireTimeout = acquireOptions.AcquireTimeout;
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         Ensure.False(lockId.Contains(':', StringComparison.Ordinal), "Reader-writer lock ids cannot contain ':'.");
@@ -254,6 +287,11 @@ public sealed class DistributedReaderWriterLockProvider(
         var gotLock = false;
         var retryAttempt = 0;
         var isFirstAttempt = true;
+        // A waiting marker is only planted by the Lua write-acquire script after it observes a
+        // contended state (i.e., TryAcquireWrite returned false). For Read mode the storage never
+        // plants a marker; for Write mode the first false return is what triggers the placeholder.
+        // Tracking this lets the finally block skip a wasted round-trip when no marker exists.
+        var waitingMarkerPlanted = false;
 
         try
         {
@@ -275,7 +313,13 @@ public sealed class DistributedReaderWriterLockProvider(
                 }
                 catch (OperationCanceledException)
                 {
-                    await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+                    // The storage call may have planted the writer-waiting marker server-side
+                    // before the client observed cancellation. Mark it as potentially planted so
+                    // the finally block issues the idempotent cleanup release.
+                    if (mode == ReaderWriterLockMode.Write)
+                    {
+                        waitingMarkerPlanted = true;
+                    }
 
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -286,6 +330,13 @@ public sealed class DistributedReaderWriterLockProvider(
                 }
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
+                    // Same rationale as the cancellation catch — Lua may have planted the marker
+                    // before the client-side exception surfaced. Cleanup is idempotent.
+                    if (mode == ReaderWriterLockMode.Write)
+                    {
+                        waitingMarkerPlanted = true;
+                    }
+
                     logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
                 }
 
@@ -294,13 +345,18 @@ public sealed class DistributedReaderWriterLockProvider(
                     break;
                 }
 
+                if (mode == ReaderWriterLockMode.Write)
+                {
+                    waitingMarkerPlanted = true;
+                }
+
                 if (cts.IsCancellationRequested)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     break;
                 }
 
-                var delayAmount = _GetBackoffDelay(retryAttempt++);
+                var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
                 try
                 {
                     await timeProvider.Delay(delayAmount, cts.Token).ConfigureAwait(false);
@@ -313,7 +369,7 @@ public sealed class DistributedReaderWriterLockProvider(
         }
         finally
         {
-            if (!gotLock)
+            if (!gotLock && waitingMarkerPlanted)
             {
                 await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
             }
@@ -377,8 +433,10 @@ public sealed class DistributedReaderWriterLockProvider(
         }
         catch (OperationCanceledException)
         {
-            await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
-
+            // Cleanup is performed by the post-loop `if (!gotLock)` block when control reaches
+            // it. Skip the inline round trip here so cancellation doesn't pay double the cleanup
+            // cost. If the caller cancelled, surface the exception immediately so the cleanup
+            // is intentionally skipped.
             if (callerToken.IsCancellationRequested)
             {
                 throw;
@@ -397,7 +455,16 @@ public sealed class DistributedReaderWriterLockProvider(
 
         if (!gotLock)
         {
-            await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+            // Only writers can plant the waiting marker (the Lua write-acquire script does it
+            // after a contended return). Read-mode contention never touches the writer key, so
+            // running cleanup for it is a pointless round trip. `_CleanupWaitingMarkerAsync`
+            // already short-circuits on non-Write mode, but mirroring the guarded shape here
+            // keeps the intent obvious.
+            if (mode == ReaderWriterLockMode.Write)
+            {
+                await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+            }
+
             DistributedLockMetrics.LockFailed.Add(1);
             return null;
         }
@@ -433,8 +500,9 @@ public sealed class DistributedReaderWriterLockProvider(
             ReaderWriterLockMode.Write => _storage.TryAcquireWriteAsync(
                 resource,
                 lockId,
-                _GetWaitingId(lockId),
+                _storage.GetWaitingId(lockId),
                 timeUntilExpires,
+                _writerWaitingMarkerTtl,
                 cancellationToken
             ),
             _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
@@ -515,50 +583,6 @@ public sealed class DistributedReaderWriterLockProvider(
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
     }
 
-    private TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
-    {
-        return timeUntilExpires is null ? DefaultTimeUntilExpires
-            : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
-            : Argument.IsPositive(timeUntilExpires.Value);
-    }
-
-    private static TimeSpan _RequireFiniteLeaseDuration(TimeSpan? timeUntilExpires, bool monitorLease)
-    {
-        if (timeUntilExpires is { } leaseDuration)
-        {
-            return leaseDuration;
-        }
-
-        if (monitorLease)
-        {
-            throw new ArgumentException(
-                "Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
-                nameof(timeUntilExpires)
-            );
-        }
-
-        return Timeout.InfiniteTimeSpan;
-    }
-
-    private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
-    {
-        if (acquireTimeout is null || acquireTimeout == Timeout.InfiniteTimeSpan)
-        {
-            return;
-        }
-
-        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
-    }
-
-    private static TimeSpan _GetBackoffDelay(int attempt)
-    {
-        var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));
-        var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
-        var jitter = cappedDelayMs * ((Random.Shared.NextDouble() * 0.5) - 0.25);
-
-        return TimeSpan.FromMilliseconds(cappedDelayMs + jitter);
-    }
-
     private static Activity? _StartLockActivity(ReaderWriterLockMode mode, string resource)
     {
         var activity = DistributedLocksDiagnostics.Start("reader-writer-lock.acquire");
@@ -569,32 +593,20 @@ public sealed class DistributedReaderWriterLockProvider(
         }
 
         activity.AddTag("headless.lock.resource", resource);
-        activity.AddTag("headless.lock.mode", mode.ToString().ToLowerInvariant());
+        activity.AddTag("headless.lock.mode", _GetModeTag(mode));
         activity.DisplayName = $"Reader-writer lock: {resource}";
 
         return activity;
     }
 
-    private static IOutboxPublisher? _ConfigureOutboxPublisher(
-        IOutboxPublisher? outboxPublisher,
-        ILogger<DistributedReaderWriterLockProvider> logger
-    )
+    private static string _GetModeTag(ReaderWriterLockMode mode)
     {
-        if (outboxPublisher is null)
+        return mode switch
         {
-            logger.LogOutboxPublisherAbsent();
-        }
-
-        return outboxPublisher;
+            ReaderWriterLockMode.Read => "read",
+            ReaderWriterLockMode.Write => "write",
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown reader-writer lock mode."),
+        };
     }
 
-    internal static string GetWaitingId(string lockId)
-    {
-        return _GetWaitingId(lockId);
-    }
-
-    private static string _GetWaitingId(string lockId)
-    {
-        return lockId + WriterWaitingSuffix;
-    }
 }

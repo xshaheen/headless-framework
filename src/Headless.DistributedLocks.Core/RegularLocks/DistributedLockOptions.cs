@@ -36,6 +36,20 @@ public sealed class DistributedLockOptions
     /// the safety net effective under cadence jitter.
     /// </remarks>
     public double AutoExtensionCadenceFraction { get; set; } = 1.0 / 3.0;
+
+    /// <summary>
+    /// TTL applied to the reader-writer writer-waiting marker planted by a queued writer
+    /// (reader-writer locks only).
+    /// </summary>
+    /// <remarks>
+    /// The marker is the placeholder Redis key value that enforces writer-preference: while it is
+    /// present, new readers refuse to acquire so the queued writer eventually promotes. The marker
+    /// is short-lived by design — a queued writer that is cancelled or crashes should not strand
+    /// readers for the full lease window. Default is 30s. Validated to fall in
+    /// <c>(0, 5min]</c>; pick a value larger than your worst-case writer acquire wait but small
+    /// enough that an abandoned marker does not keep new readers blocked for long.
+    /// </remarks>
+    public TimeSpan WriterWaitingMarkerTtl { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 internal sealed class DistributedLockOptionsValidator : AbstractValidator<DistributedLockOptions>
@@ -48,5 +62,8 @@ internal sealed class DistributedLockOptionsValidator : AbstractValidator<Distri
         RuleFor(x => x.MaxWaitersPerResource).InclusiveBetween(1, 100_000);
         RuleFor(x => x.PollingCadenceFraction).InclusiveBetween(0.1, 0.5);
         RuleFor(x => x.AutoExtensionCadenceFraction).InclusiveBetween(0.1, 0.5);
+        RuleFor(x => x.WriterWaitingMarkerTtl)
+            .GreaterThan(TimeSpan.Zero)
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5));
     }
 }

@@ -15,6 +15,13 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     private IDatabase Db => multiplexer.GetDatabase();
 
+    public string GetWaitingId(string lockId)
+    {
+        Argument.IsNotNullOrEmpty(lockId);
+
+        return _GetWaitingId(lockId);
+    }
+
     public async ValueTask<bool> TryAcquireReadAsync(
         string resource,
         string lockId,
@@ -43,7 +50,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await scriptsLoader
-            .TryExtendReadLockAsync(Db, keys.ReaderKey, lockId, ttl, cancellationToken)
+            .TryExtendReadLockAsync(Db, keys.WriterKey, keys.ReaderKey, lockId, ttl, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -66,16 +73,26 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         string lockId,
         string waitingId,
         TimeSpan? ttl = null,
+        TimeSpan? markerTtl = null,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
         _ValidateLockId(lockId);
-        _ValidateWaitingId(lockId, waitingId);
+        Argument.IsNotNullOrEmpty(waitingId);
         cancellationToken.ThrowIfCancellationRequested();
 
         return await scriptsLoader
-            .TryAcquireWriteLockAsync(Db, keys.WriterKey, keys.ReaderKey, lockId, waitingId, ttl, cancellationToken)
+            .TryAcquireWriteLockAsync(
+                Db,
+                keys.WriterKey,
+                keys.ReaderKey,
+                lockId,
+                waitingId,
+                ttl,
+                markerTtl,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -110,6 +127,13 @@ public sealed class RedisDistributedReaderWriterLockStorage(
             .ConfigureAwait(false);
     }
 
+    // StackExchange.Redis's IDatabase APIs (HashExistsAsync/StringGetAsync/HashLengthAsync) do
+    // not accept a CancellationToken — the driver does not expose request-level cancellation. We
+    // (1) throw eagerly on a pre-cancelled token to avoid issuing the round trip and
+    // (2) wrap the awaitable with Task.WaitAsync(cancellationToken) so a token that fires while
+    // the round trip is in flight still preempts the await. The Redis request itself keeps
+    // running to completion — consumers that need request-level cancellation must rely on the
+    // StackExchange.Redis AsyncTimeout for hard bounds.
     public async ValueTask<bool> ValidateReadAsync(
         string resource,
         string lockId,
@@ -120,7 +144,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         _ValidateLockId(lockId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.SetContainsAsync(keys.ReaderKey, lockId).ConfigureAwait(false);
+        return await Db.HashExistsAsync(keys.ReaderKey, lockId).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> ValidateWriteAsync(
@@ -133,7 +157,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         _ValidateLockId(lockId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringGetAsync(keys.WriterKey).ConfigureAwait(false);
+        var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
         return value.HasValue && string.Equals(value.ToString(), lockId, StringComparison.Ordinal);
     }
@@ -143,7 +167,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         var keys = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.SetLengthAsync(keys.ReaderKey).ConfigureAwait(false) > 0;
+        return await Db.HashLengthAsync(keys.ReaderKey).WaitAsync(cancellationToken).ConfigureAwait(false) > 0;
     }
 
     public async ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -151,7 +175,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         var keys = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringGetAsync(keys.WriterKey).ConfigureAwait(false);
+        var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
         return value.HasValue && !value.ToString().EndsWith(WriterWaitingSuffix, StringComparison.Ordinal);
     }
@@ -161,7 +185,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         var keys = _GetKeys(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.SetLengthAsync(keys.ReaderKey).ConfigureAwait(false);
+        return await Db.HashLengthAsync(keys.ReaderKey).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static (RedisKey WriterKey, RedisKey ReaderKey) _GetKeys(string resource)
@@ -180,20 +204,10 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     private static void _ValidateLockId(string lockId)
     {
         Argument.IsNotNullOrEmpty(lockId);
-    }
-
-    private static void _ValidateWaitingId(string lockId, string waitingId)
-    {
-        Argument.IsNotNullOrEmpty(waitingId);
-        Ensure.True(
-            string.Equals(waitingId, _GetWaitingId(lockId), StringComparison.Ordinal),
-            "Writer waiting marker must be derived from the lock id."
+        Ensure.False(
+            lockId.Contains(':', StringComparison.Ordinal),
+            "Reader-writer lock ids cannot contain ':' because it conflicts with the writer-waiting suffix delimiter."
         );
-    }
-
-    internal static string GetWaitingId(string lockId)
-    {
-        return _GetWaitingId(lockId);
     }
 
     private static string _GetWaitingId(string lockId)

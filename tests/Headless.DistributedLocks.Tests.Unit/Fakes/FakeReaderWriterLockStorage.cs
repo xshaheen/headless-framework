@@ -11,6 +11,8 @@ internal sealed class FakeReaderWriterLockStorage : IDistributedReaderWriterLock
 
     public int WriteReleaseCount { get; private set; }
 
+    public string GetWaitingId(string lockId) => $"{lockId}:_WRITERWAITING";
+
     public ValueTask<bool> TryAcquireReadAsync(
         string resource,
         string lockId,
@@ -66,6 +68,7 @@ internal sealed class FakeReaderWriterLockStorage : IDistributedReaderWriterLock
         string lockId,
         string waitingId,
         TimeSpan? ttl = null,
+        TimeSpan? markerTtl = null,
         CancellationToken cancellationToken = default
     )
     {

@@ -5,7 +5,7 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReaderWriterLockStorage
+internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReaderWriterLockStorage
 {
     private readonly IDistributedReaderWriterLockStorage _inner;
     private readonly string _scopedPrefix;
@@ -14,6 +14,11 @@ public sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReade
     {
         _inner = Argument.IsNotNull(inner);
         _scopedPrefix = Argument.IsNotNullOrEmpty(scopedPrefix);
+    }
+
+    public string GetWaitingId(string lockId)
+    {
+        return _inner.GetWaitingId(lockId);
     }
 
     public ValueTask<bool> TryAcquireReadAsync(
@@ -50,6 +55,7 @@ public sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReade
         string lockId,
         string waitingId,
         TimeSpan? ttl = null,
+        TimeSpan? markerTtl = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -58,6 +64,7 @@ public sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReade
             lockId,
             waitingId,
             ttl,
+            markerTtl,
             cancellationToken
         );
     }

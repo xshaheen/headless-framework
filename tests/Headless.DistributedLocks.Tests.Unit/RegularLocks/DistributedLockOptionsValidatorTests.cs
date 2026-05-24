@@ -58,4 +58,46 @@ public sealed class DistributedLockOptionsValidatorTests : TestBase
         result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.PollingCadenceFraction));
         result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.AutoExtensionCadenceFraction));
     }
+
+    [Fact]
+    public void should_have_writer_waiting_marker_ttl_default_within_bounds()
+    {
+        // given
+        var options = new DistributedLockOptions();
+
+        // then
+        options.WriterWaitingMarkerTtl.Should().BeGreaterThan(TimeSpan.Zero);
+        options.WriterWaitingMarkerTtl.Should().BeLessThanOrEqualTo(TimeSpan.FromMinutes(5));
+        _validator.Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_non_positive_writer_waiting_marker_ttl(int seconds)
+    {
+        // given
+        var options = new DistributedLockOptions { WriterWaitingMarkerTtl = TimeSpan.FromSeconds(seconds) };
+
+        // when
+        var result = _validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.WriterWaitingMarkerTtl));
+    }
+
+    [Fact]
+    public void should_reject_writer_waiting_marker_ttl_above_five_minutes()
+    {
+        // given
+        var options = new DistributedLockOptions { WriterWaitingMarkerTtl = TimeSpan.FromMinutes(6) };
+
+        // when
+        var result = _validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.WriterWaitingMarkerTtl));
+    }
 }

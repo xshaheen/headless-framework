@@ -378,6 +378,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
     public async Task<bool> TryExtendReadLockAsync(
         IDatabase db,
+        RedisKey writerKey,
         RedisKey readerKey,
         string lockId,
         TimeSpan? ttl = null,
@@ -386,7 +387,7 @@ public sealed class HeadlessRedisScriptsLoader(
     {
         Argument.IsNotNull(db);
 
-        var parameters = _GetReaderOnlyLockParameters(readerKey, lockId, ttl);
+        var parameters = _GetReadLockParameters(writerKey, readerKey, lockId, ttl);
         var result = await EvaluateAsync(db, _tryExtendReadLockSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
 
@@ -416,12 +417,13 @@ public sealed class HeadlessRedisScriptsLoader(
         string lockId,
         string waitingId,
         TimeSpan? ttl = null,
+        TimeSpan? markerTtl = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(db);
 
-        var parameters = _GetWriteLockParameters(writerKey, readerKey, lockId, waitingId, ttl);
+        var parameters = _GetWriteLockParameters(writerKey, readerKey, lockId, waitingId, ttl, markerTtl);
         var result = await EvaluateAsync(db, _tryAcquireWriteLockSelector, parameters, cancellationToken)
             .ConfigureAwait(false);
 
@@ -582,12 +584,16 @@ public sealed class HeadlessRedisScriptsLoader(
         RedisKey readerKey,
         string lockId,
         string waitingId,
-        TimeSpan? ttl
+        TimeSpan? ttl,
+        TimeSpan? markerTtl
     )
     {
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var markerExpiresValue = markerTtl.HasValue
+            ? (int)markerTtl.Value.TotalMilliseconds
+            : RedisValue.EmptyString;
 
-        return new ReaderWriterWriteParams(writerKey, readerKey, lockId, waitingId, expiresValue);
+        return new ReaderWriterWriteParams(writerKey, readerKey, lockId, waitingId, expiresValue, markerExpiresValue);
     }
 
     private static ReaderWriterWriterOnlyParams _GetWriterOnlyLockParameters(
@@ -647,7 +653,8 @@ public sealed class HeadlessRedisScriptsLoader(
         RedisKey readerKey,
         string lockId,
         string waitingId,
-        RedisValue expires
+        RedisValue expires,
+        RedisValue markerExpires
     );
 
     /// <summary>Parameters for reader-writer scripts that only use the writer key.</summary>
