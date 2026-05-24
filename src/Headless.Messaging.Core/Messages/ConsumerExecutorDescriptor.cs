@@ -20,7 +20,7 @@ public sealed class ConsumerExecutorDescriptor
     public string? TopicNamePrefix { get; init; }
 
     /// <summary>
-    /// Topic name for the consumer. Can be set directly or computed from attributes (legacy).
+    /// Topic name for the consumer. Can be set directly or computed from attributes.
     /// </summary>
     public required string TopicName { get; init; }
 

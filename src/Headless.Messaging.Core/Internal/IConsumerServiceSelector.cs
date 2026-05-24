@@ -111,7 +111,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         // Get registered consumers from the ConsumerRegistry
         var registry = provider.GetService<ConsumerRegistry>();
 
-        // If no registry found, return empty (backwards compatibility with old pattern)
+        // If no registry was registered, there are no consumers to select.
         if (registry == null)
         {
             return [];

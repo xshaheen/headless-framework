@@ -304,8 +304,7 @@ internal sealed class Bootstrapper(
         {
             throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
-                    + "(e.g., UseRabbitMQ, UseKafka, UseAzureServiceBus) or register an ITransport so the "
-                    + "legacy adapter applies."
+                    + "(e.g., UseRabbitMQ, UseKafka, UseAzureServiceBus)."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );
@@ -378,9 +377,8 @@ internal sealed class Bootstrapper(
         };
 
         throw new InvalidOperationException(
-            $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport (or "
-                + "ITransport bridged via the legacy adapter) is available. Register a "
-                + $"{intent}-capable transport provider before messaging bootstrap starts."
+            $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport is available. "
+                + $"Register a {intent}-capable transport provider before messaging bootstrap starts."
         );
     }
 

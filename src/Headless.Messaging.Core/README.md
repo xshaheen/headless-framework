@@ -125,9 +125,9 @@ Use queue publishers for point-to-point competing-worker delivery:
 - `EnqueueOptions.Delay` is honored by `IOutboxQueue` and ignored by `IQueue`.
 - Stored rows and consume contexts carry `IntentType.Queue`.
 
-### Migration Notes
+### Publisher Contracts
 
-Legacy publisher contracts are still registered for compatibility, but new code should use intent-specific contracts:
+Use intent-specific contracts so delivery semantics are explicit at the call site:
 
 ```csharp
 public sealed class MetricsPublisher(IBus bus)
@@ -139,7 +139,7 @@ public sealed class MetricsPublisher(IBus bus)
 }
 ```
 
-Move old `IDirectPublisher` calls to `IBus` or `IQueue`, old durable `IOutboxPublisher` calls to `IOutboxBus` or `IOutboxQueue`, and old `IScheduledPublisher.PublishDelayAsync(...)` calls to `IOutboxBus.PublishAsync(..., new PublishOptions { Delay = delay })` or `IOutboxQueue.EnqueueAsync(..., new EnqueueOptions { Delay = delay })`.
+Durable publishes use `IOutboxBus` or `IOutboxQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay`.
 
 ## Runtime Delegates
 
@@ -356,7 +356,7 @@ pickup 3 (persisted retry #2):
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
-For the full property table, migration guide, and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
+For the full property table and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
 
 ## Circuit Breaker
 

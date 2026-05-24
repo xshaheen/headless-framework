@@ -4,7 +4,7 @@ Core contracts shared by the messaging runtime, transport providers, storage pro
 
 ## Problem Solved
 
-Defines the stable message envelope, consume context, consumer contract, legacy compatibility publisher contracts, retry contracts, and common options used by the intent-specific bus and queue packages.
+Defines the stable message envelope, consume context, consumer contract, publisher contracts, retry contracts, and common options used by the intent-specific bus and queue packages.
 
 ## Key Features
 
@@ -12,7 +12,7 @@ Defines the stable message envelope, consume context, consumer contract, legacy 
 - `IntentType` for broadcast bus versus point-to-point queue delivery.
 - `Message`, `TransportMessage`, headers, publish option base types, and retry primitives.
 - `IRuntimeSubscriber` for scoped runtime delegate subscriptions.
-- Legacy publisher contracts remain for compatibility; new code should choose `IBus`, `IQueue`, `IOutboxBus`, or `IOutboxQueue`.
+- Intent-specific publisher contracts: `IBus`, `IQueue`, `IOutboxBus`, and `IOutboxQueue`.
 
 ## Installation
 

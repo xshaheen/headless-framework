@@ -176,8 +176,6 @@ public static class SetupMessaging
             serviceExtension.AddServices(services);
         }
 
-        _AddLegacyTransportAdapters(services);
-
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
@@ -202,26 +200,6 @@ public static class SetupMessaging
         services.AddHostedService(sp => sp.GetRequiredService<Bootstrapper>());
 
         return new MessagingBuilder(services, options);
-    }
-
-    private static void _AddLegacyTransportAdapters(IServiceCollection services)
-    {
-        if (!services.Any(d => d.ServiceType == typeof(ITransport)))
-        {
-            return;
-        }
-
-        if (!services.Any(d => d.ServiceType == typeof(IBusTransport)))
-        {
-            services.TryAddSingleton<IBusTransport>(sp => new LegacyBusTransportAdapter(sp.GetRequiredService<ITransport>()));
-        }
-
-        if (!services.Any(d => d.ServiceType == typeof(IQueueTransport)))
-        {
-            services.TryAddSingleton<IQueueTransport>(sp =>
-                new LegacyQueueTransportAdapter(sp.GetRequiredService<ITransport>())
-            );
-        }
     }
 
     /// <summary>

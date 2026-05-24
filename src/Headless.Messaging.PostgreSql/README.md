@@ -9,7 +9,7 @@ Provides durable, transactional message storage using PostgreSQL with automatic 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Auto-Migration**: Automatic table creation and schema updates, including durable bus/queue intent columns
+- **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
