@@ -8,7 +8,7 @@ namespace Headless.Features;
 
 public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IFeatureDefinitionRecordRepository
-    where TContext : DbContext, IFeaturesDbContext
+    where TContext : DbContext
 {
     public async Task<List<FeatureGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
@@ -16,14 +16,14 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db.FeatureGroupDefinitions.ToListAsync(cancellationToken);
+        return await db.Set<FeatureGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db.FeatureDefinitions.ToListAsync(cancellationToken);
+        return await db.Set<FeatureDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
     public async Task SaveAsync(
@@ -38,13 +38,13 @@ public sealed class EfFeatureDefinitionRecordRepository<TContext>(IDbContextFact
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.FeatureGroupDefinitions.AddRange(newGroups);
-        db.FeatureGroupDefinitions.UpdateRange(updatedGroups);
-        db.FeatureGroupDefinitions.RemoveRange(deletedGroups);
+        db.Set<FeatureGroupDefinitionRecord>().AddRange(newGroups);
+        db.Set<FeatureGroupDefinitionRecord>().UpdateRange(updatedGroups);
+        db.Set<FeatureGroupDefinitionRecord>().RemoveRange(deletedGroups);
 
-        db.FeatureDefinitions.AddRange(newFeatures);
-        db.FeatureDefinitions.UpdateRange(updatedFeatures);
-        db.FeatureDefinitions.RemoveRange(deletedFeatures);
+        db.Set<FeatureDefinitionRecord>().AddRange(newFeatures);
+        db.Set<FeatureDefinitionRecord>().UpdateRange(updatedFeatures);
+        db.Set<FeatureDefinitionRecord>().RemoveRange(deletedFeatures);
 
         await db.SaveChangesAsync(cancellationToken);
     }

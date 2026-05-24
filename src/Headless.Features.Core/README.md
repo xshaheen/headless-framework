@@ -36,7 +36,7 @@ builder.Services.AddFeaturesManagementCore(options =>
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
 // Add storage (e.g., Entity Framework)
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 ### Custom Value Provider

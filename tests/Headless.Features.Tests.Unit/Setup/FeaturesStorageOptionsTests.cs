@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -26,12 +27,16 @@ public sealed class FeaturesStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(options =>
+        services.AddHeadlessFeatures(setup =>
         {
-            options.Schema = schema;
-            options.FeatureValuesTableName = valuesTable;
-            options.FeatureDefinitionsTableName = definitionsTable;
-            options.FeatureGroupDefinitionsTableName = groupDefinitionsTable;
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = schema;
+                options.FeatureValuesTableName = valuesTable;
+                options.FeatureDefinitionsTableName = definitionsTable;
+                options.FeatureGroupDefinitionsTableName = groupDefinitionsTable;
+            });
+            setup.UseEntityFramework<TestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<FeaturesStorageOptions>>();
@@ -48,12 +53,16 @@ public sealed class FeaturesStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(options =>
+        services.AddHeadlessFeatures(setup =>
         {
-            options.Schema = "custom_features";
-            options.FeatureValuesTableName = "tbl_feature_values";
-            options.FeatureDefinitionsTableName = "tbl_feature_definitions";
-            options.FeatureGroupDefinitionsTableName = "tbl_feature_group_definitions";
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = "custom_features";
+                options.FeatureValuesTableName = "tbl_feature_values";
+                options.FeatureDefinitionsTableName = "tbl_feature_definitions";
+                options.FeatureGroupDefinitionsTableName = "tbl_feature_group_definitions";
+            });
+            setup.UseEntityFramework<TestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<FeaturesStorageOptions>>();
@@ -74,7 +83,7 @@ public sealed class FeaturesStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>();
+        services.AddHeadlessFeatures(setup => setup.UseEntityFramework<TestDbContext>());
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<FeaturesStorageOptions>>();
 
@@ -88,4 +97,6 @@ public sealed class FeaturesStorageOptionsTests
         resolved.FeatureDefinitionsTableName.Should().Be("FeatureDefinitions");
         resolved.FeatureGroupDefinitionsTableName.Should().Be("FeatureGroupDefinitions");
     }
+
+    private sealed class TestDbContext(DbContextOptions<TestDbContext> options) : DbContext(options);
 }

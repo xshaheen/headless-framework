@@ -55,7 +55,7 @@ Typical registration:
 ```csharp
 builder.Services.AddFeaturesManagementCore(options => { options.CacheKeyPrefix = "features:"; });
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered.
@@ -65,8 +65,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
-- Storage registration: use `AddFeaturesManagementDbContextStorage<TDbContext>()` for custom DbContext, or the overload with `Action<DbContextOptionsBuilder>` for a standalone context.
-- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.AddFeaturesConfiguration(this)` in `OnModelCreating`.
+- Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
 - Gate access with `RequiresFeatureAttribute` on controllers/actions.
@@ -178,7 +177,7 @@ builder.Services.AddFeaturesManagementCore(options =>
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
 // Add storage (e.g., Entity Framework)
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 ### Custom Value Provider
@@ -220,16 +219,14 @@ Entity Framework Core storage implementation for feature management.
 
 ## Problem Solved
 
-Provides persistent storage for feature definitions and values using Entity Framework Core, enabling database-backed feature management with full CRUD support.
+Provides EF Core repository implementations for feature values, feature definitions, and feature group definitions using the consumer's own `DbContext`.
 
 ## Key Features
 
-- `IFeaturesDbContext` - DbContext interface for features
-- `FeaturesDbContext` - Ready-to-use DbContext
-- `FeaturesStorageOptions` - Schema and table-name configuration
+- `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())` storage registration
+- `modelBuilder.AddHeadlessFeatures(options)` entity mapping for shared contexts
 - EF repositories for feature definitions and values
-- Model builder extensions for custom DbContext integration
-- Pooled DbContext factory support
+- `FeaturesStorageOptions` for schema and table-name configuration
 
 ## Installation
 
@@ -239,51 +236,28 @@ dotnet add package Headless.Features.Storage.EntityFramework
 
 ## Quick Start
 
-### Using Built-in DbContext
-
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddFeaturesManagementDbContextStorage(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Features"))
-);
-```
-
-### Custom Schema / Table Names
-
-```csharp
-builder.Services.AddFeaturesManagementDbContextStorage(
-    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Features")),
-    storage =>
-    {
-        storage.Schema = "app_features";
-        storage.FeatureValuesTableName = "FeatureValues";
-        storage.FeatureDefinitionsTableName = "FeatureDefinitions";
-        storage.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions";
-    }
-);
-```
-
-### Using Custom DbContext
-
-```csharp
-public class AppDbContext(DbContextOptions<AppDbContext> options)
-    : DbContext(options), IFeaturesDbContext
+public sealed class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<FeaturesStorageOptions> featuresStorage
+) : DbContext(options)
 {
-    public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
-    public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
-    public DbSet<FeatureValueRecord> FeatureValues => Set<FeatureValueRecord>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddFeaturesConfiguration(this);
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessFeatures(featuresStorage.Value);
     }
 }
 
-// Registration
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+
+builder.Services.AddFeaturesManagementCore();
+builder.Services.AddHeadlessFeatures(setup =>
 {
-    storage.Schema = "app_features";
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
@@ -296,7 +270,7 @@ builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
 - `FeatureDefinitionsTableName = "FeatureDefinitions"`
 - `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
 
-The storage registration validates these values on startup; schema and table names must be non-empty.
+The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
 
 ## Dependencies
 
@@ -309,4 +283,4 @@ The storage registration validates these values on startup; schema and table nam
 - Registers `IFeatureDefinitionRecordRepository` as singleton
 - Registers `IFeatureValueRecordRepository` as singleton
 - Registers validated `FeaturesStorageOptions`
-- Uses pooled DbContext factory for performance
+- Registers an `IHostedLifecycleService` startup gate for missing entity mappings

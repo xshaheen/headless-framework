@@ -1,59 +1,96 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Features;
+using Headless.Features.Internal;
 using Headless.Features.Repositories;
+using Headless.Hosting.Storage;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
-namespace Headless.Features;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class EntityFrameworkFeaturesSetup
+public static class SetupFeatures
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddFeaturesManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction,
-            Action<FeaturesStorageOptions>? configureStorage = null
+        public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessFeaturesSetupBuilder(services);
+            configure(setup);
+
+            return _RegisterCoreFeaturesServices(services, setup);
+        }
+
+        private static HeadlessFeaturesBuilder _RegisterCoreFeaturesServices(
+            IServiceCollection serviceCollection,
+            HeadlessFeaturesSetupBuilder setup
         )
         {
-            services.AddPooledDbContextFactory<FeaturesDbContext>(options =>
+            if (setup.Extensions.Count != 1)
             {
-                setupAction(options);
-                options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
+                throw new InvalidOperationException(
+                    setup.Extensions.Count == 0
+                        ? "Headless.Features requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                        : "Headless.Features requires exactly one storage provider. Multiple storage providers were configured."
+                );
+            }
+
+            serviceCollection.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(options =>
+            {
+                options.Schema = setup.StorageOptions.Schema;
+                options.FeatureValuesTableName = setup.StorageOptions.FeatureValuesTableName;
+                options.FeatureDefinitionsTableName = setup.StorageOptions.FeatureDefinitionsTableName;
+                options.FeatureGroupDefinitionsTableName = setup.StorageOptions.FeatureGroupDefinitionsTableName;
             });
-            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
 
-            return services;
+            foreach (var extension in setup.Extensions)
+            {
+                extension.AddServices(serviceCollection);
+            }
+
+            return new HeadlessFeaturesBuilder(serviceCollection);
         }
+    }
+}
 
-        public IServiceCollection AddFeaturesManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
-            Action<FeaturesStorageOptions>? configureStorage = null
-        )
+[PublicAPI]
+public static class SetupFeaturesEntityFramework
+{
+    extension(HeadlessFeaturesSetupBuilder setup)
+    {
+        public HeadlessFeaturesSetupBuilder UseEntityFramework<TContext>()
+            where TContext : DbContext
         {
-            services.AddPooledDbContextFactory<FeaturesDbContext>(
-                (provider, options) =>
-                {
-                    setupAction(provider, options);
-                    options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
-                }
+            setup.RegisterExtension(new EntityFrameworkFeaturesOptionsExtension(typeof(TContext)));
+
+            return setup;
+        }
+    }
+
+    private sealed class EntityFrameworkFeaturesOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.TryAddSingleton(
+                typeof(IFeatureValueRecordRepository),
+                typeof(EfFeatureValueRecordRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
-
-            return services;
-        }
-
-        public IServiceCollection AddFeaturesManagementDbContextStorage<TContext>(
-            Action<FeaturesStorageOptions>? configureStorage = null
-        )
-            where TContext : DbContext, IFeaturesDbContext
-        {
-            services.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(configureStorage);
-            services.AddSingleton<IFeatureValueRecordRepository, EfFeatureValueRecordRecordRepository<TContext>>();
-            services.AddSingleton<IFeatureDefinitionRecordRepository, EfFeatureDefinitionRecordRepository<TContext>>();
-
-            return services;
+            services.TryAddSingleton(
+                typeof(IFeatureDefinitionRecordRepository),
+                typeof(EfFeatureDefinitionRecordRepository<>).MakeGenericType(dbContextType)
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(
+                    typeof(IHostedService),
+                    typeof(FeaturesEntityValidationStartupGate<>).MakeGenericType(dbContextType)
+                )
+            );
         }
     }
 }
