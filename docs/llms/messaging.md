@@ -1,12 +1,6 @@
 ---
 domain: Messaging
-<<<<<<< HEAD
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
-||||||| parent of b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
-=======
-packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
->>>>>>> b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.InMemory, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -201,7 +195,6 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Key Features](#key-features-12)
     - [Installation](#installation-12)
     - [Quick Start](#quick-start-12)
-<<<<<<< HEAD
     - [Configuration](#configuration-12)
     - [Dependencies](#dependencies-12)
     - [Side Effects](#side-effects-12)
@@ -210,28 +203,10 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Key Features](#key-features-13)
     - [Installation](#installation-13)
     - [Quick Start](#quick-start-13)
-||||||| parent of b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
-    - [Configuration](#configuration-12)
-    - [Dependencies](#dependencies-12)
-    - [Side Effects](#side-effects-12)
-- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
-    - [Problem Solved](#problem-solved-13)
-    - [Key Features](#key-features-13)
-    - [Installation](#installation-13)
-    - [Quick Start](#quick-start-13)
-=======
->>>>>>> b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
     - [Configuration](#configuration-13)
     - [Dependencies](#dependencies-13)
     - [Side Effects](#side-effects-13)
-<<<<<<< HEAD
 - [Headless.Messaging.Storage.SqlServer](#headlessmessagingsqlserver)
-||||||| parent of b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
-- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
-=======
-    - [None. Messages are stored in memory only and lost on restart.](#none-messages-are-stored-in-memory-only-and-lost-on-restart)
-- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
->>>>>>> b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
     - [Problem Solved](#problem-solved-14)
     - [Key Features](#key-features-14)
     - [Installation](#installation-14)
@@ -239,14 +214,6 @@ packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Ab
     - [Configuration](#configuration-14)
     - [Dependencies](#dependencies-14)
     - [Side Effects](#side-effects-14)
-- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
-    - [Problem Solved](#problem-solved-15)
-    - [Key Features](#key-features-15)
-    - [Installation](#installation-15)
-    - [Quick Start](#quick-start-15)
-    - [Configuration](#configuration-15)
-    - [Dependencies](#dependencies-15)
-    - [Side Effects](#side-effects-15)
 - [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
     - [Problem Solved](#problem-solved-16)
     - [Key Features](#key-features-16)

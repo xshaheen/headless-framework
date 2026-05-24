@@ -208,22 +208,10 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.AzureServiceBus` — Azure Service Bus transport.
 - `Headless.Messaging.Nats` — NATS with JetStream transport.
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
-<<<<<<< HEAD
-- `Headless.Messaging.RedisStreams` — Redis Streams transport.
-- `Headless.Messaging.InMemoryQueue` — In-memory transport (dev/testing).
-- `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
-- `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
-||||||| parent of b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
-- `Headless.Messaging.RedisStreams` — Redis Streams transport.
-- `Headless.Messaging.InMemoryQueue` — In-memory transport (dev/testing).
-- `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
-- `Headless.Messaging.SqlServer` — SQL Server durable storage.
-=======
 - `Headless.Messaging.Redis` — Redis Streams queue transport and Redis Pub/Sub bus transport.
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
-- `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
-- `Headless.Messaging.SqlServer` — SQL Server durable storage.
->>>>>>> b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
+- `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
+- `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
 - `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
 
 ### OpenAPI
@@ -255,7 +243,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Distributed Locks
 - `Headless.DistributedLocks.Abstractions` — Distributed lock interface.
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
-- `Headless.DistributedLocks.Cache` — Cache-based lock storage (uses `ICache`).
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
 
 ### Serialization

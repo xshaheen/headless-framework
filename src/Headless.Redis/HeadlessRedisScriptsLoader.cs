@@ -25,6 +25,12 @@ public sealed class HeadlessRedisScriptsLoader(
     private static readonly ScriptSelector _incrementSelector = static x => x.IncrementWithExpireScript;
     private static readonly ScriptSelector _setIfLowerSelector = static x => x.SetIfLowerScript;
     private static readonly ScriptSelector _setIfHigherSelector = static x => x.SetIfHigherScript;
+    private static readonly ScriptSelector _tryAcquireReadLockSelector = static x => x.TryAcquireReadLockScript;
+    private static readonly ScriptSelector _tryExtendReadLockSelector = static x => x.TryExtendReadLockScript;
+    private static readonly ScriptSelector _releaseReadLockSelector = static x => x.ReleaseReadLockScript;
+    private static readonly ScriptSelector _tryAcquireWriteLockSelector = static x => x.TryAcquireWriteLockScript;
+    private static readonly ScriptSelector _tryExtendWriteLockSelector = static x => x.TryExtendWriteLockScript;
+    private static readonly ScriptSelector _releaseWriteLockSelector = static x => x.ReleaseWriteLockScript;
 
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _version = 1; // Odd = not loaded, Even = loaded
@@ -40,6 +46,18 @@ public sealed class HeadlessRedisScriptsLoader(
     public LoadedLuaScript? SetIfHigherScript { get; private set; }
 
     public LoadedLuaScript? SetIfLowerScript { get; private set; }
+
+    public LoadedLuaScript? TryAcquireReadLockScript { get; private set; }
+
+    public LoadedLuaScript? TryExtendReadLockScript { get; private set; }
+
+    public LoadedLuaScript? ReleaseReadLockScript { get; private set; }
+
+    public LoadedLuaScript? TryAcquireWriteLockScript { get; private set; }
+
+    public LoadedLuaScript? TryExtendWriteLockScript { get; private set; }
+
+    public LoadedLuaScript? ReleaseWriteLockScript { get; private set; }
 
     public async ValueTask LoadScriptsAsync(CancellationToken cancellationToken = default)
     {
@@ -66,12 +84,24 @@ public sealed class HeadlessRedisScriptsLoader(
             var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
             var setIfHigher = LuaScript.Prepare(RedisScripts.SetIfHigher);
             var setIfLower = LuaScript.Prepare(RedisScripts.SetIfLower);
+            var tryAcquireReadLock = LuaScript.Prepare(RedisScripts.TryAcquireReadLock);
+            var tryExtendReadLock = LuaScript.Prepare(RedisScripts.TryExtendReadLock);
+            var releaseReadLock = LuaScript.Prepare(RedisScripts.ReleaseReadLock);
+            var tryAcquireWriteLock = LuaScript.Prepare(RedisScripts.TryAcquireWriteLock);
+            var tryExtendWriteLock = LuaScript.Prepare(RedisScripts.TryExtendWriteLock);
+            var releaseWriteLock = LuaScript.Prepare(RedisScripts.ReleaseWriteLock);
 
             LoadedLuaScript? loadedIncrement = null;
             LoadedLuaScript? loadedRemove = null;
             LoadedLuaScript? loadedReplace = null;
             LoadedLuaScript? loadedSetIfHigher = null;
             LoadedLuaScript? loadedSetIfLower = null;
+            LoadedLuaScript? loadedTryAcquireReadLock = null;
+            LoadedLuaScript? loadedTryExtendReadLock = null;
+            LoadedLuaScript? loadedReleaseReadLock = null;
+            LoadedLuaScript? loadedTryAcquireWriteLock = null;
+            LoadedLuaScript? loadedTryExtendWriteLock = null;
+            LoadedLuaScript? loadedReleaseWriteLock = null;
 
             foreach (var endpoint in multiplexer.GetEndPoints())
             {
@@ -89,13 +119,25 @@ public sealed class HeadlessRedisScriptsLoader(
                 var loadReplaceScriptTask = replaceIfEqual.LoadAsync(server);
                 var loadSetIfHigherScriptTask = setIfHigher.LoadAsync(server);
                 var loadSetIfLowerScriptTask = setIfLower.LoadAsync(server);
+                var loadTryAcquireReadLockTask = tryAcquireReadLock.LoadAsync(server);
+                var loadTryExtendReadLockTask = tryExtendReadLock.LoadAsync(server);
+                var loadReleaseReadLockTask = releaseReadLock.LoadAsync(server);
+                var loadTryAcquireWriteLockTask = tryAcquireWriteLock.LoadAsync(server);
+                var loadTryExtendWriteLockTask = tryExtendWriteLock.LoadAsync(server);
+                var loadReleaseWriteLockTask = releaseWriteLock.LoadAsync(server);
 
                 var whenAll = Task.WhenAll(
                     loadIncrementScriptTask,
                     loadRemoveScriptTask,
                     loadReplaceScriptTask,
                     loadSetIfHigherScriptTask,
-                    loadSetIfLowerScriptTask
+                    loadSetIfLowerScriptTask,
+                    loadTryAcquireReadLockTask,
+                    loadTryExtendReadLockTask,
+                    loadReleaseReadLockTask,
+                    loadTryAcquireWriteLockTask,
+                    loadTryExtendWriteLockTask,
+                    loadReleaseWriteLockTask
                 );
 
                 var results = await whenAll.WithAggregatedExceptions().ConfigureAwait(false);
@@ -104,6 +146,12 @@ public sealed class HeadlessRedisScriptsLoader(
                 loadedReplace = results[2];
                 loadedSetIfHigher = results[3];
                 loadedSetIfLower = results[4];
+                loadedTryAcquireReadLock = results[5];
+                loadedTryExtendReadLock = results[6];
+                loadedReleaseReadLock = results[7];
+                loadedTryAcquireWriteLock = results[8];
+                loadedTryExtendWriteLock = results[9];
+                loadedReleaseWriteLock = results[10];
             }
 
             // Only publish loaded scripts after every master endpoint has loaded successfully.
@@ -113,6 +161,12 @@ public sealed class HeadlessRedisScriptsLoader(
             ReplaceIfEqualScript = loadedReplace;
             SetIfHigherScript = loadedSetIfHigher;
             SetIfLowerScript = loadedSetIfLower;
+            TryAcquireReadLockScript = loadedTryAcquireReadLock;
+            TryExtendReadLockScript = loadedTryExtendReadLock;
+            ReleaseReadLockScript = loadedReleaseReadLock;
+            TryAcquireWriteLockScript = loadedTryAcquireWriteLock;
+            TryExtendWriteLockScript = loadedTryExtendWriteLock;
+            ReleaseWriteLockScript = loadedReleaseWriteLock;
 
             _version++; // Becomes even (loaded)
 
@@ -304,6 +358,112 @@ public sealed class HeadlessRedisScriptsLoader(
         return (double)result;
     }
 
+    public async Task<bool> TryAcquireReadLockAsync(
+        IDatabase db,
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetReadLockParameters(writerKey, readerKey, lockId, ttl);
+        var result = await EvaluateAsync(db, _tryAcquireReadLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> TryExtendReadLockAsync(
+        IDatabase db,
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetReadLockParameters(writerKey, readerKey, lockId, ttl);
+        var result = await EvaluateAsync(db, _tryExtendReadLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> ReleaseReadLockAsync(
+        IDatabase db,
+        RedisKey readerKey,
+        string lockId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetReaderOnlyLockParameters(readerKey, lockId, ttl: null);
+        var result = await EvaluateAsync(db, _releaseReadLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> TryAcquireWriteLockAsync(
+        IDatabase db,
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        string waitingId,
+        TimeSpan? ttl = null,
+        TimeSpan? markerTtl = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetWriteLockParameters(writerKey, readerKey, lockId, waitingId, ttl, markerTtl);
+        var result = await EvaluateAsync(db, _tryAcquireWriteLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> TryExtendWriteLockAsync(
+        IDatabase db,
+        RedisKey writerKey,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetWriterOnlyLockParameters(writerKey, lockId, ttl);
+        var result = await EvaluateAsync(db, _tryExtendWriteLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> ReleaseWriteLockAsync(
+        IDatabase db,
+        RedisKey writerKey,
+        string lockId,
+        string waitingId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetWriterOnlyLockParameters(writerKey, lockId, ttl: null, waitingId);
+        var result = await EvaluateAsync(db, _releaseWriteLockSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
     /// <summary>
     /// Evaluates a Lua script with automatic recovery from NOSCRIPT errors, which occur when the
     /// server's script cache is invalidated between the caller's <see cref="LoadScriptsAsync"/>
@@ -396,6 +556,58 @@ public sealed class HeadlessRedisScriptsLoader(
         return new SetIfParams((RedisKey)key, valueStr, expiresValue);
     }
 
+    private static ReaderWriterReadParams _GetReadLockParameters(
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        TimeSpan? ttl
+    )
+    {
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new ReaderWriterReadParams(writerKey, readerKey, lockId, expiresValue);
+    }
+
+    private static ReaderWriterReaderOnlyParams _GetReaderOnlyLockParameters(
+        RedisKey readerKey,
+        string lockId,
+        TimeSpan? ttl
+    )
+    {
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new ReaderWriterReaderOnlyParams(readerKey, lockId, expiresValue);
+    }
+
+    private static ReaderWriterWriteParams _GetWriteLockParameters(
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        string waitingId,
+        TimeSpan? ttl,
+        TimeSpan? markerTtl
+    )
+    {
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+        var markerExpiresValue = markerTtl.HasValue
+            ? (int)markerTtl.Value.TotalMilliseconds
+            : RedisValue.EmptyString;
+
+        return new ReaderWriterWriteParams(writerKey, readerKey, lockId, waitingId, expiresValue, markerExpiresValue);
+    }
+
+    private static ReaderWriterWriterOnlyParams _GetWriterOnlyLockParameters(
+        RedisKey writerKey,
+        string lockId,
+        TimeSpan? ttl,
+        string? waitingId = null
+    )
+    {
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new ReaderWriterWriterOnlyParams(writerKey, lockId, waitingId ?? string.Empty, expiresValue);
+    }
+
     #endregion
 
     #region Parameter Types
@@ -420,6 +632,39 @@ public sealed class HeadlessRedisScriptsLoader(
     /// <summary>Parameters for the SetIfHigher/SetIfLower Lua scripts.</summary>
     [StructLayout(LayoutKind.Auto)]
     private readonly record struct SetIfParams(RedisKey key, string value, RedisValue expires);
+
+    /// <summary>Parameters for reader-writer scripts that use both keys.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReaderWriterReadParams(
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        RedisValue expires
+    );
+
+    /// <summary>Parameters for reader-writer scripts that only use the reader set key.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReaderWriterReaderOnlyParams(RedisKey readerKey, string lockId, RedisValue expires);
+
+    /// <summary>Parameters for reader-writer scripts that use both keys and a waiting marker.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReaderWriterWriteParams(
+        RedisKey writerKey,
+        RedisKey readerKey,
+        string lockId,
+        string waitingId,
+        RedisValue expires,
+        RedisValue markerExpires
+    );
+
+    /// <summary>Parameters for reader-writer scripts that only use the writer key.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReaderWriterWriterOnlyParams(
+        RedisKey writerKey,
+        string lockId,
+        string waitingId,
+        RedisValue expires
+    );
 
     #endregion
 }

@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Cache;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -15,6 +13,7 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Tests.Fakes;
 
 namespace Tests;
 
@@ -22,13 +21,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 {
     private readonly CancellationTokenSource _cts = new(TimeSpan.FromSeconds(30));
     private CancellationToken AbortToken => _cts.Token;
-    private readonly InMemoryCache _cache;
     private readonly IDistributedLockProvider _realLockProvider;
 
     public RetryProcessorDistributedLockTests()
     {
-        _cache = new InMemoryCache(TimeProvider.System, new InMemoryCacheOptions());
-        var storage = new CacheDistributedLockStorage(_cache);
+        var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
         _realLockProvider = new DistributedLockProvider(
             storage,
             Substitute.For<IOutboxBus>(),
@@ -42,7 +39,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public void Dispose()
     {
         _cts.Dispose();
-        _cache.Dispose();
     }
 
     [Fact]

@@ -42,19 +42,10 @@ Use `Headless.Messaging.Bus.Abstractions` for broadcast publisher contracts and 
 
 ## Configuration
 
-<<<<<<< HEAD
 No configuration required. This is an abstractions package. Implementations are provided by:
 - `Headless.Messaging.Core` (base implementation)
 - Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
 - Storage packages: `Headless.Messaging.Storage.PostgreSql`, `Headless.Messaging.Storage.SqlServer`, etc.
-||||||| parent of b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
-No configuration required. This is an abstractions package. Implementations are provided by:
-- `Headless.Messaging.Core` (base implementation)
-- Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
-- Storage packages: `Headless.Messaging.PostgreSql`, `Headless.Messaging.SqlServer`, etc.
-=======
-None. This package only defines contracts.
->>>>>>> b25f49dc9 (feat(messaging): split bus and queue delivery intents (#340))
 
 ## Dependencies
 

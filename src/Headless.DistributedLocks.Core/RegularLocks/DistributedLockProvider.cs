@@ -23,11 +23,19 @@ public sealed class DistributedLockProvider(
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IOutboxBus? _outboxBus = _ConfigureOutboxBus(outboxBus, logger);
+    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(
+        outboxBus,
+        logger
+    );
+    private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
-    // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`.
-    private readonly ResiliencePipeline _releasePipeline = _BuildReleasePipeline(timeProvider, logger);
+    // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`. Shared
+    // helper so the reader-writer provider uses the same retry shape.
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
+        timeProvider,
+        logger
+    );
 
     // Short pipeline for query/renew operations where 5 attempts mirror the prior default.
     private readonly ResiliencePipeline _queryPipeline = _BuildQueryPipeline(timeProvider, logger);
@@ -45,8 +53,6 @@ public sealed class DistributedLockProvider(
     TimeProvider IHaveTimeProvider.TimeProvider => timeProvider;
 
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan _MinRetryDelay = TimeSpan.FromMilliseconds(50);
-    private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
 
     // Bounds the best-effort orphan-lock cleanup that runs when an acquire is cancelled
     // after the storage may have accepted the write. Worst-case interaction with the
@@ -105,16 +111,19 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsLessThanOrEqualTo(resource.Length, _maxResourceNameLength, paramName: nameof(resource));
         options ??= new DistributedLockAcquireOptions();
-        _ValidateAcquireTimeout(options.AcquireTimeout);
+        DistributedLockCoreHelpers.ValidateAcquireTimeout(options.AcquireTimeout);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var timeUntilExpires = _NormalizeTimeUntilExpires(options.TimeUntilExpires);
+        var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
+            options.TimeUntilExpires,
+            DefaultTimeUntilExpires
+        );
         var acquireTimeout = options.AcquireTimeout;
         var releaseOnDispose = options.ReleaseOnDispose;
         var monitoring = options.Monitoring;
         var monitorLease = monitoring != LockMonitoringMode.None;
         var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
-        var leaseDuration = _RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
+        var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
         logger.LogAttemptingToAcquireLock(resource, lockId);
@@ -214,7 +223,7 @@ public sealed class DistributedLockProvider(
                 autoResetEvent ??= _IncrementResetEvent(resource);
 
                 // Use exponential backoff instead of storage call
-                var delayAmount = _GetBackoffDelay(retryAttempt++);
+                var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
                 logger.LogDelayBeforeRetry(resource, lockId, delayAmount);
 
                 // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
@@ -468,18 +477,6 @@ public sealed class DistributedLockProvider(
         }
     }
 
-    private static TimeSpan _GetBackoffDelay(int attempt)
-    {
-        // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ... capped at 3s
-        var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));
-        var cappedDelayMs = Math.Min(delayMs, _MaxRetryDelay.TotalMilliseconds);
-
-        // Add jitter (±25%) to prevent thundering herd
-        var jitter = cappedDelayMs * ((Random.Shared.NextDouble() * 0.5) - 0.25);
-
-        return TimeSpan.FromMilliseconds(cappedDelayMs + jitter);
-    }
-
     #endregion
 
     #region Release
@@ -503,24 +500,43 @@ public sealed class DistributedLockProvider(
         var resourceRef = resource;
         var lockIdRef = lockId;
 
-        var lastResult = await _releasePipeline
-            .ExecuteAsync(
-                async ct =>
-                {
-                    var result = await storageRef.RemoveIfEqualAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false);
-
-                    if (result)
+        // Cap the release pipeline at DisposeTimeout so application shutdown is not blocked by
+        // sustained storage unavailability. On timeout the pipeline continues in the background
+        // and the storage's per-record TTL is the eventual consistency mechanism.
+        bool removed;
+        try
+        {
+            var lastResult = await _releasePipeline
+                .ExecuteAsync(
+                    async ct =>
                     {
-                        observedAttemptSucceeded = true;
-                    }
+                        var result = await storageRef
+                            .RemoveIfEqualAsync(resourceRef, lockIdRef, ct)
+                            .ConfigureAwait(false);
 
-                    return result;
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+                        if (result)
+                        {
+                            observedAttemptSucceeded = true;
+                        }
 
-        var removed = observedAttemptSucceeded || lastResult;
+                        return result;
+                    },
+                    cancellationToken
+                )
+                .AsTask()
+                .WaitAsync(_disposeTimeout, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
+
+            removed = observedAttemptSucceeded || lastResult;
+        }
+        catch (TimeoutException)
+        {
+            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
+            // Background pipeline may still succeed and set observedAttemptSucceeded; treat the
+            // caller's release as not-yet-confirmed so we skip the outbox publish (waiters will
+            // fall back to polling, which is the same path as a never-published release).
+            removed = false;
+        }
 
         if (removed)
         {
@@ -578,7 +594,10 @@ public sealed class DistributedLockProvider(
         Argument.IsNotNullOrWhiteSpace(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        timeUntilExpires = _NormalizeTimeUntilExpires(timeUntilExpires);
+        timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
+            timeUntilExpires,
+            DefaultTimeUntilExpires
+        );
 
         logger.LogRenewingLock(resource, lockId, timeUntilExpires);
 
@@ -718,43 +737,6 @@ public sealed class DistributedLockProvider(
 
     #region Helpers
 
-    private TimeSpan? _NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires)
-    {
-        return timeUntilExpires is null ? DefaultTimeUntilExpires
-            : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
-            : Argument.IsPositive(timeUntilExpires.Value);
-    }
-
-    private static TimeSpan _RequireFiniteLeaseDuration(TimeSpan? timeUntilExpires, bool monitorLease)
-    {
-        if (timeUntilExpires is { } leaseDuration)
-        {
-            return leaseDuration;
-        }
-
-        if (monitorLease)
-        {
-            throw new ArgumentException(
-                @"Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
-                nameof(timeUntilExpires)
-            );
-        }
-
-        return Timeout.InfiniteTimeSpan;
-    }
-
-    private static void _ValidateAcquireTimeout(TimeSpan? acquireTimeout)
-    {
-        // Allow null (use default) and Timeout.InfiniteTimeSpan as the explicit "wait forever" sentinel;
-        // reject other negatives.
-        if (acquireTimeout is null || acquireTimeout == Timeout.InfiniteTimeSpan)
-        {
-            return;
-        }
-
-        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
-    }
-
     private static Activity? _StartLockActivity(string resource)
     {
         var activity = DistributedLocksDiagnostics.Start("lock.acquire");
@@ -770,57 +752,6 @@ public sealed class DistributedLockProvider(
         return activity;
     }
 
-    private static IOutboxBus? _ConfigureOutboxBus(IOutboxBus? outboxBus, ILogger<DistributedLockProvider> logger)
-    {
-        if (outboxBus is null)
-        {
-            logger.LogOutboxBusAbsent();
-        }
-
-        return outboxBus;
-    }
-
-    // Transient = anything that isn't a programmer error or caller-driven cancellation.
-    // Mirrors the existing catch filter used by the acquire loop (line ~185).
-    private static bool _IsTransientStorageException(Exception ex)
-    {
-        return ex
-            is not (
-                OperationCanceledException
-                or ObjectDisposedException
-                or InvalidOperationException
-                or ArgumentException
-            );
-    }
-
-    private static ResiliencePipeline _BuildReleasePipeline(
-        TimeProvider timeProvider,
-        ILogger<DistributedLockProvider> logger
-    )
-    {
-        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
-            .AddRetry(
-                new RetryStrategyOptions
-                {
-                    ShouldHandle = static args => new ValueTask<bool>(
-                        args.Outcome.Exception is { } ex && _IsTransientStorageException(ex)
-                    ),
-                    MaxRetryAttempts = 14, // 15 total attempts (1 initial + 14 retries)
-                    BackoffType = DelayBackoffType.Exponential,
-                    Delay = TimeSpan.FromMilliseconds(50),
-                    MaxDelay = TimeSpan.FromSeconds(2),
-                    UseJitter = true,
-                    OnRetry = args =>
-                    {
-                        logger.LogLockStorageRetry(args.AttemptNumber + 1, args.RetryDelay, args.Outcome.Exception);
-
-                        return default;
-                    },
-                }
-            )
-            .Build();
-    }
-
     private static ResiliencePipeline _BuildQueryPipeline(
         TimeProvider timeProvider,
         ILogger<DistributedLockProvider> logger
@@ -831,7 +762,8 @@ public sealed class DistributedLockProvider(
                 new RetryStrategyOptions
                 {
                     ShouldHandle = static args => new ValueTask<bool>(
-                        args.Outcome.Exception is { } ex && _IsTransientStorageException(ex)
+                        args.Outcome.Exception is { } ex
+                            && DistributedLockCoreHelpers.IsTransientStorageException(ex)
                     ),
                     MaxRetryAttempts = 4, // 5 total attempts (1 initial + 4 retries)
                     BackoffType = DelayBackoffType.Exponential,

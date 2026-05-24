@@ -10,7 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
-    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Cache\Headless.DistributedLocks.Cache.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
