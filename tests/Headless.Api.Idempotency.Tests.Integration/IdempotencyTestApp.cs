@@ -67,7 +67,7 @@ internal static class IdempotencyTestApp
 
         // Optional in-memory distributed-lock provider for WaitAndReplay tests. Built on a
         // SemaphoreSlim-per-resource map; the production wiring (DistributedLockProvider in
-        // Headless.DistributedLocks.Core) depends on IOutboxPublisher which would force the
+        // Headless.DistributedLocks.Core) depends on IOutboxBus which would force the
         // tests to spin up the messaging infrastructure. The middleware only exercises
         // TryAcquireAsync + IDistributedLock.DisposeAsync, so the test double covers exactly
         // the surface under test.

@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxBus? outboxPublisher,
+    IOutboxBus? outboxBus,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
@@ -23,7 +23,7 @@ public sealed class DistributedLockProvider(
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxBus? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
+    private readonly IOutboxBus? _outboxBus = _ConfigureOutboxBus(outboxBus, logger);
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`.
@@ -484,13 +484,13 @@ public sealed class DistributedLockProvider(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _outboxPublisher is not null)
+        if (removed && _outboxBus is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
 
             try
             {
-                await _outboxPublisher
+                await _outboxBus
                     .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -675,17 +675,17 @@ public sealed class DistributedLockProvider(
         return activity;
     }
 
-    private static IOutboxBus? _ConfigureOutboxPublisher(
-        IOutboxBus? outboxPublisher,
+    private static IOutboxBus? _ConfigureOutboxBus(
+        IOutboxBus? outboxBus,
         ILogger<DistributedLockProvider> logger
     )
     {
-        if (outboxPublisher is null)
+        if (outboxBus is null)
         {
-            logger.LogOutboxPublisherAbsent();
+            logger.LogOutboxBusAbsent();
         }
 
-        return outboxPublisher;
+        return outboxBus;
     }
 
     // Transient = anything that isn't a programmer error or caller-driven cancellation.

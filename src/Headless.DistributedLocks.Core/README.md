@@ -15,7 +15,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 ## Design Notes
 
-- `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
 - `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
 
 ## Installation
@@ -60,4 +60,4 @@ Default lock expiration is 20 minutes and default acquire timeout is 30 seconds;
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
-- Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
+- Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.

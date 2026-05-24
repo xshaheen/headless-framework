@@ -14,8 +14,8 @@ namespace Headless.DistributedLocks;
 /// <see cref="IOutboxBus"/> registration exists at the moment <c>AddDistributedLock(...)</c>
 /// runs. If the caller registers messaging afterwards (<c>AddMessages(...)</c> later in
 /// <c>Program.cs</c>), the consumer is silently skipped and push-based release wake-ups degrade
-/// to polling without firing the existing <c>LogOutboxPublisherAbsent</c> warning (because
-/// <c>_outboxPublisher</c> is non-null at runtime).
+/// to polling without firing the existing <c>LogOutboxBusAbsent</c> warning (because
+/// <c>_outboxBus</c> is non-null at runtime).
 /// </summary>
 /// <remarks>
 /// Implemented as <see cref="IValidateOptions{TOptions}"/> rather than a dedicated
@@ -35,7 +35,7 @@ internal sealed class DistributedLockMessagingValidator(
     {
         if (serviceProvider.GetService<IOutboxBus>() is null)
         {
-            // No publisher registered — `LogOutboxPublisherAbsent` already fires from the
+            // No outbox bus registered — `LogOutboxBusAbsent` already fires from the
             // provider ctor; no additional signal needed here.
             return ValidateOptionsResult.Success;
         }

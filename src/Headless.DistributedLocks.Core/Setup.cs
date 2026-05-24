@@ -120,7 +120,7 @@ public static class AddDistributedLockExtensions
             // Startup-time hook that warns when IOutboxBus is registered AFTER
             // AddDistributedLock(...). The consumer registration block below only runs at
             // registration time; a later AddMessages(...) call silently skips push wake-ups
-            // and the existing LogOutboxPublisherAbsent warning would NOT fire (publisher is
+            // and the existing LogOutboxBusAbsent warning would NOT fire (outbox bus is
             // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<

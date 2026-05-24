@@ -15,7 +15,7 @@ public sealed class DistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeDistributedLockStorage _storage = new();
-    private readonly IOutboxBus _outboxPublisher = Substitute.For<IOutboxBus>();
+    private readonly IOutboxBus _outboxBus = Substitute.For<IOutboxBus>();
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
 
     private long _lockIdCounter = 1000;
@@ -23,9 +23,9 @@ public sealed class DistributedLockProviderTests : TestBase
     private DistributedLockProvider _CreateProvider(
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
-        IOutboxBus? outboxPublisher = null,
+        IOutboxBus? outboxBus = null,
         ILogger<DistributedLockProvider>? logger = null,
-        bool useNullOutboxPublisher = false
+        bool useNullOutboxBus = false
     )
     {
         options ??= new DistributedLockOptions();
@@ -33,7 +33,7 @@ public sealed class DistributedLockProviderTests : TestBase
 
         return new DistributedLockProvider(
             storage ?? _storage,
-            useNullOutboxPublisher ? null : outboxPublisher ?? _outboxPublisher,
+            useNullOutboxBus ? null : outboxBus ?? _outboxBus,
             options,
             _longIdGenerator,
             _timeProvider,
@@ -844,7 +844,7 @@ public sealed class DistributedLockProviderTests : TestBase
 
         var provider = new DistributedLockProvider(
             storage,
-            _outboxPublisher,
+            _outboxBus,
             new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
@@ -881,7 +881,7 @@ public sealed class DistributedLockProviderTests : TestBase
         await provider.ReleaseAsync(resource, acquiredLock!.LockId, AbortToken);
 
         // then
-        await _outboxPublisher
+        await _outboxBus
             .Received(1)
             .PublishAsync(
                 Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LockId == acquiredLock.LockId),
@@ -891,10 +891,10 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_release_without_publishing_when_outbox_publisher_is_absent()
+    public async Task should_release_without_publishing_when_outbox_bus_is_absent()
     {
         // given
-        var provider = _CreateProvider(useNullOutboxPublisher: true);
+        var provider = _CreateProvider(useNullOutboxBus: true);
         var resource = Faker.Random.AlphaNumeric(10);
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -908,10 +908,10 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_acquire_waiting_lock_with_polling_when_outbox_publisher_is_absent()
+    public async Task should_acquire_waiting_lock_with_polling_when_outbox_bus_is_absent()
     {
         // given
-        var provider = _CreateProvider(useNullOutboxPublisher: true);
+        var provider = _CreateProvider(useNullOutboxBus: true);
         var resource = Faker.Random.AlphaNumeric(10);
         await using var existing = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
 
@@ -938,7 +938,7 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
-    public void should_log_warning_when_outbox_publisher_is_absent()
+    public void should_log_warning_when_outbox_bus_is_absent()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLockProvider>>();
@@ -957,14 +957,14 @@ public sealed class DistributedLockProviderTests : TestBase
             .Do(call => captured.Add((call.Arg<LogLevel>(), call.Arg<EventId>().Id)));
 
         // when
-        _ = _CreateProvider(logger: logger, useNullOutboxPublisher: true);
+        _ = _CreateProvider(logger: logger, useNullOutboxBus: true);
 
         // then
         captured.Should().ContainSingle(e => e.Level == LogLevel.Warning && e.Id == 16);
     }
 
     [Fact]
-    public void should_not_log_warning_when_outbox_publisher_is_present()
+    public void should_not_log_warning_when_outbox_bus_is_present()
     {
         // given
         var logger = Substitute.For<ILogger<DistributedLockProvider>>();

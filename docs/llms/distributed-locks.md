@@ -64,7 +64,7 @@ Use `IDistributedLockProvider` when only one worker should own a named resource 
 - Do not use distributed locks as rate limiters. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + community Redis (distributed) — the framework does not ship a rate-limiting package.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis and cache locks are efficiency locks, not transaction-coupled correctness locks.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per `AcquireAsync(...)` or `TryAcquireAsync(...)` call; `DistributedLockOptions` configures key prefix and waiter/resource limits.
-- If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxPublisher` is registered, the provider still works and falls back to polling backoff with a one-time warning.
+- If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxBus` is registered, the provider still works and falls back to polling backoff with a one-time warning.
 - `Headless.Messaging.Core` uses a keyed `IDistributedLockProvider` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
 
 ## Core Concepts
@@ -85,7 +85,7 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 ### Messaging Wake-ups
 
-`DistributedLockProvider` can publish `DistributedLockReleased` through `IOutboxPublisher` so waiters wake quickly. Messaging is optional: when no publisher is registered, lock acquisition retries through polling backoff. This keeps distributed locks usable without forcing `Headless.Messaging`.
+`DistributedLockProvider` can publish `DistributedLockReleased` through `IOutboxBus` so waiters wake quickly. Messaging is optional: when no outbox bus is registered, lock acquisition retries through polling backoff. This keeps distributed locks usable without forcing `Headless.Messaging`.
 
 ## Choosing a Provider
 
@@ -176,7 +176,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 ### Design Notes
 
-- `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
 - `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
 
 ### Installation
@@ -230,7 +230,7 @@ await lockProvider.AcquireAsync(
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
-- Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
+- Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.
 
 ---
 

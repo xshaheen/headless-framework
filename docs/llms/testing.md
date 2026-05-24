@@ -503,7 +503,7 @@ Each method has a no-predicate overload (matches by type only) and a predicate o
 
 ### Why Not Query the Outbox Directly
 
-A common reflex is to assert by selecting from the outbox table (`outbox.published` or the configured equivalent). That only works when the producer goes through the outbox pipeline. Code paths that call `IMessagePublisher` directly -- system messages, retries that opt out of the outbox, framework internals -- never write a row there. `MessagingTestHarness` records at the transport boundary, so the assertion is single-source-of-truth regardless of how the message was produced.
+A common reflex is to assert by selecting from the outbox table (`outbox.published` or the configured equivalent). That only works when the producer goes through the outbox pipeline. Code paths that call `IBus` directly -- system messages, retries that opt out of the outbox, framework internals -- never write a row there. `MessagingTestHarness` records at the transport boundary, so the assertion is single-source-of-truth regardless of how the message was produced.
 
 ### Isolation Between Tests
 
