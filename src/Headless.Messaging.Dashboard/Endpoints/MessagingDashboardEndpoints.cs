@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -24,6 +25,7 @@ namespace Headless.Messaging.Dashboard;
 public static class MessagingDashboardEndpoints
 {
     private const int _MaxPageSize = 200;
+    private const int _MaxBulkActionSize = 500;
 
     internal static void MapMessagingDashboardEndpoints(
         this IEndpointRouteBuilder endpoints,
@@ -307,6 +309,7 @@ public static class MessagingDashboardEndpoints
                 StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
+                message.IntentType,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -333,6 +336,7 @@ public static class MessagingDashboardEndpoints
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 Group = message.Origin.GetGroup(),
+                message.IntentType,
                 message.Content,
                 message.Added,
                 message.ExpiresAt,
@@ -350,17 +354,44 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return _BulkTooLarge();
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
+        var busTransport = sp.GetService<IBusTransport>();
+        var queueTransport = sp.GetService<IQueueTransport>();
 
-        foreach (var storageId in storageIds)
+        var messages = await monitoringApi.GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted);
+
+        var rejected = new List<long>();
+        var requeued = new List<long>();
+
+        foreach (var message in messages)
         {
-            var message = await monitoringApi.GetPublishedMessageAsync(storageId);
-            if (message != null)
+            var hasTransport = message.IntentType switch
             {
-                await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
+                IntentType.Bus => busTransport is not null,
+                IntentType.Queue => queueTransport is not null,
+                _ => false,
+            };
+
+            if (!hasTransport)
+            {
+                rejected.Add(message.StorageId);
+                continue;
             }
+
+            await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
+            requeued.Add(message.StorageId);
+        }
+
+        if (rejected.Count > 0)
+        {
+            return Results.UnprocessableEntity(new { rejected, requeued });
         }
 
         return Results.NoContent();
@@ -374,13 +405,13 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        var dataStorage = sp.GetRequiredService<IDataStorage>();
-
-        foreach (var storageId in storageIds)
+        if (storageIds.Length > _MaxBulkActionSize)
         {
-            _ = await dataStorage.DeletePublishedMessageAsync(storageId);
+            return _BulkTooLarge();
         }
 
+        var dataStorage = sp.GetRequiredService<IDataStorage>();
+        _ = await dataStorage.DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted);
         return Results.NoContent();
     }
 
@@ -392,17 +423,44 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return _BulkTooLarge();
+        }
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
+        var busTransport = sp.GetService<IBusTransport>();
+        var queueTransport = sp.GetService<IQueueTransport>();
 
-        foreach (var storageId in storageIds)
+        var messages = await monitoringApi.GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
+
+        var rejected = new List<long>();
+        var requeued = new List<long>();
+
+        foreach (var message in messages)
         {
-            var message = await monitoringApi.GetReceivedMessageAsync(storageId);
-            if (message != null)
+            var hasTransport = message.IntentType switch
             {
-                await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
+                IntentType.Bus => busTransport is not null,
+                IntentType.Queue => queueTransport is not null,
+                _ => false,
+            };
+
+            if (!hasTransport)
+            {
+                rejected.Add(message.StorageId);
+                continue;
             }
+
+            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
+            requeued.Add(message.StorageId);
+        }
+
+        if (rejected.Count > 0)
+        {
+            return Results.UnprocessableEntity(new { rejected, requeued });
         }
 
         return Results.NoContent();
@@ -416,13 +474,13 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        var dataStorage = sp.GetRequiredService<IDataStorage>();
-
-        foreach (var storageId in storageIds)
+        if (storageIds.Length > _MaxBulkActionSize)
         {
-            _ = await dataStorage.DeleteReceivedMessageAsync(storageId);
+            return _BulkTooLarge();
         }
 
+        var dataStorage = sp.GetRequiredService<IDataStorage>();
+        _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
         return Results.NoContent();
     }
 
@@ -431,6 +489,7 @@ public static class MessagingDashboardEndpoints
         IServiceProvider sp,
         string? name = null,
         string? content = null,
+        IntentType? intentType = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -445,6 +504,7 @@ public static class MessagingDashboardEndpoints
             MessageType = MessageType.Publish,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
+            IntentType = intentType,
             StatusName = status,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -460,6 +520,7 @@ public static class MessagingDashboardEndpoints
         string? name = null,
         string? group = null,
         string? content = null,
+        IntentType? intentType = null,
         int perPage = 20,
         int currentPage = 1
     )
@@ -475,6 +536,7 @@ public static class MessagingDashboardEndpoints
             Group = group ?? string.Empty,
             Name = name ?? string.Empty,
             Content = content ?? string.Empty,
+            IntentType = intentType,
             StatusName = status,
             CurrentPage = currentPage - 1,
             PageSize = pageSize,
@@ -527,6 +589,7 @@ public static class MessagingDashboardEndpoints
             message.MessageId,
             message.Group,
             message.Name,
+            message.IntentType,
             message.Content,
             message.Added,
             message.ExpiresAt,
@@ -551,6 +614,17 @@ public static class MessagingDashboardEndpoints
             mapped.HasNext,
             Totals = mapped.TotalItems,
         };
+    }
+
+    private static IResult _BulkTooLarge()
+    {
+        return Results.UnprocessableEntity(
+            new
+            {
+                error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                maxBulkSize = _MaxBulkActionSize,
+            }
+        );
     }
 
     private static async ValueTask<long[]?> _ReadStorageIdsAsync(HttpContext httpContext)

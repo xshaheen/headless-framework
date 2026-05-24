@@ -434,7 +434,7 @@ internal static partial class LoggerExtensions
         EventId = 63,
         EventName = "TenantIdHeaderRejected",
         Level = LogLevel.Warning,
-        Message = "Inbound tenant header was rejected because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
+        Message = "Inbound tenant header was rejected because its length ({Length}) exceeds MessagePublishOptionsBase.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
     )]
     public static partial void TenantIdHeaderRejected(this ILogger logger, int length);
 
@@ -455,7 +455,7 @@ internal static partial class LoggerExtensions
         EventId = 65,
         EventName = "AmbientTenantPropagationDropped",
         Level = LogLevel.Warning,
-        Message = "Ambient ICurrentTenant.Id was rejected by tenant propagation middleware because its length ({Length}) exceeds PublishOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
+        Message = "Ambient ICurrentTenant.Id was rejected by tenant propagation middleware because its length ({Length}) exceeds MessagePublishOptionsBase.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
     )]
     public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
 
@@ -659,4 +659,38 @@ internal static partial class LoggerExtensions
         Exception ex,
         int consecutiveFailures
     );
+
+    [LoggerMessage(
+        EventId = 85,
+        EventName = "StoredMessageUnsupportedIntent",
+        Level = LogLevel.Error,
+        Message = "Stored published message {StorageId} cannot be dispatched because its intent '{IntentType}' has no supported transport. Marked terminal Failed."
+    )]
+    public static partial void StoredMessageUnsupportedIntent(
+        this ILogger logger,
+        Exception exception,
+        long storageId,
+        string intentType
+    );
+
+    [LoggerMessage(
+        EventId = 86,
+        EventName = "ConsumeIntentMismatch",
+        Level = LogLevel.Warning,
+        Message = "Message '{MessageName}' arrived with intent header '{WireIntent}' but consumer is registered for intent '{ConsumerIntent}'. Verify that the producer and consumer use matching intent types."
+    )]
+    public static partial void ConsumeIntentMismatch(
+        this ILogger logger,
+        string messageName,
+        string wireIntent,
+        string consumerIntent
+    );
+
+    [LoggerMessage(
+        EventId = 87,
+        EventName = "ProcessorStopFailed",
+        Level = LogLevel.Error,
+        Message = "Messaging processor '{ProcessorType}' failed to stop cleanly. Continuing to drain remaining processors."
+    )]
+    public static partial void ProcessorStopFailed(this ILogger logger, Exception exception, string processorType);
 }

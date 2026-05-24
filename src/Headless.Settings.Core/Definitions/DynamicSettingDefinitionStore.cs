@@ -228,11 +228,7 @@ public sealed class DynamicSettingDefinitionStore(
             await distributedLockProvider
                 .TryAcquireAsync(
                     _options.CrossApplicationsCommonLockKey,
-                    new DistributedLockAcquireOptions
-                    {
-                        TimeUntilExpires = 10.Minutes(),
-                        AcquireTimeout = 5.Minutes(),
-                    },
+                    new DistributedLockAcquireOptions { TimeUntilExpires = 10.Minutes(), AcquireTimeout = 5.Minutes() },
                     cancellationToken
                 )
                 .ConfigureAwait(false)

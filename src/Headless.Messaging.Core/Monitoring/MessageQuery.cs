@@ -16,6 +16,8 @@ public class MessageQuery
 
     public string? StatusName { get; set; }
 
+    public IntentType? IntentType { get; set; }
+
     public int CurrentPage { get; set; }
 
     public int PageSize { get; set; }

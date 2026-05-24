@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks.Redis;
 /// </summary>
 /// <remarks>
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
-/// Messaging is optional; when an <see cref="IOutboxPublisher"/> registration exists before lock setup,
+/// Messaging is optional; when an <see cref="IOutboxBus"/> registration exists before lock setup,
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]

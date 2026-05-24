@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
@@ -27,8 +28,7 @@ public sealed class SetupTests : TestBase
         var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetService<ITransport>().Should().NotBeNull();
-        provider.GetService<ITransport>().Should().BeOfType<KafkaTransport>();
+        provider.GetService<IQueueTransport>().Should().BeOfType<KafkaTransport>();
         provider.GetService<IConsumerClientFactory>().Should().NotBeNull();
         provider.GetService<IConsumerClientFactory>().Should().BeOfType<KafkaConsumerClientFactory>();
         provider.GetService<IKafkaConnectionPool>().Should().NotBeNull();

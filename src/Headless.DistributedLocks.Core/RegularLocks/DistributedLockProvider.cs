@@ -15,15 +15,15 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher? outboxPublisher,
-    DistributedLockOptions options,
+    IOutboxBus? outboxBus,
+    DistributedLockOptions lockOptions,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLockProvider> logger
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
-    private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxPublisher? _outboxPublisher = _ConfigureOutboxPublisher(outboxPublisher, logger);
+    private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
+    private readonly IOutboxBus? _outboxBus = _ConfigureOutboxBus(outboxBus, logger);
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`.
@@ -68,9 +68,9 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
 
     // Configurable limits from options
-    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = options.MaxWaitersPerResource;
+    private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
+    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
+    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -378,7 +378,7 @@ public sealed class DistributedLockProvider(
             this,
             releaseOnDispose,
             autoExtend,
-            options,
+            lockOptions,
             timeProvider,
             _DeregisterMonitor,
             logger
@@ -544,13 +544,13 @@ public sealed class DistributedLockProvider(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _outboxPublisher is not null)
+        if (removed && _outboxBus is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
 
             try
             {
-                await _outboxPublisher
+                await _outboxBus
                     .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -735,7 +735,7 @@ public sealed class DistributedLockProvider(
         if (monitorLease)
         {
             throw new ArgumentException(
-                "Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                @"Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
                 nameof(timeUntilExpires)
             );
         }
@@ -770,17 +770,14 @@ public sealed class DistributedLockProvider(
         return activity;
     }
 
-    private static IOutboxPublisher? _ConfigureOutboxPublisher(
-        IOutboxPublisher? outboxPublisher,
-        ILogger<DistributedLockProvider> logger
-    )
+    private static IOutboxBus? _ConfigureOutboxBus(IOutboxBus? outboxBus, ILogger<DistributedLockProvider> logger)
     {
-        if (outboxPublisher is null)
+        if (outboxBus is null)
         {
-            logger.LogOutboxPublisherAbsent();
+            logger.LogOutboxBusAbsent();
         }
 
-        return outboxPublisher;
+        return outboxBus;
     }
 
     // Transient = anything that isn't a programmer error or caller-driven cancellation.
@@ -902,7 +899,10 @@ public sealed class DistributedLockProvider(
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
         : IConsume<DistributedLockReleased>
     {
-        public ValueTask Consume(ConsumeContext<DistributedLockReleased> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(
+            ConsumeContext<DistributedLockReleased> context,
+            CancellationToken cancellationToken
+        )
         {
             if (cancellationToken.IsCancellationRequested)
             {

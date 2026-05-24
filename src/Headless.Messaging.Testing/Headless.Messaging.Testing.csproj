@@ -13,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.InMemoryQueue\Headless.Messaging.InMemoryQueue.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\Headless.Messaging.InMemoryStorage\Headless.Messaging.InMemoryStorage.csproj" />
   </ItemGroup>
 </Project>

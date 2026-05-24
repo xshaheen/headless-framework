@@ -84,6 +84,7 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
                 null
             ),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
     }
 

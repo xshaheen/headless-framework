@@ -12,7 +12,7 @@ public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private (HybridCache cache, IInMemoryCache l1, IDistributedCache l2, IDirectPublisher publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IDistributedCache l2, IBus publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -24,7 +24,7 @@ public sealed class HybridCacheTests : TestBase
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
         var l2 = new InMemoryCacheDistributedAdapter(new InMemoryCache(_timeProvider, l2Options));
 
-        var publisher = Substitute.For<IDirectPublisher>();
+        var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -518,7 +518,7 @@ public sealed class HybridCacheTests : TestBase
         // Use a test double that throws on write but returns values on read
         using var l2 = new FailingWriteDistributedCache(_timeProvider);
 
-        var publisher = Substitute.For<IDirectPublisher>();
+        var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
@@ -712,7 +712,7 @@ public sealed class HybridCacheTests : TestBase
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
         var l2 = new InMemoryCacheDistributedAdapter(new InMemoryCache(_timeProvider, l2Options));
 
-        var publisher = Substitute.For<IDirectPublisher>();
+        var publisher = Substitute.For<IBus>();
         publisher
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("Publish failed"));

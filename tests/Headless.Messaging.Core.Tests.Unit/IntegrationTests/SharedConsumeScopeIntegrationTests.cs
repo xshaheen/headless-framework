@@ -12,7 +12,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     public async Task should_use_same_scope_for_class_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var recorder = provider.GetRequiredService<ScopedExecutionRecorder>();
 
         await publisher.PublishAsync(
@@ -32,7 +32,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     public async Task should_use_same_scope_for_runtime_handler_and_middleware()
     {
         await using var provider = await _CreateStartedProviderAsync();
-        var publisher = provider.GetRequiredService<IOutboxPublisher>();
+        var publisher = provider.GetRequiredService<IOutboxBus>();
         var runtimeSubscriber = provider.GetRequiredService<IRuntimeSubscriber>();
         var recorder = provider.GetRequiredService<ScopedExecutionRecorder>();
 
@@ -79,7 +79,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
         services
             .AddHeadlessMessaging(options =>
             {
-                options.UseInMemoryMessageQueue();
+                options.UseInMemory();
                 options.UseInMemoryStorage();
                 options.UseConventions(c =>
                 {
@@ -154,7 +154,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     private sealed class ScopedClassConsumer(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
         : IConsume<ScopedMessage>
     {
-        public ValueTask Consume(ConsumeContext<ScopedMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<ScopedMessage> context, CancellationToken cancellationToken)
         {
             recorder.RecordClassHandler(dependency.Id);
             return ValueTask.CompletedTask;

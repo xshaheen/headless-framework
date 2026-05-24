@@ -8,7 +8,7 @@ using RabbitMQ.Client.Exceptions;
 
 namespace Headless.Messaging.RabbitMq;
 
-internal sealed class RabbitMqTransport : ITransport
+internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 {
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly string _exchange;
@@ -30,9 +30,7 @@ internal sealed class RabbitMqTransport : ITransport
         IChannel? channel = null;
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            channel = await _connectionChannelPool.Rent().ConfigureAwait(false);
+            channel = await _connectionChannelPool.Rent(cancellationToken).ConfigureAwait(false);
 
             var props = new BasicProperties
             {

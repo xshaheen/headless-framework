@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -58,6 +60,25 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
         var act = async () => await factory.CreateAsync("test-group", 5);
 
         // then
+        await act.Should().ThrowAsync<BrokerConnectionException>();
+    }
+
+    [Fact]
+    public async Task should_allow_queue_consumer_group_longer_than_subscription_limit()
+    {
+        // given
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+
+        var options = Options.Create(new AzureServiceBusOptions { ConnectionString = "InvalidConnectionString" });
+        var serviceProvider = new ServiceCollection().BuildServiceProvider();
+        var factory = new AzureServiceBusConsumerClientFactory(loggerFactory, options, serviceProvider);
+        var groupName = new string('a', 80);
+
+        // when
+        var act = async () => await factory.CreateAsync(groupName, 5, IntentType.Queue);
+
+        // then - reaches connection setup instead of rejecting the framework-local group name.
         await act.Should().ThrowAsync<BrokerConnectionException>();
     }
 }

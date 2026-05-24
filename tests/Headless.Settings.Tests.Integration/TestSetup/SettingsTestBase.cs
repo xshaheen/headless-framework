@@ -52,7 +52,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
         // Cache

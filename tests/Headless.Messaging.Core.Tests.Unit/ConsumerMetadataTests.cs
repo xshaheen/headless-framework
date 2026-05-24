@@ -18,7 +18,14 @@ public sealed class ConsumerMetadataTests : TestBase
         const byte concurrency = 5;
 
         // when
-        var metadata = new ConsumerMetadata(messageType, consumerType, topic, group, concurrency);
+        var metadata = new ConsumerMetadata(
+            messageType,
+            consumerType,
+            topic,
+            group,
+            concurrency,
+            IntentType: IntentType.Bus
+        );
 
         // then
         metadata.MessageType.Should().Be(messageType);
@@ -37,7 +44,8 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "test.topic",
             null,
-            1
+            1,
+            IntentType: IntentType.Bus
         );
 
         // then
@@ -53,7 +61,8 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "original.topic",
             "group",
-            1
+            1,
+            IntentType: IntentType.Bus
         );
 
         // when
@@ -79,7 +88,8 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "topic",
             "original-group",
-            1
+            1,
+            IntentType: IntentType.Bus
         );
 
         // when
@@ -102,7 +112,8 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "topic",
             "group",
-            1
+            1,
+            IntentType: IntentType.Bus
         );
 
         // when
@@ -124,14 +135,16 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "topic",
             "group",
-            5
+            5,
+            IntentType: IntentType.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "topic",
             "group",
-            5
+            5,
+            IntentType: IntentType.Bus
         );
 
         // then
@@ -148,14 +161,16 @@ public sealed class ConsumerMetadataTests : TestBase
             typeof(MetadataTestConsumer),
             "topic",
             "group",
-            5
+            5,
+            IntentType: IntentType.Bus
         );
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
             "different-topic",
             "group",
-            5
+            5,
+            IntentType: IntentType.Bus
         );
 
         // then
@@ -168,7 +183,7 @@ public sealed record MetadataTestMessage(string Value);
 
 public sealed class MetadataTestConsumer : IConsume<MetadataTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

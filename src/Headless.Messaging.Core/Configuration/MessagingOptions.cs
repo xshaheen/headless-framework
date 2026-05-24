@@ -176,14 +176,14 @@ public sealed class MessagingOptions
     /// <summary>
     /// Gets or sets a value indicating whether publish calls require a resolved tenant identifier.
     /// When <see langword="true"/>, the publish wrapper rejects calls where neither
-    /// <see cref="PublishOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
+    /// <see cref="MessagePublishOptionsBase.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
     /// tenant, throwing <see cref="MissingTenantContextException"/>. Sibling of the EF write guard
     /// (#234) and the HTTP authorization requirement for cross-layer tenant safety.
     /// </summary>
     /// <remarks>
     /// Defaults to <see langword="false"/> to preserve today's behavior. Background workers and
     /// <c>IHostedService</c> callers without an ambient request scope must wrap publishes in
-    /// <c>using (currentTenant.Change(tenantId))</c> or set <see cref="PublishOptions.TenantId"/>
+    /// <c>using (currentTenant.Change(tenantId))</c> or set <see cref="MessagePublishOptionsBase.TenantId"/>
     /// explicitly when this flag is enabled.
     /// </remarks>
     public bool TenantContextRequired { get; set; }
@@ -393,7 +393,8 @@ public sealed class MessagingOptions
         string? topic,
         string? group,
         byte concurrency,
-        string? handlerId = null
+        string? handlerId = null,
+        IntentType intentType = IntentType.Bus
     )
     {
         var conventions = Conventions;
@@ -408,7 +409,15 @@ public sealed class MessagingOptions
         var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 
-        return new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency, finalHandlerId);
+        return new ConsumerMetadata(
+            messageType,
+            consumerType,
+            finalTopic,
+            finalGroup,
+            concurrency,
+            intentType,
+            finalHandlerId
+        );
     }
 
     internal string ResolveGroupName(string handlerId, string? explicitGroup = null)

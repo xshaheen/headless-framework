@@ -48,6 +48,7 @@ builder.Services.AddOpenTelemetry()
         {
             opt.EnableMetrics = true;          // collect message metrics in addition to traces
             opt.SuppressTenantIdTag = false;   // set true for shared multi-tenant trace backends
+            opt.SuppressIntentTags = false;    // set true to omit intent and destination-kind tags
             opt.SuppressRetryCountTag = false; // set true to omit headless.messaging.retry_count
 
             opt.AddEnricher(new MyCustomEnricher()); // implements IActivityTagEnricher
@@ -55,7 +56,16 @@ builder.Services.AddOpenTelemetry()
         .AddJaegerExporter());
 ```
 
-Custom enrichers implement `IActivityTagEnricher` from `Headless.Messaging.OpenTelemetry`. The pipeline runs built-in enrichers first (`TenantIdTagEnricher`, then `RetryCountTagEnricher`, each gated by its suppression option) and then custom enrichers in registration order. Enricher exceptions are isolated and logged; the messaging operation continues regardless.
+Custom enrichers implement `IActivityTagEnricher` from `Headless.Messaging.OpenTelemetry`. The pipeline runs built-in enrichers first (`TenantIdTagEnricher`, `IntentTagEnricher`, then `RetryCountTagEnricher`, each gated by its suppression option) and then custom enrichers in registration order. Enricher exceptions are isolated and logged; the messaging operation continues regardless.
+
+Built-in messaging tags:
+
+| Tag | Value | Suppression |
+| --- | --- | --- |
+| `headless.messaging.intent` | `bus` or `queue` | `SuppressIntentTags` |
+| `messaging.destination.kind` | `topic` for bus, `queue` for queue | `SuppressIntentTags` |
+| `headless.messaging.tenant_id` | Tenant header value | `SuppressTenantIdTag` |
+| `headless.messaging.retry_count` | Persisted retry pickup count | `SuppressRetryCountTag` |
 
 ## Dependencies
 

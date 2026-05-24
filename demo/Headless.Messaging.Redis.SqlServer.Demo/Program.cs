@@ -9,9 +9,10 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddQueueConsumer<PersonConsumer, Person>("test-message");
+
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.SubscribeFromAssembly(typeof(Program).Assembly);
     setup.WithTopicMapping<Person>("test-message");
 
     setup.UseRedis(redis =>

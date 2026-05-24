@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -122,6 +123,24 @@ public sealed class NatsConsumerClientTests : TestBase
             .BuildStreamSubjects("events", ["orders.created"])
             .Should()
             .BeEquivalentTo(["orders.created"]);
+    }
+
+    [Fact]
+    public void BuildDurableName_should_include_group_for_bus_intent()
+    {
+        NatsConsumerClient
+            .BuildDurableName("payments", "orders.created", IntentType.Bus)
+            .Should()
+            .Be("payments-orders_created");
+    }
+
+    [Fact]
+    public void BuildDurableName_should_share_destination_for_queue_intent()
+    {
+        NatsConsumerClient
+            .BuildDurableName("payments", "orders.created", IntentType.Queue)
+            .Should()
+            .Be("queue-orders_created");
     }
 
     // _NextBackoff tests

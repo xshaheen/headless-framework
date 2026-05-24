@@ -20,7 +20,7 @@ public sealed class ConsumerExecutorDescriptor
     public string? TopicNamePrefix { get; init; }
 
     /// <summary>
-    /// Topic name for the consumer. Can be set directly or computed from attributes (legacy).
+    /// Topic name for the consumer. Can be set directly or computed from attributes.
     /// </summary>
     public required string TopicName { get; init; }
 
@@ -38,6 +38,11 @@ public sealed class ConsumerExecutorDescriptor
     /// Deterministic handler identity used for diagnostics and runtime subscription matching.
     /// </summary>
     public string? HandlerId { get; init; }
+
+    /// <summary>
+    /// Delivery intent used to subscribe this consumer.
+    /// </summary>
+    public required IntentType IntentType { get; init; }
 }
 
 public sealed class ParameterDescriptor

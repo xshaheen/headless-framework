@@ -72,7 +72,7 @@ public class Startup
         {
             setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
 
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
         });
@@ -105,7 +105,7 @@ public class Startup
         {
             setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
 
             setup.UseDashboard(d => d.WithHostAuthentication(myDashboardAuthenticationPolicy));
         });
@@ -156,7 +156,7 @@ public class Startup
             setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
             setup.UseInMemoryStorage();
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
         });
 
         return services;
@@ -169,7 +169,7 @@ public class Startup
             setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithNoAuth());
             setup.UseInMemoryStorage();
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
         });
 
         return services;

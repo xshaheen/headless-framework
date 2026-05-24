@@ -14,7 +14,7 @@ public sealed class HybridCacheInvalidationConsumer(HybridCache cache, ILogger<H
     : IConsume<CacheInvalidationMessage>
 {
     /// <inheritdoc />
-    public async ValueTask Consume(
+    public async ValueTask ConsumeAsync(
         ConsumeContext<CacheInvalidationMessage> context,
         CancellationToken cancellationToken
     )

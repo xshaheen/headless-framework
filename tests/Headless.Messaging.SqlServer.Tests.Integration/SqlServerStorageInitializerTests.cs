@@ -277,6 +277,81 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
     }
 
     [Fact]
+    public async Task should_recreate_missing_indexes_when_tables_already_exist()
+    {
+        // given
+        const string schema = "index_repair_test";
+        var initializer = _CreateInitializer(schema, useStorageLock: false);
+
+        await initializer.InitializeAsync(AbortToken);
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"""
+                DROP INDEX IF EXISTS [IX_{schema}_Received_Version_MessageId_Group_IntentType] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [IX_{schema}_Received_Version_ExpiresAt_StatusName] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [IX_{schema}_Received_ExpiresAt_StatusName] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [IX_{schema}_Received_Version_NextRetryAt] ON [{schema}].[Received];
+                DROP INDEX IF EXISTS [IX_{schema}_Published_Version_ExpiresAt_StatusName] ON [{schema}].[Published];
+                DROP INDEX IF EXISTS [IX_{schema}_Published_ExpiresAt_StatusName] ON [{schema}].[Published];
+                DROP INDEX IF EXISTS [IX_{schema}_Published_Version_NextRetryAt] ON [{schema}].[Published];
+                """,
+                cancellationToken: AbortToken
+            )
+        );
+
+        // when
+        await initializer.InitializeAsync(AbortToken);
+
+        // then
+        var indexCount = await connection.QuerySingleAsync<int>(
+            new CommandDefinition(
+                """
+                SELECT COUNT(*)
+                FROM sys.indexes i
+                INNER JOIN sys.tables t ON i.object_id = t.object_id
+                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+                WHERE s.name = @Schema
+                  AND i.name IN (
+                    @ReceivedUnique,
+                    @ReceivedVersionExpires,
+                    @ReceivedExpires,
+                    @ReceivedRetry,
+                    @PublishedVersionExpires,
+                    @PublishedExpires,
+                    @PublishedRetry
+                  )
+                """,
+                new
+                {
+                    Schema = schema,
+                    ReceivedUnique = $"IX_{schema}_Received_Version_MessageId_Group_IntentType",
+                    ReceivedVersionExpires = $"IX_{schema}_Received_Version_ExpiresAt_StatusName",
+                    ReceivedExpires = $"IX_{schema}_Received_ExpiresAt_StatusName",
+                    ReceivedRetry = $"IX_{schema}_Received_Version_NextRetryAt",
+                    PublishedVersionExpires = $"IX_{schema}_Published_Version_ExpiresAt_StatusName",
+                    PublishedExpires = $"IX_{schema}_Published_ExpiresAt_StatusName",
+                    PublishedRetry = $"IX_{schema}_Published_Version_NextRetryAt",
+                },
+                cancellationToken: AbortToken
+            )
+        );
+
+        indexCount.Should().Be(7);
+
+        // cleanup
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
+        );
+    }
+
+    [Fact]
     public void should_return_correct_table_names()
     {
         // given

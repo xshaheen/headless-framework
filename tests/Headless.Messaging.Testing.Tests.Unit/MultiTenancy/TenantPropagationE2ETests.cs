@@ -23,7 +23,7 @@ public sealed record TenantOrderEvent(string OrderId);
 public sealed class TenantCapturingConsumer(ICurrentTenant currentTenant, TenantCapture capture)
     : IConsume<TenantOrderEvent>
 {
-    public ValueTask Consume(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
     {
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
         return ValueTask.CompletedTask;
@@ -37,11 +37,11 @@ public sealed record TenantOrderUpstream(string OrderId);
 /// <see cref="TenantOrderEvent"/> from inside the consume scope so we can verify that the
 /// publish-filter picks up the restored ambient tenant on the consume side.
 /// </summary>
-public sealed class ChainedRepublishConsumer(IMessagePublisher publisher) : IConsume<TenantOrderUpstream>
+public sealed class ChainedRepublishConsumer(IBus publisher) : IConsume<TenantOrderUpstream>
 {
-    public async ValueTask Consume(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
+    public async ValueTask ConsumeAsync(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
     {
-        await publisher.PublishAsync(new TenantOrderEvent($"chained-{context.Message.OrderId}"), ct);
+        await publisher.PublishAsync(new TenantOrderEvent($"chained-{context.Message.OrderId}"), cancellationToken: ct);
     }
 }
 
@@ -51,7 +51,7 @@ public sealed class FlakyTenantConsumer(ICurrentTenant currentTenant, TenantCapt
 {
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
 
-    public ValueTask Consume(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
     {
         var attempt = _attempts.AddOrUpdate(context.Message.OrderId, 1, (_, prev) => prev + 1);
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
@@ -111,7 +111,7 @@ public sealed class TenantPropagationE2ETests : TestBase
 
             var messagingBuilder = services.AddHeadlessMessaging(setup =>
             {
-                setup.UseInMemoryMessageQueue();
+                setup.UseInMemory();
                 setup.UseInMemoryStorage();
                 configureMessaging(setup);
             });
@@ -135,7 +135,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         // when — publish under ambient tenant "acme"
         using (currentTenant.Change("acme"))
         {
-            await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-1"), AbortToken);
+            await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-1"), cancellationToken: AbortToken);
         }
 
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
@@ -162,7 +162,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         );
 
         // when — no ambient tenant; publish without explicit options
-        await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-SYS"), AbortToken);
+        await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-SYS"), cancellationToken: AbortToken);
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — envelope carries no tenant; consumer observes no ambient tenant
@@ -218,7 +218,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         // when — first attempt throws; the harness records it as faulted
         using (currentTenant.Change("acme"))
         {
-            await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-RETRY"), AbortToken);
+            await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-RETRY"), cancellationToken: AbortToken);
         }
 
         await harness.WaitForFaulted<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
@@ -274,7 +274,10 @@ public sealed class TenantPropagationE2ETests : TestBase
                 {
                     using (currentTenant.Change(tenantId))
                     {
-                        await harness.Publisher.PublishAsync(new TenantOrderEvent(tenantId), AbortToken);
+                        await harness.Publisher.PublishAsync(
+                            new TenantOrderEvent(tenantId),
+                            cancellationToken: AbortToken
+                        );
                     }
                 },
                 AbortToken
@@ -326,7 +329,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         // when — kick off the chain under ambient "tenant-x"
         using (currentTenant.Change("tenant-x"))
         {
-            await harness.Publisher.PublishAsync(new TenantOrderUpstream("HOP-1"), AbortToken);
+            await harness.Publisher.PublishAsync(new TenantOrderUpstream("HOP-1"), cancellationToken: AbortToken);
         }
 
         await harness.WaitForConsumed<TenantOrderEvent>(
@@ -346,19 +349,19 @@ public sealed class TenantPropagationE2ETests : TestBase
     [Fact]
     public async Task should_propagate_ambient_tenant_through_outbox_publisher()
     {
-        // given — IOutboxPublisher routes through the same publish pipeline (and filter chain)
+        // given — IOutboxBus routes through the same publish pipeline (and filter chain)
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
             options => options.Subscribe<TenantCapturingConsumer>("tenant-orders")
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
-        var outbox = harness.ServiceProvider.GetRequiredService<IOutboxPublisher>();
+        var outbox = harness.ServiceProvider.GetRequiredService<IOutboxBus>();
 
         // when — publish via outbox under ambient tenant
         using (currentTenant.Change("globex"))
         {
-            await outbox.PublishAsync(new TenantOrderEvent("ORD-OUTBOX"), AbortToken);
+            await outbox.PublishAsync(new TenantOrderEvent("ORD-OUTBOX"), cancellationToken: AbortToken);
         }
 
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(10), AbortToken);

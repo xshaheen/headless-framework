@@ -111,6 +111,24 @@ public sealed class AzureServiceBusConsumerClientTests
     }
 
     [Fact]
+    public void CheckValidQueueName_should_allow_names_longer_than_subscription_rule_limit()
+    {
+        var queueName = new string('a', 80);
+
+        var act = () => AzureServiceBusConsumerClient.CheckValidQueueName(queueName);
+
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void CheckValidQueueName_should_reject_reserved_uri_characters()
+    {
+        var act = () => AzureServiceBusConsumerClient.CheckValidQueueName("orders#created");
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public async Task should_throw_when_connecting_without_connection_info()
     {
         // given

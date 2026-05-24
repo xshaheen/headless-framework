@@ -50,7 +50,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
         var context = _CreateContext(new OrderPlaced("order-1"));
 
         // when
-        context.WithCancellationToken(cts.Token);
+        context.SetCancellationToken(cts.Token);
 
         // then
         context.CancellationToken.Should().Be(cts.Token);
@@ -62,6 +62,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
         // when
         var context = new DerivedConsumeContext
         {
+            IntentType = IntentType.Bus,
             Message = new OrderPlaced("order-1"),
             MessageId = "message-1",
             CorrelationId = null,
@@ -80,6 +81,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
     {
         return new ConsumeContext<OrderPlaced>
         {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = "message-1",
             CorrelationId = "correlation-1",

@@ -29,8 +29,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     // failed. Per-row LockedUntil still gates correctness — this is degraded observability,
     // not degraded behavior. The whole manual-renewal block (this constant, _GetLockTtl(),
     // and the ProcessAsync renewal tick) is replaced by LeaseMonitor + autoExtend once
-    // issues #289 (Phase 2) and #296 (messaging migration) land — bumping the margin now
-    // would churn code on the way out. Tracked by #300.
+    // issues #289 (Phase 2) and #296 land — bumping the margin now would churn code on the way
+    // out. Tracked by #300.
     private static readonly TimeSpan _LockSafetyMargin = TimeSpan.FromSeconds(10);
 
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
@@ -68,6 +68,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private long _currentIntervalTicks;
     private int _consecutiveHealthyCycles;
     private int _consecutiveCleanCycles;
+    private int _storagePickupFailureSinceLastAdaptiveAdjustment;
 
     // Tracks consecutive failures per call site so adaptive polling backs off (rather than
     // accelerating from artificially "clean" cycles when work throws and returns an empty list).
@@ -149,6 +150,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
         Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
         Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
+        Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0);
         return ValueTask.CompletedTask;
     }
 
@@ -371,14 +373,19 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task _ExecutePublishedWorkAsync(IDataStorage connection, ProcessingContext context)
     {
-        var messages = await _GetSafelyAsync(
+        var pickup = await _GetSafelyAsync(
                 connection.GetPublishedMessagesOfNeedRetryAsync,
                 StoragePickupKind.Published,
                 context.CancellationToken
             )
             .ConfigureAwait(false);
 
-        foreach (var message in messages)
+        if (!pickup.Succeeded)
+        {
+            return;
+        }
+
+        foreach (var message in pickup.Messages)
         {
             context.ThrowIfStopping();
 
@@ -388,23 +395,28 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task _ExecuteReceivedWorkAsync(IDataStorage connection, ProcessingContext context)
     {
-        var messages = await _GetSafelyAsync(
+        var pickup = await _GetSafelyAsync(
                 connection.GetReceivedMessagesOfNeedRetryAsync,
                 StoragePickupKind.Received,
                 context.CancellationToken
             )
             .ConfigureAwait(false);
 
+        if (!pickup.Succeeded)
+        {
+            return;
+        }
+
         var enqueued = 0;
         var skippedCircuitOpen = 0;
         var circuitOpenCache = new Dictionary<string, bool>(StringComparer.Ordinal);
 
-        foreach (var message in messages)
+        foreach (var message in pickup.Messages)
         {
             context.ThrowIfStopping();
 
             var group = message.Origin.GetGroup();
-            if (group is not null && _IsCircuitOpen(group, circuitOpenCache))
+            if (group is not null && _IsCircuitOpen(message.IntentType, group, circuitOpenCache))
             {
                 skippedCircuitOpen++;
                 var safeGroup = LogSanitizer.Sanitize(group);
@@ -418,11 +430,15 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         if (_adaptivePolling)
         {
-            _AdjustPollingInterval(enqueued, skippedCircuitOpen);
+            var hadPickupFailure = Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0) != 0;
+            if (!hadPickupFailure)
+            {
+                _AdjustPollingInterval(enqueued, skippedCircuitOpen);
+            }
         }
     }
 
-    private async Task<IEnumerable<T>> _GetSafelyAsync<T>(
+    private async Task<RetryPickupResult<T>> _GetSafelyAsync<T>(
         Func<CancellationToken, ValueTask<IEnumerable<T>>> getMessagesAsync,
         StoragePickupKind kind,
         CancellationToken cancellationToken = default
@@ -432,7 +448,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             var result = await getMessagesAsync(cancellationToken).ConfigureAwait(false);
             Interlocked.Exchange(ref _CounterRef(kind), 0);
-            return result;
+            return new RetryPickupResult<T>(result, Succeeded: true);
         }
         catch (OperationCanceledException)
         {
@@ -444,6 +460,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             // cycles (empty list ≠ healthy). Escalate the log to Error after a small streak so
             // monitoring picks up persistent failures.
             var failureCount = Interlocked.Increment(ref _CounterRef(kind));
+            Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 1);
+            Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+            Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
             _CompareExchangeDouble();
 
             if (failureCount >= _StoragePickupErrorEscalationThreshold)
@@ -455,9 +474,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                 _logger.GetMessagesFromStorageFailed(ex);
             }
 
-            return [];
+            return new RetryPickupResult<T>([], Succeeded: false);
         }
     }
+
+    private readonly record struct RetryPickupResult<T>(IEnumerable<T> Messages, bool Succeeded);
 
     private ref int _CounterRef(StoragePickupKind kind)
     {
@@ -627,15 +648,17 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _logger.AdaptivePollingIntervalDecreased(decreasedInterval);
     }
 
-    private bool _IsCircuitOpen(string group, Dictionary<string, bool> cache)
+    private bool _IsCircuitOpen(IntentType intentType, string group, Dictionary<string, bool> cache)
     {
-        if (cache.TryGetValue(group, out var isOpen))
+        var circuitBreakerGroup = CircuitBreakerGroupKeys.For(intentType, group);
+
+        if (cache.TryGetValue(circuitBreakerGroup, out var isOpen))
         {
             return isOpen;
         }
 
-        isOpen = _circuitBreakerMonitor?.IsOpen(group) == true;
-        cache[group] = isOpen;
+        isOpen = _circuitBreakerMonitor?.IsOpen(circuitBreakerGroup) == true;
+        cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
 

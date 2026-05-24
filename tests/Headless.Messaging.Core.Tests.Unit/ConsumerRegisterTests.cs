@@ -79,19 +79,12 @@ public sealed class ConsumerRegisterTests : TestBase
         // Start normally so internal fields are initialized.
         await register.StartAsync(hostCts.Token);
 
-        // Swap _selector with a MethodMatcherCache whose _entries are pre-populated so
-        // ExecuteAsync enters the foreach loop and calls the factory.
+        // Swap _selector with a MethodMatcherCache whose selector returns one candidate so
+        // ExecuteAsync enters the intent-aware foreach loop and calls the factory.
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
-        var fakeCache = new MethodMatcherCache(selectorSub);
-        var entriesField = typeof(MethodMatcherCache).GetField(
-            "_entries",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        )!;
-        var fakeEntries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
-            StringComparer.Ordinal
-        );
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -101,8 +94,8 @@ public sealed class ConsumerRegisterTests : TestBase
             TopicName = "fake-topic",
             GroupName = "fake-group",
         };
-        fakeEntries.TryAdd("fake-group", [fakeDescriptor]);
-        entriesField.SetValue(fakeCache, fakeEntries);
+        selectorSub.SelectCandidates().Returns([fakeDescriptor]);
+        var fakeCache = new MethodMatcherCache(selectorSub);
 
         typeof(ConsumerRegister)
             .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
@@ -143,9 +136,10 @@ public sealed class ConsumerRegisterTests : TestBase
         // given — a mock circuit breaker that reports Open for a group
         var mockCb = Substitute.For<ICircuitBreakerStateManager>();
         const string groupName = "fake-group";
+        const string handleName = "0:fake-group";
 
-        mockCb.IsOpen(groupName).Returns(true);
-        mockCb.AbortHalfOpenProbeAsync(groupName).Returns(ValueTask.CompletedTask);
+        mockCb.IsOpen(handleName).Returns(true);
+        mockCb.AbortHalfOpenProbeAsync(handleName).Returns(ValueTask.CompletedTask);
         mockCb.RemoveGroupAsync(Arg.Any<string>()).Returns(ValueTask.CompletedTask);
         mockCb.RegisterKnownGroups(Arg.Any<IEnumerable<string>>());
 
@@ -165,16 +159,9 @@ public sealed class ConsumerRegisterTests : TestBase
 
         // Swap selector with a fake that has one group so ExecuteAsync enters the per-group loop
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
-        var fakeCache = new MethodMatcherCache(selectorSub);
-        var entriesField = typeof(MethodMatcherCache).GetField(
-            "_entries",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        )!;
-        var fakeEntries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
-            StringComparer.Ordinal
-        );
         var fakeDescriptor = new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -184,8 +171,8 @@ public sealed class ConsumerRegisterTests : TestBase
             TopicName = "fake-topic",
             GroupName = groupName,
         };
-        fakeEntries.TryAdd(groupName, [fakeDescriptor]);
-        entriesField.SetValue(fakeCache, fakeEntries);
+        selectorSub.SelectCandidates().Returns([fakeDescriptor]);
+        var fakeCache = new MethodMatcherCache(selectorSub);
         typeof(ConsumerRegister)
             .GetField("_selector", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!
             .SetValue(register, fakeCache);
@@ -228,7 +215,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await (ValueTask)executeAsync.Invoke(register, null)!;
 
         // then — AbortHalfOpenProbeAsync was called for the group
-        await mockCb.Received(1).AbortHalfOpenProbeAsync(groupName);
+        await mockCb.Received(1).AbortHalfOpenProbeAsync(handleName);
 
         // then — the handle for the group has IsPaused = true because IsOpen returned true
         var groupHandlesField = typeof(ConsumerRegister).GetField(
@@ -239,7 +226,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // Use dynamic to avoid compile-time knowledge of GroupHandle's private nested type
         var handleType = handles.GetType().GetGenericArguments()[1]; // ConcurrentDictionary<string, GroupHandle>
         var tryGetMethod = handles.GetType().GetMethod("TryGetValue")!;
-        var handleArgs = new object?[] { groupName, null };
+        var handleArgs = new object?[] { handleName, null };
         var found = (bool)tryGetMethod.Invoke(handles, handleArgs)!;
         found.Should().BeTrue("handle should have been created for the group");
         var handleObj = handleArgs[1]!;
@@ -305,6 +292,37 @@ public sealed class ConsumerRegisterTests : TestBase
         await register.DisposeAsync();
     }
 
+    [Fact]
+    public async Task start_fails_when_queue_consumer_uses_legacy_consumer_factory()
+    {
+        await using var provider = _CreateProvider(
+            configureMessaging: options =>
+            {
+                options.RegisterConsumer(
+                    typeof(QueueOnlyConsumer),
+                    typeof(QueueOnlyMessage),
+                    "queue-topic",
+                    "queue-group",
+                    1,
+                    IntentType.Queue
+                );
+            },
+            configureServices: services =>
+            {
+                services.AddSingleton<IConsumerClientFactory>(new SequencedConsumerClientFactory());
+                services.AddSingleton<QueueOnlyConsumer>();
+            }
+        );
+
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+
+        var act = async () => await register.StartAsync(AbortToken);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*IIntentAwareConsumerClientFactory*queue consumers*");
+    }
+
     private ServiceProvider _CreateProvider(
         ICircuitBreakerStateManager? circuitBreakerStateManager = null,
         Action<MessagingSetupBuilder>? configureMessaging = null,
@@ -320,7 +338,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
             setup.UseConventions(c =>
             {
@@ -343,13 +361,26 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
     {
-        public ValueTask Consume(ConsumeContext<BootstrapReadyMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(
+            ConsumeContext<BootstrapReadyMessage> context,
+            CancellationToken cancellationToken
+        )
         {
             return ValueTask.CompletedTask;
         }
     }
 
     private sealed record BootstrapReadyMessage;
+
+    private sealed class QueueOnlyConsumer : IConsume<QueueOnlyMessage>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<QueueOnlyMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record QueueOnlyMessage;
 
     private sealed class SequencedConsumerClientFactory(params IConsumerClient[] clients) : IConsumerClientFactory
     {

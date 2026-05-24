@@ -4,7 +4,7 @@ namespace Demo.Messages;
 
 public class VeryFastProcessingReceiver(ILogger<VeryFastProcessingReceiver> logger) : IConsume<TestMessage>
 {
-    public async ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+    public async ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {

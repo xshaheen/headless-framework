@@ -47,6 +47,11 @@ public sealed class FailedInfo
     public required Message Message { get; init; }
 
     /// <summary>
+    /// Gets the delivery intent of the failed message.
+    /// </summary>
+    public required IntentType IntentType { get; init; }
+
+    /// <summary>
     /// Gets the exception that triggered the exhausted retry decision.
     /// </summary>
     public required Exception Exception { get; init; }

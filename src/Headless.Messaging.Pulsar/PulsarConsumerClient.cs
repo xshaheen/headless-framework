@@ -14,12 +14,15 @@ internal sealed class PulsarConsumerClient(
     IOptions<MessagingPulsarOptions> options,
     PulsarClient client,
     string groupName,
-    byte groupConcurrent
+    byte groupConcurrent,
+    IntentType intentType = IntentType.Bus,
+    TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
     private readonly MessagingPulsarOptions _pulsarOptions = options.Value;
     private IConsumer<byte[]>? _consumerClient;
@@ -43,12 +46,17 @@ internal sealed class PulsarConsumerClient(
         _consumerClient = await client
             .NewConsumer()
             .Topics(topics)
-            .SubscriptionName(groupName)
+            .SubscriptionName(GetSubscriptionName(groupName, intentType))
             .ConsumerName(serviceName)
             .SubscriptionType(SubscriptionType.Shared)
             .SubscribeAsync()
             .WaitAsync(cts.Token);
         _ready.TrySetResult();
+    }
+
+    internal static string GetSubscriptionName(string groupName, IntentType intentType)
+    {
+        return intentType == IntentType.Queue ? "headless-queue" : groupName;
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -58,6 +66,8 @@ internal sealed class PulsarConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
+        var retryDelay = TimeSpan.FromMilliseconds(200);
+
         while (!cancellationToken.IsCancellationRequested)
         {
             Message<byte[]> consumerResult;
@@ -65,6 +75,7 @@ internal sealed class PulsarConsumerClient(
             {
                 await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
                 consumerResult = await _consumerClient!.ReceiveAsync(cancellationToken).ConfigureAwait(false);
+                retryDelay = TimeSpan.FromMilliseconds(200);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -73,6 +84,8 @@ internal sealed class PulsarConsumerClient(
             catch (Exception e)
             {
                 OnLogCallback!(new LogMessageEventArgs { LogType = MqLogType.ConsumeError, Reason = e.Message });
+                retryDelay = _NextBackoff(retryDelay);
+                await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                 continue;
             }
 
@@ -149,6 +162,16 @@ internal sealed class PulsarConsumerClient(
         {
             await _consumerClient!.NegativeAcknowledge(id);
         }
+    }
+
+    private static TimeSpan _NextBackoff(TimeSpan current)
+    {
+        var floor = TimeSpan.FromMilliseconds(200);
+        var ceiling = TimeSpan.FromSeconds(30);
+        var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
+        var capped = doubled > ceiling ? ceiling : doubled;
+        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+        return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 
     private void _ReleaseSemaphore()

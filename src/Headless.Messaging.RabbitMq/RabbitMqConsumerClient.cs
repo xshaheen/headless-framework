@@ -20,11 +20,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TimeProvider _timeProvider;
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
+    private readonly IntentType _intentType;
+    private readonly List<string> _queueNames = [];
+    private readonly List<string> _consumerTags = [];
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
-    private string? _consumerTag;
     private int _disposed;
 
     public RabbitMqConsumerClient(
@@ -32,7 +34,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         byte groupConcurrent,
         IConnectionChannelPool connectionChannelPool,
         IOptions<RabbitMqOptions> options,
-        IServiceProvider serviceProvider
+        IServiceProvider serviceProvider,
+        IntentType intentType = IntentType.Bus
     )
     {
         RabbitMqValidation.ValidateQueueName(groupName);
@@ -44,6 +47,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _exchangeName = connectionChannelPool.Exchange;
         _rabbitMqOptions = options.Value;
+        _intentType = intentType;
     }
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -61,7 +65,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         foreach (var topic in topics)
         {
             RabbitMqValidation.ValidateTopicName(topic);
-            await _channel!.QueueBindAsync(_groupName, _exchangeName, topic);
+            var queueName = _GetQueueName(topic);
+            if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
+            {
+                await _DeclareQueueAsync(queueName).ConfigureAwait(false);
+                _queueNames.Add(queueName);
+            }
+
+            await _channel!.QueueBindAsync(queueName, _exchangeName, topic).ConfigureAwait(false);
         }
     }
 
@@ -98,7 +109,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         try
         {
-            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer, cancellationToken);
+            foreach (var queueName in _queueNames)
+            {
+                var consumerTag = await _channel!
+                    .BasicConsumeAsync(queueName, false, _consumer, cancellationToken)
+                    .ConfigureAwait(false);
+                _consumerTags.Add(consumerTag);
+            }
+
             _ready.TrySetResult();
         }
         catch (TimeoutException ex)
@@ -155,10 +173,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             return;
         }
 
-        if (_consumerTag is not null)
+        foreach (var consumerTag in _consumerTags)
         {
-            await _channel!.BasicCancelAsync(_consumerTag, cancellationToken: cancellationToken);
+            await _channel!.BasicCancelAsync(consumerTag, cancellationToken: cancellationToken).ConfigureAwait(false);
         }
+
+        _consumerTags.Clear();
     }
 
     public async ValueTask ResumeAsync(CancellationToken cancellationToken = default)
@@ -175,9 +195,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
         // Re-register consumer after transitioning so the broker is
         // delivering messages when the gate unblocks waiters.
-        if (_consumerTag is not null)
+        foreach (var queueName in _queueNames)
         {
-            _consumerTag = await _channel!.BasicConsumeAsync(_groupName, false, _consumer!, cancellationToken);
+            var consumerTag = await _channel!
+                .BasicConsumeAsync(queueName, false, _consumer!, cancellationToken)
+                .ConfigureAwait(false);
+            _consumerTags.Add(consumerTag);
         }
     }
 
@@ -219,36 +242,20 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                     .ExchangeDeclareAsync(_exchangeName, RabbitMqOptions.ExchangeType, true)
                     .ConfigureAwait(false);
 
-                var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
-                {
-                    { "x-message-ttl", _rabbitMqOptions.QueueArguments.MessageTTL },
-                };
-
-                if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueMode))
-                {
-                    arguments.Add("x-queue-mode", _rabbitMqOptions.QueueArguments.QueueMode);
-                }
-
-                if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueType))
-                {
-                    arguments.Add("x-queue-type", _rabbitMqOptions.QueueArguments.QueueType);
-                }
-
-                await channel
-                    .QueueDeclareAsync(
-                        _groupName,
-                        _rabbitMqOptions.QueueOptions.Durable,
-                        _rabbitMqOptions.QueueOptions.Exclusive,
-                        _rabbitMqOptions.QueueOptions.AutoDelete,
-                        arguments
-                    )
-                    .ConfigureAwait(false);
-
                 _channel = channel;
+
+                if (_intentType == IntentType.Bus && !_queueNames.Contains(_groupName, StringComparer.Ordinal))
+                {
+                    await _DeclareQueueAsync(_groupName).ConfigureAwait(false);
+                    _queueNames.Add(_groupName);
+                }
             }
             catch (TimeoutException ex)
             {
-                _channel = channel;
+                // RabbitMQ channel timed out during queue/exchange declare; surface to caller so the
+                // outer reconnect loop can recover instead of leaving a half-initialized channel.
+                await channel.DisposeAsync().ConfigureAwait(false);
+                _channel = null;
                 var args = new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumerShutdown,
@@ -256,6 +263,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 };
 
                 OnLogCallback!(args);
+                throw;
             }
             catch
             {
@@ -267,5 +275,43 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         {
             _semaphore.Release();
         }
+    }
+
+    private string _GetQueueName(string topic)
+    {
+        return GetQueueName(_groupName, topic, _intentType);
+    }
+
+    internal static string GetQueueName(string groupName, string topic, IntentType intentType)
+    {
+        return intentType == IntentType.Queue ? topic : groupName;
+    }
+
+    private async Task _DeclareQueueAsync(string queueName)
+    {
+        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            { "x-message-ttl", _rabbitMqOptions.QueueArguments.MessageTTL },
+        };
+
+        if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueMode))
+        {
+            arguments.Add("x-queue-mode", _rabbitMqOptions.QueueArguments.QueueMode);
+        }
+
+        if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueType))
+        {
+            arguments.Add("x-queue-type", _rabbitMqOptions.QueueArguments.QueueType);
+        }
+
+        await _channel!
+            .QueueDeclareAsync(
+                queueName,
+                _rabbitMqOptions.QueueOptions.Durable,
+                _rabbitMqOptions.QueueOptions.Exclusive,
+                _rabbitMqOptions.QueueOptions.AutoDelete,
+                arguments
+            )
+            .ConfigureAwait(false);
     }
 }

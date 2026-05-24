@@ -35,7 +35,6 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         DateAcquired = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
         _timestamp = timeProvider.GetTimestamp();
-        _options = options;
         _leaseDuration = leaseDuration;
         _lockProvider = lockProvider;
         _releaseOnDispose = releaseOnDispose;
@@ -49,16 +48,14 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         var fraction = autoExtend ? options.AutoExtensionCadenceFraction : options.PollingCadenceFraction;
         var cadenceTicks = Math.Max(1, (long)(leaseDuration.Ticks * fraction));
         _monitoringCadenceSnapshot = TimeSpan.FromTicks(cadenceTicks);
-        _storageDeadlineSnapshot = _monitoringCadenceSnapshot.TotalSeconds < 5.0
-            ? _monitoringCadenceSnapshot
-            : TimeSpan.FromSeconds(5);
+        _storageDeadlineSnapshot =
+            _monitoringCadenceSnapshot.TotalSeconds < 5.0 ? _monitoringCadenceSnapshot : TimeSpan.FromSeconds(5);
     }
 
     private volatile bool _isReleased;
     private int _disposed;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp;
-    private readonly DistributedLockOptions _options;
     private LeaseMonitor? _monitor;
     private readonly Lock _leaseProbeLock = new();
     private Task<LeaseMonitor.LeaseState>? _pendingLeaseProbe;
@@ -318,9 +315,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
                 : LeaseMonitor.LeaseState.Lost;
         }
 
-        var currentLockId = await _lockProvider
-            .GetLockIdAsync(Resource, cancellationToken)
-            .ConfigureAwait(false);
+        var currentLockId = await _lockProvider.GetLockIdAsync(Resource, cancellationToken).ConfigureAwait(false);
 
         return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
             ? LeaseMonitor.LeaseState.Held

@@ -8,12 +8,13 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 ## Key Features
 
-- **Outbox Publisher**: Transactional message publishing with database consistency
-- **Scheduled Publisher**: Delayed message delivery through the configured scheduler pipeline
-- **Unified Publish Contract**: `IDirectPublisher` and `IOutboxPublisher` share the same `PublishAsync(message, options, ct)` surface
-- **Consumer Management**: `AddHeadlessMessaging(...)`, `Subscribe*()`, `AddConsumer(...)`, invocation, and per-dispatch lifecycle handling
+- **Intent-Specific Publishers**: `IBus` / `IOutboxBus` for broadcast and `IQueue` / `IOutboxQueue` for point-to-point delivery
+- **Outbox Delivery**: Transactional message publishing with database consistency
+- **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
+- **Consumer Management**: `AddHeadlessMessaging(...)`, `Subscribe*()`, `AddBusConsumer(...)`, `AddQueueConsumer(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
@@ -57,27 +58,26 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Publish messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+// Publish broadcast messages with outbox (reliable delivery)
+public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
         await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
         {
-            await publisher.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
+            await bus.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
             await dbContext.SaveChangesAsync(ct);
             await dbTransaction.CommitAsync(ct);
         }
     }
 }
 
-// Publish messages directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
+// Enqueue point-to-point work directly (fire-and-forget)
+public sealed class ImportService(IQueue queue)
 {
-    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        // Bypasses outbox - sent directly to transport
-        await publisher.PublishAsync(metric, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
     }
 }
 ```
@@ -86,8 +86,10 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `SubscribeFromAssemblyContaining<T>()` and `Subscribe<T>()` are the primary registration APIs.
-- `AddConsumer<TConsumer, TMessage>(topic)` is the library-author registration API when a package wants to contribute consumers through DI.
+- `AddBusConsumer<TConsumer, TMessage>(topic)` and `AddQueueConsumer<TConsumer, TMessage>(topic)` are the library-author registration APIs when a package wants to contribute consumers through DI with explicit delivery intent.
 - topic and group defaults are deterministic; duplicate registrations fail fast by default.
+- persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.
+- a persisted row whose `IntentType` has no registered transport is marked terminal `Failed` with no next retry; the drainer logs the unsupported intent and continues processing later rows.
 - direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
 - runtime delegates execute through the same scoped consume pipeline as class handlers, so diagnostics, middleware, and correlation behavior stay aligned.
 - `IConsumerLifecycle` hooks run per delivery on the scoped consumer instance, not once for application startup or shutdown.
@@ -105,57 +107,41 @@ public sealed class MetricsService(IDirectPublisher publisher)
 
 ## Publisher Options
 
-### IOutboxPublisher (Reliable Delivery)
+Publisher services are registered only when their matching transport capability exists: `IBus` / `IOutboxBus` require `IBusTransport`, and `IQueue` / `IOutboxQueue` require `IQueueTransport`. If a custom registration exposes a publisher without the matching transport, messaging bootstrap fails before the host starts.
 
-Use `IOutboxPublisher` for messages that must not be lost:
+### Bus Publishers
 
-- **Transactional**: Messages are stored in database before sending
-- **At-least-once**: Automatic retries with configurable backoff
-- **Ordering**: Preserves publish order within transactions
-- **Two identities**: durable providers generate an internal numeric storage ID for retries and operator actions while `PublishOptions.MessageId` remains a logical string capped at `PublishOptions.MessageIdMaxLength` characters
+Use bus publishers for broadcast publish/subscribe delivery:
 
-### IScheduledPublisher (Delayed Delivery)
+- `IBus` sends directly to an `IBusTransport`.
+- `IOutboxBus` stores first, then dispatches through an `IBusTransport`.
+- `PublishOptions.Delay` is honored by `IOutboxBus` and ignored by `IBus`.
+- Stored rows and consume contexts carry `IntentType.Bus`.
 
-Use `IScheduledPublisher` when publish timing is part of the use case:
+### Queue Publishers
 
-- **Delayed delivery**: Schedule messages for future delivery
-- **Shared message model**: Uses the same message payloads and `PublishOptions`
-- **Composable**: Current core implementation uses the outbox pipeline under the hood
+Use queue publishers for point-to-point competing-worker delivery:
 
-### IDirectPublisher (Fire-and-Forget)
+- `IQueue` sends directly to an `IQueueTransport`.
+- `IOutboxQueue` stores first, then dispatches through an `IQueueTransport`.
+- `EnqueueOptions.Delay` is honored by `IOutboxQueue` and ignored by `IQueue`.
+- Stored rows and consume contexts carry `IntentType.Queue`.
 
-Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+### Publisher Contracts
+
+Use intent-specific contracts so delivery semantics are explicit at the call site:
 
 ```csharp
-// Configure topic mapping
-options.WithTopicMapping<MetricEvent>("metrics.events");
-
-// Inject and publish
-public sealed class MetricsPublisher(IDirectPublisher publisher)
+public sealed class MetricsPublisher(IBus bus)
 {
     public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
     {
-        // Sent immediately to transport, no persistence
-        await publisher.PublishAsync(metric, ct);
-
-        var options = new PublishOptions
-        {
-            CorrelationId = Guid.NewGuid().ToString(),
-            TenantId = "demo",
-        };
-        await publisher.PublishAsync(metric, options, ct);
+        await bus.PublishAsync(metric, new PublishOptions { Topic = "metrics.events" }, ct);
     }
 }
 ```
 
-**Characteristics:**
-
-- **No persistence**: Messages bypass outbox storage
-- **Lower latency**: Direct transport send without database round-trip
-- **No retries**: Transport failures throw immediately
-- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
-
-**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+Durable publishes use `IOutboxBus` or `IOutboxQueue`. Delayed delivery is expressed with `PublishOptions.Delay` or `EnqueueOptions.Delay`.
 
 ## Runtime Delegates
 
@@ -277,7 +263,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
 - **Pulsar**: Ordered within partitions when using partition key
-- **InMemoryQueue**: FIFO ordering with single consumer thread
+- **InMemory**: FIFO ordering with single consumer thread
 
 ### Configuration Impact on Ordering
 
@@ -372,7 +358,7 @@ pickup 3 (persisted retry #2):
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
 
-For the full property table, migration guide, and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
+For the full property table and `FailedInfo` construction details, see [docs/llms/messaging.md](../../../../docs/llms/messaging.md).
 
 ## Circuit Breaker
 
@@ -438,11 +424,11 @@ var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen("payments");
-var state = monitor.GetState("payments"); // Closed, Open, or HalfOpen
+var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
+var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, or HalfOpen
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
+var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:

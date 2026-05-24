@@ -98,12 +98,12 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             Payload = "direct-path",
         };
 
-        var directPublisher = ServiceProvider.GetRequiredService<IDirectPublisher>();
+        var directPublisher = ServiceProvider.GetRequiredService<IBus>();
 
         await directPublisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
 
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
-        received.Should().BeTrue("direct publisher should still deliver through the NATS transport");
+        received.Should().BeTrue("bus should still deliver through the NATS transport");
 
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
@@ -118,7 +118,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     public async Task should_attach_runtime_subscriber_after_bootstrap_and_receive_real_nats_message()
     {
         var runtimeSubscriber = ServiceProvider.GetRequiredService<IRuntimeSubscriber>();
-        var publisher = ServiceProvider.GetRequiredService<IOutboxPublisher>();
+        var publisher = ServiceProvider.GetRequiredService<IOutboxBus>();
 
         await using var handle = await runtimeSubscriber.SubscribeAsync<Fixtures.TestMessage>(
             static (context, services, _) =>
