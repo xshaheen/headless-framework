@@ -26,10 +26,11 @@ internal sealed class AmazonSnsBusTransport(
     {
         try
         {
-            await _FetchExistingTopicArns(cancellationToken);
+            await _FetchExistingTopicArns(cancellationToken).ConfigureAwait(false);
 
             var normalizeForAws = message.GetName().NormalizeForAws();
-            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken);
+            var (success, arn) = await _TryGetOrCreateTopicArnAsync(normalizeForAws, cancellationToken)
+                .ConfigureAwait(false);
 
             if (success)
             {
@@ -59,7 +60,7 @@ internal sealed class AmazonSnsBusTransport(
                     }
                 }
 
-                await _snsClient!.PublishAsync(request, cancellationToken);
+                await _snsClient!.PublishAsync(request, cancellationToken).ConfigureAwait(false);
 
                 if (_logger.IsEnabled(LogLevel.Debug))
                 {
@@ -101,11 +102,11 @@ internal sealed class AmazonSnsBusTransport(
             return;
         }
 
-        await _semaphore.WaitAsync(cancellationToken);
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            _snsClient = AwsClientFactory.CreateSnsClient(sqsOptionsAccessor.Value);
+            _snsClient ??= AwsClientFactory.CreateSnsClient(sqsOptionsAccessor.Value);
 
 #pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_topicArnMaps == null)
@@ -118,8 +119,8 @@ internal sealed class AmazonSnsBusTransport(
                 {
                     var topics =
                         nextToken == null
-                            ? await _snsClient.ListTopicsAsync(cancellationToken)
-                            : await _snsClient.ListTopicsAsync(nextToken, cancellationToken);
+                            ? await _snsClient.ListTopicsAsync(cancellationToken).ConfigureAwait(false)
+                            : await _snsClient.ListTopicsAsync(nextToken, cancellationToken).ConfigureAwait(false);
                     topics.Topics.ForEach(x =>
                     {
                         var name = x.TopicArn.Split(':')[^1];
@@ -192,16 +193,7 @@ internal sealed class AmazonSnsBusTransport(
     private string _GetBrokerEndpoint()
     {
         var options = sqsOptionsAccessor.Value;
-
-        if (
-            Uri.TryCreate(options.SnsServiceUrl, UriKind.Absolute, out var serviceUri)
-            && !string.IsNullOrWhiteSpace(serviceUri.Host)
-        )
-        {
-            return serviceUri.IsDefaultPort ? serviceUri.Host : $"{serviceUri.Host}:{serviceUri.Port}";
-        }
-
-        return $"sns.{options.Region.SystemName}.{options.Region.PartitionDnsSuffix}";
+        return AwsBrokerEndpoint.Resolve(options.SnsServiceUrl, "sns", options);
     }
 }
 

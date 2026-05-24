@@ -167,7 +167,26 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
             {
                 if (OnMessageCallback is not null)
                 {
-                    await OnMessageCallback.Invoke(message, null).ConfigureAwait(false);
+                    try
+                    {
+                        await OnMessageCallback.Invoke(message, null).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // Mirror the concurrent branch: log and continue so a single bad message
+                        // does not poison the in-memory listener loop.
+                        OnLogCallback?.Invoke(
+                            new LogMessageEventArgs
+                            {
+                                LogType = MqLogType.ExceptionReceived,
+                                Reason = $"Unhandled exception in message handler: {ex}",
+                            }
+                        );
+                    }
                 }
             }
         }

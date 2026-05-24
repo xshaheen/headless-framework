@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Immutable;
 using Amazon.Auth.AccessControlPolicy;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
@@ -29,7 +30,7 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly List<string> _queueUrls = [];
+    private ImmutableArray<string> _queueUrls = ImmutableArray<string>.Empty;
     private int _disposed;
     private string _queueUrl = string.Empty;
 
@@ -46,36 +47,42 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(topicNames);
 
+        var cancellationToken = CancellationToken.None;
+
         if (intentType == IntentType.Queue)
         {
-            await _ConnectAsync(false, true).ConfigureAwait(false);
-            _queueUrls.Clear();
+            await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
 
+            var queueUrls = new List<string>();
             foreach (var topic in topicNames)
             {
                 var queueResponse = await _sqsClient!
-                    .CreateQueueAsync(topic.ToSqsCreateQueueRequest())
+                    .CreateQueueAsync(topic.ToSqsCreateQueueRequest(), cancellationToken)
                     .ConfigureAwait(false);
 
-                _queueUrls.Add(queueResponse.QueueUrl);
+                queueUrls.Add(queueResponse.QueueUrl);
             }
 
-            return _queueUrls.ToList();
+            Interlocked.Exchange(ref _queueUrls, [.. queueUrls]);
+
+            return queueUrls;
         }
 
-        await _ConnectAsync(true, false).ConfigureAwait(false);
+        await _ConnectAsync(true, false, cancellationToken).ConfigureAwait(false);
 
         var topicArns = new List<string>();
         foreach (var topic in topicNames)
         {
             var createTopicRequest = topic.ToSnsCreateTopicRequest();
 
-            var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).ConfigureAwait(false);
+            var createTopicResponse = await _snsClient!
+                .CreateTopicAsync(createTopicRequest, cancellationToken)
+                .ConfigureAwait(false);
 
             topicArns.Add(createTopicResponse.TopicArn);
         }
 
-        await _GenerateSqsAccessPolicyAsync(topicArns).ConfigureAwait(false);
+        await _GenerateSqsAccessPolicyAsync(topicArns, cancellationToken).ConfigureAwait(false);
 
         return topicArns;
     }
@@ -84,17 +91,18 @@ internal sealed class AmazonSqsConsumerClient(
     {
         Argument.IsNotNull(topics);
 
+        var cancellationToken = CancellationToken.None;
+
         if (intentType == IntentType.Queue)
         {
-            await _ConnectAsync(false, true).ConfigureAwait(false);
-            _queueUrls.Clear();
-            _queueUrls.AddRange(topics);
+            await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
+            Interlocked.Exchange(ref _queueUrls, [.. topics]);
             _ready.TrySetResult();
             return;
         }
 
-        await _ConnectAsync().ConfigureAwait(false);
-        await _SubscribeToTopics(topics).ConfigureAwait(false);
+        await _ConnectAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        await _SubscribeToTopics(topics, cancellationToken).ConfigureAwait(false);
         _ready.TrySetResult();
     }
 
@@ -105,21 +113,41 @@ internal sealed class AmazonSqsConsumerClient(
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        await _ConnectAsync(intentType == IntentType.Bus, true).ConfigureAwait(false);
+        await _ConnectAsync(intentType == IntentType.Bus, true, cancellationToken).ConfigureAwait(false);
 
-        if (intentType == IntentType.Bus && _queueUrls.Count == 0)
+        if (intentType == IntentType.Bus && _queueUrls.Length == 0)
         {
-            _queueUrls.Add(_queueUrl);
+            Interlocked.Exchange(ref _queueUrls, [_queueUrl]);
         }
+
+        var retryDelay = TimeSpan.FromSeconds(1);
 
         while (true)
         {
             await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
-            var responses = await Task.WhenAll(
-                    _queueUrls.Select(queueUrl => _ReceiveMessagesAsync(queueUrl, cancellationToken))
-                )
-                .ConfigureAwait(false);
+            (string QueueUrl, ReceiveMessageResponse Response)[] responses;
+            try
+            {
+                var snapshot = _queueUrls;
+                responses = await Task.WhenAll(
+                        snapshot.Select(queueUrl => _ReceiveMessagesAsync(queueUrl, cancellationToken))
+                    )
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.SqsReceiveFailed(ex, groupId);
+                retryDelay = _NextBackoff(retryDelay);
+                await _timeProvider.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            retryDelay = TimeSpan.FromSeconds(1);
 
             var receivedAny = false;
             foreach (var (queueUrl, response) in responses)
@@ -198,6 +226,17 @@ internal sealed class AmazonSqsConsumerClient(
         };
         var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
         return (queueUrl, response);
+    }
+
+    private static TimeSpan _NextBackoff(TimeSpan current)
+    {
+        // Floor at 200ms, ceiling at 30s — jittered exponential backoff for transient SQS errors.
+        var floor = TimeSpan.FromMilliseconds(200);
+        var ceiling = TimeSpan.FromSeconds(30);
+        var doubled = TimeSpan.FromTicks(Math.Max(current.Ticks * 2, floor.Ticks));
+        var capped = doubled > ceiling ? ceiling : doubled;
+        var jitterMs = Random.Shared.Next(0, (int)Math.Max(1, capped.TotalMilliseconds / 4));
+        return capped + TimeSpan.FromMilliseconds(jitterMs);
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -282,7 +321,11 @@ internal sealed class AmazonSqsConsumerClient(
     }
 
     // Asynchronous version of Connect to avoid blocking threads during queue creation
-    private async Task _ConnectAsync(bool initSns = true, bool initSqs = true)
+    private async Task _ConnectAsync(
+        bool initSns = true,
+        bool initSqs = true,
+        CancellationToken cancellationToken = default
+    )
     {
         // Fast path if already initialized for requested resources
         if ((initSns && _snsClient == null) || (initSqs && _sqsClient == null))
@@ -310,7 +353,7 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     // Create or get existing queue URL asynchronously
                     var queueResponse = await _sqsClient!
-                        .CreateQueueAsync(groupId.ToSqsCreateQueueRequest())
+                        .CreateQueueAsync(groupId.ToSqsCreateQueueRequest(), cancellationToken)
                         .ConfigureAwait(false);
                     _queueUrl = queueResponse.QueueUrl;
                 }
@@ -388,9 +431,9 @@ internal sealed class AmazonSqsConsumerClient(
         OnLogCallback!(logArgs);
     }
 
-    private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns)
+    private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns, CancellationToken cancellationToken)
     {
-        await _ConnectAsync(false, true).ConfigureAwait(false);
+        await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
 
         var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
 
@@ -414,7 +457,7 @@ internal sealed class AmazonSqsConsumerClient(
         await _sqsClient.SetAttributesAsync(_queueUrl, setAttributes).ConfigureAwait(false);
     }
 
-    private async Task _SubscribeToTopics(IEnumerable<string> topics)
+    private async Task _SubscribeToTopics(IEnumerable<string> topics, CancellationToken cancellationToken)
     {
         var queueAttributes = await _sqsClient!.GetAttributesAsync(_queueUrl).ConfigureAwait(false);
 
@@ -428,7 +471,8 @@ internal sealed class AmazonSqsConsumerClient(
                         TopicArn = topicArn,
                         Protocol = "sqs",
                         Endpoint = sqsQueueArn,
-                    }
+                    },
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -457,4 +501,11 @@ internal static partial class AmazonSqsConsumerClientLog
 
     [LoggerMessage(EventId = 4203, Level = LogLevel.Error, Message = "Error consuming message for group {GroupId}")]
     public static partial void SqsMessageConsumeFailed(this ILogger logger, Exception exception, string groupId);
+
+    [LoggerMessage(
+        EventId = 4204,
+        Level = LogLevel.Warning,
+        Message = "Failed to receive SQS messages for group {GroupId}; backing off before retry."
+    )]
+    public static partial void SqsReceiveFailed(this ILogger logger, Exception exception, string groupId);
 }

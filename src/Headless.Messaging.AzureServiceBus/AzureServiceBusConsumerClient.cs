@@ -288,7 +288,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         if (groupConcurrent > 0)
         {
-            await _semaphore.WaitAsync().ConfigureAwait(false);
+            await _semaphore.WaitAsync(arg.CancellationToken).ConfigureAwait(false);
             try
             {
                 await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);

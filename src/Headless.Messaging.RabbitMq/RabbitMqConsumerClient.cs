@@ -252,7 +252,10 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             }
             catch (TimeoutException ex)
             {
-                _channel = channel;
+                // RabbitMQ channel timed out during queue/exchange declare; surface to caller so the
+                // outer reconnect loop can recover instead of leaving a half-initialized channel.
+                await channel.DisposeAsync().ConfigureAwait(false);
+                _channel = null;
                 var args = new LogMessageEventArgs
                 {
                     LogType = MqLogType.ConsumerShutdown,
@@ -260,6 +263,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 };
 
                 OnLogCallback!(args);
+                throw;
             }
             catch
             {

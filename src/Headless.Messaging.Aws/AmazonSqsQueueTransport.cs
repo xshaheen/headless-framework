@@ -137,16 +137,7 @@ internal sealed class AmazonSqsQueueTransport(
     private string _GetBrokerEndpoint()
     {
         var options = sqsOptionsAccessor.Value;
-
-        if (
-            Uri.TryCreate(options.SqsServiceUrl, UriKind.Absolute, out var serviceUri)
-            && !string.IsNullOrWhiteSpace(serviceUri.Host)
-        )
-        {
-            return serviceUri.IsDefaultPort ? serviceUri.Host : $"{serviceUri.Host}:{serviceUri.Port}";
-        }
-
-        return $"sqs.{options.Region.SystemName}.{options.Region.PartitionDnsSuffix}";
+        return AwsBrokerEndpoint.Resolve(options.SqsServiceUrl, "sqs", options);
     }
 }
 

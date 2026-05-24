@@ -30,9 +30,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         IChannel? channel = null;
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            channel = await _connectionChannelPool.Rent().ConfigureAwait(false);
+            channel = await _connectionChannelPool.Rent(cancellationToken).ConfigureAwait(false);
 
             var props = new BasicProperties
             {

@@ -14,12 +14,14 @@ internal sealed class RedisConsumerClient(
     byte groupConcurrent,
     IRedisStreamManager redis,
     IOptions<MessagingRedisOptions> options,
-    ILogger<RedisConsumerClient> logger
+    ILogger<RedisConsumerClient> logger,
+    TimeProvider? timeProvider = null
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
     private string[] _topics = null!;
 
@@ -55,7 +57,7 @@ internal sealed class RedisConsumerClient(
 
         try
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            await _timeProvider.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
