@@ -1,6 +1,6 @@
 ---
 domain: Feature Management
-packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
+packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
 ---
 
 # Feature Management
@@ -39,6 +39,8 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
+- [Headless.Features.Storage.PostgreSql](#headlessfeaturesstoragepostgresql)
+- [Headless.Features.Storage.SqlServer](#headlessfeaturesstoragesqlserver)
 
 > Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and EF Core persistence.
 
@@ -49,6 +51,8 @@ Install all three packages for a complete setup:
 - `Headless.Features.Abstractions` — interfaces (`IFeatureManager`, `IFeatureDefinitionProvider`)
 - `Headless.Features.Core` — implementation with caching, value providers, background initialization
 - `Headless.Features.Storage.EntityFramework` — database persistence via EF Core
+- `Headless.Features.Storage.PostgreSql` — raw PostgreSQL persistence
+- `Headless.Features.Storage.SqlServer` — raw SQL Server persistence
 
 Typical registration:
 
@@ -66,6 +70,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
 - Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
+- Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
 - Gate access with `RequiresFeatureAttribute` on controllers/actions.
@@ -284,3 +289,95 @@ The registration validates these values on startup. The startup gate also inspec
 - Registers `IFeatureValueRecordRepository` as singleton
 - Registers validated `FeaturesStorageOptions`
 - Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+---
+# Headless.Features.Storage.PostgreSql
+
+PostgreSQL raw-DDL storage for feature management.
+
+## Problem Solved
+
+Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence.
+
+## Key Features
+
+- `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
+- Shares `FeaturesStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Features.Storage.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddFeaturesManagementCore();
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `FeaturesStorageOptions` on the shared features builder. Configure the connection string through `PostgreSqlFeaturesOptions`.
+
+## Dependencies
+
+- `Headless.Features.Storage.EntityFramework`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw PostgreSQL implementations of `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
+---
+# Headless.Features.Storage.SqlServer
+
+SQL Server raw-DDL storage for feature management.
+
+## Problem Solved
+
+Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence.
+
+## Key Features
+
+- `AddHeadlessFeatures(setup => setup.UseSqlServer(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
+- Shares `FeaturesStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Features.Storage.SqlServer
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddFeaturesManagementCore();
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `FeaturesStorageOptions` on the shared features builder. Configure the connection string through `SqlServerFeaturesOptions`.
+
+## Dependencies
+
+- `Headless.Features.Storage.EntityFramework`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Registers `SqlServerFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw SQL Server implementations of `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`

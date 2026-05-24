@@ -1,0 +1,13 @@
+﻿<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Features.SqlServer</RootNamespace>
+    <NoWarn>$(NoWarn);CA2100</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.SqlClient" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
+  </ItemGroup>
+</Project>

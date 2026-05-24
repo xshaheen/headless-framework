@@ -174,6 +174,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Features.Abstractions` — Feature flag interface.
 - `Headless.Features.Core` — Feature management with caching and value providers.
 - `Headless.Features.Storage.EntityFramework` — EF Core storage.
+- `Headless.Features.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Features.Storage.SqlServer` — SQL Server raw storage.
 
 ### Identity
 - `Headless.Identity.Storage.EntityFramework` — ASP.NET Core Identity EF Core storage with framework extensions.

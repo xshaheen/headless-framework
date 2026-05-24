@@ -109,7 +109,11 @@
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
         <Project Path="src\Headless.Features.Core\Headless.Features.Core.csproj" />
         <Project Path="src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
+        <Project Path="src\Headless.Features.Storage.PostgreSql\Headless.Features.Storage.PostgreSql.csproj" />
+        <Project Path="src\Headless.Features.Storage.SqlServer\Headless.Features.Storage.SqlServer.csproj" />
         <Project Path="tests\Headless.Features.Tests.Integration\Headless.Features.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Features.Storage.PostgreSql.Tests.Integration\Headless.Features.Storage.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Features.Storage.SqlServer.Tests.Integration\Headless.Features.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Features.Tests.Unit\Headless.Features.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Generators/">
