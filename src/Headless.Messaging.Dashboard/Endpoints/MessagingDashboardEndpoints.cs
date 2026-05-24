@@ -354,7 +354,16 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return Results.UnprocessableEntity(
+                new
+                {
+                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                    maxBulkSize = _MaxBulkActionSize,
+                }
+            );
+        }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -402,7 +411,16 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return Results.UnprocessableEntity(
+                new
+                {
+                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                    maxBulkSize = _MaxBulkActionSize,
+                }
+            );
+        }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         _ = await dataStorage.DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted);
@@ -417,7 +435,16 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return Results.UnprocessableEntity(
+                new
+                {
+                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                    maxBulkSize = _MaxBulkActionSize,
+                }
+            );
+        }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -465,7 +492,16 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
-        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+        if (storageIds.Length > _MaxBulkActionSize)
+        {
+            return Results.UnprocessableEntity(
+                new
+                {
+                    error = $"Bulk action exceeds the maximum of {_MaxBulkActionSize} ids.",
+                    maxBulkSize = _MaxBulkActionSize,
+                }
+            );
+        }
 
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted);

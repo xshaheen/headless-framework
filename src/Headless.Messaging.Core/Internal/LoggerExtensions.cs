@@ -685,4 +685,12 @@ internal static partial class LoggerExtensions
         string wireIntent,
         string consumerIntent
     );
+
+    [LoggerMessage(
+        EventId = 87,
+        EventName = "ProcessorStopFailed",
+        Level = LogLevel.Error,
+        Message = "Messaging processor '{ProcessorType}' failed to stop cleanly. Continuing to drain remaining processors."
+    )]
+    public static partial void ProcessorStopFailed(this ILogger logger, Exception exception, string processorType);
 }

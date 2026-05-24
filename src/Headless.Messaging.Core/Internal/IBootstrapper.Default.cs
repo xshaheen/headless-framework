@@ -470,6 +470,8 @@ internal sealed class Bootstrapper(
     {
         logger.MessagingStopping();
 
+        List<Exception>? failures = null;
+
         foreach (var item in processors)
         {
             try
@@ -480,6 +482,20 @@ internal sealed class Bootstrapper(
             {
                 logger.ExpectedOperationCanceledException(ex, ex.Message);
             }
+            catch (Exception ex)
+            {
+                // Continue shutting down remaining processors instead of aborting on the first
+                // failure — partial shutdown leaves orphaned subscriptions/leases. Collect and
+                // surface all failures via AggregateException so callers can diagnose.
+                logger.ProcessorStopFailed(ex, item.GetType().FullName ?? item.GetType().Name);
+                failures ??= [];
+                failures.Add(ex);
+            }
+        }
+
+        if (failures is { Count: > 0 })
+        {
+            throw new AggregateException("One or more messaging processors failed to stop cleanly.", failures);
         }
     }
 
