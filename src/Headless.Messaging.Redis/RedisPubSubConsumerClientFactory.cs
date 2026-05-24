@@ -10,7 +10,8 @@ namespace Headless.Messaging.Redis;
 internal sealed class RedisPubSubConsumerClientFactory(
     IRedisPubSubConnectionProvider connectionProvider,
     IOptions<RedisPubSubOptions> options,
-    ILogger<RedisPubSubConsumerClient> logger
+    ILogger<RedisPubSubConsumerClient> logger,
+    TimeProvider timeProvider
 ) : IConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
@@ -18,7 +19,7 @@ internal sealed class RedisPubSubConsumerClientFactory(
         try
         {
             return Task.FromResult<IConsumerClient>(
-                new RedisPubSubConsumerClient(groupName, groupConcurrent, connectionProvider, options, logger)
+                new RedisPubSubConsumerClient(groupName, groupConcurrent, connectionProvider, options, logger, timeProvider)
             );
         }
         catch (Exception e)

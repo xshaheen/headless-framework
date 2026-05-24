@@ -159,14 +159,18 @@ public abstract record MessagePublishOptionsBase
             return false;
         }
 
-        foreach (var kvp in left)
-        {
-            if (!right.TryGetValue(kvp.Key, out var rightValue))
-            {
-                return false;
-            }
+        var leftHeaders = left.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
+        var rightHeaders = right.OrderBy(p => p.Key, StringComparer.Ordinal).ToArray();
 
-            if (!string.Equals(kvp.Value, rightValue, StringComparison.Ordinal))
+        for (var i = 0; i < leftHeaders.Length; i++)
+        {
+            var leftKvp = leftHeaders[i];
+            var rightKvp = rightHeaders[i];
+
+            if (
+                !string.Equals(leftKvp.Key, rightKvp.Key, StringComparison.Ordinal)
+                || !string.Equals(leftKvp.Value, rightKvp.Value, StringComparison.Ordinal)
+            )
             {
                 return false;
             }

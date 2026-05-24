@@ -61,4 +61,48 @@ public sealed class PublishOptionsTests : TestBase
         // then
         PublishOptions.TenantIdMaxLength.Should().Be(200);
     }
+
+    [Fact]
+    public void should_compare_headers_with_ordinal_keys_independent_of_dictionary_comparer()
+    {
+        // given
+        var left = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["Tenant"] = "acme" },
+        };
+        var right = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase) { ["tenant"] = "acme" },
+        };
+
+        // then
+        left.Should().NotBe(right);
+        right.Should().NotBe(left);
+    }
+
+    [Fact]
+    public void should_hash_equal_when_headers_have_same_pairs_in_different_order()
+    {
+        // given
+        var left = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["alpha"] = "1",
+                ["beta"] = "2",
+            },
+        };
+        var right = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                ["beta"] = "2",
+                ["alpha"] = "1",
+            },
+        };
+
+        // then
+        left.Should().Be(right);
+        left.GetHashCode().Should().Be(right.GetHashCode());
+    }
 }

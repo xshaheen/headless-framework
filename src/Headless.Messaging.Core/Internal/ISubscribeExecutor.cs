@@ -145,6 +145,7 @@ internal sealed class SubscribeExecutor(
             var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
             if (!leased)
             {
+                _ReleaseHalfOpenProbe(message);
                 return (RetryDecision.Stop, OperateResult.Success);
             }
         }
@@ -237,6 +238,7 @@ internal sealed class SubscribeExecutor(
         if (isCancellation)
         {
             logger.StoredMessageExecutionCanceled(message.StorageId);
+            _ReleaseHalfOpenProbe(message);
             return RetryDecision.Stop;
         }
 
@@ -363,6 +365,7 @@ internal sealed class SubscribeExecutor(
                 logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
             }
 
+            _ReleaseHalfOpenProbe(message);
             return RetryDecision.Stop;
         }
 
@@ -381,6 +384,16 @@ internal sealed class SubscribeExecutor(
         }
 
         return decision;
+    }
+
+    private void _ReleaseHalfOpenProbe(MediumMessage message)
+    {
+        if (circuitBreakerStateManager is null)
+        {
+            return;
+        }
+
+        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(message));
     }
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)

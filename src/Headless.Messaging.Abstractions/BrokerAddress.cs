@@ -24,12 +24,12 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// </param>
     public BrokerAddress(string address)
     {
-        if (address.Contains('$', StringComparison.Ordinal))
-        {
-            var parts = address.Split('$');
+        var separatorIndex = address.IndexOf('$', StringComparison.Ordinal);
 
-            Name = parts[0];
-            Endpoint = string.Concat(parts.Skip(1));
+        if (separatorIndex >= 0)
+        {
+            Name = address[..separatorIndex];
+            Endpoint = address[(separatorIndex + 1)..];
         }
         else
         {

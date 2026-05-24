@@ -89,8 +89,8 @@ public static class MessagingServiceCollectionExtensions
             Topic: topic,
             Group: null,
             Concurrency: 1,
-            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage)),
-            IntentType: intentType
+            IntentType: intentType,
+            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage))
         );
 
         // Register metadata as singleton for discovery

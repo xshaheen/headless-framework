@@ -231,6 +231,59 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_half_open_probe_when_receive_lease_is_not_acquired()
+    {
+        // given
+        var storage = _CreateStorage();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var (executor, cbMock) = _CreateExecutor(invoker, storage);
+
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+    }
+
+    [Fact]
+    public async Task should_release_half_open_probe_when_failed_state_write_is_already_terminal()
+    {
+        // given
+        var storage = _CreateStorage();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ConsumerExecutedResult>>(_ =>
+                Task.FromException<ConsumerExecutedResult>(new TimeoutException("downstream timeout"))
+            );
+        var (executor, cbMock) = _CreateExecutor(invoker, storage);
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+    }
+
+    [Fact]
     public async Task should_persist_db_success_state_and_report_to_circuit_breaker()
     {
         // given

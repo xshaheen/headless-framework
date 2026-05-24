@@ -5,7 +5,12 @@ namespace Headless.Messaging.Internal;
 // TODO(plan-003): remove this adapter once the outbox write path accepts enqueue options directly.
 internal static class PublishOptionsAdapter
 {
-    public static PublishOptions? ToPublishOptions(EnqueueOptions? options)
+    public static PublishOptions? WithoutDelay(PublishOptions? options)
+    {
+        return options?.Delay is null ? options : options with { Delay = null };
+    }
+
+    public static PublishOptions? ToPublishOptions(EnqueueOptions? options, bool includeDelay = true)
     {
         return options is null
             ? null
@@ -18,7 +23,7 @@ internal static class PublishOptionsAdapter
                 CorrelationSequence = options.CorrelationSequence,
                 CallbackName = options.CallbackName,
                 TenantId = options.TenantId,
-                Delay = options.Delay,
+                Delay = includeDelay ? options.Delay : null,
             };
     }
 }

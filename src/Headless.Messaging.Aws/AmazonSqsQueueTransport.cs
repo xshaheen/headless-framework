@@ -26,7 +26,7 @@ internal sealed class AmazonSqsQueueTransport(
     {
         try
         {
-            var queueName = message.GetName().NormalizeForAws();
+            var queueName = message.GetName().NormalizeForSqsQueueName();
             var queueUrl = await _GetOrCreateQueueUrlAsync(queueName, cancellationToken).ConfigureAwait(false);
             var body = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
             var attributes = message

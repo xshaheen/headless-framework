@@ -27,7 +27,7 @@ internal sealed class Bus(
     {
         return publishPipeline.ExecuteAsync(
             contentObj,
-            options,
+            PublishOptionsAdapter.WithoutDelay(options),
             delayTime: null,
             innerPublish: (middlewareOptions, _, ct) =>
             {

@@ -14,7 +14,8 @@ internal sealed class RedisPubSubConsumerClient(
     byte groupConcurrent,
     IRedisPubSubConnectionProvider connectionProvider,
     IOptions<RedisPubSubOptions> options,
-    ILogger<RedisPubSubConsumerClient> logger
+    ILogger<RedisPubSubConsumerClient> logger,
+    TimeProvider timeProvider
 ) : IConsumerClient
 {
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
@@ -65,7 +66,7 @@ internal sealed class RedisPubSubConsumerClient(
     {
         _ = timeout;
         await _ready.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        await timeProvider.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)

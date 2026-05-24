@@ -17,8 +17,9 @@ namespace Headless.Messaging;
 /// outbox row's <c>DelayTime</c> / <c>ExpiresAt</c> fields are stamped accordingly and the drainer respects them.
 /// </para>
 /// <para>
-/// At least one <see cref="IQueueTransport"/> must be registered in DI for an application that
-/// resolves <see cref="IOutboxQueue"/>. Misconfiguration is caught at host startup, not at first call.
+/// At least one <see cref="IQueueTransport"/> must be registered in DI before the drainer dispatches
+/// queue-intent rows. Consumer-side intent mismatches are caught at host startup; publisher-only
+/// mismatches surface when the publisher is resolved.
 /// </para>
 /// </remarks>
 [PublicAPI]

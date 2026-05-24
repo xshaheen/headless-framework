@@ -85,6 +85,35 @@ public sealed class TopicNormalizerTests
     }
 
     [Fact]
+    public void should_accept_80_character_sqs_queue_name()
+    {
+        // given
+        var input = new string('a', 80);
+
+        // when
+        var result = input.NormalizeForSqsQueueName();
+
+        // then
+        result.Should().HaveLength(80);
+    }
+
+    [Fact]
+    public void should_throw_when_sqs_queue_name_exceeds_80_chars()
+    {
+        // given
+        var input = new string('a', 81);
+
+        // when
+        var testCode = () => input.NormalizeForSqsQueueName();
+
+        // then
+        testCode
+            .Should()
+            .ThrowExactly<ArgumentOutOfRangeException>()
+            .WithMessage("*AWS SQS queue names must be 80 characters or less*");
+    }
+
+    [Fact]
     public void should_throw_when_length_exceeds_256_chars()
     {
         // given

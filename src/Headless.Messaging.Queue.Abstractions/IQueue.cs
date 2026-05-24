@@ -18,8 +18,9 @@ namespace Headless.Messaging;
 /// scheduled delivery.
 /// </para>
 /// <para>
-/// At least one <see cref="IQueueTransport"/> must be registered in DI for an application that
-/// resolves <see cref="IQueue"/>. Misconfiguration is caught at host startup, not at first call.
+/// At least one <see cref="IQueueTransport"/> must be registered in DI for direct queue publishing.
+/// Consumer-side intent mismatches are caught at host startup; publisher-only mismatches surface
+/// when the publisher is resolved.
 /// </para>
 /// </remarks>
 [PublicAPI]

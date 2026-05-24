@@ -27,7 +27,7 @@ internal sealed class Queue(
     {
         return publishPipeline.ExecuteAsync(
             contentObj,
-            PublishOptionsAdapter.ToPublishOptions(options),
+            PublishOptionsAdapter.ToPublishOptions(options, includeDelay: false),
             delayTime: null,
             innerPublish: (middlewareOptions, _, ct) =>
             {

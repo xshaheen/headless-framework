@@ -48,4 +48,17 @@ public sealed class BrokerAddressDisplayTests
     {
         BrokerAddressDisplay.Format(new DnsEndPoint("redis.example.com", 6380)).Should().Be("redis.example.com:6380");
     }
+
+    [Fact]
+    public void broker_address_should_preserve_endpoint_delimiters_on_round_trip()
+    {
+        // given
+        var address = new BrokerAddress("redis", "localhost:6379?password=a$b");
+
+        // when
+        var parsed = new BrokerAddress(address.ToString());
+
+        // then
+        parsed.Should().Be(address);
+    }
 }
