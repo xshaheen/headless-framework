@@ -2,13 +2,13 @@
 
 using System.Reflection;
 using Headless.Api;
-using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Cache;
+using Headless.DistributedLocks.Redis;
 using Headless.Features;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
+using StackExchange.Redis;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Headless.EntityFramework.Migrations.Startup --context FeaturesDbContext
@@ -36,7 +36,7 @@ builder.AddHeadless(encryption =>
     encryption.DefaultSalt = "DemoSalt"u8.ToArray();
 });
 
-addInMemoryDistributedLock(builder.Services);
+addRedisDistributedLock(builder.Services);
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
@@ -67,10 +67,10 @@ await app.RunAsync();
 
 return;
 
-static void addInMemoryDistributedLock(IServiceCollection services)
+static void addRedisDistributedLock(IServiceCollection services)
 {
-    // Cache
-    services.AddInMemoryCache();
+    // Redis connection (required by Headless.DistributedLocks.Redis)
+    services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
 
     // Messages
     services.AddHeadlessMessaging(setup =>
@@ -80,5 +80,5 @@ static void addInMemoryDistributedLock(IServiceCollection services)
     });
 
     // Resource Locks
-    services.AddDistributedLock<CacheDistributedLockStorage>(static _ => { });
+    services.AddRedisDistributedLock(static _ => { });
 }
