@@ -6,6 +6,7 @@ using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using System.Xml.Linq;
 
 namespace Tests;
 
@@ -102,6 +103,32 @@ public sealed class SetupInMemoryTests : TestBase
     }
 
     [Fact]
+    public void should_reference_registered_capability_abstractions_directly()
+    {
+        // given
+        var projectPath = Path.Combine(
+            _FindRepositoryRoot(),
+            "src",
+            "Headless.Messaging.InMemory",
+            "Headless.Messaging.InMemory.csproj"
+        );
+
+        // when
+        var projectReferences = XDocument
+            .Load(projectPath)
+            .Descendants("ProjectReference")
+            .Select(element => element.Attribute("Include")?.Value)
+            .Where(value => value is not null)
+            .ToList();
+
+        // then
+        projectReferences.Should().Contain(@"..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj");
+        projectReferences
+            .Should()
+            .Contain(@"..\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj");
+    }
+
+    [Fact]
     public async Task should_register_message_queue_marker_service()
     {
         // given
@@ -134,5 +161,18 @@ public sealed class SetupInMemoryTests : TestBase
 
         // then
         result.Should().BeSameAs(setup);
+    }
+
+    private static string _FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "headless-framework.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
 }
