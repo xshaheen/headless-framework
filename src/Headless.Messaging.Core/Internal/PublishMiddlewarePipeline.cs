@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
@@ -31,6 +32,13 @@ internal sealed class PublishMiddlewarePipeline(
 {
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, PublishMiddlewareInvoker> _TypedInvokers =
         new();
+
+    // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
+    // the application's lifetime, so we never recompute the set on the hot publish path.
+    private static readonly ConditionalWeakTable<
+        IMiddlewareDescriptorRegistry,
+        ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
+    > _TrackedTypesByRegistry = new();
 
     private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
 
@@ -157,10 +165,16 @@ internal sealed class PublishMiddlewarePipeline(
         MiddlewareDirection direction
     )
     {
-        var trackedTypes = descriptorRegistry!
-            .Descriptors.Where(descriptor => descriptor.Direction == direction)
-            .Select(descriptor => descriptor.MiddlewareType)
-            .ToHashSet();
+        var perDirection = _TrackedTypesByRegistry.GetValue(descriptorRegistry!, static _ => new());
+        var trackedTypes = perDirection.GetOrAdd(
+            direction,
+            (dir, registry) =>
+                registry
+                    .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                    .Select(descriptor => descriptor.MiddlewareType)
+                    .ToHashSet(),
+            descriptorRegistry!
+        );
 
         return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
     }

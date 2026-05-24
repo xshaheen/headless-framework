@@ -47,6 +47,10 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
     > _cacheList;
 
+    // Per-message-type MethodInfo cache. Each registered consumer message type otherwise pays a
+    // MakeGenericType + GetMethod hit on every cache rebuild (Invalidate -> SelectCandidates).
+    private static readonly ConcurrentDictionary<Type, MethodInfo> _ConsumeMethodCache = new();
+
     private readonly MessagingOptions _messagingOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
     private readonly IServiceProvider _serviceProvider;
@@ -125,9 +129,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         foreach (var consumer in metadata)
         {
             // Build ConsumerExecutorDescriptor from metadata
-            var consumeMethod = typeof(IConsume<>)
-                .MakeGenericType(consumer.MessageType)
-                .GetMethod(nameof(IConsume<>.ConsumeAsync))!;
+            var consumeMethod = _ConsumeMethodCache.GetOrAdd(
+                consumer.MessageType,
+                static messageType =>
+                    typeof(IConsume<>).MakeGenericType(messageType).GetMethod(nameof(IConsume<>.ConsumeAsync))!
+            );
 
             var descriptor = new ConsumerExecutorDescriptor
             {

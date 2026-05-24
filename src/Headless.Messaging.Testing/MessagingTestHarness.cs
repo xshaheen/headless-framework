@@ -197,6 +197,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Waits until a message of type <typeparamref name="T"/> is published for the given
+    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
     public Task<RecordedMessage> WaitForPublished<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
@@ -256,6 +261,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Waits until a message of type <typeparamref name="T"/> is consumed for the given
+    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
     public Task<RecordedMessage> WaitForConsumed<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
@@ -315,6 +325,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Waits until processing of a message of type <typeparamref name="T"/> faults for the given
+    /// <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
     public Task<RecordedMessage> WaitForFaulted<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
@@ -375,6 +390,11 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// Waits until the retry budget for a message of type <typeparamref name="T"/> is exhausted
+    /// for the given <paramref name="intentType"/> (Bus vs Queue), or throws
+    /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
+    /// </summary>
     public Task<RecordedMessage> WaitForExhausted<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
