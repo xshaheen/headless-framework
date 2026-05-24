@@ -1,59 +1,95 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+using Headless.Hosting.Storage;
+using Headless.Settings;
+using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
-namespace Headless.Settings;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class EntityFrameworkSettingsSetup
+public static class SetupSettings
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddSettingsManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction,
-            Action<SettingsStorageOptions>? configureStorage = null
+        public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessSettingsSetupBuilder(services);
+            configure(setup);
+
+            return _RegisterCoreSettingsServices(services, setup);
+        }
+
+        private static HeadlessSettingsBuilder _RegisterCoreSettingsServices(
+            IServiceCollection serviceCollection,
+            HeadlessSettingsSetupBuilder setup
         )
         {
-            services.AddPooledDbContextFactory<SettingsDbContext>(options =>
+            if (setup.Extensions.Count != 1)
             {
-                setupAction(options);
-                options.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
+                throw new InvalidOperationException(
+                    setup.Extensions.Count == 0
+                        ? "Headless.Settings requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                        : "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
+                );
+            }
+
+            serviceCollection.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(options =>
+            {
+                options.Schema = setup.StorageOptions.Schema;
+                options.SettingValuesTableName = setup.StorageOptions.SettingValuesTableName;
+                options.SettingDefinitionsTableName = setup.StorageOptions.SettingDefinitionsTableName;
             });
-            services.AddSettingsManagementDbContextStorage<SettingsDbContext>(configureStorage);
 
-            return services;
+            foreach (var extension in setup.Extensions)
+            {
+                extension.AddServices(serviceCollection);
+            }
+
+            return new HeadlessSettingsBuilder(serviceCollection);
         }
+    }
+}
 
-        public IServiceCollection AddSettingsManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
-            Action<SettingsStorageOptions>? configureStorage = null
-        )
+[PublicAPI]
+public static class SetupSettingsEntityFramework
+{
+    extension(HeadlessSettingsSetupBuilder setup)
+    {
+        public HeadlessSettingsSetupBuilder UseEntityFramework<TContext>()
+            where TContext : DbContext
         {
-            services.AddPooledDbContextFactory<SettingsDbContext>(
-                (provider, options) =>
-                {
-                    setupAction(provider, options);
-                    options.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
-                }
+            setup.RegisterExtension(new EntityFrameworkSettingsOptionsExtension(typeof(TContext)));
+
+            return setup;
+        }
+    }
+
+    private sealed class EntityFrameworkSettingsOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            services.TryAddSingleton(
+                typeof(ISettingValueRecordRepository),
+                typeof(EfSettingValueRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.AddSettingsManagementDbContextStorage<SettingsDbContext>(configureStorage);
-
-            return services;
-        }
-
-        public IServiceCollection AddSettingsManagementDbContextStorage<TContext>(
-            Action<SettingsStorageOptions>? configureStorage = null
-        )
-            where TContext : DbContext, ISettingsDbContext
-        {
-            services.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(configureStorage);
-            services.AddSingleton<ISettingValueRecordRepository, EfSettingValueRecordRepository<TContext>>();
-            services.AddSingleton<ISettingDefinitionRecordRepository, EfSettingDefinitionRecordRepository<TContext>>();
-
-            return services;
+            services.TryAddSingleton(
+                typeof(ISettingDefinitionRecordRepository),
+                typeof(EfSettingDefinitionRecordRepository<>).MakeGenericType(dbContextType)
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(
+                    typeof(IHostedService),
+                    typeof(SettingsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
+                )
+            );
         }
     }
 }

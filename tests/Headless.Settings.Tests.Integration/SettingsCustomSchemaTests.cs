@@ -94,13 +94,17 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         // given
         var services = new ServiceCollection();
-        services.AddDbContextFactory<SharedSettingsDbContext>(options =>
+        services.AddDbContextFactory<SharedSettingsContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
-        services.AddSettingsManagementDbContextStorage<SharedSettingsDbContext>(ConfigureSettingsStorage);
+        services.AddHeadlessSettings(setup =>
+        {
+            setup.ConfigureStorage(ConfigureSettingsStorage);
+            setup.UseEntityFramework<SharedSettingsContext>();
+        });
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
-            .GetRequiredService<IDbContextFactory<SharedSettingsDbContext>>()
+            .GetRequiredService<IDbContextFactory<SharedSettingsContext>>()
             .CreateDbContextAsync(AbortToken);
 
         // when
@@ -116,95 +120,6 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         definitionsEntity.GetTableName().Should().Be(_DefinitionsTableName);
     }
 
-    [Fact]
-    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
-    {
-        // given
-        var factory = new SettingsStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(
-            new SettingsStorageOptions
-            {
-                Schema = "settings_a",
-                SettingValuesTableName = "SettingValues",
-                SettingDefinitionsTableName = "SettingDefinitions",
-            }
-        );
-        var contextB = _BuildContextWithOptions(
-            new SettingsStorageOptions
-            {
-                Schema = "settings_b",
-                SettingValuesTableName = "SettingValues",
-                SettingDefinitionsTableName = "SettingDefinitions",
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().NotBe(keyB);
-        keyA.Should().Be(factory.Create(contextA, designTime: false));
-    }
-
-    [Fact]
-    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
-    {
-        // given
-        var factory = new SettingsStorageModelCacheKeyFactory();
-        var optionsValues = new SettingsStorageOptions
-        {
-            Schema = "shared",
-            SettingValuesTableName = "Values",
-            SettingDefinitionsTableName = "Definitions",
-        };
-        var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(
-            new SettingsStorageOptions
-            {
-                Schema = optionsValues.Schema,
-                SettingValuesTableName = optionsValues.SettingValuesTableName,
-                SettingDefinitionsTableName = optionsValues.SettingDefinitionsTableName,
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().Be(keyB);
-    }
-
-    [Fact]
-    public void should_distinguish_designtime_in_model_cache_key()
-    {
-        // given
-        var factory = new SettingsStorageModelCacheKeyFactory();
-        var context = _BuildContextWithOptions(new SettingsStorageOptions());
-
-        // when
-        var runtimeKey = factory.Create(context, designTime: false);
-        var designTimeKey = factory.Create(context, designTime: true);
-
-        // then
-        runtimeKey.Should().NotBe(designTimeKey);
-    }
-
-    private static SettingsDbContext _BuildContextWithOptions(SettingsStorageOptions storageOptions)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(Options.Create(storageOptions));
-        var sp = services.BuildServiceProvider();
-
-        var dbOptions = new DbContextOptionsBuilder<SettingsDbContext>()
-            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
-            .UseApplicationServiceProvider(sp)
-            .Options;
-
-        return new SettingsDbContext(dbOptions) { SettingValues = null!, SettingDefinitions = null! };
-    }
-
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -217,7 +132,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     private async Task _RecreateCustomTablesAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
-        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SettingsDbContext>>();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<SettingsTestDbContext>>();
         await using var db = await factory.CreateDbContextAsync(AbortToken);
 
         await db.Database.ExecuteSqlRawAsync($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE""", AbortToken);
@@ -259,18 +174,15 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private sealed class SharedSettingsDbContext(DbContextOptions<SharedSettingsDbContext> options)
-        : DbContext(options),
-            ISettingsDbContext
+    private sealed class SharedSettingsContext(
+        DbContextOptions<SharedSettingsContext> options,
+        IOptions<SettingsStorageOptions> storageOptions
+    ) : DbContext(options)
     {
-        public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
-
-        public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
-
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddSettingsConfiguration(this);
+            modelBuilder.AddHeadlessSettings(storageOptions.Value);
         }
     }
 

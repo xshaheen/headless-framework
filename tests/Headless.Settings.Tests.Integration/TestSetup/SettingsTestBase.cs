@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Tests.TestSetup;
@@ -64,12 +65,15 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
         services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
-        services
-            .AddSettingsManagementCore()
-            .AddSettingsManagementDbContextStorage(
-                options => options.UseNpgsql(Fixture.SqlConnectionString),
-                ConfigureSettingsStorage
-            );
+        services.AddDbContextFactory<SettingsTestDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+
+        services.AddSettingsManagementCore().AddHeadlessSettings(setup =>
+        {
+            setup.ConfigureStorage(ConfigureSettingsStorage);
+            setup.UseEntityFramework<SettingsTestDbContext>();
+        });
     }
 
     protected virtual void ConfigureSettingsStorage(SettingsStorageOptions options) { }
@@ -81,5 +85,17 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
             new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
             new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
         ]);
+    }
+
+    protected sealed class SettingsTestDbContext(
+        DbContextOptions<SettingsTestDbContext> options,
+        IOptions<SettingsStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessSettings(storageOptions.Value);
+        }
     }
 }

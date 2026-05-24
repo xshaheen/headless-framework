@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Settings;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -23,11 +24,15 @@ public sealed class SettingsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddSettingsManagementDbContextStorage<SettingsDbContext>(options =>
+        services.AddHeadlessSettings(setup =>
         {
-            options.Schema = schema;
-            options.SettingValuesTableName = valuesTable;
-            options.SettingDefinitionsTableName = definitionsTable;
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = schema;
+                options.SettingValuesTableName = valuesTable;
+                options.SettingDefinitionsTableName = definitionsTable;
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<SettingsStorageOptions>>();
@@ -44,11 +49,15 @@ public sealed class SettingsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddSettingsManagementDbContextStorage<SettingsDbContext>(options =>
+        services.AddHeadlessSettings(setup =>
         {
-            options.Schema = "custom_settings";
-            options.SettingValuesTableName = "tbl_setting_values";
-            options.SettingDefinitionsTableName = "tbl_setting_definitions";
+            setup.ConfigureStorage(options =>
+            {
+                options.Schema = "custom_settings";
+                options.SettingValuesTableName = "tbl_setting_values";
+                options.SettingDefinitionsTableName = "tbl_setting_definitions";
+            });
+            setup.UseEntityFramework<OptionsTestDbContext>();
         });
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<SettingsStorageOptions>>();
@@ -68,7 +77,7 @@ public sealed class SettingsStorageOptionsTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddSettingsManagementDbContextStorage<SettingsDbContext>();
+        services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
         using var provider = services.BuildServiceProvider();
         var options = provider.GetRequiredService<IOptions<SettingsStorageOptions>>();
 
@@ -81,4 +90,6 @@ public sealed class SettingsStorageOptionsTests
         resolved.SettingValuesTableName.Should().Be("SettingValues");
         resolved.SettingDefinitionsTableName.Should().Be("SettingDefinitions");
     }
+
+    private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);
 }

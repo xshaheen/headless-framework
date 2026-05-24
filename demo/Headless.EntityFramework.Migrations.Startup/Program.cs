@@ -9,6 +9,7 @@ using Headless.Features;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 // To add a migration use:
 // dotnet ef migrations add InitialMigration -p .\demo\Headless.EntityFramework.Migrations.Startup --context FeaturesDbContext
@@ -47,12 +48,14 @@ builder
         options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
     });
 
-builder
-    .Services.AddSettingsManagementCore(_ => { })
-    .AddSettingsManagementDbContextStorage(options =>
-    {
-        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
-    });
+builder.Services.AddDbContextFactory<SettingsMigrationDbContext>(options =>
+    options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
+);
+
+builder.Services.AddSettingsManagementCore(_ => { }).AddHeadlessSettings(setup =>
+{
+    setup.UseEntityFramework<SettingsMigrationDbContext>();
+});
 
 builder
     .Services.AddFeaturesManagementCore()
@@ -81,4 +84,16 @@ static void addInMemoryDistributedLock(IServiceCollection services)
 
     // Resource Locks
     services.AddDistributedLock<CacheDistributedLockStorage>(static _ => { });
+}
+
+internal sealed class SettingsMigrationDbContext(
+    DbContextOptions<SettingsMigrationDbContext> options,
+    IOptions<SettingsStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessSettings(storageOptions.Value);
+    }
 }

@@ -45,7 +45,7 @@ builder.Services.AddSettingsManagementCore(options =>
 });
 
 // Add storage (EF Core)
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
