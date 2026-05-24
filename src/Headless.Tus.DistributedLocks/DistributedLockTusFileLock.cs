@@ -15,8 +15,11 @@ public sealed class DistributedLockTusFileLock(string fileId, IDistributedLockPr
     {
         _distributedLock = await distributedLockProvider.TryAcquireAsync(
             _resource,
-            timeUntilExpires: Timeout.InfiniteTimeSpan, // Lock never expires
-            acquireTimeout: TimeSpan.Zero // Do not wait to acquire the lock
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = Timeout.InfiniteTimeSpan, // Lock never expires
+                AcquireTimeout = TimeSpan.Zero, // Do not wait to acquire the lock
+            }
         );
 
         return _distributedLock is not null;

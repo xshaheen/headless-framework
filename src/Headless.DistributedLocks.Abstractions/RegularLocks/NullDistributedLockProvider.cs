@@ -18,26 +18,24 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
     public Task<IDistributedLock> AcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ValidateAcquireOptions(options);
 
         return Task.FromResult<IDistributedLock>(new NullDistributedLock(resource, timeProvider));
     }
 
     public Task<IDistributedLock?> TryAcquireAsync(
         string resource,
-        TimeSpan? timeUntilExpires = null,
-        TimeSpan? acquireTimeout = null,
-        bool releaseOnDispose = true,
+        DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        _ValidateAcquireOptions(options);
 
         return Task.FromResult<IDistributedLock?>(new NullDistributedLock(resource, timeProvider));
     }
@@ -52,6 +50,13 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(true);
+    }
+
+    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult<string?>(null);
     }
 
     public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
@@ -86,6 +91,22 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return Task.FromResult(0L);
     }
 
+    private static void _ValidateAcquireOptions(DistributedLockAcquireOptions? options)
+    {
+        if (_IsMonitoringRequested(options) && options?.TimeUntilExpires == Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentException(
+                "Lease monitoring requires a finite time until expiration.",
+                nameof(options)
+            );
+        }
+    }
+
+    private static bool _IsMonitoringRequested(DistributedLockAcquireOptions? options)
+    {
+        return options is { Monitoring: not LockMonitoringMode.None };
+    }
+
     private sealed class NullDistributedLock(string resource, TimeProvider timeProvider) : IDistributedLock
     {
         private int _renewalCount;
@@ -99,6 +120,10 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
+
+        public bool IsMonitored => false;
 
         public Task ReleaseAsync()
         {

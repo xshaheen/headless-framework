@@ -10,13 +10,16 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 - `DistributedLockProvider` implements `IDistributedLockProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
-- `DistributedLockOptions` configures key prefix, resource name length, and waiter limits.
+- `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
 
 ## Design Notes
 
 - `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
-- `TryAcquireAsync(..., acquireTimeout: TimeSpan.Zero)` performs a single storage attempt with an internal safety deadline.
+- `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
+- Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
+- Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
+- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. Structured fields are `Resource`, `LockId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
 ## Installation
 
@@ -44,9 +47,25 @@ options.KeyPrefix = "distributed-lock:";
 options.MaxResourceNameLength = 512;
 options.MaxConcurrentWaitingResources = 10_000;
 options.MaxWaitersPerResource = 1_000;
+options.PollingCadenceFraction = 0.5;
+options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per `AcquireAsync(...)` or `TryAcquireAsync(...)` call.
+Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per call by passing a `DistributedLockAcquireOptions` instance to `AcquireAsync(...)` or `TryAcquireAsync(...)`. Set `Monitoring = LockMonitoringMode.Monitor` for `HandleLostToken` loss detection and `Monitoring = LockMonitoringMode.AutoExtend` for background renewal.
+
+Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:
+
+```csharp
+await using var lease = await lockProvider.AcquireAsync(
+    "orders:123",
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(5),
+        Monitoring = LockMonitoringMode.AutoExtend,
+    },
+    ct
+);
+```
 
 ## Dependencies
 

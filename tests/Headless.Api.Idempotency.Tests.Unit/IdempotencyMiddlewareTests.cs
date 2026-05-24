@@ -722,9 +722,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -785,9 +783,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -830,9 +826,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns((IDistributedLock?)null);
@@ -888,9 +882,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -939,9 +931,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);
@@ -989,9 +979,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         lockProvider
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(dlock);

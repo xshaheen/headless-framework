@@ -51,8 +51,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Arrange — pre-acquire published lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
             MessagingKeys.PublishRetryResource("v1"),
-            timeUntilExpires: TimeSpan.FromMinutes(1),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(1) },
+            AbortToken
         );
         externalLock.Should().NotBeNull("pre-condition: lock must be acquirable on empty store");
         await using var _ = externalLock!;
@@ -79,8 +79,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Arrange — pre-acquire received lock so the processor's try-once acquire returns null
         var externalLock = await _realLockProvider.TryAcquireAsync(
             MessagingKeys.ReceiveRetryResource("v1"),
-            timeUntilExpires: TimeSpan.FromMinutes(1),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(1) },
+            AbortToken
         );
         externalLock.Should().NotBeNull("pre-condition: lock must be acquirable on empty store");
         await using var _ = externalLock!;
@@ -176,9 +176,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         alwaysGranted
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
@@ -229,9 +227,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             .DidNotReceive()
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage.Received().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
@@ -251,9 +247,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         alwaysGranted
             .TryAcquireAsync(
                 Arg.Any<string>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(),
+                Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
@@ -308,8 +302,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Arrange — hold the lock with the first acquire
         var firstLock = await _realLockProvider.TryAcquireAsync(
             "pin-test-resource",
-            timeUntilExpires: TimeSpan.FromMinutes(1),
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(1) },
+            AbortToken
         );
         firstLock.Should().NotBeNull("first acquire must succeed on an empty store");
         await using var _ = firstLock!;
@@ -317,9 +311,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Act — try-once acquire with zero timeout while first is held
         var secondLock = await _realLockProvider.TryAcquireAsync(
             "pin-test-resource",
-            timeUntilExpires: TimeSpan.FromMinutes(1),
-            acquireTimeout: TimeSpan.Zero,
-            cancellationToken: AbortToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromMinutes(1),
+                AcquireTimeout = TimeSpan.Zero,
+            },
+            AbortToken
         );
 
         // Assert
@@ -371,20 +368,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         public async Task<IDistributedLock> AcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
-            return await TryAcquireAsync(
-                        resource,
-                        timeUntilExpires,
-                        acquireTimeout,
-                        releaseOnDispose,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false)
+            return await TryAcquireAsync(resource, options, cancellationToken).ConfigureAwait(false)
                 ?? throw new LockAcquisitionTimeoutException(resource);
         }
 
@@ -393,9 +381,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         public Task<IDistributedLock?> TryAcquireAsync(
             string resource,
-            TimeSpan? timeUntilExpires = null,
-            TimeSpan? acquireTimeout = null,
-            bool releaseOnDispose = true,
+            DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
         {
@@ -407,28 +393,15 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             return Task.FromResult<IDistributedLock?>(trackingLock);
         }
 
-        public Task<IDistributedLock?> TryAcquireAsync(
-            string resource,
-            TimeSpan? timeUntilExpires,
-            TimeSpan? acquireTimeout,
-            CancellationToken cancellationToken
-        )
-        {
-            return TryAcquireAsync(
-                resource,
-                timeUntilExpires,
-                acquireTimeout,
-                releaseOnDispose: true,
-                cancellationToken: cancellationToken
-            );
-        }
-
         public Task<bool> RenewAsync(
             string resource,
             string lockId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => Task.FromResult(false);
+
+        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+            Task.FromResult<string?>(null);
 
         public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
@@ -458,6 +431,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         public int RenewalCount => Volatile.Read(ref _renewalCount);
         public DateTimeOffset DateAcquired => DateTimeOffset.UtcNow;
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
+
+        public bool IsMonitored => false;
 
         public Task ReleaseAsync() => Task.CompletedTask;
 

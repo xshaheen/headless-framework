@@ -177,9 +177,12 @@ public sealed class DynamicFeatureDefinitionStore(
         await using var distributedLock =
             await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
-                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
-                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                cancellationToken: cancellationToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                },
+                cancellationToken
             )
             ?? throw new InvalidOperationException(
                 "Could not acquire distributed lock for feature definition common stamp check!"
@@ -303,9 +306,12 @@ public sealed class DynamicFeatureDefinitionStore(
     {
         await using var appDistributedLock = await distributedLockProvider.TryAcquireAsync(
             _appSaveLockKey,
-            timeUntilExpires: _options.ApplicationSaveLockExpiration,
-            acquireTimeout: _options.ApplicationSaveLockAcquireTimeout,
-            cancellationToken: cancellationToken
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = _options.ApplicationSaveLockExpiration,
+                AcquireTimeout = _options.ApplicationSaveLockAcquireTimeout,
+            },
+            cancellationToken
         );
 
         if (appDistributedLock is null)
@@ -339,9 +345,12 @@ public sealed class DynamicFeatureDefinitionStore(
         await using var commonDistributedLock =
             await distributedLockProvider.TryAcquireAsync(
                 resource: _options.CrossApplicationsCommonLockKey,
-                timeUntilExpires: _options.CrossApplicationsCommonLockExpiration,
-                acquireTimeout: _options.CrossApplicationsCommonLockAcquireTimeout,
-                cancellationToken: cancellationToken
+                new DistributedLockAcquireOptions
+                {
+                    TimeUntilExpires = _options.CrossApplicationsCommonLockExpiration,
+                    AcquireTimeout = _options.CrossApplicationsCommonLockAcquireTimeout,
+                },
+                cancellationToken
             ) ?? throw new InvalidOperationException("Could not acquire distributed lock for saving static features!"); // It will re-try
 
         var (newGroups, updatedGroups, deletedGroups) = await _UpdateChangedFeatureGroupsAsync(

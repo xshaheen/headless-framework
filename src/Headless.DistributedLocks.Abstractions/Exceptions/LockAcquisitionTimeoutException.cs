@@ -11,7 +11,7 @@ namespace Headless.DistributedLocks;
 /// <see cref="TimeoutException"/>. Callers writing <c>catch (TimeoutException)</c> will NOT catch
 /// this exception — they must catch <see cref="LockAcquisitionTimeoutException"/> directly or its
 /// base <see cref="DistributedLockException"/>. The hierarchy preserves room for additional
-/// lock-specific exceptions (for example, a future <c>LockHandleLostException</c>) under the same
+/// lock-specific exceptions such as <see cref="LockHandleLostException"/> under the same
 /// base, while keeping lock-acquisition timeouts distinct from generic I/O-style timeouts.
 /// </remarks>
 [PublicAPI]

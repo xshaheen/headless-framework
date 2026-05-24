@@ -211,4 +211,28 @@ public static partial class RegularLockLoggerExtensions
         TimeSpan delay,
         Exception? exception
     );
+
+    [LoggerMessage(
+        EventId = 20,
+        EventName = "LeaseMonitorRegistered",
+        Level = LogLevel.Trace,
+        Message = "Registered lease monitor: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogLeaseMonitorRegistered(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 21,
+        EventName = "LeaseMonitorDeregistered",
+        Level = LogLevel.Trace,
+        Message = "Deregistered lease monitor: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogLeaseMonitorDeregistered(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 22,
+        EventName = "LeaseMonitorNudged",
+        Level = LogLevel.Trace,
+        Message = "Nudged lease monitor: R={Resource} Id={LockId}"
+    )]
+    public static partial void LogLeaseMonitorNudged(this ILogger logger, string resource, string lockId);
 }
