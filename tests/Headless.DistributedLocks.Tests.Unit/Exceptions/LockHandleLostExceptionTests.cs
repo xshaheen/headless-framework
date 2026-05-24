@@ -30,13 +30,22 @@ public sealed class LockHandleLostExceptionTests : TestBase
     [InlineData("resource", "")]
     public void should_throw_when_resource_or_lock_id_is_null_or_whitespace(string? resource, string? lockId)
     {
-        var act1 = () => { _ = new LockHandleLostException(resource!, lockId!); };
+        var act1 = () =>
+        {
+            _ = new LockHandleLostException(resource!, lockId!);
+        };
         act1.Should().Throw<ArgumentException>();
 
-        var act2 = () => { _ = new LockHandleLostException(resource!, lockId!, "message"); };
+        var act2 = () =>
+        {
+            _ = new LockHandleLostException(resource!, lockId!, "message");
+        };
         act2.Should().Throw<ArgumentException>();
 
-        var act3 = () => { _ = new LockHandleLostException(resource!, lockId!, "message", new System.Exception()); };
+        var act3 = () =>
+        {
+            _ = new LockHandleLostException(resource!, lockId!, "message", new System.Exception());
+        };
         act3.Should().Throw<ArgumentException>();
     }
 

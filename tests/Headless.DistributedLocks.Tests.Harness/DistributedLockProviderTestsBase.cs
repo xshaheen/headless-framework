@@ -81,7 +81,10 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         );
 
         var act = async () =>
-            await lockProvider.AcquireAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero });
+            await lockProvider.AcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }
+            );
 
         var assertion = await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
         assertion.Which.Resource.Should().Be(resource);

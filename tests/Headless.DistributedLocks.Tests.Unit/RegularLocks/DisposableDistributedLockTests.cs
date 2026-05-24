@@ -199,9 +199,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // but ownership probe via GetLockIdAsync still shows our LockId — i.e., we still own it.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 
@@ -218,9 +216,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given - autoExtend handle whose RenewAsync returns false and probe shows a different owner.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 
@@ -237,9 +233,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given - autoExtend handle whose RenewAsync returns false and probe shows nothing.
         var resource = Faker.Random.AlphaNumeric(10);
         var lockId = Faker.Random.Guid().ToString();
-        _lockProvider
-            .RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
         _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
         var sut = _CreateLock(resource, lockId, autoExtend: true);
 

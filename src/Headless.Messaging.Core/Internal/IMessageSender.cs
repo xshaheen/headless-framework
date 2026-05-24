@@ -134,12 +134,25 @@ internal sealed class MessageSender : IMessageSender
         {
             await _SetSuccessfulState(message, CancellationToken.None).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, transportMsg, message.IntentType, transport.BrokerAddress, cancellationToken);
+            _TracingAfter(
+                tracingTimestamp,
+                transportMsg,
+                message.IntentType,
+                transport.BrokerAddress,
+                cancellationToken
+            );
 
             return (RetryDecision.Stop, OperateResult.Success);
         }
 
-        _TracingError(tracingTimestamp, transportMsg, message.IntentType, transport.BrokerAddress, result, cancellationToken);
+        _TracingError(
+            tracingTimestamp,
+            transportMsg,
+            message.IntentType,
+            transport.BrokerAddress,
+            result,
+            cancellationToken
+        );
 
         var decision = await _SetFailedState(
                 message,
@@ -153,7 +166,9 @@ internal sealed class MessageSender : IMessageSender
         return (decision, OperateResult.Failed(result.Exception!));
     }
 
-    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
+    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
+        MediumMessage message
+    )
     {
         if (!Enum.IsDefined(message.IntentType))
         {
@@ -470,7 +485,9 @@ internal readonly record struct DispatchTransport(
     Func<TransportMessage, CancellationToken, Task<OperateResult>> SendAsync
 )
 {
-    public static DispatchTransport ForBus(IBusTransport transport) => new(transport.BrokerAddress, transport.SendAsync);
+    public static DispatchTransport ForBus(IBusTransport transport) =>
+        new(transport.BrokerAddress, transport.SendAsync);
 
-    public static DispatchTransport ForQueue(IQueueTransport transport) => new(transport.BrokerAddress, transport.SendAsync);
+    public static DispatchTransport ForQueue(IQueueTransport transport) =>
+        new(transport.BrokerAddress, transport.SendAsync);
 }

@@ -332,9 +332,14 @@ internal sealed class Bootstrapper(
 
         var consumerRequiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
         var consumerRequiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
+        // Scan the registered service descriptors rather than resolving publishers. Resolving IBus/IQueue
+        // can instantiate user-supplied substitutes or trigger side-effects during bootstrap. IServiceCollection
+        // is registered by AddHeadlessMessaging so this is available in all production setups; it returns null
+        // in standalone test harnesses that wire services manually (where publisher gating is irrelevant).
         var registeredServices = serviceProvider.GetService<IServiceCollection>();
         var publisherRequiresBus = _HasService<IBus>(registeredServices) || _HasService<IOutboxBus>(registeredServices);
-        var publisherRequiresQueue = _HasService<IQueue>(registeredServices) || _HasService<IOutboxQueue>(registeredServices);
+        var publisherRequiresQueue =
+            _HasService<IQueue>(registeredServices) || _HasService<IOutboxQueue>(registeredServices);
 
         _RequireTransportFor<IBusTransport>(
             "bus",
@@ -349,11 +354,6 @@ internal sealed class Bootstrapper(
             consumerSide: consumerRequiresQueue,
             publisherSide: publisherRequiresQueue
         );
-    }
-
-    private static bool _HasService<TService>(IServiceCollection? services)
-    {
-        return services?.Any(static descriptor => descriptor.ServiceType == typeof(TService)) == true;
     }
 
     private void _RequireTransportFor<TTransport>(string intent, bool required, bool consumerSide, bool publisherSide)
@@ -381,6 +381,11 @@ internal sealed class Bootstrapper(
             $"{caller} was registered but no I{(intent == "bus" ? "Bus" : "Queue")}Transport is available. "
                 + $"Register a {intent}-capable transport provider before messaging bootstrap starts."
         );
+    }
+
+    private static bool _HasService<TService>(IServiceCollection? services)
+    {
+        return services?.Any(static descriptor => descriptor.ServiceType == typeof(TService)) == true;
     }
 
     public override void Dispose()

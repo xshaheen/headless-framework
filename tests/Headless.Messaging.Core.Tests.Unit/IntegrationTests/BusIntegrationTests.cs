@@ -49,7 +49,8 @@ public sealed class IBusIntegrationTests : TestBase
         // Build consume context manually (bypasses transport and deserialization)
         var message = new DirectTestMessage("direct-dispatch-value");
         var context = new ConsumeContext<DirectTestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,

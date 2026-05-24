@@ -379,7 +379,8 @@ internal sealed class SubscribeExecutor(
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
 
             var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
-            await circuitBreakerStateManager.ReportFailureAsync(circuitBreakerGroup, reportedException, cancellationToken)
+            await circuitBreakerStateManager
+                .ReportFailureAsync(circuitBreakerGroup, reportedException, cancellationToken)
                 .ConfigureAwait(false);
         }
 

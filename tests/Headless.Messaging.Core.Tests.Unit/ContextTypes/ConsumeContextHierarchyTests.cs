@@ -80,7 +80,8 @@ public sealed class ConsumeContextHierarchyTests : TestBase
     private static ConsumeContext<OrderPlaced> _CreateContext(OrderPlaced message)
     {
         return new ConsumeContext<OrderPlaced>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = "message-1",
             CorrelationId = "correlation-1",

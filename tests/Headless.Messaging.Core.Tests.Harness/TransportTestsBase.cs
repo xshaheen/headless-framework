@@ -355,7 +355,11 @@ public abstract class TransportTestsBase : TestBase
         if (Capabilities.SupportsQueueTransport)
         {
             var queueTransport = GetQueueTransport();
-            return new ProbeTransport(queueTransport.BrokerAddress, queueTransport.SendAsync, queueTransport.DisposeAsync);
+            return new ProbeTransport(
+                queueTransport.BrokerAddress,
+                queueTransport.SendAsync,
+                queueTransport.DisposeAsync
+            );
         }
 
         var legacyTransport = GetTransport();
@@ -373,10 +377,8 @@ public abstract class TransportTestsBase : TestBase
     {
         public BrokerAddress BrokerAddress { get; } = brokerAddress;
 
-        public Task<OperateResult> SendAsync(
-            TransportMessage message,
-            CancellationToken cancellationToken = default
-        ) => sendAsync(message, cancellationToken);
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            sendAsync(message, cancellationToken);
 
         public ValueTask DisposeAsync() => disposeAsync();
     }

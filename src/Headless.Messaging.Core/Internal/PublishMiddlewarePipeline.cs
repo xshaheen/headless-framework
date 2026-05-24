@@ -14,9 +14,10 @@ internal interface IPublishMiddlewarePipeline
 {
     Task ExecuteAsync<T>(
         T? content,
-        PublishOptions? options,
+        IntentType intentType,
+        MessagePublishOptionsBase? options,
         TimeSpan? delayTime,
-        Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        Func<MessagePublishOptionsBase?, TimeSpan?, CancellationToken, Task> innerPublish,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     );
@@ -35,9 +36,10 @@ internal sealed class PublishMiddlewarePipeline(
 
     public async Task ExecuteAsync<T>(
         T? content,
-        PublishOptions? options,
+        IntentType intentType,
+        MessagePublishOptionsBase? options,
         TimeSpan? delayTime,
-        Func<PublishOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
+        Func<MessagePublishOptionsBase?, TimeSpan?, CancellationToken, Task> innerPublish,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     )
@@ -46,7 +48,14 @@ internal sealed class PublishMiddlewarePipeline(
 
         await using var scope = _serviceProvider.CreateAsyncScope();
         var provider = scope.ServiceProvider;
-        var context = new PublishingContext<T>(content, options, delayTime, isTransactional, cancellationToken);
+        var context = new PublishingContext<T>(
+            content,
+            intentType,
+            options,
+            delayTime,
+            isTransactional,
+            cancellationToken
+        );
         var middleware = _ResolveMiddleware(provider, context);
         var innerRingCompleted = false;
 

@@ -703,10 +703,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         sut.CurrentPollingInterval.Should().Be(TimeSpan.FromSeconds(2));
 
         await sut.ProcessAsync(context);
-        sut.CurrentPollingInterval.Should().Be(
-            TimeSpan.FromSeconds(2),
-            "the successful empty poll after a storage failure should not count as a clean cycle"
-        );
+        sut.CurrentPollingInterval.Should()
+            .Be(
+                TimeSpan.FromSeconds(2),
+                "the successful empty poll after a storage failure should not count as a clean cycle"
+            );
     }
 
     // -------------------------------------------------------------------------
@@ -932,11 +933,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var captured = Substitute.For<IDistributedLock>();
         captured.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(captured));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
@@ -959,11 +956,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => neverCompletes.Task);
 
         await sut.ProcessAsync(context);
@@ -992,11 +985,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var renewableLock = Substitute.For<IDistributedLock>();
         renewableLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(renewableLock));
 
         dataStorage
@@ -1068,11 +1057,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var lostLock = Substitute.For<IDistributedLock>();
         lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
@@ -1129,11 +1114,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var acquiredLock = Substitute.For<IDistributedLock>();
         acquiredLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(acquiredLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
@@ -1195,11 +1176,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var lostLock = Substitute.For<IDistributedLock>();
         lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(lostLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
@@ -1268,11 +1245,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns<Task<bool>>(_ => throw new InvalidOperationException("simulated lock-store outage"));
         lockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(failingLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });

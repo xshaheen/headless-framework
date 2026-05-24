@@ -8,10 +8,7 @@ using Npgsql;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(
-    IOutboxQueue producer,
-    IOutboxTransaction outboxTransaction
-) : Controller
+public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTransaction) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)
@@ -41,7 +38,10 @@ public class ValuesController(
     [Route("~/without/transaction")]
     public async Task<IActionResult> WithoutTransaction()
     {
-        await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.EnqueueAsync(
+            new KafkaMessage(DateTime.UtcNow),
+            new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+        );
 
         return Ok();
     }
@@ -67,7 +67,10 @@ public class ValuesController(
             await transaction.CommitAsync();
         }
 
-        await producer.EnqueueAsync(new KafkaMessage(DateTime.UtcNow), new EnqueueOptions { Topic = "sample.kafka.postgrsql" });
+        await producer.EnqueueAsync(
+            new KafkaMessage(DateTime.UtcNow),
+            new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+        );
 
         return Ok();
     }

@@ -89,7 +89,8 @@ public sealed class ConsumerContextTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             MethodInfo = methodInfo,
             ImplTypeInfo = typeof(ConsumerContextTestConsumer).GetTypeInfo(),
             TopicName = "test.topic",

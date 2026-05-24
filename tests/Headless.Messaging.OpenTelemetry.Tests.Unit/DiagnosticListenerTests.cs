@@ -132,7 +132,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.Persist && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.Persist
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
@@ -160,7 +161,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.Persist && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.Persist
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Queue
                 ),
                 Arg.Any<CancellationToken>()
@@ -242,7 +244,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.Publish && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.Publish
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
@@ -290,7 +293,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.Consume && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.Consume
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
@@ -340,7 +344,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.SubscriberInvoke && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.SubscriberInvoke
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Bus
                 ),
                 Arg.Any<CancellationToken>()
@@ -368,7 +373,8 @@ public sealed class DiagnosticListenerTests : TestBase
             .Enrich(
                 Arg.Any<Activity>(),
                 Arg.Is<MessagingEnrichmentContext>(c =>
-                    c.Kind == MessagingEventKind.SubscriberInvoke && c.MessageName == "order.created"
+                    c.Kind == MessagingEventKind.SubscriberInvoke
+                    && c.MessageName == "order.created"
                     && c.IntentType == IntentType.Queue
                 ),
                 Arg.Any<CancellationToken>()

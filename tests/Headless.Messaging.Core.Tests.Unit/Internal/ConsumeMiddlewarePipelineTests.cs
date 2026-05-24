@@ -141,7 +141,8 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     private static ConsumerContext _BuildConsumerContext()
     {
         var descriptor = new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
@@ -170,7 +171,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 StorageId = 1,
                 Origin = origin,
                 Content = "{}",
-            IntentType = IntentType.Bus,
+                IntentType = IntentType.Bus,
                 Added = DateTime.UtcNow,
             }
         );

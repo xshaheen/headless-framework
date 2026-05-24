@@ -19,6 +19,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     {
         _storage = new FakeDistributedLockStorage(_timeProvider);
     }
+
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
     private long _lockIdCounter = 2000;
 
@@ -87,8 +88,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
         _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var lostRegistration = handle!
-            .HandleLostToken.Register(static state => ((TaskCompletionSource)state!).TrySetResult(), lostSignal);
+        using var lostRegistration = handle!.HandleLostToken.Register(
+            static state => ((TaskCompletionSource)state!).TrySetResult(),
+            lostSignal
+        );
 
         // when
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
@@ -145,7 +148,9 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
 
         // when - advance beyond the real storage TTL and confirm storage expires it.
-        (await provider.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+        (await provider.IsLockedAsync(resource, AbortToken))
+            .Should()
+            .BeTrue();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
         (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
         (await provider.GetLockIdAsync(resource, AbortToken)).Should().BeNull();
@@ -311,17 +316,14 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
         var disposalDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        handle!
-            .HandleLostToken.Register(
-                () =>
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        await handle.DisposeAsync();
-                        disposalDone.TrySetResult(true);
-                    });
-                }
-            );
+        handle!.HandleLostToken.Register(() =>
+        {
+            _ = Task.Run(async () =>
+            {
+                await handle.DisposeAsync();
+                disposalDone.TrySetResult(true);
+            });
+        });
         _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
 
         // when - trigger validation
@@ -422,8 +424,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
     }
 
-    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null)
-        => _CreateProvider(options, Substitute.For<IOutboxBus>());
+    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null) =>
+        _CreateProvider(options, Substitute.For<IOutboxBus>());
 
     private DistributedLockProvider _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
     {

@@ -60,7 +60,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         )!;
 
         return new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -197,7 +198,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
-        await cbMock.Received(1)
+        await cbMock
+            .Received(1)
             .ReportFailureAsync(_CircuitBreakerGroupName, Arg.Is<Exception>(e => e is HttpRequestException));
     }
 

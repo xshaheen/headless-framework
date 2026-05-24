@@ -10,10 +10,8 @@ internal sealed class OutboxQueue(OutboxMessageWriter publisher) : IOutboxQueue
         CancellationToken cancellationToken = default
     )
     {
-        var publishOptions = PublishOptionsAdapter.ToPublishOptions(options);
-
-        return publishOptions?.Delay is { } delay
-            ? publisher.PublishDelayAsync(delay, contentObj, publishOptions, IntentType.Queue, cancellationToken)
-            : publisher.PublishAsync(contentObj, publishOptions, IntentType.Queue, cancellationToken);
+        return options?.Delay is { } delay
+            ? publisher.PublishDelayAsync(delay, contentObj, options, IntentType.Queue, cancellationToken)
+            : publisher.PublishAsync(contentObj, options, IntentType.Queue, cancellationToken);
     }
 }

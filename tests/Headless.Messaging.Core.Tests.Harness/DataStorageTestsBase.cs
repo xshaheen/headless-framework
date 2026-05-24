@@ -807,7 +807,7 @@ public abstract class DataStorageTestsBase : TestBase
                             StorageId = storedMessage.StorageId,
                             Origin = storedMessage.Origin,
                             Content = storedMessage.Content,
-            IntentType = IntentType.Bus,
+                            IntentType = IntentType.Bus,
                             Retries = 1,
                         };
                         var ok = await storage.ChangeReceiveStateAsync(

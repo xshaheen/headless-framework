@@ -552,6 +552,49 @@ public sealed class BusTests : TestBase
         publisher.Should().BeOfType<Bus>();
     }
 
+    [Fact]
+    public async Task should_propagate_serializer_exception_on_publish()
+    {
+        // given
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
+
+        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+        var publisher = _CreateBusWithSerializer(serializer, options);
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Serializer failure");
+    }
+
+    private static IBus _CreateBusWithSerializer(
+        ISerializer serializer,
+        MessagingOptions options,
+        IBusTransport? transport = null
+    )
+    {
+        var optionsAccessor = Options.Create(options);
+        var publishRequestFactory = new MessagePublishRequestFactory(
+            new SnowflakeIdLongIdGenerator(),
+            TimeProvider.System,
+            optionsAccessor,
+            new NullCurrentTenant()
+        );
+        var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
+
+        return new Bus(
+            serializer,
+            transport ?? new TestTransport(),
+            publishRequestFactory,
+            pipeline,
+            TimeProvider.System
+        );
+    }
+
     private static IBus _CreateBus(
         IBusTransport transport,
         MessagingOptions options,

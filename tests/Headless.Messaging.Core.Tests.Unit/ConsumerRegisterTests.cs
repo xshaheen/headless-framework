@@ -83,7 +83,8 @@ public sealed class ConsumerRegisterTests : TestBase
         // ExecuteAsync enters the intent-aware foreach loop and calls the factory.
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
@@ -159,7 +160,8 @@ public sealed class ConsumerRegisterTests : TestBase
         // Swap selector with a fake that has one group so ExecuteAsync enters the per-group loop
         var selectorSub = Substitute.For<IConsumerServiceSelector>();
         var fakeDescriptor = new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(object).GetMethod(
                 nameof(ToString),
                 BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,

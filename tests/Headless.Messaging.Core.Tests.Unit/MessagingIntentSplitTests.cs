@@ -118,9 +118,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*IQueueTransport*available*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IQueueTransport*available*");
     }
 
     [Fact]
@@ -159,9 +157,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*IBusTransport*available*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IBusTransport*available*");
     }
 
     [Fact]
@@ -246,9 +242,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*IBusTransport*available*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IBusTransport*available*");
     }
 
     [Fact]
@@ -270,9 +264,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         var act = () => bootstrapper.BootstrapAsync(AbortToken);
 
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*IQueueTransport*available*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*IQueueTransport*available*");
     }
 
     [Fact]
@@ -296,7 +288,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
         publishRequestFactory
             .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Bus)
-            .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Queue));
+            .Returns(_CreatePreparedPublishMessage("events.prepared", IntentType.Bus));
 
         var transport = new CapturingBusTransport();
         using var diagnostics = new CapturingDiagnosticObserver("events.prepared");
@@ -315,7 +307,11 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Bus
             );
         transport.LastMessage!.Value.GetName().Should().Be("events.prepared");
-        diagnostics.BeforePublishData.Should().BeOfType<MessageEventDataPubSend>().Which.IntentType.Should().Be(IntentType.Queue);
+        diagnostics
+            .BeforePublishData.Should()
+            .BeOfType<MessageEventDataPubSend>()
+            .Which.IntentType.Should()
+            .Be(IntentType.Bus);
     }
 
     [Fact]
@@ -339,7 +335,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var publishRequestFactory = Substitute.For<IMessagePublishRequestFactory>();
         publishRequestFactory
             .Create(Arg.Any<TestMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<TimeSpan?>(), IntentType.Queue)
-            .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Bus));
+            .Returns(_CreatePreparedPublishMessage("jobs.prepared", IntentType.Queue));
 
         var transport = new CapturingQueueTransport();
         using var diagnostics = new CapturingDiagnosticObserver("jobs.prepared");
@@ -358,7 +354,11 @@ public sealed class MessagingIntentSplitTests : TestBase
                 IntentType.Queue
             );
         transport.LastMessage!.Value.GetName().Should().Be("jobs.prepared");
-        diagnostics.BeforePublishData.Should().BeOfType<MessageEventDataPubSend>().Which.IntentType.Should().Be(IntentType.Bus);
+        diagnostics
+            .BeforePublishData.Should()
+            .BeOfType<MessageEventDataPubSend>()
+            .Which.IntentType.Should()
+            .Be(IntentType.Queue);
     }
 
     private static IBus _CreateBus(IBusTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
@@ -371,7 +371,10 @@ public sealed class MessagingIntentSplitTests : TestBase
         return new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
-    private static IQueue _CreateQueue(IQueueTransport transport, IMessagePublishRequestFactory? publishRequestFactory = null)
+    private static IQueue _CreateQueue(
+        IQueueTransport transport,
+        IMessagePublishRequestFactory? publishRequestFactory = null
+    )
     {
         var optionsAccessor = Options.Create(new MessagingOptions());
         var serializer = new JsonUtf8Serializer(optionsAccessor);
@@ -381,7 +384,9 @@ public sealed class MessagingIntentSplitTests : TestBase
         return new Queue(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
     }
 
-    private static IMessagePublishRequestFactory _CreatePublishRequestFactory(IOptions<MessagingOptions> optionsAccessor) =>
+    private static IMessagePublishRequestFactory _CreatePublishRequestFactory(
+        IOptions<MessagingOptions> optionsAccessor
+    ) =>
         new MessagePublishRequestFactory(
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
@@ -408,9 +413,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     [Fact]
     public void descriptor_comparer_should_treat_bus_and_queue_with_same_topic_group_as_distinct()
     {
-        var comparer = new ConsumerExecutorDescriptorComparer(
-            NullLogger<ConsumerExecutorDescriptorComparer>.Instance
-        );
+        var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
         var methodInfo = typeof(TestBusConsumer).GetMethod(
             nameof(TestBusConsumer.Consume),
@@ -442,9 +445,7 @@ public sealed class MessagingIntentSplitTests : TestBase
     [Fact]
     public void descriptor_comparer_should_treat_same_topic_group_and_intent_as_equal()
     {
-        var comparer = new ConsumerExecutorDescriptorComparer(
-            NullLogger<ConsumerExecutorDescriptorComparer>.Instance
-        );
+        var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
         var methodInfo = typeof(TestBusConsumer).GetMethod(
             nameof(TestBusConsumer.Consume),
@@ -591,7 +592,13 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         public void OnNext(DiagnosticListener value)
         {
-            if (string.Equals(value.Name, MessageDiagnosticListenerNames.DiagnosticListenerName, StringComparison.Ordinal))
+            if (
+                string.Equals(
+                    value.Name,
+                    MessageDiagnosticListenerNames.DiagnosticListenerName,
+                    StringComparison.Ordinal
+                )
+            )
             {
                 _listenerSubscription = value.Subscribe(this, IsBeforePublish);
             }
@@ -599,7 +606,10 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         public void OnNext(KeyValuePair<string, object?> value)
         {
-            if (value.Value is MessageEventDataPubSend eventData && eventData.TransportMessage.GetName() == _expectedMessageName)
+            if (
+                value.Value is MessageEventDataPubSend eventData
+                && eventData.TransportMessage.GetName() == _expectedMessageName
+            )
             {
                 BeforePublishData = eventData;
             }

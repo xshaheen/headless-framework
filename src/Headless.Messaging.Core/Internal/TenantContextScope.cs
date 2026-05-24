@@ -16,7 +16,7 @@ internal static class TenantContextScope
             return null;
         }
 
-        if (value.Length > PublishOptions.TenantIdMaxLength)
+        if (value.Length > MessagePublishOptionsBase.TenantIdMaxLength)
         {
             logger?.TenantIdHeaderRejected(value.Length);
             return null;

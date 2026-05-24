@@ -344,7 +344,8 @@ internal sealed class CircuitBreakerStateManager(
     }
 
     /// <inheritdoc />
-    public bool IsOpen(IntentType intentType, string groupName) => IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
+    public bool IsOpen(IntentType intentType, string groupName) =>
+        IsOpen(CircuitBreakerGroupKeys.For(intentType, groupName));
 
     /// <inheritdoc />
     public async ValueTask RemoveGroupAsync(string groupName)

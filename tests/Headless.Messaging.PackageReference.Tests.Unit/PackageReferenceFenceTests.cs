@@ -10,10 +10,7 @@ public sealed class PackageReferenceFenceTests : TestBase
     [Theory]
     [InlineData("QueueOnlyCannotResolveBus", "IBus")]
     [InlineData("BusOnlyCannotResolveQueue", "IQueue")]
-    public async Task should_keep_bus_and_queue_abstractions_compile_time_isolated(
-        string probeName,
-        string missingType
-    )
+    public async Task should_keep_bus_and_queue_abstractions_compile_time_isolated(string probeName, string missingType)
     {
         // given
         var projectPath = Path.Combine(
@@ -39,25 +36,16 @@ public sealed class PackageReferenceFenceTests : TestBase
         CancellationToken cancellationToken
     )
     {
-        using var process = new Process
+        var startInfo = new ProcessStartInfo
         {
-            StartInfo = new ProcessStartInfo
-            {
-                FileName = "dotnet",
-                ArgumentList =
-                {
-                    "build",
-                    projectPath,
-                    "-v:q",
-                    "-nologo",
-                    "/clp:ErrorsOnly",
-                    "-p:NuGetAudit=false",
-                },
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            },
+            FileName = "dotnet",
+            ArgumentList = { "build", projectPath, "-v:q", "-nologo", "/clp:ErrorsOnly", "-p:NuGetAudit=false" },
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
         };
+
+        var result = startInfo.RunAsTaskAsync(cancellationToken);
 
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);

@@ -49,9 +49,8 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         var fraction = autoExtend ? options.AutoExtensionCadenceFraction : options.PollingCadenceFraction;
         var cadenceTicks = Math.Max(1, (long)(leaseDuration.Ticks * fraction));
         _monitoringCadenceSnapshot = TimeSpan.FromTicks(cadenceTicks);
-        _storageDeadlineSnapshot = _monitoringCadenceSnapshot.TotalSeconds < 5.0
-            ? _monitoringCadenceSnapshot
-            : TimeSpan.FromSeconds(5);
+        _storageDeadlineSnapshot =
+            _monitoringCadenceSnapshot.TotalSeconds < 5.0 ? _monitoringCadenceSnapshot : TimeSpan.FromSeconds(5);
     }
 
     private volatile bool _isReleased;
@@ -318,9 +317,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
                 : LeaseMonitor.LeaseState.Lost;
         }
 
-        var currentLockId = await _lockProvider
-            .GetLockIdAsync(Resource, cancellationToken)
-            .ConfigureAwait(false);
+        var currentLockId = await _lockProvider.GetLockIdAsync(Resource, cancellationToken).ConfigureAwait(false);
 
         return string.Equals(currentLockId, LockId, StringComparison.Ordinal)
             ? LeaseMonitor.LeaseState.Held

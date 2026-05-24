@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
-using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

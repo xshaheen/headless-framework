@@ -45,16 +45,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
             optionsAccessor,
             new NullCurrentTenant()
         );
-        var publisher = new Bus(
-            serializer,
-            transport,
-            publishRequestFactory,
-            pipeline,
-            TimeProvider.System
-        );
+        var publisher = new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
 
         // when
-        await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
+        await publisher.PublishAsync(new TestMessage("hi"), options: null, cancellationToken: AbortToken);
 
         // then — Bus always commits to the wire; rollback has no semantic
         observed.Captured.Should().BeFalse();
@@ -75,7 +69,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: true);
 
         // when
-        await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
+        await publisher.PublishAsync(
+            new TestMessage("hi"),
+            options: null,
+            intentType: IntentType.Bus,
+            cancellationToken: AbortToken
+        );
 
         // then — post-success middleware saw the transactional flag
         observed.Captured.Should().BeTrue();
@@ -95,7 +94,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: true, ambientTransaction: true);
 
         // when
-        await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
+        await publisher.PublishAsync(
+            new TestMessage("hi"),
+            options: null,
+            intentType: IntentType.Bus,
+            cancellationToken: AbortToken
+        );
 
         // then
         observed.Captured.Should().BeFalse();
@@ -115,7 +119,12 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: false);
 
         // when
-        await publisher.PublishAsync(new TestMessage("hi"), cancellationToken: AbortToken);
+        await publisher.PublishAsync(
+            new TestMessage("hi"),
+            options: null,
+            intentType: IntentType.Bus,
+            cancellationToken: AbortToken
+        );
 
         // then
         observed.Captured.Should().BeFalse();
@@ -148,7 +157,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                         StorageId = 1L,
                         Origin = content,
                         Content = "{}",
-            IntentType = IntentType.Bus,
+                        IntentType = IntentType.Bus,
                         Added = DateTime.UtcNow,
                     }
                 );

@@ -228,11 +228,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 
         var lockHandle = Substitute.For<IDistributedLock>();
         _distributedLockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(lockHandle);
     }
 

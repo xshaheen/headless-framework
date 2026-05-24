@@ -92,7 +92,11 @@ public static class SetupMessaging
     )
     {
         var options = setup.Options;
-        services.AddSingleton(_ => services);
+        // Register the service collection itself so the bootstrapper can introspect registered descriptors
+        // at startup (e.g., to detect whether IBus/IQueue publishers were gated in). This is intentional:
+        // the bootstrapper is framework-internal and uses it only for read-only discovery — not as a
+        // runtime factory service locator.
+        services.TryAddSingleton<IServiceCollection>(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
@@ -199,22 +203,23 @@ public static class SetupMessaging
 
     private static void _RegisterPublisherServicesForAvailableTransports(IServiceCollection services)
     {
-        if (_HasService<IBusTransport>(services))
+        // Scan the service collection at registration time (extensions have already run) to determine
+        // which transports are present. This gates publisher registration to transport capability so that
+        // a queue-only setup never registers IBus/IOutboxBus descriptors and vice-versa.
+        var hasBusTransport = services.Any(d => d.ServiceType == typeof(IBusTransport));
+        var hasQueueTransport = services.Any(d => d.ServiceType == typeof(IQueueTransport));
+
+        if (hasBusTransport)
         {
-            services.TryAddSingleton<IBus, Bus>();
-            services.TryAddSingleton<IOutboxBus, OutboxBus>();
+            services.TryAddSingleton<IBus>(sp => ActivatorUtilities.CreateInstance<Bus>(sp));
+            services.TryAddSingleton<IOutboxBus>(sp => ActivatorUtilities.CreateInstance<OutboxBus>(sp));
         }
 
-        if (_HasService<IQueueTransport>(services))
+        if (hasQueueTransport)
         {
-            services.TryAddSingleton<IQueue, Queue>();
-            services.TryAddSingleton<IOutboxQueue, OutboxQueue>();
+            services.TryAddSingleton<IQueue>(sp => ActivatorUtilities.CreateInstance<Queue>(sp));
+            services.TryAddSingleton<IOutboxQueue>(sp => ActivatorUtilities.CreateInstance<OutboxQueue>(sp));
         }
-    }
-
-    private static bool _HasService<TService>(IServiceCollection services)
-    {
-        return services.Any(static descriptor => descriptor.ServiceType == typeof(TService));
     }
 
     /// <summary>

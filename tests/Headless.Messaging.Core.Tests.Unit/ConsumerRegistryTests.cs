@@ -12,7 +12,14 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var metadata = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", "test.group", 2, IntentType: IntentType.Bus);
+        var metadata = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "test.topic",
+            "test.group",
+            2,
+            IntentType: IntentType.Bus
+        );
 
         // when
         registry.Register(metadata);
@@ -28,12 +35,23 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+        );
 
         // when
         _ = registry.GetAll(); // Freeze
         var act = () =>
-            registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1, IntentType: IntentType.Bus));
+            registry.Register(
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    "test2",
+                    null,
+                    1,
+                    IntentType: IntentType.Bus
+                )
+            );
 
         // then
         act.Should()
@@ -46,8 +64,22 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var original = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, IntentType: IntentType.Bus);
-        var updated = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", "group1", 5, IntentType: IntentType.Bus);
+        var original = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "original",
+            null,
+            1,
+            IntentType: IntentType.Bus
+        );
+        var updated = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "updated",
+            "group1",
+            5,
+            IntentType: IntentType.Bus
+        );
         registry.Register(original);
 
         // when
@@ -67,7 +99,14 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var original = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, IntentType: IntentType.Bus);
+        var original = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "original",
+            null,
+            1,
+            IntentType: IntentType.Bus
+        );
         registry.Register(original);
 
         // when
@@ -87,14 +126,23 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+        );
         _ = registry.GetAll(); // Freeze
 
         // when
         var act = () =>
             registry.Update(
                 m => m.ConsumerType == typeof(TestConsumer),
-                new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", null, 1, IntentType: IntentType.Bus)
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    "updated",
+                    null,
+                    1,
+                    IntentType: IntentType.Bus
+                )
             );
 
         // then
@@ -108,7 +156,9 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+        );
 
         // when
         var first = registry.GetAll();
@@ -156,13 +206,29 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "orders.placed", "billing", 1, IntentType: IntentType.Bus, "Tests.ConsumerA")
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "orders.placed",
+                "billing",
+                1,
+                IntentType: IntentType.Bus,
+                "Tests.ConsumerA"
+            )
         );
 
         // when
         var act = () =>
             registry.Register(
-                new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "orders.placed", "billing", 1, IntentType: IntentType.Bus, "Tests.ConsumerB")
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(OtherConsumer),
+                    "orders.placed",
+                    "billing",
+                    1,
+                    IntentType: IntentType.Bus,
+                    "Tests.ConsumerB"
+                )
             );
 
         // then
@@ -177,17 +243,41 @@ public sealed class ConsumerRegistryTests : TestBase
         // given
         var registry = new ConsumerRegistry();
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "orders.placed", "billing", 1, IntentType: IntentType.Bus, "Tests.ConsumerA")
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "orders.placed",
+                "billing",
+                1,
+                IntentType: IntentType.Bus,
+                "Tests.ConsumerA"
+            )
         );
         registry.Register(
-            new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "orders.cancelled", "analytics", 1, IntentType: IntentType.Bus, "Tests.ConsumerB")
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(OtherConsumer),
+                "orders.cancelled",
+                "analytics",
+                1,
+                IntentType: IntentType.Bus,
+                "Tests.ConsumerB"
+            )
         );
 
         // when
         var act = () =>
             registry.Update(
                 m => m.ConsumerType == typeof(OtherConsumer),
-                new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "orders.placed", "billing", 1, IntentType: IntentType.Bus, "Tests.ConsumerB")
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(OtherConsumer),
+                    "orders.placed",
+                    "billing",
+                    1,
+                    IntentType: IntentType.Bus,
+                    "Tests.ConsumerB"
+                )
             );
 
         // then
@@ -201,7 +291,9 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test", null, 1, IntentType: IntentType.Bus)
+        );
 
         var freezeTask = Task.Run(() => registry.GetAll());
         InvalidOperationException? caughtException = null;
@@ -213,7 +305,14 @@ public sealed class ConsumerRegistryTests : TestBase
                 try
                 {
                     registry.Register(
-                        new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test2", null, 1, IntentType: IntentType.Bus)
+                        new ConsumerMetadata(
+                            typeof(TestMessage),
+                            typeof(TestConsumer),
+                            "test2",
+                            null,
+                            1,
+                            IntentType: IntentType.Bus
+                        )
                     );
                 }
                 catch (InvalidOperationException ex)
@@ -237,7 +336,16 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "original",
+                null,
+                1,
+                IntentType: IntentType.Bus
+            )
+        );
         const int updateCount = 50;
 
         // when
@@ -292,7 +400,14 @@ public sealed class ConsumerRegistryTests : TestBase
                             {
                                 barrier.SignalAndWait();
                                 registry.Register(
-                                    new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), $"topic.{index}", $"group.{index}", 1, IntentType: IntentType.Bus)
+                                    new ConsumerMetadata(
+                                        typeof(TestMessage),
+                                        typeof(TestConsumer),
+                                        $"topic.{index}",
+                                        $"group.{index}",
+                                        1,
+                                        IntentType: IntentType.Bus
+                                    )
                                 );
                             }
                             catch (Exception ex)
@@ -347,7 +462,16 @@ public sealed class ConsumerRegistryTests : TestBase
         for (var iter = 0; iter < iterations; iter++)
         {
             var registry = new ConsumerRegistry();
-            registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "original", null, 1, IntentType: IntentType.Bus));
+            registry.Register(
+                new ConsumerMetadata(
+                    typeof(TestMessage),
+                    typeof(TestConsumer),
+                    "original",
+                    null,
+                    1,
+                    IntentType: IntentType.Bus
+                )
+            );
             using var barrier = new Barrier(2);
 
             var updateTask = Task.Run(
@@ -358,7 +482,14 @@ public sealed class ConsumerRegistryTests : TestBase
                         barrier.SignalAndWait();
                         registry.Update(
                             m => m.ConsumerType == typeof(TestConsumer),
-                            new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "updated", "group1", 5, IntentType: IntentType.Bus)
+                            new ConsumerMetadata(
+                                typeof(TestMessage),
+                                typeof(TestConsumer),
+                                "updated",
+                                "group1",
+                                5,
+                                IntentType: IntentType.Bus
+                            )
                         );
                     }
                     catch (Exception ex)
@@ -422,7 +553,14 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var metadata = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", null, 2, IntentType: IntentType.Bus);
+        var metadata = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "test.topic",
+            null,
+            2,
+            IntentType: IntentType.Bus
+        );
         registry.Register(metadata);
 
         // when
@@ -438,8 +576,22 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", "group1", 2, IntentType: IntentType.Bus);
-        var metadata2 = new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "test.topic", "group2", 3, IntentType: IntentType.Bus);
+        var metadata1 = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "test.topic",
+            "group1",
+            2,
+            IntentType: IntentType.Bus
+        );
+        var metadata2 = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(OtherConsumer),
+            "test.topic",
+            "group2",
+            3,
+            IntentType: IntentType.Bus
+        );
         registry.Register(metadata1);
         registry.Register(metadata2);
 
@@ -457,7 +609,16 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test.topic",
+                null,
+                1,
+                IntentType: IntentType.Bus
+            )
+        );
 
         // when
         var found = registry.FindByTopic("nonexistent.topic");
@@ -471,7 +632,16 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "test.topic", "group1", 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "test.topic",
+                "group1",
+                1,
+                IntentType: IntentType.Bus
+            )
+        );
 
         // when
         var found = registry.FindByTopic("test.topic", "group2");
@@ -485,9 +655,30 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1, IntentType: IntentType.Bus);
-        var metadata2 = new ConsumerMetadata(typeof(TestMessage), typeof(OtherConsumer), "topic2", null, 2, IntentType: IntentType.Bus);
-        var metadata3 = new ConsumerMetadata(typeof(OtherMessage), typeof(OtherMessageConsumer), "topic3", null, 3, IntentType: IntentType.Bus);
+        var metadata1 = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "topic1",
+            null,
+            1,
+            IntentType: IntentType.Bus
+        );
+        var metadata2 = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(OtherConsumer),
+            "topic2",
+            null,
+            2,
+            IntentType: IntentType.Bus
+        );
+        var metadata3 = new ConsumerMetadata(
+            typeof(OtherMessage),
+            typeof(OtherMessageConsumer),
+            "topic3",
+            null,
+            3,
+            IntentType: IntentType.Bus
+        );
         registry.Register(metadata1);
         registry.Register(metadata2);
         registry.Register(metadata3);
@@ -507,8 +698,22 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        var metadata1 = new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1, IntentType: IntentType.Bus);
-        var metadata2 = new ConsumerMetadata(typeof(OtherMessage), typeof(OtherMessageConsumer), "topic2", null, 2, IntentType: IntentType.Bus);
+        var metadata1 = new ConsumerMetadata(
+            typeof(TestMessage),
+            typeof(TestConsumer),
+            "topic1",
+            null,
+            1,
+            IntentType: IntentType.Bus
+        );
+        var metadata2 = new ConsumerMetadata(
+            typeof(OtherMessage),
+            typeof(OtherMessageConsumer),
+            "topic2",
+            null,
+            2,
+            IntentType: IntentType.Bus
+        );
         registry.Register(metadata1);
         registry.Register(metadata2);
 
@@ -525,7 +730,16 @@ public sealed class ConsumerRegistryTests : TestBase
     {
         // given
         var registry = new ConsumerRegistry();
-        registry.Register(new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), "topic1", null, 1, IntentType: IntentType.Bus));
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestConsumer),
+                "topic1",
+                null,
+                1,
+                IntentType: IntentType.Bus
+            )
+        );
 
         // when
         var found = registry.FindByMessageType<OtherMessage>().ToList();

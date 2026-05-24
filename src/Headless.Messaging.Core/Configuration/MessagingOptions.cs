@@ -409,7 +409,15 @@ public sealed class MessagingOptions
         var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 
-        return new ConsumerMetadata(messageType, consumerType, finalTopic, finalGroup, concurrency, intentType, finalHandlerId);
+        return new ConsumerMetadata(
+            messageType,
+            consumerType,
+            finalTopic,
+            finalGroup,
+            concurrency,
+            intentType,
+            finalHandlerId
+        );
     }
 
     internal string ResolveGroupName(string handlerId, string? explicitGroup = null)

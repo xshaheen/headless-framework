@@ -42,7 +42,10 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     /// <summary>
     /// since this class be designed as a Singleton service,the following two list must be thread safe!
     /// </summary>
-    private readonly ConcurrentDictionary<WildcardCacheKey, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>> _cacheList;
+    private readonly ConcurrentDictionary<
+        WildcardCacheKey,
+        List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
+    > _cacheList;
 
     private readonly MessagingOptions _messagingOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
@@ -59,7 +62,8 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
         _runtimeConsumerRegistry =
             serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
-        _cacheList = new ConcurrentDictionary<WildcardCacheKey, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>();
+        _cacheList =
+            new ConcurrentDictionary<WildcardCacheKey, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>();
     }
 
     public void Invalidate()

@@ -22,15 +22,9 @@ internal sealed class OutboxMessageWriter(
     private static DiagnosticListener DiagnosticListener { get; } =
         new(MessageDiagnosticListenerNames.DiagnosticListenerName);
 
-    public Task PublishAsync<T>(
-        T? contentObj,
-        PublishOptions? options = null,
-        CancellationToken cancellationToken = default
-    ) => PublishAsync(contentObj, options, IntentType.Bus, cancellationToken);
-
     internal Task PublishAsync<T>(
         T? contentObj,
-        PublishOptions? options,
+        MessagePublishOptionsBase? options,
         IntentType intentType,
         CancellationToken cancellationToken
     )
@@ -41,27 +35,24 @@ internal sealed class OutboxMessageWriter(
 
         return publishPipeline.ExecuteAsync(
             contentObj,
+            intentType,
             options,
             delayTime: null,
             // DelayTime is undefined for the immediate publish path; ignored.
             innerPublish: (middlewareOptions, _, ct) =>
-                _PublishInternalAsync(publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType), ct),
+                _PublishInternalAsync(
+                    publishRequestFactory.Create(contentObj, middlewareOptions, intentType: intentType),
+                    ct
+                ),
             isTransactional,
             cancellationToken
         );
     }
 
-    public Task PublishDelayAsync<T>(
-        TimeSpan delayTime,
-        T? contentObj,
-        PublishOptions? options = null,
-        CancellationToken cancellationToken = default
-    ) => PublishDelayAsync(delayTime, contentObj, options, IntentType.Bus, cancellationToken);
-
     internal Task PublishDelayAsync<T>(
         TimeSpan delayTime,
         T? contentObj,
-        PublishOptions? options,
+        MessagePublishOptionsBase? options,
         IntentType intentType,
         CancellationToken cancellationToken
     )
@@ -70,6 +61,7 @@ internal sealed class OutboxMessageWriter(
 
         return publishPipeline.ExecuteAsync(
             contentObj,
+            intentType,
             options,
             delayTime,
             innerPublish: (middlewareOptions, middlewareDelay, ct) =>

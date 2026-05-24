@@ -107,7 +107,8 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
     private static ConsumeContext<Payload> _CreateContext(string? tenantId)
     {
         return new ConsumeContext<Payload>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = new Payload("hello"),
             MessageId = "msg-1",
             CorrelationId = null,

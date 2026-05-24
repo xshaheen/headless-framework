@@ -49,6 +49,11 @@ internal sealed class ConsumeMiddlewarePipeline(
         var descriptor = context.ConsumerDescriptor;
         var originHeaders = context.MediumMessage.Origin.Headers;
         var tenantId = TenantContextScope.ResolveTenantId(originHeaders, logger);
+
+        // Warn when the wire intent disagrees with the registered consumer intent so misconfigured
+        // producers surface early without breaking the consume path.
+        _ValidateIntentHeader(originHeaders, descriptor, logger);
+
         var consumeHeaders = new MessageHeader(originHeaders);
         var consumeContext = _BuildConsumeContext(
             messageInstance,
@@ -228,7 +233,9 @@ internal sealed class ConsumeMiddlewarePipeline(
         return context;
     }
 
-    private static Func<object, MediumMessage, MessageHeader, string?, IntentType, object> _CompileFactory(Type messageType)
+    private static Func<object, MediumMessage, MessageHeader, string?, IntentType, object> _CompileFactory(
+        Type messageType
+    )
     {
         var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
         var messageParam = Expression.Parameter(typeof(object), "message");
@@ -404,6 +411,28 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
 
         await task.ConfigureAwait(false);
+    }
+
+    private static void _ValidateIntentHeader(
+        IDictionary<string, string?> headers,
+        ConsumerExecutorDescriptor descriptor,
+        ILogger? logger
+    )
+    {
+        if (
+            logger is null
+            || !headers.TryGetValue(Headers.Intent, out var wireIntent)
+            || string.IsNullOrWhiteSpace(wireIntent)
+        )
+        {
+            return;
+        }
+
+        var consumerIntent = descriptor.IntentType.ToString();
+        if (!string.Equals(wireIntent, consumerIntent, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.ConsumeIntentMismatch(descriptor.TopicName, wireIntent, consumerIntent);
+        }
     }
 
     private static bool _ShouldRethrowOce(Exception exception, CancellationToken cancellationToken)

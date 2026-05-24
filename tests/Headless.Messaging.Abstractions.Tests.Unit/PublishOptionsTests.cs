@@ -86,19 +86,11 @@ public sealed class PublishOptionsTests : TestBase
         // given
         var left = new PublishOptions
         {
-            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["alpha"] = "1",
-                ["beta"] = "2",
-            },
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["alpha"] = "1", ["beta"] = "2" },
         };
         var right = new PublishOptions
         {
-            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["beta"] = "2",
-                ["alpha"] = "1",
-            },
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["beta"] = "2", ["alpha"] = "1" },
         };
 
         // then

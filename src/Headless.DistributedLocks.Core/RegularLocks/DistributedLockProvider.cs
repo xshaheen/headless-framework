@@ -770,10 +770,7 @@ public sealed class DistributedLockProvider(
         return activity;
     }
 
-    private static IOutboxBus? _ConfigureOutboxBus(
-        IOutboxBus? outboxBus,
-        ILogger<DistributedLockProvider> logger
-    )
+    private static IOutboxBus? _ConfigureOutboxBus(IOutboxBus? outboxBus, ILogger<DistributedLockProvider> logger)
     {
         if (outboxBus is null)
         {

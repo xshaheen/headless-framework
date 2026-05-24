@@ -173,7 +173,14 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         IntentType intentType = IntentType.Bus
     )
     {
-        var metadata = Options.CreateConsumerMetadata(consumerType, messageType, topic, group, concurrency, intentType: intentType);
+        var metadata = Options.CreateConsumerMetadata(
+            consumerType,
+            messageType,
+            topic,
+            group,
+            concurrency,
+            intentType: intentType
+        );
 
         Registry.Register(metadata);
         Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));

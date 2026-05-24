@@ -10,10 +10,7 @@ using NameGenerator.Generators;
 namespace Demo.Controllers;
 
 [Route("api/[controller]")]
-public class ValuesController(
-    IOutboxBus producer,
-    IOutboxTransaction outboxTransaction
-) : Controller
+public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTransaction) : Controller
 {
     [Route("~/control/start")]
     public async Task<IActionResult> Start([FromServices] IBootstrapper bootstrapper)

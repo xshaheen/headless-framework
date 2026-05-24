@@ -13,7 +13,7 @@ internal interface IMessagePublishRequestFactory
 {
     PreparedPublishMessage Create<T>(
         T? contentObj,
-        PublishOptions? options = null,
+        MessagePublishOptionsBase? options = null,
         TimeSpan? delayTime = null,
         IntentType intentType = IntentType.Bus
     );
@@ -36,6 +36,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Type,
         Headers.SentTime,
         Headers.DelayTime,
+        Headers.Intent,
     };
 
     private readonly ConditionalWeakTable<Type, string> _topicNameCache = new();
@@ -46,7 +47,7 @@ internal sealed class MessagePublishRequestFactory(
 
     public PreparedPublishMessage Create<T>(
         T? contentObj,
-        PublishOptions? options = null,
+        MessagePublishOptionsBase? options = null,
         TimeSpan? delayTime = null,
         IntentType intentType = IntentType.Bus
     )
@@ -61,6 +62,7 @@ internal sealed class MessagePublishRequestFactory(
         var publishAt = _ResolvePublishAt(delayTime);
 
         headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
+        headers[Headers.Intent] = intentType.ToString();
 
         if (delayTime.HasValue)
         {
@@ -79,7 +81,7 @@ internal sealed class MessagePublishRequestFactory(
     private Dictionary<string, string?> _CreateHeaders(
         Type messageType,
         string topicName,
-        PublishOptions? options,
+        MessagePublishOptionsBase? options,
         TimeSpan? delayTime
     )
     {
@@ -122,8 +124,8 @@ internal sealed class MessagePublishRequestFactory(
     {
         Argument.IsLessThanOrEqualTo(
             messageId.Length,
-            PublishOptions.MessageIdMaxLength,
-            $"PublishOptions.MessageId must be {PublishOptions.MessageIdMaxLength} characters or fewer before durable storage.",
+            MessagePublishOptionsBase.MessageIdMaxLength,
+            $"Options.MessageId must be {MessagePublishOptionsBase.MessageIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(messageId)
         );
 
@@ -132,7 +134,7 @@ internal sealed class MessagePublishRequestFactory(
 
     // Strict publish-time tenant integrity policy.
     //
-    // U2 4-case header check (shipped in #228): PublishOptions.TenantId is the source of truth;
+    // U2 4-case header check (shipped in #228): MessagePublishOptionsBase.TenantId is the source of truth;
     // writing the wire header directly is reserved for transport-internal use. Whitespace raw
     // headers are treated as unset to mirror the lenient consume-side mapping in
     // TenantContextScope.ResolveTenantId.
@@ -141,7 +143,7 @@ internal sealed class MessagePublishRequestFactory(
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
     // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
     //
-    private void _ApplyTenantId(Dictionary<string, string?> headers, PublishOptions? options)
+    private void _ApplyTenantId(Dictionary<string, string?> headers, MessagePublishOptionsBase? options)
     {
         var typed = options?.TenantId;
         var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
@@ -151,11 +153,11 @@ internal sealed class MessagePublishRequestFactory(
         // attempts cannot bypass by enabling strict tenancy.
         if (typed is null && rawSet)
         {
-            var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+            var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, MessagePublishOptionsBase.TenantIdMaxLength);
 
             var ex = new InvalidOperationException(
                 $"Header '{Headers.TenantId}' is reserved. "
-                    + $"Use {nameof(PublishOptions)}.{nameof(PublishOptions.TenantId)} to set the tenant identifier."
+                    + $"Use the typed TenantId property on your publish options to set the tenant identifier."
             )
             {
                 Data = { ["Headers.TenantId.Raw"] = safeRawForReservedMessage },
@@ -173,7 +175,7 @@ internal sealed class MessagePublishRequestFactory(
             {
                 var ex = new MissingTenantContextException(
                     "Publish requires an ambient tenant context but none was set. "
-                        + "Set PublishOptions.TenantId explicitly, or wrap the publish in "
+                        + "Set TenantId on your publish options explicitly, or wrap the publish in "
                         + "ICurrentTenant.Change(tenantId) to scope the AsyncLocal accessor "
                         + "(common pattern for background workers and IHostedService callers)."
                 );
@@ -199,10 +201,10 @@ internal sealed class MessagePublishRequestFactory(
             // Sanitize wire-side raw value before interpolating into the exception message.
             // R4 delegates charset validation to consumers, so a malicious caller could otherwise
             // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
-            var safeRaw = LogSanitizer.Sanitize(raw, PublishOptions.TenantIdMaxLength);
+            var safeRaw = LogSanitizer.Sanitize(raw, MessagePublishOptionsBase.TenantIdMaxLength);
 
             var ex = new InvalidOperationException(
-                $"PublishOptions.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
+                $"Options.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
                     + "Set the typed property only."
             )
             {
@@ -225,19 +227,19 @@ internal sealed class MessagePublishRequestFactory(
 
         Argument.IsLessThanOrEqualTo(
             tenantId.Length,
-            PublishOptions.TenantIdMaxLength,
-            $"PublishOptions.TenantId must be {PublishOptions.TenantIdMaxLength} characters or fewer before durable storage.",
+            MessagePublishOptionsBase.TenantIdMaxLength,
+            $"Options.TenantId must be {MessagePublishOptionsBase.TenantIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(tenantId)
         );
     }
 
-    private void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)
+    private static void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)
     {
         var invalidHeader = headers.Keys.FirstOrDefault(_ReservedHeaders.Contains);
         if (invalidHeader != null)
         {
             throw new InvalidOperationException(
-                $"Header '{invalidHeader}' is reserved. Use {nameof(PublishOptions)} for messaging metadata overrides."
+                $"Header '{invalidHeader}' is reserved. Use the typed publish options properties for messaging metadata overrides."
             );
         }
     }
@@ -282,7 +284,7 @@ internal sealed class MessagePublishRequestFactory(
         throw new InvalidOperationException(
             $"No topic mapping found for message type '{messageType.Name}'. "
                 + $"Register a topic mapping using WithTopicMapping<{messageType.Name}>(\"topic-name\") "
-                + $"or set {nameof(PublishOptions)}.{nameof(PublishOptions.Topic)} explicitly."
+                + "or set the Topic property on your publish options explicitly."
         );
     }
 }

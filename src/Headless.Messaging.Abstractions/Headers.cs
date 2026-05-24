@@ -112,4 +112,13 @@ public static class Headers
     /// Value: "traceparent"
     /// </summary>
     public const string TraceParent = "traceparent";
+
+    /// <summary>
+    /// The publish intent of the message, stamped by the framework at publish time.
+    /// Value is the string representation of <c>IntentType</c> (e.g., <c>"Bus"</c> or <c>"Queue"</c>).
+    /// On the consume side the framework warns when the wire value disagrees with the registered
+    /// consumer intent so misconfigured producers surface early.
+    /// Value: "headless-intent"
+    /// </summary>
+    public const string Intent = "headless-intent";
 }

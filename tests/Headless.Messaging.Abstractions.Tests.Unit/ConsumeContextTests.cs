@@ -22,7 +22,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = messageId,
             CorrelationId = correlationId,
@@ -49,7 +50,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = null!,
                 CorrelationId = null,
@@ -71,7 +73,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = "",
                 CorrelationId = null,
@@ -93,7 +96,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = "   ",
                 CorrelationId = null,
@@ -114,7 +118,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -136,7 +141,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = "",
@@ -158,7 +164,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = "   ",
@@ -179,7 +186,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -200,7 +208,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = new TestMessage("order-123", 99.99m),
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -222,7 +231,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -245,7 +255,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = null,
@@ -268,7 +279,8 @@ public sealed class ConsumeContextTests : TestBase
         // when
         var act = () =>
             new ConsumeContext<TestMessage>
-            { IntentType = IntentType.Bus,
+            {
+                IntentType = IntentType.Bus,
                 Message = message,
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = null,
@@ -312,7 +324,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = new TestMessage("order-123", 99.99m),
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -336,7 +349,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = new TestMessage("order-123", 99.99m),
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -357,7 +371,8 @@ public sealed class ConsumeContextTests : TestBase
 
         // when
         var context = new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = new TestMessage("order-123", 99.99m),
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
@@ -373,7 +388,8 @@ public sealed class ConsumeContextTests : TestBase
     private ConsumeContext<TestMessage> _CreateContext(TestMessage message)
     {
         return new ConsumeContext<TestMessage>
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,

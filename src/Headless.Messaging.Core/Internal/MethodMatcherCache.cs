@@ -59,10 +59,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
             var entries = new ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>>(
                 StringComparer.Ordinal
             );
-            var intentEntries = new ConcurrentDictionary<
-                ConsumerGroupKey,
-                IReadOnlyList<ConsumerExecutorDescriptor>
-            >();
+            var intentEntries = new ConcurrentDictionary<ConsumerGroupKey, IReadOnlyList<ConsumerExecutorDescriptor>>();
             var groupConcurrent = new ConcurrentDictionary<string, byte>(StringComparer.Ordinal);
             var intentGroupConcurrent = new ConcurrentDictionary<ConsumerGroupKey, byte>();
             var groupedCandidates = executorCollection.GroupBy(x => x.GroupName, StringComparer.Ordinal);
@@ -75,9 +72,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
                 groupConcurrent.TryAdd(item.Key, maxConcurrency);
             }
 
-            var intentGroupedCandidates = executorCollection.GroupBy(
-                x => new ConsumerGroupKey(x.GroupName, x.IntentType)
-            );
+            var intentGroupedCandidates = executorCollection.GroupBy(x => new ConsumerGroupKey(
+                x.GroupName,
+                x.IntentType
+            ));
 
             foreach (var item in intentGroupedCandidates)
             {

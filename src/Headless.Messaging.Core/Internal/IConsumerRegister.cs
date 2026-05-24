@@ -351,7 +351,13 @@ internal sealed class ConsumerRegister(
 
                                 _serverAddress = innerClient.BrokerAddress;
 
-                                _RegisterMessageProcessor(innerClient, groupName, handleName, intentType, groupCts.Token);
+                                _RegisterMessageProcessor(
+                                    innerClient,
+                                    groupName,
+                                    handleName,
+                                    intentType,
+                                    groupCts.Token
+                                );
 
                                 await innerClient.SubscribeAsync(topics);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
@@ -631,7 +637,14 @@ internal sealed class ConsumerRegister(
                             $"Message can not be found subscriber. Name:{safeName}, Group:{safeGroup}. {Environment.NewLine} Ensure the subscriber method is decorated with [Subscribe] and the consumer group matches.";
                         var ex = new SubscriberNotFoundException(error);
 
-                        _TracingError(tracingTimestamp, transportMessage, intentType, client.BrokerAddress, ex, hostShutdownToken);
+                        _TracingError(
+                            tracingTimestamp,
+                            transportMessage,
+                            intentType,
+                            client.BrokerAddress,
+                            ex,
+                            hostShutdownToken
+                        );
 
                         throw ex;
                     }
@@ -798,7 +811,14 @@ internal sealed class ConsumerRegister(
 
                 await client.RejectAsync(sender);
 
-                _TracingError(tracingTimestamp, transportMessage, intentType, client.BrokerAddress, e, hostShutdownToken);
+                _TracingError(
+                    tracingTimestamp,
+                    transportMessage,
+                    intentType,
+                    client.BrokerAddress,
+                    e,
+                    hostShutdownToken
+                );
             }
             finally
             {
