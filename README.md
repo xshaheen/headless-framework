@@ -287,7 +287,6 @@ Coordinate access to shared resources across distributed services.
 |---------|-------------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
 | [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
-| [Headless.DistributedLocks.Cache](src/Headless.DistributedLocks.Cache/README.md) | Cache-based locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 
 ### Serialization

@@ -235,7 +235,6 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Distributed Locks
 - `Headless.DistributedLocks.Abstractions` — Distributed lock interface.
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
-- `Headless.DistributedLocks.Cache` — Cache-based lock storage (uses `ICache`).
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
 
 ### Serialization
