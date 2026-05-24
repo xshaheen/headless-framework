@@ -325,7 +325,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Id", longIdGenerator.Create()),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
-            new NpgsqlParameter("@Content", string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content),
+            new NpgsqlParameter(
+                "@Content",
+                string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
+            ),
             new NpgsqlParameter("@IntentType", (short)message.IntentType),
             new NpgsqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new NpgsqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
@@ -484,6 +487,52 @@ public sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
         return result;
+    }
+
+    public async ValueTask<int> DeleteReceivedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        var sql = $"""DELETE FROM {_receivedTable} WHERE "Id" = ANY(@Ids)""";
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        return await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Ids", ids.ToArray())],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<int> DeletePublishedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        var sql = $"""DELETE FROM {_publishedTable} WHERE "Id" = ANY(@Ids)""";
+
+        await using var connection = postgreSqlOptions.Value.CreateConnection();
+        return await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Ids", ids.ToArray())],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async ValueTask ScheduleMessagesOfDelayedAsync(

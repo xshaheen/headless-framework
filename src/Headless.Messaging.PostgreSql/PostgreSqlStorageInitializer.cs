@@ -54,11 +54,11 @@ public sealed class PostgreSqlStorageInitializer(
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        // Retry-pickup partial indexes use CREATE INDEX CONCURRENTLY so the AccessExclusiveLock
-        // is replaced with a ShareUpdateExclusiveLock — readers and writers stay live during the
-        // create. CONCURRENTLY cannot run inside a transaction (PG raises 25001), so these run on
-        // an autocommit connection AFTER the schema/table DDL has committed above. Each statement is
-        // standalone (no transaction wrapping).
+        // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
+        // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
+        // stay live during the create. CONCURRENTLY cannot run inside a transaction (PG raises 25001),
+        // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
+        // Each statement is standalone (no transaction wrapping).
         await _EnsureRetryPickupIndexConcurrentlyAsync(
                 connection,
                 GetReceivedTableName(),
@@ -71,6 +71,22 @@ public sealed class PostgreSqlStorageInitializer(
                 connection,
                 GetPublishedTableName(),
                 indexName: "idx_published_Version_NextRetryAt",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureContentTrgmIndexConcurrentlyAsync(
+                connection,
+                GetReceivedTableName(),
+                indexName: "idx_received_Content_trgm",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureContentTrgmIndexConcurrentlyAsync(
+                connection,
+                GetPublishedTableName(),
+                indexName: "idx_published_Content_trgm",
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -98,9 +114,35 @@ public sealed class PostgreSqlStorageInitializer(
             .ConfigureAwait(false);
     }
 
+    private async Task _EnsureContentTrgmIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string qualifiedTable,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        // pg_trgm GIN index accelerates ILIKE / similarity searches on the Content column used by
+        // the dashboard message-list filter. CONCURRENTLY avoids an AccessExclusiveLock on hot tables.
+        var createIndex = $"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("Content" gin_trgm_ops);
+            """;
+
+        await connection
+            .ExecuteNonQueryAsync(
+                createIndex,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
     private string _CreateDbTablesScript(string schema)
     {
         var batchSql = $"""
+            -- pg_trgm is required for GIN trigram indexes on the Content column (dashboard search).
+            -- CREATE EXTENSION is idempotent and safe inside a transaction on PostgreSQL 9.1+.
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             CREATE TABLE IF NOT EXISTS {GetReceivedTableName()}(

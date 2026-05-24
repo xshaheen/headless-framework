@@ -252,12 +252,28 @@ public sealed class SqlServerMonitoringApi(
         return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_publishedTable, storageIds, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
         long id,
         CancellationToken cancellationToken = default
     )
     {
         return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_receivedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask<long> _GetNumberOfMessage(
@@ -363,6 +379,78 @@ public sealed class SqlServerMonitoringApi(
         }
 
         return result;
+    }
+
+    private async Task<IReadOnlyList<MediumMessage>> _GetMessagesAsync(
+        string tableName,
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (storageIds.Count == 0)
+        {
+            return [];
+        }
+
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? "ExceptionInfo"
+            : "CAST(NULL AS nvarchar(max)) AS ExceptionInfo";
+
+        // Build @Id0,@Id1,... IN-list for SQL Server (no array parameter support).
+        var paramNames = new string[storageIds.Count];
+        var sqlParams = new object[storageIds.Count];
+        for (var i = 0; i < storageIds.Count; i++)
+        {
+            paramNames[i] = $"@Id{i}";
+            sqlParams[i] = new SqlParameter($"@Id{i}", storageIds[i]);
+        }
+
+        var sql =
+            $"SELECT Id, Content, IntentType, Added, ExpiresAt, Retries, {exceptionInfoSql}, NextRetryAt, LockedUntil FROM {tableName} WITH (READPAST) WHERE Id IN ({string.Join(',', paramNames)})";
+
+        await using var connection = new SqlConnection(_options.ConnectionString);
+
+        return await connection
+            .ExecuteReaderAsync(
+                sql,
+                async (reader, ct) =>
+                {
+                    var messages = new List<MediumMessage>();
+
+                    while (await reader.ReadAsync(ct).ConfigureAwait(false))
+                    {
+                        messages.Add(
+                            new MediumMessage
+                            {
+                                StorageId = reader.GetInt64(0),
+                                Origin = serializer.Deserialize(reader.GetString(1))!,
+                                Content = reader.GetString(1),
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Added = reader.GetDateTime(3),
+                                ExpiresAt = await reader.IsDBNullAsync(4, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(4),
+                                Retries = reader.GetInt32(5),
+                                ExceptionInfo = await reader.IsDBNullAsync(6, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(6),
+                                NextRetryAt = await reader.IsDBNullAsync(7, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(7),
+                                LockedUntil = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(8),
+                            }
+                        );
+                    }
+
+                    return (IReadOnlyList<MediumMessage>)messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task<MediumMessage?> _GetMessageAsync(

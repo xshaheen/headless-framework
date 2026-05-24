@@ -279,5 +279,9 @@ public interface IDataStorage
 
     ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
 
+    ValueTask<int> DeleteReceivedMessagesAsync(IReadOnlyList<long> ids, CancellationToken cancellationToken = default);
+
     ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default);
+
+    ValueTask<int> DeletePublishedMessagesAsync(IReadOnlyList<long> ids, CancellationToken cancellationToken = default);
 }

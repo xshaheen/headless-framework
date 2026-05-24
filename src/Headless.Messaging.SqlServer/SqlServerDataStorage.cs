@@ -75,19 +75,20 @@ public sealed class SqlServerDataStorage(
             return;
         }
 
-        var parameters = new object[storageIds.Length + 1];
-        var paramNames = new string[storageIds.Length];
+        var schema = options.Value.Schema;
+        var tvpTypeName = $"[{schema}].[HeadlessMessagingIdList]";
 
-        for (var i = 0; i < storageIds.Length; i++)
+        var idsTable = new DataTable();
+        idsTable.Columns.Add("Id", typeof(long));
+        foreach (var id in storageIds)
         {
-            paramNames[i] = $"@Id{i}";
-            parameters[i] = new SqlParameter($"@Id{i}", storageIds[i]);
+            idsTable.Rows.Add(id);
         }
 
-        parameters[^1] = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
+        var tvpParam = new SqlParameter("@Ids", SqlDbType.Structured) { TypeName = tvpTypeName, Value = idsTable };
+        var statusParam = new SqlParameter("@StatusName", nameof(StatusName.Delayed));
 
-        var sql =
-            $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN ({string.Join(',', paramNames)});";
+        var sql = $"UPDATE {_publishedTable} SET [StatusName]=@StatusName WHERE [Id] IN (SELECT [Id] FROM @Ids);";
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
 
@@ -95,7 +96,7 @@ public sealed class SqlServerDataStorage(
             .ExecuteNonQueryAsync(
                 sql,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
-                sqlParams: parameters,
+                sqlParams: [tvpParam, statusParam],
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
@@ -324,7 +325,10 @@ public sealed class SqlServerDataStorage(
             new SqlParameter("@Id", longIdGenerator.Create()),
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
-            new SqlParameter("@Content", string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content),
+            new SqlParameter(
+                "@Content",
+                string.IsNullOrEmpty(message.Content) ? serializer.Serialize(message.Origin) : message.Content
+            ),
             new SqlParameter("@IntentType", SqlDbType.SmallInt) { Value = (short)message.IntentType },
             new SqlParameter("@Retries", messagingOptions.Value.RetryPolicy.MaxPersistedRetries),
             new SqlParameter("@Added", timeProvider.GetUtcNow().UtcDateTime),
@@ -494,6 +498,68 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
 
         return affectedRowCount;
+    }
+
+    public async ValueTask<int> DeleteReceivedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        var paramNames = new string[ids.Count];
+        var sqlParams = new object[ids.Count];
+        for (var i = 0; i < ids.Count; i++)
+        {
+            paramNames[i] = $"@Id{i}";
+            sqlParams[i] = new SqlParameter($"@Id{i}", ids[i]);
+        }
+
+        var sql = $"DELETE FROM {_receivedTable} WHERE Id IN ({string.Join(',', paramNames)})";
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        return await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<int> DeletePublishedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (ids.Count == 0)
+        {
+            return 0;
+        }
+
+        var paramNames = new string[ids.Count];
+        var sqlParams = new object[ids.Count];
+        for (var i = 0; i < ids.Count; i++)
+        {
+            paramNames[i] = $"@Id{i}";
+            sqlParams[i] = new SqlParameter($"@Id{i}", ids[i]);
+        }
+
+        var sql = $"DELETE FROM {_publishedTable} WHERE Id IN ({string.Join(',', paramNames)})";
+
+        await using var connection = new SqlConnection(options.Value.ConnectionString);
+        return await connection
+            .ExecuteNonQueryAsync(
+                sql,
+                commandTimeout: messagingOptions.Value.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async ValueTask ScheduleMessagesOfDelayedAsync(

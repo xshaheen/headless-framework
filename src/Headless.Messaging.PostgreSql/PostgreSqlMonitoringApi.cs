@@ -38,12 +38,28 @@ public sealed class PostgreSqlMonitoringApi(
         return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_publishedTable, storageIds, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
         long id,
         CancellationToken cancellationToken = default
     )
     {
         return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_receivedTable, storageIds, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
@@ -367,6 +383,69 @@ public sealed class PostgreSqlMonitoringApi(
         }
 
         return result;
+    }
+
+    private async Task<IReadOnlyList<MediumMessage>> _GetMessagesAsync(
+        string tableName,
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (storageIds.Count == 0)
+        {
+            return [];
+        }
+
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
+
+        var sql =
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id"" = ANY(@Ids)";
+
+        await using var connection = _options.CreateConnection();
+
+        return await connection
+            .ExecuteReaderAsync(
+                sql,
+                async (reader, token) =>
+                {
+                    var messages = new List<MediumMessage>();
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        messages.Add(
+                            new MediumMessage
+                            {
+                                StorageId = reader.GetInt64(0),
+                                Origin = serializer.Deserialize(reader.GetString(1))!,
+                                Content = reader.GetString(1),
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Added = reader.GetDateTime(3),
+                                ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(4),
+                                Retries = reader.GetInt32(5),
+                                ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(6),
+                                NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(7),
+                                LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(8),
+                            }
+                        );
+                    }
+
+                    return (IReadOnlyList<MediumMessage>)messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Ids", storageIds.ToArray())],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task<MediumMessage?> _GetMessageAsync(

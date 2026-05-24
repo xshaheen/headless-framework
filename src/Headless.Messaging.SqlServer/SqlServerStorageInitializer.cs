@@ -85,6 +85,14 @@ public sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF TYPE_ID(N'{schema}.HeadlessMessagingIdList') IS NULL
+                    CREATE TYPE [{schema}].[HeadlessMessagingIdList] AS TABLE ([Id] BIGINT NOT NULL PRIMARY KEY);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 2714 THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetReceivedTableName()}(

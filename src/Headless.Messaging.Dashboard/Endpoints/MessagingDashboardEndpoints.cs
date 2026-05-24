@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using Headless.Checks;
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard.GatewayProxy;
@@ -24,6 +25,7 @@ namespace Headless.Messaging.Dashboard;
 public static class MessagingDashboardEndpoints
 {
     private const int _MaxPageSize = 200;
+    private const int _MaxBulkActionSize = 500;
 
     internal static void MapMessagingDashboardEndpoints(
         this IEndpointRouteBuilder endpoints,
@@ -352,17 +354,41 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
+        var busTransport = sp.GetService<IBusTransport>();
+        var queueTransport = sp.GetService<IQueueTransport>();
 
-        foreach (var storageId in storageIds)
+        var messages = await monitoringApi.GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted);
+
+        var rejected = new List<long>();
+        var requeued = new List<long>();
+
+        foreach (var message in messages)
         {
-            var message = await monitoringApi.GetPublishedMessageAsync(storageId);
-            if (message != null)
+            var hasTransport = message.IntentType switch
             {
-                await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
+                IntentType.Bus => busTransport is not null,
+                IntentType.Queue => queueTransport is not null,
+                _ => false,
+            };
+
+            if (!hasTransport)
+            {
+                rejected.Add(message.StorageId);
+                continue;
             }
+
+            await dispatcher.EnqueueToPublish(message, httpContext.RequestAborted);
+            requeued.Add(message.StorageId);
+        }
+
+        if (rejected.Count > 0)
+        {
+            return Results.UnprocessableEntity(new { rejected, requeued });
         }
 
         return Results.NoContent();
@@ -376,13 +402,10 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
-
-        foreach (var storageId in storageIds)
-        {
-            _ = await dataStorage.DeletePublishedMessageAsync(storageId);
-        }
-
+        _ = await dataStorage.DeletePublishedMessagesAsync(storageIds, httpContext.RequestAborted);
         return Results.NoContent();
     }
 
@@ -394,17 +417,41 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
         var dispatcher = sp.GetRequiredService<IDispatcher>();
+        var busTransport = sp.GetService<IBusTransport>();
+        var queueTransport = sp.GetService<IQueueTransport>();
 
-        foreach (var storageId in storageIds)
+        var messages = await monitoringApi.GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
+
+        var rejected = new List<long>();
+        var requeued = new List<long>();
+
+        foreach (var message in messages)
         {
-            var message = await monitoringApi.GetReceivedMessageAsync(storageId);
-            if (message != null)
+            var hasTransport = message.IntentType switch
             {
-                await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
+                IntentType.Bus => busTransport is not null,
+                IntentType.Queue => queueTransport is not null,
+                _ => false,
+            };
+
+            if (!hasTransport)
+            {
+                rejected.Add(message.StorageId);
+                continue;
             }
+
+            await dispatcher.EnqueueToExecute(message, null, httpContext.RequestAborted);
+            requeued.Add(message.StorageId);
+        }
+
+        if (rejected.Count > 0)
+        {
+            return Results.UnprocessableEntity(new { rejected, requeued });
         }
 
         return Results.NoContent();
@@ -418,13 +465,10 @@ public static class MessagingDashboardEndpoints
             return Results.UnprocessableEntity();
         }
 
+        Argument.IsLessThanOrEqualTo(storageIds.Length, _MaxBulkActionSize);
+
         var dataStorage = sp.GetRequiredService<IDataStorage>();
-
-        foreach (var storageId in storageIds)
-        {
-            _ = await dataStorage.DeleteReceivedMessageAsync(storageId);
-        }
-
+        _ = await dataStorage.DeleteReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
         return Results.NoContent();
     }
 

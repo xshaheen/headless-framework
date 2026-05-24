@@ -739,6 +739,27 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(0);
     }
 
+    public ValueTask<int> DeleteReceivedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var deleted = 0;
+
+        foreach (var id in ids)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (ReceivedMessages.TryRemove(id, out var removed))
+            {
+                _RemoveFromIdentityIndex(removed);
+                deleted++;
+            }
+        }
+
+        return ValueTask.FromResult(deleted);
+    }
+
     private void _RemoveFromIdentityIndex(MemoryMessage removed)
     {
         // Same tolerance as the insert path: only attempt the index removal when MessageId is
@@ -757,6 +778,26 @@ internal sealed class InMemoryDataStorage(
         cancellationToken.ThrowIfCancellationRequested();
         var deleteResult = PublishedMessages.TryRemove(id, out _);
         return ValueTask.FromResult(deleteResult ? 1 : 0);
+    }
+
+    public ValueTask<int> DeletePublishedMessagesAsync(
+        IReadOnlyList<long> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var deleted = 0;
+
+        foreach (var id in ids)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (PublishedMessages.TryRemove(id, out _))
+            {
+                deleted++;
+            }
+        }
+
+        return ValueTask.FromResult(deleted);
     }
 
     public ValueTask ScheduleMessagesOfDelayedAsync(

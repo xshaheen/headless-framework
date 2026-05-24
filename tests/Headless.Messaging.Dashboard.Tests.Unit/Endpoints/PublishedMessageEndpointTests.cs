@@ -115,18 +115,26 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20&intentType=Queue");
+        var response = await client.GetAsync(
+            "/api/published/Succeeded?currentPage=2&perPage=20&intentType=Queue",
+            AbortToken
+        );
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>();
+
+        var payload = await response.Content.ReadFromJsonAsync<Dictionary<string, JsonElement>>(
+            cancellationToken: AbortToken
+        );
+
         payload
             .Should()
             .ContainKeys("items", "index", "size", "totalItems", "totalPages", "hasPrevious", "hasNext", "totals");
+
         payload["index"].GetInt32().Should().Be(1);
         payload["size"].GetInt32().Should().Be(20);
         payload["totalItems"].GetInt32().Should().Be(35);
@@ -152,17 +160,52 @@ public sealed class PublishedMessageEndpointTests : TestBase
     }
 
     [Fact]
+    public async Task PublishedList_should_bind_null_intent_filter_when_intentType_is_omitted()
+    {
+        // given
+        var result = new IndexPage<MessageView>([], index: 1, size: 20, totalItems: 0);
+
+        _monitoringApi
+            .GetMessagesAsync(Arg.Any<MessageQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(result));
+        _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
+
+        await using var app = _CreateTestApp(_dataStorage);
+        await app.StartAsync(AbortToken);
+        using var client = app.GetTestClient();
+
+        // when — intentType omitted from query string
+        var response = await client.GetAsync("/api/published/Succeeded?currentPage=2&perPage=20", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        await _monitoringApi
+            .Received(1)
+            .GetMessagesAsync(
+                Arg.Is<MessageQuery>(query =>
+                    query.MessageType == MessageType.Publish
+                    && query.StatusName == "Succeeded"
+                    && query.IntentType == null
+                    && query.CurrentPage == 1
+                    && query.PageSize == 20
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task PublishedRequeue_should_return_422_for_empty_array()
     {
         // given
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.PostAsJsonAsync("/api/published/requeue", Array.Empty<long>());
+        var response = await client.PostAsJsonAsync("/api/published/requeue", Array.Empty<long>(), AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
@@ -175,14 +218,12 @@ public sealed class PublishedMessageEndpointTests : TestBase
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.PostAsync(
-            "/api/published/delete",
-            new StringContent("null", Encoding.UTF8, "application/json")
-        );
+        using var stringContent = new StringContent("null", Encoding.UTF8, "application/json");
+        var response = await client.PostAsync("/api/published/delete", stringContent, AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
@@ -199,11 +240,11 @@ public sealed class PublishedMessageEndpointTests : TestBase
             .Returns(ValueTask.FromResult(1));
 
         await using var app = _CreateTestApp(_dataStorage);
-        await app.StartAsync();
+        await app.StartAsync(AbortToken);
         using var client = app.GetTestClient();
 
         // when
-        var response = await client.PostAsJsonAsync("/api/published/delete", new[] { messageId });
+        var response = await client.PostAsJsonAsync("/api/published/delete", new[] { messageId }, AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);

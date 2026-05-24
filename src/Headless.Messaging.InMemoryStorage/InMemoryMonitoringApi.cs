@@ -17,12 +17,50 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         );
     }
 
+    public ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = new List<MediumMessage>(storageIds.Count);
+
+        foreach (var id in storageIds)
+        {
+            if (storage.PublishedMessages.TryGetValue(id, out var message))
+            {
+                result.Add(message);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
+    }
+
     public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
             storage.ReceivedMessages.TryGetValue(id, out var message) ? (MediumMessage?)message : null
         );
+    }
+
+    public ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = new List<MediumMessage>(storageIds.Count);
+
+        foreach (var id in storageIds)
+        {
+            if (storage.ReceivedMessages.TryGetValue(id, out var message))
+            {
+                result.Add(message);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
     }
 
     public ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
