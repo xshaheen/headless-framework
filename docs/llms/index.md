@@ -147,7 +147,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
-- `Headless.AuditLog.EntityFramework` — EF Core persistence for audit log.
+- `Headless.AuditLog.Storage.EntityFramework` — EF Core persistence for audit log.
+- `Headless.AuditLog.Storage.PostgreSql` — PostgreSQL raw audit log storage.
+- `Headless.AuditLog.Storage.SqlServer` — SQL Server raw audit log storage.
 
 ### Blob Storage
 - `Headless.Blobs.Abstractions` — `IBlobStorage` interface.

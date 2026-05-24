@@ -1,4 +1,4 @@
-# Headless.AuditLog.EntityFramework
+# Headless.AuditLog.Storage.EntityFramework
 
 EF Core implementation of the audit log subsystem: change capture, persistent storage, and explicit event logging.
 
@@ -13,7 +13,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so that entity mutatio
 - `EfAuditLog<TContext>` - Implements `IAuditLog<TContext>` for explicit event logging (reads, PII reveals, failures)
 - `EfReadAuditLog<TContext>` - Implements `IReadAuditLog<TContext>` for filtered read-back without leaking EF entities
 - `AuditLogEntry` - Single-table entity with JSON columns for `OldValues`, `NewValues`, and `ChangedFields`
-- `ConfigureAuditLog()` - ModelBuilder extension; supports custom table name, schema, and JSON column type
+- `AddHeadlessAuditLog()` - ModelBuilder extension; uses `AuditLogStorageOptions` for table name, schema, and JSON column type
 - Soft-delete detection: automatically emits `entity.soft_deleted` / `entity.restored` actions when `IsDeleted` transitions
 - Suspend detection: emits `entity.suspended` / `entity.unsuspended` when `IsSuspended` transitions
 - `EntityFilter` and `PropertyFilter` results are cached after first evaluation for the capture service lifetime
@@ -22,7 +22,7 @@ Wires the audit log pipeline into EF Core's ChangeTracker so that entity mutatio
 ## Installation
 
 ```bash
-dotnet add package Headless.AuditLog.EntityFramework
+dotnet add package Headless.AuditLog.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -35,18 +35,34 @@ services.AddHeadlessAuditLog(o =>
     o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
 });
 
-services.AddHeadlessAuditLogEntity<AppDbContext>();
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options =>
+    {
+        options.Schema = "audit";
+        options.JsonColumnType = "jsonb";
+    });
+    setup.UseEntityFramework<AppDbContext>();
+});
 ```
 
-`AddHeadlessAuditLogEntity` requires `AddHeadlessAuditLog` (from `Headless.AuditLog.Abstractions`) to be called first for options registration, and `AddHeadlessDbContext<T>` for the DbContext registration.
+`UseEntityFramework<TContext>()` requires the same context to be registered with EF Core. Register `IDbContextFactory<TContext>` too if you resolve `IReadAuditLog<TContext>`.
 
 ### DbContext setup
 
 ```csharp
+public AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<AuditLogStorageOptions> auditLogStorage)
+    : base(options)
+{
+    _auditLogStorage = auditLogStorage;
+}
+
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
-    modelBuilder.ConfigureAuditLog();
+    modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
 }
 ```
 
@@ -88,18 +104,21 @@ var entries = await readAuditLog.QueryAsync(
 
 ## Configuration
 
-### PostgreSQL JSON columns
+### Storage Options
 
-Pass `jsonColumnType: "jsonb"` to store `OldValues`, `NewValues`, and `ChangedFields` as native JSONB instead of serialized strings:
-
-```csharp
-modelBuilder.ConfigureAuditLog(jsonColumnType: "jsonb");
-```
-
-### Custom table and schema
+Set `JsonColumnType` to store `OldValues`, `NewValues`, and `ChangedFields` as native JSONB on PostgreSQL:
 
 ```csharp
-modelBuilder.ConfigureAuditLog(tableName: "audit_entries", schema: "audit");
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options =>
+    {
+        options.TableName = "audit_entries";
+        options.Schema = "audit";
+        options.JsonColumnType = "jsonb";
+    });
+    setup.UseEntityFramework<AppDbContext>();
+});
 ```
 
 ### Sensitive data strategies
@@ -154,4 +173,4 @@ Composite-key `EntityId` values are now serialized as JSON arrays instead of com
 - Registers `IAuditChangeCapture` as scoped (`EfAuditChangeCapture`)
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`)
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`)
-- Registers `IReadAuditLog<TContext>` as scoped (`EfReadAuditLog<TContext>`)
+- Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`)

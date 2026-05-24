@@ -57,7 +57,6 @@ public static class AuditIntegrationFixture
 
         // Audit services
         services.AddHeadlessAuditLog(configure);
-        services.AddHeadlessAuditLogEntity<TContext>();
 
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);
@@ -76,6 +75,15 @@ public static class AuditIntegrationFixture
                 new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
             );
         });
+        services.AddDbContextFactory<TContext>(opts =>
+        {
+            opts.UseSqlite(connection).AddHeadlessExtension();
+            configureDbContext?.Invoke(opts);
+            ((IDbContextOptionsBuilderInfrastructure)opts).AddOrUpdateExtension(
+                new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
+            );
+        });
+        services.AddHeadlessAuditLog(setup => setup.UseEntityFramework<TContext>());
 
         // Run consumer-supplied overrides last so they can swap any default registration.
         configureServices?.Invoke(services);

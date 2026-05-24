@@ -100,7 +100,9 @@ Property-level audit logging for tracking entity mutations and explicit business
 | Package | Description |
 |---------|-------------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
-| [Headless.AuditLog.EntityFramework](src/Headless.AuditLog.EntityFramework/README.md) | EF Core audit log persistence |
+| [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
+| [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
+| [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
 
 ### Blob Storage
 

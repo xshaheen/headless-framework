@@ -1,6 +1,8 @@
+using Headless.AuditLog;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace Tests.Fixture;
 
@@ -11,8 +13,11 @@ namespace Tests.Fixture;
 /// catch block in the save pipeline must discard tracking for the persisted audit entries
 /// so a retry on the same change tracker doesn't double-insert.
 /// </summary>
-public sealed class ThrowingPublishAuditTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
-    : AuditTestDbContext(services, options)
+public sealed class ThrowingPublishAuditTestDbContext(
+    HeadlessDbContextServices services,
+    DbContextOptions options,
+    IOptions<AuditLogStorageOptions> auditLogStorage
+) : AuditTestDbContext(services, options, auditLogStorage)
 {
     public const string PublishFailureMessage = "Simulated publish failure.";
 

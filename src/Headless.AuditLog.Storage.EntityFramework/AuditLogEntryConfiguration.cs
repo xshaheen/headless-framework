@@ -5,14 +5,14 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace Headless.AuditLog;
 
-internal sealed class AuditLogEntryConfiguration(string? schema, string tableName, string? jsonColumnType)
+internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
     : IEntityTypeConfiguration<AuditLogEntry>
 {
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     public void Configure(EntityTypeBuilder<AuditLogEntry> builder)
     {
-        builder.ToTable(tableName, schema);
+        builder.ToTable(options.TableName, options.Schema);
 
         // Composite PK for partition-readiness (time-range partitioning by CreatedAt).
         // Note: SQLite does not support autoincrement on composite keys. Consumers
@@ -58,11 +58,11 @@ internal sealed class AuditLogEntryConfiguration(string? schema, string tableNam
             );
 
         // Optional: override to native JSON column type (e.g., "jsonb" for PostgreSQL)
-        if (jsonColumnType is not null)
+        if (options.JsonColumnType is not null)
         {
-            builder.Property(e => e.OldValues).HasColumnType(jsonColumnType);
-            builder.Property(e => e.NewValues).HasColumnType(jsonColumnType);
-            builder.Property(e => e.ChangedFields).HasColumnType(jsonColumnType);
+            builder.Property(e => e.OldValues).HasColumnType(options.JsonColumnType);
+            builder.Property(e => e.NewValues).HasColumnType(options.JsonColumnType);
+            builder.Property(e => e.ChangedFields).HasColumnType(options.JsonColumnType);
         }
 
         // Indexes optimized for common query patterns

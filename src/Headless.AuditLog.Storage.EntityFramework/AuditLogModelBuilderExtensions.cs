@@ -13,23 +13,12 @@ public static class AuditLogModelBuilderExtensions
     /// Call this from your <c>DbContext.OnModelCreating</c>.
     /// </summary>
     /// <param name="modelBuilder">The model builder.</param>
-    /// <param name="tableName">Table name. Default: <c>"audit_log"</c>.</param>
-    /// <param name="schema">Optional database schema.</param>
-    /// <param name="jsonColumnType">
-    /// Optional native JSON column type override (e.g., <c>"jsonb"</c> for PostgreSQL,
-    /// <c>"json"</c> for SQL Server 2025+). When <c>null</c>, string columns with
-    /// value converters are used for universal portability.
-    /// </param>
+    /// <param name="options">Audit log storage options.</param>
     /// <remarks>
     /// This method is idempotent. If the audit log entity is already configured,
     /// subsequent calls are no-ops.
     /// </remarks>
-    public static ModelBuilder ConfigureAuditLog(
-        this ModelBuilder modelBuilder,
-        string tableName = "audit_log",
-        string? schema = null,
-        string? jsonColumnType = null
-    )
+    public static ModelBuilder AddHeadlessAuditLog(this ModelBuilder modelBuilder, AuditLogStorageOptions options)
     {
         // Idempotent: skip if already configured
         if (modelBuilder.Model.FindEntityType(typeof(AuditLogEntry)) is not null)
@@ -37,7 +26,7 @@ public static class AuditLogModelBuilderExtensions
             return modelBuilder;
         }
 
-        modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(schema, tableName, jsonColumnType));
+        modelBuilder.ApplyConfiguration(new AuditLogEntryConfiguration(options));
         return modelBuilder;
     }
 }
