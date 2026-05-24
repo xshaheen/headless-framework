@@ -211,11 +211,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         using var leaseLostCts = new CancellationTokenSource();
         distributedLock.IsMonitored.Returns(true);
         distributedLock.HandleLostToken.Returns(leaseLostCts.Token);
+
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
 
-        CancellationToken observedToken = default;
+        var observedToken = CancellationToken.None;
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // when
@@ -231,7 +232,8 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 }
                 catch (OperationCanceledException) { }
             },
-            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor }
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            AbortToken
         );
 
         await started.Task;

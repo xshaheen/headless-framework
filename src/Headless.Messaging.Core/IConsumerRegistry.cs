@@ -16,6 +16,7 @@ namespace Headless.Messaging;
 /// to consumer metadata at runtime.
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IConsumerRegistry
 {
     /// <summary>

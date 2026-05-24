@@ -10,32 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Testing.Internal;
 
-internal sealed class RecordingTransport(
-    ITransport inner,
-    MessageObservationStore store,
-    ISerializer serializer,
-    ILogger<RecordingTransport>? logger = null
-) : ITransport
-{
-    public BrokerAddress BrokerAddress => inner.BrokerAddress;
-
-    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
-    {
-        var result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
-        await RecordingTransportRecorder
-            .RecordPublishedAsync(result, message, IntentType.Bus, store, serializer, logger)
-            .ConfigureAwait(false);
-        return result;
-    }
-
-    public ValueTask DisposeAsync() => inner.DisposeAsync();
-}
-
 internal sealed class RecordingBusTransport(
     IBusTransport inner,
     MessageObservationStore store,
     ISerializer serializer,
-    ILogger<RecordingTransport>? logger = null
+    ILogger<RecordingBusTransport>? logger = null
 ) : IBusTransport
 {
     public BrokerAddress BrokerAddress => inner.BrokerAddress;
@@ -48,14 +27,8 @@ internal sealed class RecordingBusTransport(
             result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
 
-        await RecordingTransportRecorder.RecordPublishedAsync(
-                result,
-                message,
-                IntentType.Bus,
-                store,
-                serializer,
-                logger
-            )
+        await RecordingTransportRecorder
+            .RecordPublishedAsync(result, message, IntentType.Bus, store, serializer, logger)
             .ConfigureAwait(false);
         return result;
     }
@@ -67,7 +40,7 @@ internal sealed class RecordingQueueTransport(
     IQueueTransport inner,
     MessageObservationStore store,
     ISerializer serializer,
-    ILogger<RecordingTransport>? logger = null
+    ILogger<RecordingQueueTransport>? logger = null
 ) : IQueueTransport
 {
     public BrokerAddress BrokerAddress => inner.BrokerAddress;
@@ -80,14 +53,8 @@ internal sealed class RecordingQueueTransport(
             result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
 
-        await RecordingTransportRecorder.RecordPublishedAsync(
-                result,
-                message,
-                IntentType.Queue,
-                store,
-                serializer,
-                logger
-            )
+        await RecordingTransportRecorder
+            .RecordPublishedAsync(result, message, IntentType.Queue, store, serializer, logger)
             .ConfigureAwait(false);
         return result;
     }
@@ -112,7 +79,7 @@ internal static class RecordingTransportRecorder
         IntentType intentType,
         MessageObservationStore store,
         ISerializer serializer,
-        ILogger<RecordingTransport>? logger
+        ILogger? logger
     )
     {
         if (_NestedRecordingSuppression.Value > 0)

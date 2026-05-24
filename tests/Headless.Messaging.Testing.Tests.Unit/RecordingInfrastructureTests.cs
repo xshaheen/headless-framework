@@ -61,7 +61,8 @@ public sealed class RecordingInfrastructureTests : TestBase
     private static ConsumerContext _MakeConsumerContext(MediumMessage medium)
     {
         var descriptor = new ConsumerExecutorDescriptor
-        { IntentType = IntentType.Bus,
+        {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(RecordingInfrastructureTests).GetMethod(
                 nameof(_MakeConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static,
@@ -76,17 +77,17 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // RecordingTransport
+    // RecordingBusTransport
     // ═══════════════════════════════════════════════════════════════════════
 
     [Fact]
-    public async Task RecordingTransport_records_published_message_on_success()
+    public async Task RecordingBusTransport_records_published_message_on_success()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty), AbortToken);
@@ -98,13 +99,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_does_not_record_on_failure()
+    public async Task RecordingBusTransport_does_not_record_on_failure()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Failed(new Exception("broker error")));
+        await using var inner = new FakeBusTransport(OperateResult.Failed(new Exception("broker error")));
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty), AbortToken);
@@ -114,13 +115,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_extracts_message_id_and_topic_from_headers()
+    public async Task RecordingBusTransport_extracts_message_id_and_topic_from_headers()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(
@@ -135,13 +136,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_extracts_correlation_id_from_headers()
+    public async Task RecordingBusTransport_extracts_correlation_id_from_headers()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(
@@ -154,13 +155,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_sets_null_correlation_id_when_absent()
+    public async Task RecordingBusTransport_sets_null_correlation_id_when_absent()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty), AbortToken);
@@ -170,36 +171,36 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_deserializes_body_when_type_header_present()
+    public async Task RecordingBusTransport_deserializes_body_when_type_header_present()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var payload = new SimplePayload { Value = "hello" };
         var typeName = typeof(SimplePayload).AssemblyQualifiedName!;
         var headers = _BaseHeaders(typeName: typeName);
         var body = new ReadOnlyMemory<byte>(JsonSerializer.SerializeToUtf8Bytes(payload));
         var transportMsg = new TransportMessage(headers, body);
         var serializer = new FakeSerializer(new Message(headers, payload));
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(transportMsg, AbortToken);
 
         // then
         var recorded = store.Published.Single();
-        recorded.MessageType.Should().Be(typeof(SimplePayload));
+        recorded.MessageType.Should().Be<SimplePayload>();
         recorded.Message.Should().BeOfType<SimplePayload>().Which.Value.Should().Be("hello");
     }
 
     [Fact]
-    public async Task RecordingTransport_falls_back_to_TransportMessage_when_type_unresolvable()
+    public async Task RecordingBusTransport_falls_back_to_TransportMessage_when_type_unresolvable()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         var headers = _BaseHeaders(typeName: "Nonexistent.Type, NonexistentAssembly");
 
@@ -208,20 +209,20 @@ public sealed class RecordingInfrastructureTests : TestBase
 
         // then
         var recorded = store.Published.Single();
-        recorded.MessageType.Should().Be(typeof(TransportMessage));
+        recorded.MessageType.Should().Be<TransportMessage>();
         recorded.Message.Should().BeOfType<TransportMessage>();
     }
 
     [Fact]
-    public async Task RecordingTransport_falls_back_gracefully_when_deserialization_throws()
+    public async Task RecordingBusTransport_falls_back_gracefully_when_deserialization_throws()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = new FakeSerializer(new InvalidOperationException("serializer exploded"));
         var typeName = typeof(SimplePayload).AssemblyQualifiedName!;
         var headers = _BaseHeaders(typeName: typeName);
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when — must not throw
         await transport.SendAsync(new TransportMessage(headers, new byte[] { 1 }), AbortToken);
@@ -232,13 +233,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_forwards_to_inner_transport()
+    public async Task RecordingBusTransport_forwards_to_inner_transport()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
         await transport.SendAsync(new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty), AbortToken);
@@ -248,13 +249,13 @@ public sealed class RecordingInfrastructureTests : TestBase
     }
 
     [Fact]
-    public async Task RecordingTransport_sets_timestamp_to_utc_now()
+    public async Task RecordingBusTransport_sets_timestamp_to_utc_now()
     {
         // given
         var store = new MessageObservationStore();
-        var inner = new FakeTransport(OperateResult.Success);
+        await using var inner = new FakeBusTransport(OperateResult.Success);
         var serializer = Substitute.For<ISerializer>();
-        var transport = new RecordingTransport(inner, store, serializer);
+        await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         var before = DateTimeOffset.UtcNow;
 
@@ -453,7 +454,7 @@ public sealed class RecordingInfrastructureTests : TestBase
             return new ValueTask<Message>(_result!);
         }
 
-        // Remaining members are not used by RecordingTransport
+        // Remaining members are not used by RecordingBusTransport
         public string Serialize(Message message) => throw new NotSupportedException();
 
         public ValueTask<TransportMessage> SerializeToTransportMessageAsync(Message message) =>
@@ -466,8 +467,8 @@ public sealed class RecordingInfrastructureTests : TestBase
         public bool IsJsonType(object jsonObject) => throw new NotSupportedException();
     }
 
-    /// <summary>Stub <see cref="ITransport"/> that always returns a fixed <see cref="OperateResult"/>.</summary>
-    private sealed class FakeTransport(OperateResult result) : ITransport
+    /// <summary>Stub <see cref="IBusTransport"/> that always returns a fixed <see cref="OperateResult"/>.</summary>
+    private sealed class FakeBusTransport(OperateResult result) : IBusTransport
     {
         public int CallCount { get; private set; }
 

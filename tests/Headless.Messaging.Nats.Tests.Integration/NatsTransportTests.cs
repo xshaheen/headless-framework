@@ -9,15 +9,9 @@ using Tests.Capabilities;
 namespace Tests;
 
 [Collection("Nats")]
-public sealed class NatsTransportTests : TransportTestsBase
+public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
 {
-    private readonly NatsFixture _fixture;
     private INatsConnectionPool? _connectionPool;
-
-    public NatsTransportTests(NatsFixture fixture)
-    {
-        _fixture = fixture;
-    }
 
     public override async ValueTask InitializeAsync()
     {
@@ -27,7 +21,7 @@ public sealed class NatsTransportTests : TransportTestsBase
         // Create a catch-all stream for test subjects.
         // TransportTestsBase uses single-token subjects ("TestMessage", "TestMessageName").
         // NATS "*" matches any single token at one level.
-        await _fixture.EnsureStreamAsync("TEST", "*");
+        await fixture.EnsureStreamAsync("TEST", "*");
     }
 
     protected override TransportCapabilities Capabilities =>
@@ -46,7 +40,7 @@ public sealed class NatsTransportTests : TransportTestsBase
         var natsOptions = Options.Create(
             new MessagingNatsOptions
             {
-                Servers = _fixture.ConnectionString,
+                Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
                 ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
             }

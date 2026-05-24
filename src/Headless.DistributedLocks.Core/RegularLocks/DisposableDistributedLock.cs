@@ -35,7 +35,6 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
         DateAcquired = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
         _timestamp = timeProvider.GetTimestamp();
-        _options = options;
         _leaseDuration = leaseDuration;
         _lockProvider = lockProvider;
         _releaseOnDispose = releaseOnDispose;
@@ -57,7 +56,6 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
     private int _disposed;
     private readonly AsyncLock _lock = new();
     private readonly long _timestamp;
-    private readonly DistributedLockOptions _options;
     private LeaseMonitor? _monitor;
     private readonly Lock _leaseProbeLock = new();
     private Task<LeaseMonitor.LeaseState>? _pendingLeaseProbe;

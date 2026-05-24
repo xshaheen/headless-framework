@@ -41,9 +41,8 @@ public sealed class BusTests : TestBase
     public async Task should_resolve_topic_from_conventions_when_no_explicit_mapping()
     {
         // given
-        var testTransport = new TestTransport();
-        var options = new MessagingOptions();
-        options.Conventions.TopicNaming = TopicNamingConvention.KebabCase;
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { Conventions = { TopicNaming = TopicNamingConvention.KebabCase } };
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -201,25 +200,35 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength) };
+        var publishOptions = new PublishOptions
+        {
+            MessageId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength),
+        };
 
         // when
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
-        testTransport.SentMessages[0].Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+        testTransport
+            .SentMessages[0]
+            .Headers[Headers.MessageId]
+            .Should()
+            .HaveLength(MessagePublishOptionsBase.MessageIdMaxLength);
     }
 
     [Fact]
     public async Task should_reject_message_id_values_longer_than_the_supported_limit()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { MessageId = new string('m', PublishOptions.MessageIdMaxLength + 1) };
+        var publishOptions = new PublishOptions
+        {
+            MessageId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength + 1),
+        };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -228,7 +237,7 @@ public sealed class BusTests : TestBase
         await act.Should()
             .ThrowAsync<ArgumentOutOfRangeException>()
             .WithParameterName("messageId")
-            .WithMessage($"*{PublishOptions.MessageIdMaxLength} characters or fewer*");
+            .WithMessage($"*{MessagePublishOptionsBase.MessageIdMaxLength} characters or fewer*");
     }
 
     [Fact]
@@ -422,7 +431,10 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions { TenantId = new string('t', PublishOptions.TenantIdMaxLength + 1) };
+        var publishOptions = new PublishOptions
+        {
+            TenantId = new string('t', MessagePublishOptionsBase.TenantIdMaxLength + 1),
+        };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -431,7 +443,7 @@ public sealed class BusTests : TestBase
         await act.Should()
             .ThrowAsync<ArgumentOutOfRangeException>()
             .WithParameterName("tenantId")
-            .WithMessage($"*{PublishOptions.TenantIdMaxLength} characters or fewer*");
+            .WithMessage($"*{MessagePublishOptionsBase.TenantIdMaxLength} characters or fewer*");
         testTransport.SentMessages.Should().BeEmpty();
     }
 
@@ -443,7 +455,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var maxTenantId = new string('t', PublishOptions.TenantIdMaxLength);
+        var maxTenantId = new string('t', MessagePublishOptionsBase.TenantIdMaxLength);
         var publishOptions = new PublishOptions { TenantId = maxTenantId };
 
         // when

@@ -615,7 +615,7 @@ public sealed class DiagnosticListenerTests : TestBase
     public void should_set_retry_count_tag_when_retry_count_is_positive()
     {
         // given
-        var listener = new DiagnosticListener([new Headless.Messaging.OpenTelemetry.Internal.RetryCountTagEnricher()]);
+        var listener = new DiagnosticListener([new RetryCountTagEnricher()]);
         using var activityListener = _CreateActivityListener();
         var eventData = _CreateSubExecuteEventData("order.created", retryCount: 3);
 
@@ -632,7 +632,7 @@ public sealed class DiagnosticListenerTests : TestBase
     public void should_not_set_retry_count_tag_when_retry_count_is_zero()
     {
         // given
-        var listener = new DiagnosticListener([new Headless.Messaging.OpenTelemetry.Internal.RetryCountTagEnricher()]);
+        var listener = new DiagnosticListener([new RetryCountTagEnricher()]);
         using var activityListener = _CreateActivityListener();
         var eventData = _CreateSubExecuteEventData("order.created", retryCount: 0);
 

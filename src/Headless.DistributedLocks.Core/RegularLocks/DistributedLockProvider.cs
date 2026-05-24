@@ -16,13 +16,13 @@ namespace Headless.DistributedLocks;
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,
-    DistributedLockOptions options,
+    DistributedLockOptions lockOptions,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLockProvider> logger
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
-    private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
+    private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IOutboxBus? _outboxBus = _ConfigureOutboxBus(outboxBus, logger);
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
@@ -68,9 +68,9 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
 
     // Configurable limits from options
-    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = options.MaxWaitersPerResource;
+    private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
+    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
+    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -378,7 +378,7 @@ public sealed class DistributedLockProvider(
             this,
             releaseOnDispose,
             autoExtend,
-            options,
+            lockOptions,
             timeProvider,
             _DeregisterMonitor,
             logger
@@ -735,7 +735,7 @@ public sealed class DistributedLockProvider(
         if (monitorLease)
         {
             throw new ArgumentException(
-                "Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                @"Lease monitoring requires a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
                 nameof(timeUntilExpires)
             );
         }

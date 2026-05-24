@@ -263,7 +263,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
     {
         var field = typeof(AmazonSqsQueueTransport).GetField(
             "_sqsClient",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         field.SetValue(transport, sqsClient);
     }
@@ -272,7 +272,7 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
     {
         var field = typeof(AmazonSqsQueueTransport).GetField(
             "_queueUrlMaps",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var queueUrls = (ConcurrentDictionary<string, string>)field.GetValue(transport)!;
         queueUrls[queueName] = queueUrl;

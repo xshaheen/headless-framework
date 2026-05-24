@@ -19,6 +19,7 @@ namespace Headless.Messaging;
 /// When the transaction is used with <c>IOutboxBus</c> or <c>IOutboxQueue</c> and an ambient database transaction is present,
 /// the runtime implementation should also support buffered stored messages so they can be flushed on commit.
 /// </remarks>
+[PublicAPI]
 public interface IOutboxTransaction : IDisposable, IAsyncDisposable
 {
     /// <summary>

@@ -46,7 +46,7 @@ public sealed class PublishOptionsTests : TestBase
         // given
         // PublishOptions.TenantId has no setter validation; length is enforced downstream
         // by MessagePublishRequestFactory at publish time.
-        var oversized = new string('x', PublishOptions.TenantIdMaxLength + 1);
+        var oversized = new string('x', MessagePublishOptionsBase.TenantIdMaxLength + 1);
 
         // when
         var options = new PublishOptions { TenantId = oversized };
@@ -59,7 +59,7 @@ public sealed class PublishOptionsTests : TestBase
     public void should_expose_tenantId_max_length_constant()
     {
         // then
-        PublishOptions.TenantIdMaxLength.Should().Be(200);
+        MessagePublishOptionsBase.TenantIdMaxLength.Should().Be(200);
     }
 
     [Fact]

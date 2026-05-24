@@ -96,7 +96,7 @@ public static class SetupMessaging
         // at startup (e.g., to detect whether IBus/IQueue publishers were gated in). This is intentional:
         // the bootstrapper is framework-internal and uses it only for read-only discovery — not as a
         // runtime factory service locator.
-        services.TryAddSingleton<IServiceCollection>(services);
+        services.TryAddSingleton(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
@@ -178,20 +178,15 @@ public static class SetupMessaging
         // Register options with values that were set during AddHeadlessMessaging configuration.
         // Don't re-register setupAction as it contains consumer registration logic that
         // requires Services/Registry to be initialized - which only happens in AddHeadlessMessaging.
-        services.Configure<MessagingOptions, MessagingOptionsValidator>(opt =>
-        {
-            options.CopyTo(opt);
-        });
+        services.Configure<MessagingOptions, MessagingOptionsValidator>(options.CopyTo);
 
         // Register and validate circuit breaker and retry processor options via DI pipeline
         services.Configure<CircuitBreakerOptions, CircuitBreakerOptionsValidator>(cb =>
-        {
-            options.CircuitBreaker.CopyTo(cb);
-        });
+            options.CircuitBreaker.CopyTo(cb)
+        );
         services.Configure<RetryProcessorOptions, RetryProcessorOptionsValidator>(rp =>
-        {
-            options.RetryProcessor.CopyTo(rp);
-        });
+            options.RetryProcessor.CopyTo(rp)
+        );
 
         //Startup and Hosted
         services.TryAddSingleton<Bootstrapper>();

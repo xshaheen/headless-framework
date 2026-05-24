@@ -126,7 +126,6 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         var store = new MessageObservationStore();
         services.AddSingleton(store);
 
-        _DecorateTransport(services, store);
         _DecorateBusTransport(services, store);
         _DecorateQueueTransport(services, store);
         _DecoratePipeline(services, store);
@@ -513,19 +512,6 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         }
     }
 
-    private static void _DecorateTransport(IServiceCollection services, MessageObservationStore store)
-    {
-        _DecorateLast<ITransport>(
-            services,
-            sp =>
-            {
-                var serializer = sp.GetRequiredService<ISerializer>();
-                var logger = sp.GetService<ILogger<RecordingTransport>>();
-                return inner => new RecordingTransport(inner, store, serializer, logger);
-            }
-        );
-    }
-
     private static void _DecorateLast<TService>(
         IServiceCollection services,
         Func<IServiceProvider, Func<TService, TService>> createDecorator
@@ -541,13 +527,17 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
         services.Remove(original);
 
-        services.Add(new ServiceDescriptor(typeof(TService), sp =>
-            {
-                var inner = _ResolveFromDescriptor<TService>(sp, original);
-                return createDecorator(sp)(inner);
-            },
-            original.Lifetime
-        ));
+        services.Add(
+            new ServiceDescriptor(
+                typeof(TService),
+                sp =>
+                {
+                    var inner = _ResolveFromDescriptor<TService>(sp, original);
+                    return createDecorator(sp)(inner);
+                },
+                original.Lifetime
+            )
+        );
     }
 
     private static void _DecoratePipeline(IServiceCollection services, MessageObservationStore store)
@@ -610,7 +600,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             sp =>
             {
                 var serializer = sp.GetRequiredService<ISerializer>();
-                var logger = sp.GetService<ILogger<RecordingTransport>>();
+                var logger = sp.GetService<ILogger<RecordingBusTransport>>();
                 return inner => new RecordingBusTransport(inner, store, serializer, logger);
             }
         );
@@ -623,7 +613,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             sp =>
             {
                 var serializer = sp.GetRequiredService<ISerializer>();
-                var logger = sp.GetService<ILogger<RecordingTransport>>();
+                var logger = sp.GetService<ILogger<RecordingQueueTransport>>();
                 return inner => new RecordingQueueTransport(inner, store, serializer, logger);
             }
         );

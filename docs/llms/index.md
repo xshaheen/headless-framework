@@ -192,6 +192,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Messaging (Distributed Bus)
 - `Headless.Messaging.Abstractions` — Standardized contracts for reliable messaging.
+- `Headless.Messaging.Bus.Abstractions` — Broadcast (pub/subscribe) publisher contracts: `IBus` and `IOutboxBus`.
+- `Headless.Messaging.Queue.Abstractions` — Point-to-point (work-queue) publisher contracts: `IQueue` and `IOutboxQueue`.
 - `Headless.Messaging.Core` — Outbox runtime, retries, delayed delivery, consumer orchestration.
 - `Headless.Messaging.Dashboard` — Web UI for monitoring messages, failures, retries.
 - `Headless.Messaging.Dashboard.K8s` — Kubernetes node auto-discovery for the dashboard.

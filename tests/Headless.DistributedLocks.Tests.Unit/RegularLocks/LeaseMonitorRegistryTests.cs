@@ -142,7 +142,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
     {
         var activeMonitorsField = typeof(LeaseMonitorRegistry).GetField(
             "_activeMonitors",
-            BindingFlags.Instance | BindingFlags.NonPublic
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         );
         activeMonitorsField.Should().NotBeNull();
 

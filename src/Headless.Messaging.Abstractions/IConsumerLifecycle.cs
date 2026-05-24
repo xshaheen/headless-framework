@@ -66,6 +66,7 @@ namespace Headless.Messaging;
 /// </code>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IConsumerLifecycle
 {
     /// <summary>

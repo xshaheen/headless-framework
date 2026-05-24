@@ -9,6 +9,7 @@ namespace Headless.Messaging;
 /// <param name="context">The typed consume context for the current message.</param>
 /// <param name="services">The scoped services for the current execution.</param>
 /// <param name="cancellationToken">The cancellation token for the current execution.</param>
+[PublicAPI]
 public delegate ValueTask RuntimeConsumeHandler<TMessage>(
     ConsumeContext<TMessage> context,
     IServiceProvider services,
@@ -19,6 +20,7 @@ public delegate ValueTask RuntimeConsumeHandler<TMessage>(
 /// <summary>
 /// Controls how runtime subscription conflicts are handled.
 /// </summary>
+[PublicAPI]
 public enum RuntimeSubscriptionDuplicateBehavior
 {
     /// <summary>
@@ -40,6 +42,7 @@ public enum RuntimeSubscriptionDuplicateBehavior
 /// <summary>
 /// Options used when attaching a runtime message handler to the broker subscription pipeline.
 /// </summary>
+[PublicAPI]
 public sealed class RuntimeSubscriptionOptions
 {
     /// <summary>
@@ -77,6 +80,7 @@ public sealed class RuntimeSubscriptionOptions
 /// <summary>
 /// Represents an attached runtime subscription registration.
 /// </summary>
+[PublicAPI]
 public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAsyncDisposable
 {
     private int _disposed;
@@ -160,6 +164,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
 /// Attaches and detaches ephemeral runtime message handlers.
 /// Runtime delegates share scoped DI, middleware, diagnostics, correlation, and failure semantics with class-based <see cref="IConsume{TMessage}" /> handlers.
 /// </summary>
+[PublicAPI]
 public interface IRuntimeSubscriber
 {
     /// <summary>

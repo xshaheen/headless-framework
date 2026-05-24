@@ -42,6 +42,11 @@ public sealed record EnqueueOptions : MessagePublishOptionsBase
             return false;
         }
 
+        if (ReferenceEquals(this, other))
+        {
+            return true;
+        }
+
         return base.Equals(other) && Nullable.Equals(Delay, other.Delay);
     }
 

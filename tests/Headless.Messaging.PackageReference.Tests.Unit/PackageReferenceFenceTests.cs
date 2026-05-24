@@ -27,8 +27,9 @@ public sealed class PackageReferenceFenceTests : TestBase
 
         // then
         result.ExitCode.Should().NotBe(0);
-        result.Output.Should().Contain("CS0246");
-        result.Output.Should().Contain(missingType);
+        var output = result.Output.ToString();
+        output.Should().Contain("CS0246");
+        output.Should().Contain(missingType);
     }
 
     private static async Task<ProcessResult> _RunDotnetBuildAsync(
@@ -45,14 +46,7 @@ public sealed class PackageReferenceFenceTests : TestBase
             UseShellExecute = false,
         };
 
-        var result = startInfo.RunAsTaskAsync(cancellationToken);
-
-        process.Start();
-        var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-
-        return new ProcessResult(process.ExitCode, await outputTask + await errorTask);
+        return await startInfo.RunAsTaskAsync(cancellationToken);
     }
 
     private static string _FindRepositoryRoot()
@@ -67,6 +61,4 @@ public sealed class PackageReferenceFenceTests : TestBase
         return directory?.FullName
             ?? throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
-
-    private sealed record ProcessResult(int ExitCode, string Output);
 }

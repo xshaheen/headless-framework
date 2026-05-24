@@ -7,6 +7,7 @@ namespace Headless.Messaging;
 /// <summary>
 /// Configures convention-based topic naming and default consumer settings for messaging.
 /// </summary>
+[PublicAPI]
 public sealed class MessagingConventions
 {
     /// <summary>

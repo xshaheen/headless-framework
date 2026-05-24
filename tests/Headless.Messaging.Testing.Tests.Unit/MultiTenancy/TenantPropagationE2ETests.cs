@@ -41,10 +41,7 @@ public sealed class ChainedRepublishConsumer(IBus publisher) : IConsume<TenantOr
 {
     public async ValueTask Consume(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
     {
-        await publisher.PublishAsync(
-            new TenantOrderEvent($"chained-{context.Message.OrderId}"),
-            cancellationToken: ct
-        );
+        await publisher.PublishAsync(new TenantOrderEvent($"chained-{context.Message.OrderId}"), cancellationToken: ct);
     }
 }
 
@@ -277,7 +274,10 @@ public sealed class TenantPropagationE2ETests : TestBase
                 {
                     using (currentTenant.Change(tenantId))
                     {
-                        await harness.Publisher.PublishAsync(new TenantOrderEvent(tenantId), cancellationToken: AbortToken);
+                        await harness.Publisher.PublishAsync(
+                            new TenantOrderEvent(tenantId),
+                            cancellationToken: AbortToken
+                        );
                     }
                 },
                 AbortToken

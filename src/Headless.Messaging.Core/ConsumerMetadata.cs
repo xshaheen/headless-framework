@@ -16,6 +16,7 @@ namespace Headless.Messaging;
 /// This record stores the configuration metadata for a consumer registered via
 /// <see cref="IMessagingBuilder.SubscribeFromAssembly"/> or <see cref="IMessagingBuilder.Subscribe{T}(string)"/>.
 /// </remarks>
+[PublicAPI]
 public sealed record ConsumerMetadata(
     Type MessageType,
     Type ConsumerType,

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using Headless.Messaging;
 using Headless.Messaging.Transport;
 
 namespace Tests.Transport;

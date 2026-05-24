@@ -33,6 +33,7 @@ namespace Headless.Messaging;
 /// </code>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IMessagingBuilder
 {
     /// <summary>

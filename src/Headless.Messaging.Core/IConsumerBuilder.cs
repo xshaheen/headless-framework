@@ -25,6 +25,7 @@ namespace Headless.Messaging;
 /// </code>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IConsumerBuilder<TConsumer>
     where TConsumer : class
 {

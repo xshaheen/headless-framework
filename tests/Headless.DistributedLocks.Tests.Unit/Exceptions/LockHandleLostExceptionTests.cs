@@ -43,9 +43,7 @@ public sealed class LockHandleLostExceptionTests : TestBase
         act2.Should().Throw<ArgumentException>();
 
         var act3 = () =>
-        {
-            _ = new LockHandleLostException(resource!, lockId!, "message", new System.Exception());
-        };
+            _ = new LockHandleLostException(resource!, lockId!, "message", new InvalidOperationException());
         act3.Should().Throw<ArgumentException>();
     }
 

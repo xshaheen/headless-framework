@@ -36,6 +36,7 @@ namespace Headless.Messaging;
 /// </code>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public interface IConsume<TMessage>
     where TMessage : class
 {

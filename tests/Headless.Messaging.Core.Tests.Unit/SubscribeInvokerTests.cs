@@ -345,7 +345,7 @@ public sealed class SubscribeInvokerTests : TestBase
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
-        var maxLengthTenantId = new string('x', PublishOptions.TenantIdMaxLength);
+        var maxLengthTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-boundary"),
             "test.topic",
@@ -376,7 +376,7 @@ public sealed class SubscribeInvokerTests : TestBase
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
-        var oversizedTenantId = new string('x', PublishOptions.TenantIdMaxLength + 1);
+        var oversizedTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength + 1);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-oversized"),
             "test.topic",
