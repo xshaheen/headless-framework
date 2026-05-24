@@ -1,0 +1,119 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Text.Json;
+using Headless.Primitives;
+using Headless.Settings.Entities;
+using Headless.Settings.Repositories;
+using Microsoft.Extensions.Options;
+using Npgsql;
+
+namespace Headless.Settings.PostgreSql;
+
+public sealed class PostgreSqlSettingDefinitionRecordRepository(
+    IOptions<PostgreSqlSettingsOptions> providerOptions,
+    IOptions<SettingsStorageOptions> storageOptions
+) : ISettingDefinitionRecordRepository
+{
+    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
+
+    public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
+    {
+        var sql =
+            $"""SELECT "Id","Name","DisplayName","Description","DefaultValue","Providers","IsVisibleToClients","IsInherited","IsEncrypted","ExtraProperties" FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)};""";
+
+        var result = new List<SettingDefinitionRecord>();
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var record = new SettingDefinitionRecord(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2),
+                await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(3),
+                await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4),
+                await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(5),
+                reader.GetBoolean(6),
+                reader.GetBoolean(7),
+                reader.GetBoolean(8)
+            );
+
+            foreach (var (key, value) in _DeserializeExtraProperties(reader.GetString(9)))
+            {
+                record.ExtraProperties[key] = value;
+            }
+
+            result.Add(record);
+        }
+
+        return result;
+    }
+
+    public async Task SaveAsync(
+        List<SettingDefinitionRecord> addedRecords,
+        List<SettingDefinitionRecord> changedRecords,
+        List<SettingDefinitionRecord> deletedRecords,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var connection = providerOptions.Value.CreateConnection();
+        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        foreach (var record in addedRecords)
+        {
+            await _ExecuteAsync(connection, transaction, _InsertSql(), record, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var record in changedRecords)
+        {
+            await _ExecuteAsync(connection, transaction, _UpdateSql(), record, cancellationToken).ConfigureAwait(false);
+        }
+
+        foreach (var record in deletedRecords)
+        {
+            await using var command = new NpgsqlCommand(_DeleteSql(), connection, transaction);
+            command.Parameters.AddWithValue("Id", record.Id);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task _ExecuteAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        string sql,
+        SettingDefinitionRecord record,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.Parameters.AddWithValue("Id", record.Id);
+        command.Parameters.AddWithValue("Name", record.Name);
+        command.Parameters.AddWithValue("DisplayName", record.DisplayName);
+        command.Parameters.AddWithValue("Description", (object?)record.Description ?? DBNull.Value);
+        command.Parameters.AddWithValue("DefaultValue", (object?)record.DefaultValue ?? DBNull.Value);
+        command.Parameters.AddWithValue("Providers", (object?)record.Providers ?? DBNull.Value);
+        command.Parameters.AddWithValue("IsVisibleToClients", record.IsVisibleToClients);
+        command.Parameters.AddWithValue("IsInherited", record.IsInherited);
+        command.Parameters.AddWithValue("IsEncrypted", record.IsEncrypted);
+        command.Parameters.AddWithValue("ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private string _InsertSql() =>
+        $"""INSERT INTO {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ("Id","Name","DisplayName","Description","DefaultValue","Providers","IsVisibleToClients","IsInherited","IsEncrypted","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
+
+    private string _UpdateSql() =>
+        $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"Description"=@Description,"DefaultValue"=@DefaultValue,"Providers"=@Providers,"IsVisibleToClients"=@IsVisibleToClients,"IsInherited"=@IsInherited,"IsEncrypted"=@IsEncrypted,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+
+    private string _DeleteSql() =>
+        $"""DELETE FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE "Id"=@Id;""";
+
+    private static ExtraProperties _DeserializeExtraProperties(string json) =>
+        JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];
+}

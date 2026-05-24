@@ -1,6 +1,6 @@
 ---
 domain: Settings
-packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
+packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer
 ---
 
 # Settings
@@ -38,6 +38,22 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
   - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
   - [Side Effects](#side-effects-2)
+- [Headless.Settings.Storage.PostgreSql](#headlesssettingsstoragepostgresql)
+  - [Problem Solved](#problem-solved-3)
+  - [Key Features](#key-features-3)
+  - [Installation](#installation-3)
+  - [Quick Start](#quick-start-3)
+  - [Configuration](#configuration-3)
+  - [Dependencies](#dependencies-3)
+  - [Side Effects](#side-effects-3)
+- [Headless.Settings.Storage.SqlServer](#headlesssettingsstoragesqlserver)
+  - [Problem Solved](#problem-solved-4)
+  - [Key Features](#key-features-4)
+  - [Installation](#installation-4)
+  - [Quick Start](#quick-start-4)
+  - [Configuration](#configuration-4)
+  - [Dependencies](#dependencies-4)
+  - [Side Effects](#side-effects-4)
 
 > Dynamic, hierarchical application settings with runtime read/write support and multiple value providers (default, config, global, tenant, user).
 
@@ -46,7 +62,7 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 Install the three settings packages:
 - `Headless.Settings.Abstractions` -- interfaces (`ISettingManager`, `ISettingDefinitionProvider`, `SettingDefinition`)
 - `Headless.Settings.Core` -- implementation with hierarchical providers, caching, encryption, background init
-- `Headless.Settings.Storage.EntityFramework` -- EF Core persistence for setting values and definitions
+- one storage provider: `Headless.Settings.Storage.EntityFramework`, `Headless.Settings.Storage.PostgreSql`, or `Headless.Settings.Storage.SqlServer`
 
 Minimal wiring:
 ```csharp
@@ -377,3 +393,95 @@ The registration validates these values on startup. The startup gate also inspec
 - Registers `ISettingDefinitionRecordRepository` as singleton
 - Registers validated `SettingsStorageOptions`
 - Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+---
+# Headless.Settings.Storage.PostgreSql
+
+PostgreSQL raw-DDL storage for settings management.
+
+## Problem Solved
+
+Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence.
+
+## Key Features
+
+- `AddHeadlessSettings(setup => setup.UsePostgreSql(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for setting values and definitions
+- Shares `SettingsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Settings.Storage.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddSettingsManagementCore(_ => { });
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `SettingsStorageOptions` on the shared settings builder. Configure the connection string through `PostgreSqlSettingsOptions`.
+
+## Dependencies
+
+- `Headless.Settings.Storage.EntityFramework`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw PostgreSQL implementations of the settings repositories
+---
+# Headless.Settings.Storage.SqlServer
+
+SQL Server raw-DDL storage for settings management.
+
+## Problem Solved
+
+Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence.
+
+## Key Features
+
+- `AddHeadlessSettings(setup => setup.UseSqlServer(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for setting values and definitions
+- Shares `SettingsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Settings.Storage.SqlServer
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddSettingsManagementCore(_ => { });
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `SettingsStorageOptions` on the shared settings builder. Configure the connection string through `SqlServerSettingsOptions`.
+
+## Dependencies
+
+- `Headless.Settings.Storage.EntityFramework`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Registers `SqlServerSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw SQL Server implementations of the settings repositories

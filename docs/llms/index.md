@@ -247,6 +247,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Settings.Abstractions` — Dynamic settings interface.
 - `Headless.Settings.Core` — Hierarchical value provider implementation.
 - `Headless.Settings.Storage.EntityFramework` — EF Core storage.
+- `Headless.Settings.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Settings.Storage.SqlServer` — SQL Server raw storage.
 
 ### SMS
 - `Headless.Sms.Abstractions` — SMS sending interface.

@@ -284,7 +284,11 @@
         <Project Path="src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
         <Project Path="src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
         <Project Path="src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
+        <Project Path="src\Headless.Settings.Storage.PostgreSql\Headless.Settings.Storage.PostgreSql.csproj" />
+        <Project Path="src\Headless.Settings.Storage.SqlServer\Headless.Settings.Storage.SqlServer.csproj" />
         <Project Path="tests\Headless.Settings.Tests.Integration\Headless.Settings.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Settings.Storage.PostgreSql.Tests.Integration\Headless.Settings.Storage.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Settings.Storage.SqlServer.Tests.Integration\Headless.Settings.Storage.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Settings.Tests.Unit\Headless.Settings.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Sms/">
