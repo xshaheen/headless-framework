@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
 using Headless.Testing.Tests;
@@ -43,7 +44,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // given
         var resource = _NewResource();
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         await db.StringSetAsync(_WriterKey(resource), waitingId, TimeSpan.FromMinutes(1));
 
@@ -67,7 +68,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
 
         // when
@@ -93,7 +94,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
         await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
             resource,
@@ -153,7 +154,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var writerId = Guid.NewGuid().ToString("N");
         var wrongWriterId = Guid.NewGuid().ToString("N");
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        await db.StringSetAsync(_WriterKey(resource), fixture.ReaderWriterLockStorage.GetWaitingId(writerId));
+        await db.StringSetAsync(_WriterKey(resource), DistributedLockCoreHelpers.GetWriterWaitingId(writerId));
 
         // when
         await fixture.ReaderWriterLockStorage.ReleaseWriteAsync(resource, wrongWriterId, AbortToken);
@@ -162,7 +163,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var existsAfterCorrectRelease = await db.KeyExistsAsync(_WriterKey(resource));
 
         // then
-        afterWrongRelease.ToString().Should().Be(fixture.ReaderWriterLockStorage.GetWaitingId(writerId));
+        afterWrongRelease.ToString().Should().Be(DistributedLockCoreHelpers.GetWriterWaitingId(writerId));
         existsAfterCorrectRelease.Should().BeFalse();
     }
 
@@ -172,7 +173,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // given
         var resource = _NewResource();
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
 
         // when
         var result = await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
@@ -261,7 +262,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
                     .TryAcquireWriteAsync(
                         resource,
                         id,
-                        fixture.ReaderWriterLockStorage.GetWaitingId(id),
+                        DistributedLockCoreHelpers.GetWriterWaitingId(id),
                         TimeSpan.FromMinutes(1),
                         cancellationToken: AbortToken
                     )
@@ -279,7 +280,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // given
         var resource = _NewResource();
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
             resource,
             writerId,
@@ -338,7 +339,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var writerId = Guid.NewGuid().ToString("N");
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        await db.StringSetAsync(_WriterKey(resource), fixture.ReaderWriterLockStorage.GetWaitingId(writerId));
+        await db.StringSetAsync(_WriterKey(resource), DistributedLockCoreHelpers.GetWriterWaitingId(writerId));
 
         (await fixture.ReaderWriterLockStorage.IsWriteLockedAsync(resource, AbortToken)).Should().BeFalse();
 
@@ -395,7 +396,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
             resource,
             readerId,
@@ -430,8 +431,8 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var readerId = Guid.NewGuid().ToString("N");
         var writer1 = Guid.NewGuid().ToString("N");
         var writer2 = Guid.NewGuid().ToString("N");
-        var waiting1 = fixture.ReaderWriterLockStorage.GetWaitingId(writer1);
-        var waiting2 = fixture.ReaderWriterLockStorage.GetWaitingId(writer2);
+        var waiting1 = DistributedLockCoreHelpers.GetWriterWaitingId(writer1);
+        var waiting2 = DistributedLockCoreHelpers.GetWriterWaitingId(writer2);
         await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
             resource,
             readerId,
@@ -476,7 +477,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var zombieReader = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
-        var waitingId = fixture.ReaderWriterLockStorage.GetWaitingId(writerId);
+        var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
         await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
             resource,
             zombieReader,

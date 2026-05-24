@@ -56,7 +56,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
             async () =>
             {
                 var db = fixture.ConnectionMultiplexer.GetDatabase();
-                var writerKeyValue = await db.StringGetAsync("{" + "distributed-lock:" + resource + "}:writer");
+                var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
 
                 return writerKeyValue.HasValue;
             }
@@ -225,7 +225,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
         await act.Should().ThrowAsync<OperationCanceledException>();
 
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var writerKeyValue = await db.StringGetAsync("{" + "distributed-lock:" + resource + "}:writer");
+        var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
         writerKeyValue.HasValue.Should().BeFalse();
     }
 

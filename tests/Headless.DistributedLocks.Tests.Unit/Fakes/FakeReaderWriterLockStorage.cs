@@ -11,8 +11,6 @@ internal sealed class FakeReaderWriterLockStorage : IDistributedReaderWriterLock
 
     public int WriteReleaseCount { get; private set; }
 
-    public string GetWaitingId(string lockId) => $"{lockId}:_WRITERWAITING";
-
     public ValueTask<bool> TryAcquireReadAsync(
         string resource,
         string lockId,
@@ -116,7 +114,10 @@ internal sealed class FakeReaderWriterLockStorage : IDistributedReaderWriterLock
         {
             lock (state)
             {
-                if (state.WriterId == lockId || state.WriterId == $"{lockId}:_WRITERWAITING")
+                if (
+                    state.WriterId == lockId
+                    || state.WriterId == DistributedLockCoreHelpers.GetWriterWaitingId(lockId)
+                )
                 {
                     state.WriterId = null;
                 }
@@ -175,7 +176,11 @@ internal sealed class FakeReaderWriterLockStorage : IDistributedReaderWriterLock
         lock (state)
         {
             return ValueTask.FromResult(
-                state.WriterId is not null && !state.WriterId.EndsWith(":_WRITERWAITING", StringComparison.Ordinal)
+                state.WriterId is not null
+                    && !state.WriterId.EndsWith(
+                        DistributedLockCoreHelpers.WriterWaitingSuffix,
+                        StringComparison.Ordinal
+                    )
             );
         }
     }

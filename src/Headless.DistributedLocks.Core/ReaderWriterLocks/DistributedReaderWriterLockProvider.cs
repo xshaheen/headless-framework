@@ -31,6 +31,7 @@ public sealed class DistributedReaderWriterLockProvider(
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
     private readonly TimeSpan _writerWaitingMarkerTtl = options.WriterWaitingMarkerTtl;
+    private readonly TimeSpan _disposeTimeout = options.DisposeTimeout;
 
     // Long-running release pipeline shared with the mutex provider. Release is a terminal state
     // write — if the caller's CT fires mid-retry we still want to clean up, so the release path
@@ -133,10 +134,12 @@ public sealed class DistributedReaderWriterLockProvider(
 
         return mode switch
         {
+            // Read renew also clamps null/infinite to the default — see _TryAcquireStorageAsync
+            // for rationale.
             ReaderWriterLockMode.Read => _storage.TryExtendReadAsync(
                     resource,
                     lockId,
-                    timeUntilExpires,
+                    timeUntilExpires ?? DefaultTimeUntilExpires,
                     cancellationToken
                 )
                 .AsTask(),
@@ -179,34 +182,50 @@ public sealed class DistributedReaderWriterLockProvider(
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
 
-        // Release is a terminal-state write. Use CancellationToken.None so the retry pipeline
-        // completes even if the caller's CT fires — the storage-level cleanup is the source of
-        // truth for whether waiters can proceed. Same convention as the mutex provider.
-        var storageRef = _storage;
-        var resourceRef = resource;
-        var lockIdRef = lockId;
-        switch (mode)
+        // Release is a terminal-state write. Per <see cref="DisposableReaderWriterLock.DisposeAsync"/>
+        // contract, sustained storage unreachability can keep this pipeline retrying for the full
+        // retry budget. Use CancellationToken.None so the retry pipeline completes even if the
+        // caller's CT fires — the storage-level cleanup is the source of truth for whether waiters
+        // can proceed. Same convention as the mutex provider.
+        //
+        // Static state-tuple eliminates the per-call closure allocation that the mutex provider's
+        // RenewAsync avoids via the same pattern.
+        //
+        // The outer WaitAsync(disposeTimeout) caps how long ReleaseAsync waits for the pipeline.
+        // On timeout we log a warning and return — the pipeline continues running in the background
+        // and the storage's per-record TTL is the eventual consistency mechanism. This guarantees
+        // application shutdown is never blocked beyond DisposeTimeout (default 10s) even under
+        // sustained storage unavailability.
+        ValueTask releaseTask = mode switch
         {
-            case ReaderWriterLockMode.Read:
-                await _releasePipeline
-                    .ExecuteAsync(
-                        async ct =>
-                            await storageRef.ReleaseReadAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false),
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
-                break;
-            case ReaderWriterLockMode.Write:
-                await _releasePipeline
-                    .ExecuteAsync(
-                        async ct =>
-                            await storageRef.ReleaseWriteAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false),
-                        CancellationToken.None
-                    )
-                    .ConfigureAwait(false);
-                break;
-            default:
-                throw new InvalidOperationException("Unknown reader-writer lock mode.");
+            ReaderWriterLockMode.Read => _releasePipeline.ExecuteAsync(
+                static async (state, ct) =>
+                {
+                    var (storage, resource, lockId) = state;
+                    await storage.ReleaseReadAsync(resource, lockId, ct).ConfigureAwait(false);
+                },
+                (_storage, resource, lockId),
+                CancellationToken.None
+            ),
+            ReaderWriterLockMode.Write => _releasePipeline.ExecuteAsync(
+                static async (state, ct) =>
+                {
+                    var (storage, resource, lockId) = state;
+                    await storage.ReleaseWriteAsync(resource, lockId, ct).ConfigureAwait(false);
+                },
+                (_storage, resource, lockId),
+                CancellationToken.None
+            ),
+            _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
+        };
+
+        try
+        {
+            await releaseTask.AsTask().WaitAsync(_disposeTimeout, timeProvider, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
         }
 
         var monitor = _monitorRegistry.TryDeregister(resource, lockId);
@@ -433,10 +452,15 @@ public sealed class DistributedReaderWriterLockProvider(
         }
         catch (OperationCanceledException)
         {
-            // Cleanup is performed by the post-loop `if (!gotLock)` block when control reaches
-            // it. Skip the inline round trip here so cancellation doesn't pay double the cleanup
-            // cost. If the caller cancelled, surface the exception immediately so the cleanup
-            // is intentionally skipped.
+            // The storage call may have planted the writer-waiting marker server-side before the
+            // client observed cancellation. Run the idempotent cleanup BEFORE rethrowing so a
+            // caller-cancelled try-once doesn't strand the marker until TTL expiry. This mirrors
+            // the cleanup performed by the post-loop block below for non-cancelled paths.
+            if (mode == ReaderWriterLockMode.Write)
+            {
+                await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+            }
+
             if (callerToken.IsCancellationRequested)
             {
                 throw;
@@ -459,7 +483,9 @@ public sealed class DistributedReaderWriterLockProvider(
             // after a contended return). Read-mode contention never touches the writer key, so
             // running cleanup for it is a pointless round trip. `_CleanupWaitingMarkerAsync`
             // already short-circuits on non-Write mode, but mirroring the guarded shape here
-            // keeps the intent obvious.
+            // keeps the intent obvious. The caller-cancel catch above performs its own cleanup
+            // and rethrows before reaching here when applicable; this branch handles the
+            // non-cancelled "contended" return path.
             if (mode == ReaderWriterLockMode.Write)
             {
                 await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
@@ -491,16 +517,23 @@ public sealed class DistributedReaderWriterLockProvider(
     {
         return mode switch
         {
+            // Reader entries MUST carry a finite TTL. The Lua TryAcquireReadLock used to plant a
+            // "0" sentinel for null/infinite TTL, but that left zombie entries in the reader HASH
+            // forever — a never-released reader (process crash, cancelled task) would block all
+            // future writers indefinitely. Clamping to DefaultTimeUntilExpires guarantees every
+            // reader entry has a bound on how long it can strand the resource. Writers can still
+            // accept infinite TTL because the writer is a single-key SET that the provider's
+            // release path always reaches.
             ReaderWriterLockMode.Read => _storage.TryAcquireReadAsync(
                 resource,
                 lockId,
-                timeUntilExpires,
+                timeUntilExpires ?? DefaultTimeUntilExpires,
                 cancellationToken
             ),
             ReaderWriterLockMode.Write => _storage.TryAcquireWriteAsync(
                 resource,
                 lockId,
-                _storage.GetWaitingId(lockId),
+                DistributedLockCoreHelpers.GetWriterWaitingId(lockId),
                 timeUntilExpires,
                 _writerWaitingMarkerTtl,
                 cancellationToken

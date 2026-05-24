@@ -363,13 +363,13 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
     }
 
-    private static async Task _DrainUntilAsync(Func<bool> condition)
+    private static async Task _DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
         for (var i = 0; i < 2000 && !condition(); i++)
         {
             if (i % 100 == 0)
             {
-                await Task.Delay(1);
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
             }
             else
             {
@@ -402,8 +402,6 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         }
 
         public void ReleaseExtend() => _extendGate.TrySetResult();
-
-        public string GetWaitingId(string lockId) => _inner.GetWaitingId(lockId);
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,
@@ -473,8 +471,6 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         private readonly FakeReaderWriterLockStorage _inner = new();
 
         public bool FaultProbes { get; set; }
-
-        public string GetWaitingId(string lockId) => _inner.GetWaitingId(lockId);
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,

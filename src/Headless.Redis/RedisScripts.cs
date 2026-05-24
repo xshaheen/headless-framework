@@ -302,12 +302,15 @@ public static class RedisScripts
           local nowSecMicro = redis.call('TIME')
           local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
-          -- Prune any reader entries whose per-entry expiry has passed before checking for live readers.
-          local fields = redis.call('hkeys', @readerKey)
-          for i = 1, #fields do
-            local field = fields[i]
-            local value = redis.call('hget', @readerKey, field)
-            if value and value ~= '0' and tonumber(value) and tonumber(value) <= nowMs then
+          -- Prune any reader entries whose per-entry expiry has passed before checking for live
+          -- readers. Single HGETALL beats HKEYS + per-field HGET: one round-trip's worth of work
+          -- inside the Lua VM regardless of reader count.
+          local entries = redis.call('hgetall', @readerKey)
+          for i = 1, #entries, 2 do
+            local field = entries[i]
+            local value = entries[i + 1]
+            local expiry = tonumber(value)
+            if expiry and expiry > 0 and expiry <= nowMs then
               redis.call('hdel', @readerKey, field)
             end
           end

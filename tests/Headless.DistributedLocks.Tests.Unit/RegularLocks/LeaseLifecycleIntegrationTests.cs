@@ -454,13 +454,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         _ = handle;
     }
 
-    private static async Task _DrainUntilAsync(Func<bool> condition)
+    private static async Task _DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
     {
         for (var i = 0; i < 2000 && !condition(); i++)
         {
             if (i % 100 == 0)
             {
-                await Task.Delay(1);
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1), cancellationToken);
             }
             else
             {

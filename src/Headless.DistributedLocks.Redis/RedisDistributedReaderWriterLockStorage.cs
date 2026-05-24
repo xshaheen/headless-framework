@@ -11,16 +11,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedReaderWriterLockStorage
 {
-    public const string WriterWaitingSuffix = ":_WRITERWAITING";
-
     private IDatabase Db => multiplexer.GetDatabase();
-
-    public string GetWaitingId(string lockId)
-    {
-        Argument.IsNotNullOrEmpty(lockId);
-
-        return _GetWaitingId(lockId);
-    }
 
     public async ValueTask<bool> TryAcquireReadAsync(
         string resource,
@@ -123,7 +114,13 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         _ = await scriptsLoader
-            .ReleaseWriteLockAsync(Db, keys.WriterKey, lockId, _GetWaitingId(lockId), cancellationToken)
+            .ReleaseWriteLockAsync(
+                Db,
+                keys.WriterKey,
+                lockId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(lockId),
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -177,7 +174,8 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
         var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        return value.HasValue && !value.ToString().EndsWith(WriterWaitingSuffix, StringComparison.Ordinal);
+        return value.HasValue
+            && !value.ToString().EndsWith(DistributedLockCoreHelpers.WriterWaitingSuffix, StringComparison.Ordinal);
     }
 
     public async ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
@@ -208,10 +206,5 @@ public sealed class RedisDistributedReaderWriterLockStorage(
             lockId.Contains(':', StringComparison.Ordinal),
             "Reader-writer lock ids cannot contain ':' because it conflicts with the writer-waiting suffix delimiter."
         );
-    }
-
-    private static string _GetWaitingId(string lockId)
-    {
-        return lockId + WriterWaitingSuffix;
     }
 }

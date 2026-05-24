@@ -16,11 +16,6 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
         _scopedPrefix = Argument.IsNotNullOrEmpty(scopedPrefix);
     }
 
-    public string GetWaitingId(string lockId)
-    {
-        return _inner.GetWaitingId(lockId);
-    }
-
     public ValueTask<bool> TryAcquireReadAsync(
         string resource,
         string lockId,

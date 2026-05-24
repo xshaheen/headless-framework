@@ -21,16 +21,56 @@ internal static class DistributedLockCoreHelpers
     private static readonly TimeSpan _MaxRetryDelay = TimeSpan.FromSeconds(3);
 
     /// <summary>
+    /// Suffix appended to a writer's lock id to derive the writer-waiting marker placed in storage
+    /// while readers drain (writer-preference; see D8). Shared by both .NET storage layers and
+    /// embedded inline in the matching Lua scripts so any future change keeps the two surfaces in
+    /// lockstep.
+    /// </summary>
+    internal const string WriterWaitingSuffix = ":_WRITERWAITING";
+
+    /// <summary>
+    /// Deterministic derivation of the writer-waiting marker id from a writer's lock id. Pure;
+    /// the same input always produces the same output so cleanup-or-release round trips agree
+    /// with the original acquire-time marker.
+    /// </summary>
+    [Pure]
+    public static string GetWriterWaitingId(string lockId)
+    {
+        return lockId + WriterWaitingSuffix;
+    }
+
+    /// <summary>
     /// Normalizes the lease duration: <see langword="null"/> falls back to <paramref name="defaultTimeUntilExpires"/>,
     /// <see cref="Timeout.InfiniteTimeSpan"/> is translated to <see langword="null"/> (no expiration), and
-    /// any finite value is validated as positive.
+    /// any finite value is validated as positive and capped below <see cref="int.MaxValue"/> milliseconds.
     /// </summary>
+    /// <remarks>
+    /// The upper bound of <see cref="int.MaxValue"/> milliseconds (~24.8 days) reflects the wire
+    /// format: lease TTLs travel to storage providers as <see langword="int"/> millisecond values
+    /// (Redis PX, Lua ARGV). A larger value would silently overflow on cast and plant a corrupted
+    /// TTL. Rejecting at validation time surfaces the misuse as <see cref="ArgumentException"/>.
+    /// </remarks>
     [Pure]
     public static TimeSpan? NormalizeTimeUntilExpires(TimeSpan? timeUntilExpires, TimeSpan defaultTimeUntilExpires)
     {
-        return timeUntilExpires is null ? defaultTimeUntilExpires
-            : timeUntilExpires == Timeout.InfiniteTimeSpan ? null
-            : Argument.IsPositive(timeUntilExpires.Value);
+        if (timeUntilExpires is null)
+        {
+            return defaultTimeUntilExpires;
+        }
+
+        if (timeUntilExpires == Timeout.InfiniteTimeSpan)
+        {
+            return null;
+        }
+
+        var value = Argument.IsPositive(timeUntilExpires.Value);
+        Argument.IsLessThan(
+            value.TotalMilliseconds,
+            int.MaxValue,
+            paramName: nameof(timeUntilExpires)
+        );
+
+        return value;
     }
 
     /// <summary>
@@ -74,7 +114,11 @@ internal static class DistributedLockCoreHelpers
     /// Exponential backoff with jitter: 50ms, 100ms, 200ms, ..., capped at 3s, with ±25% jitter to
     /// avoid a thundering herd of waiters retrying in lockstep.
     /// </summary>
-    [Pure]
+    /// <remarks>
+    /// Not <see cref="PureAttribute"/>: this method advances <see cref="Random.Shared"/>'s PRNG
+    /// state when sampling the jitter, so two consecutive calls with the same <paramref name="attempt"/>
+    /// return different values. Treating the result as "ignorable" would mask a real bug.
+    /// </remarks>
     public static TimeSpan GetBackoffDelay(int attempt)
     {
         var delayMs = _MinRetryDelay.TotalMilliseconds * (1 << Math.Min(attempt, 6));

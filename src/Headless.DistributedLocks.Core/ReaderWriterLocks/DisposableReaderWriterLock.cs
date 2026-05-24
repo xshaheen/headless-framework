@@ -125,6 +125,14 @@ internal sealed class DisposableReaderWriterLock : IDistributedLock, LeaseMonito
         }
     }
 
+    /// <summary>
+    /// Disposes the lock, releasing it when <see cref="DistributedLockAcquireOptions.ReleaseOnDispose"/>
+    /// was true. The provider's release pipeline is bounded by
+    /// <see cref="DistributedLockOptions.DisposeTimeout"/> (default 10s) so dispose never blocks
+    /// application shutdown beyond that window under sustained storage unavailability. On timeout
+    /// the pipeline continues in the background and the storage's per-record TTL is the eventual
+    /// consistency mechanism.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

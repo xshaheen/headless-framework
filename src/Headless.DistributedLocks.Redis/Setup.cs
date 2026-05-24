@@ -40,25 +40,25 @@ public static class RedisDistributedLockSetup
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction);
+            return services._AddRedisDistributedLockCore(s =>
+                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
+            );
         }
 
         /// <summary>Adds Redis-backed resource lock provider.</summary>
         public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions> optionSetupAction)
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction);
+            return services._AddRedisDistributedLockCore(s =>
+                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
+            );
         }
 
         /// <summary>Adds Redis-backed resource lock provider.</summary>
         public IServiceCollection AddRedisDistributedLock(IConfiguration config)
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedLock<RedisDistributedLockStorage>(config);
+            return services._AddRedisDistributedLockCore(s =>
+                s.AddDistributedLock<RedisDistributedLockStorage>(config)
+            );
         }
 
         #endregion
@@ -70,27 +70,47 @@ public static class RedisDistributedLockSetup
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction);
+            return services._AddRedisDistributedReaderWriterLockCore(s =>
+                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
+            );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(Action<DistributedLockOptions> optionSetupAction)
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction);
+            return services._AddRedisDistributedReaderWriterLockCore(s =>
+                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
+            );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(IConfiguration config)
         {
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-            return services.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config);
+            return services._AddRedisDistributedReaderWriterLockCore(s =>
+                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config)
+            );
         }
 
         #endregion
+    }
+
+    private static IServiceCollection _AddRedisDistributedLockCore(
+        this IServiceCollection services,
+        Func<IServiceCollection, IServiceCollection> registerStorage
+    )
+    {
+        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+        return registerStorage(services);
+    }
+
+    private static IServiceCollection _AddRedisDistributedReaderWriterLockCore(
+        this IServiceCollection services,
+        Func<IServiceCollection, IServiceCollection> registerStorage
+    )
+    {
+        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+        return registerStorage(services);
     }
 }

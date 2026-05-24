@@ -7,16 +7,6 @@ namespace Headless.DistributedLocks;
 public interface IDistributedReaderWriterLockStorage
 {
     /// <summary>
-    /// Derives the writer-waiting marker id from a writer's <paramref name="lockId"/>. The provider
-    /// passes the derived marker into <see cref="TryAcquireWriteAsync"/> so the storage can plant
-    /// a placeholder while readers drain (writer-preference; see D8). Implementations MUST be
-    /// deterministic for a given <paramref name="lockId"/> so the same marker is produced for the
-    /// later cleanup-or-release round trip.
-    /// </summary>
-    [Pure]
-    string GetWaitingId(string lockId);
-
-    /// <summary>
     /// Atomically acquires a shared (read) lease on <paramref name="resource"/> for the caller's
     /// <paramref name="lockId"/> when no writer holds the resource and no writer-waiting marker is
     /// present (writer preference; see D8). Implementations MUST guarantee atomicity of the
@@ -24,6 +14,12 @@ public interface IDistributedReaderWriterLockStorage
     /// exclusivity, and so concurrent readers cannot bypass a queued writer.
     /// Returns <see langword="true"/> when the lease is granted, <see langword="false"/> on contention.
     /// </summary>
+    /// <remarks>
+    /// Read leases always carry a finite TTL: the provider clamps <see langword="null"/> /
+    /// <see cref="Timeout.InfiniteTimeSpan"/> to <see cref="IDistributedReaderWriterLockProvider.DefaultTimeUntilExpires"/>
+    /// before reaching this method, so a never-released reader cannot strand the resource
+    /// indefinitely. Implementations may rely on a non-null <paramref name="ttl"/> in practice.
+    /// </remarks>
     ValueTask<bool> TryAcquireReadAsync(
         string resource,
         string lockId,
@@ -55,8 +51,8 @@ public interface IDistributedReaderWriterLockStorage
     /// Atomically acquires an exclusive (write) lease on <paramref name="resource"/> when no
     /// readers and no other writer hold the resource. When readers are present, implementations
     /// MUST plant or refresh the writer-waiting marker derived from <paramref name="waitingId"/>
-    /// (see <see cref="GetWaitingId"/> — required for writer-preference per D8) so subsequent
-    /// readers are blocked until the queued writer promotes. The marker is planted with
+    /// (required for writer-preference per D8) so subsequent readers are blocked until the queued
+    /// writer promotes. The marker is planted with
     /// <paramref name="markerTtl"/> rather than the lease TTL so an abandoned/cancelled writer
     /// does not keep readers blocked for the full lease window. Returns <see langword="true"/>
     /// when the exclusive lease is granted, <see langword="false"/> when the writer is queued or
@@ -115,6 +111,12 @@ public interface IDistributedReaderWriterLockStorage
     /// for correctness decisions; use <see cref="TryAcquireWriteAsync"/> or a held lease's
     /// validate methods instead.
     /// </summary>
+    /// <remarks>
+    /// This method does not prune expired reader entries before checking; the returned value may
+    /// include stale entries that have passed their per-entry expiry but have not yet been cleaned
+    /// up by a subsequent writer acquire. Use this for diagnostic purposes only; do not rely on it
+    /// for correctness decisions.
+    /// </remarks>
     ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -129,5 +131,11 @@ public interface IDistributedReaderWriterLockStorage
     /// only — the count can change concurrently and entries can expire, so callers MUST NOT rely
     /// on this for correctness decisions.
     /// </summary>
+    /// <remarks>
+    /// This method does not prune expired reader entries before counting; the returned value may
+    /// include stale entries that have passed their per-entry expiry but have not yet been cleaned
+    /// up by a subsequent writer acquire. Use this for diagnostic purposes only; do not rely on it
+    /// for correctness decisions.
+    /// </remarks>
     ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default);
 }

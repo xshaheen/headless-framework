@@ -27,6 +27,7 @@ public sealed class DistributedLockProvider(
         outboxPublisher,
         logger
     );
+    private readonly TimeSpan _disposeTimeout = options.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`. Shared
@@ -499,24 +500,43 @@ public sealed class DistributedLockProvider(
         var resourceRef = resource;
         var lockIdRef = lockId;
 
-        var lastResult = await _releasePipeline
-            .ExecuteAsync(
-                async ct =>
-                {
-                    var result = await storageRef.RemoveIfEqualAsync(resourceRef, lockIdRef, ct).ConfigureAwait(false);
-
-                    if (result)
+        // Cap the release pipeline at DisposeTimeout so application shutdown is not blocked by
+        // sustained storage unavailability. On timeout the pipeline continues in the background
+        // and the storage's per-record TTL is the eventual consistency mechanism.
+        bool removed;
+        try
+        {
+            var lastResult = await _releasePipeline
+                .ExecuteAsync(
+                    async ct =>
                     {
-                        observedAttemptSucceeded = true;
-                    }
+                        var result = await storageRef
+                            .RemoveIfEqualAsync(resourceRef, lockIdRef, ct)
+                            .ConfigureAwait(false);
 
-                    return result;
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+                        if (result)
+                        {
+                            observedAttemptSucceeded = true;
+                        }
 
-        var removed = observedAttemptSucceeded || lastResult;
+                        return result;
+                    },
+                    cancellationToken
+                )
+                .AsTask()
+                .WaitAsync(_disposeTimeout, timeProvider, cancellationToken)
+                .ConfigureAwait(false);
+
+            removed = observedAttemptSucceeded || lastResult;
+        }
+        catch (TimeoutException)
+        {
+            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
+            // Background pipeline may still succeed and set observedAttemptSucceeded; treat the
+            // caller's release as not-yet-confirmed so we skip the outbox publish (waiters will
+            // fall back to polling, which is the same path as a never-published release).
+            removed = false;
+        }
 
         if (removed)
         {

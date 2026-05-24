@@ -235,4 +235,17 @@ public static partial class RegularLockLoggerExtensions
         Message = "Nudged lease monitor: R={Resource} Id={LockId}"
     )]
     public static partial void LogLeaseMonitorNudged(this ILogger logger, string resource, string lockId);
+
+    [LoggerMessage(
+        EventId = 23,
+        EventName = "LockReleaseTimedOut",
+        Level = LogLevel.Warning,
+        Message = "Release pipeline exceeded DisposeTimeout ({Timeout:g}) for R={Resource} Id={LockId}; storage cleanup continues in background and the per-record TTL is the eventual consistency mechanism."
+    )]
+    public static partial void LogLockReleaseTimedOut(
+        this ILogger logger,
+        string resource,
+        string lockId,
+        TimeSpan timeout
+    );
 }
