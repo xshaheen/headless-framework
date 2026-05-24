@@ -198,4 +198,95 @@ public static class RedisScripts
         end
         return redis.call('get', @key)
         """;
+
+    /// <summary>Atomically acquires a reader lock when no writer or writer-waiting marker exists.</summary>
+    public const string TryAcquireReadLock = """
+        if redis.call('exists', @writerKey) == 1 then
+          return 0
+        end
+
+        redis.call('sadd', @readerKey, @lockId)
+
+        if (@expires ~= nil and @expires ~= '') then
+          local readerTtl = redis.call('pttl', @readerKey)
+          if readerTtl < tonumber(@expires) then
+            redis.call('pexpire', @readerKey, @expires)
+          end
+        end
+
+        return 1
+        """;
+
+    /// <summary>Atomically extends a reader lock if the lock id is still a reader set member.</summary>
+    public const string TryExtendReadLock = """
+        if redis.call('sismember', @readerKey, @lockId) == 0 then
+          return 0
+        end
+
+        if (@expires ~= nil and @expires ~= '') then
+          local readerTtl = redis.call('pttl', @readerKey)
+          if readerTtl < tonumber(@expires) then
+            redis.call('pexpire', @readerKey, @expires)
+          end
+        end
+
+        return 1
+        """;
+
+    /// <summary>Atomically releases a reader lock id from the reader set.</summary>
+    public const string ReleaseReadLock = """
+        return redis.call('srem', @readerKey, @lockId)
+        """;
+
+    /// <summary>Atomically acquires a writer lock or plants/refreshes the caller's writer-waiting marker.</summary>
+    public const string TryAcquireWriteLock = """
+        local writerValue = redis.call('get', @writerKey)
+
+        if writerValue == false or writerValue == @waitingId then
+          if redis.call('scard', @readerKey) == 0 then
+            if (@expires ~= nil and @expires ~= '') then
+              redis.call('set', @writerKey, @lockId, 'PX', @expires)
+            else
+              redis.call('set', @writerKey, @lockId)
+            end
+            return 1
+          end
+
+          if writerValue ~= false then
+            if (@expires ~= nil and @expires ~= '') then
+              redis.call('pexpire', @writerKey, @expires)
+            end
+          else
+            if (@expires ~= nil and @expires ~= '') then
+              redis.call('set', @writerKey, @waitingId, 'PX', @expires)
+            else
+              redis.call('set', @writerKey, @waitingId)
+            end
+          end
+        end
+
+        return 0
+        """;
+
+    /// <summary>Atomically extends a writer lock when the writer key still belongs to the lock id.</summary>
+    public const string TryExtendWriteLock = """
+        if redis.call('get', @writerKey) ~= @lockId then
+          return 0
+        end
+
+        if (@expires ~= nil and @expires ~= '') then
+          redis.call('pexpire', @writerKey, @expires)
+        end
+
+        return 1
+        """;
+
+    /// <summary>Atomically releases a writer lock or the caller's writer-waiting marker.</summary>
+    public const string ReleaseWriteLock = """
+        local current = redis.call('get', @writerKey)
+        if current == @lockId or current == @waitingId then
+          return redis.call('del', @writerKey)
+        end
+        return 0
+        """;
 }

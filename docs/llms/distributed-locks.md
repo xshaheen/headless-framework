@@ -15,6 +15,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Weak Fencing With LockId](#weak-fencing-with-lockid)
     - [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)
     - [Messaging Wake-ups](#messaging-wake-ups)
+- [Reader-Writer Locks](#reader-writer-locks)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
     - [Problem Solved](#problem-solved)
@@ -57,6 +58,8 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 Use `IDistributedLockProvider` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope for this domain — and the framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + a community Redis-backed `RateLimiter` (distributed) when admission control is needed.
 
+Use `IDistributedReaderWriterLockProvider` when concurrent readers are safe and writers need exclusivity. Reader-writer locks are Redis-only because the generic cache contract cannot atomically coordinate the writer flag and readers set.
+
 ## Agent Instructions
 
 - Code against `IDistributedLockProvider` from `Headless.DistributedLocks.Abstractions`; do not inject Redis or cache storage types into application services.
@@ -71,6 +74,8 @@ Use `IDistributedLockProvider` when only one worker should own a named resource 
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
 - If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxPublisher` is registered, the provider still works and falls back to polling backoff with a one-time warning.
 - `Headless.Messaging.Core` uses a keyed `IDistributedLockProvider` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
+- Use `IDistributedReaderWriterLockProvider` for reader-writer semantics and register it explicitly with `AddRedisDistributedReaderWriterLock(...)`; regular Redis lock setup does not auto-register it.
+- Do not build reader-writer locks on `Headless.DistributedLocks.Cache`; `ICache` exposes single-key mutex-shaped operations only.
 
 ## Core Concepts
 
@@ -104,6 +109,43 @@ Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `
 
 `DistributedLockProvider` can publish `DistributedLockReleased` through `IOutboxPublisher` so waiters wake quickly. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no publisher is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`.
 
+## Reader-Writer Locks
+
+Use `IDistributedReaderWriterLockProvider` for read-heavy resources where multiple readers can proceed concurrently and writers must run exclusively. Read and write acquires return the same `IDistributedLock` handle shape as mutex locks, so `ReleaseAsync()`, `RenewAsync(...)`, `HandleLostToken`, and `LockMonitoringMode.AutoExtend` work the same way.
+
+Redis reader-writer locks use two keys per resource: `{resource}:writer` for the active writer or writer-waiting marker, and `{resource}:readers` for active reader lock ids. The braces are Redis cluster hash-tags so both keys live on the same slot. Resource names containing `{` or `}` are rejected because storage owns that hash-tag shape.
+
+Writer-preference is intentional. When a writer queues behind active readers, Redis stores a writer-waiting marker. New readers are blocked while that marker exists, preventing steady read traffic from starving the writer. If the writer times out or is cancelled before acquiring, the provider clears its waiting marker.
+
+```csharp
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    _ => ConnectionMultiplexer.Connect("localhost:6379")
+);
+
+builder.Services.AddRedisDistributedReaderWriterLock(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+});
+
+await using var read = await readerWriterLocks.AcquireReadLockAsync(
+    "catalog:prices",
+    new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+    ct
+);
+
+await using var write = await readerWriterLocks.AcquireWriteLockAsync(
+    "catalog:prices",
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(2),
+        Monitoring = LockMonitoringMode.AutoExtend,
+    },
+    ct
+);
+```
+
+The cache provider intentionally does not implement reader-writer locks. Read acquire needs one atomic operation that checks the writer key and mutates the readers set; `ICache` only exposes single-key mutex-shaped operations.
+
 ## Choosing a Provider
 
 Choose based on the storage you already operate and the safety category.
@@ -111,7 +153,7 @@ Choose based on the storage you already operate and the safety category.
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
 | `Headless.DistributedLocks.Cache` | You already use `ICache` and the cache is distributed for multi-instance apps. | The app cache is in-memory, or the cache provider serves stale local reads such as `HybridCache` and you need lease monitoring or auto-extension. | Reuses cache infrastructure but inherits that cache provider's consistency and availability behavior. |
-| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks with atomic acquire/release scripts. | You need correctness locks for protected state mutations. | Requires `IConnectionMultiplexer` and Redis script loading, but avoids routing lock operations through a generic cache abstraction. |
+| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks with atomic acquire/release scripts, or Redis-backed reader-writer locks. | You need correctness locks for protected state mutations. | Requires `IConnectionMultiplexer` and Redis script loading, but avoids routing lock operations through a generic cache abstraction. |
 
 ---
 
@@ -126,6 +168,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 ### Key Features
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
+- `IDistributedReaderWriterLockProvider` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`.
 - `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
@@ -195,9 +238,12 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 ### Key Features
 
 - `DistributedLockProvider` implements `IDistributedLockProvider`.
+- `DistributedReaderWriterLockProvider` implements `IDistributedReaderWriterLockProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
+- `IDistributedReaderWriterLockStorage` defines atomic read/write acquire, extend, release, and validation operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
+- `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
 
 ### Design Notes
 
@@ -275,6 +321,7 @@ await using var lease = await lockProvider.AcquireAsync(
 ### Side Effects
 
 - Registers `IDistributedLockProvider` as singleton.
+- Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
 - Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
 
@@ -294,6 +341,7 @@ Stores lock records through `ICache` so applications can reuse an existing cache
 - Uses cache TTL for lock expiration.
 - Works with memory, Redis, or custom cache providers through `ICache`.
 - Do not use `HybridCache` for monitored or auto-extending leases; local L1 reads can outlive the distributed lock TTL and hide lease loss.
+- Does not implement reader-writer locks; the cache contract cannot atomically coordinate the writer flag and readers set.
 
 ### Installation
 
@@ -318,6 +366,8 @@ No storage-specific configuration. Configure the selected `ICache` provider and 
 
 Avoid `HybridCache` for `LockMonitoringMode.Monitor` and `LockMonitoringMode.AutoExtend`. Lease validation reads the current lock id through `ICache`; `HybridCache` may satisfy that read from its local L1 cache even after the distributed TTL has expired. Use `Headless.DistributedLocks.Redis` for monitored Redis-backed locks, or use a cache provider whose reads are distributed and TTL-accurate.
 
+Reader-writer locks are Redis-only. `ICache` exposes single-key operations and cannot atomically check a writer key while mutating a reader set.
+
 ### Dependencies
 
 - `Headless.Caching.Abstractions`
@@ -340,7 +390,9 @@ Stores lock records directly in Redis with atomic acquire, replace, and release 
 ### Key Features
 
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
+- `RedisDistributedReaderWriterLockStorage` implements `IDistributedReaderWriterLockStorage`.
 - `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
+- `AddRedisDistributedReaderWriterLock(...)` registers a Redis-backed reader-writer lock provider.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
 ### Installation
@@ -361,11 +413,18 @@ builder.Services.AddRedisDistributedLock(options =>
     options.KeyPrefix = "distributed-lock:";
     options.MaxResourceNameLength = 512;
 });
+
+builder.Services.AddRedisDistributedReaderWriterLock(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+});
 ```
 
 ### Configuration
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`.
+
+Reader-writer storage creates `{resource}:writer` and `{resource}:readers` Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic.
 
 ### Dependencies
 
@@ -377,3 +436,4 @@ No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLo
 
 - Registers `HeadlessRedisScriptsLoader`.
 - Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.
+- Registers `IDistributedReaderWriterLockProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReaderWriterLock(...)` is called.

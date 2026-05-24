@@ -1,17 +1,20 @@
 # Headless.DistributedLocks.Core
 
-Provides the distributed-lock provider implementation and setup extensions.
+Provides the distributed-lock and reader-writer lock provider implementations and setup extensions.
 
 ## Problem Solved
 
-Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over an `IDistributedLockStorage`.
+Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over storage contracts.
 
 ## Key Features
 
 - `DistributedLockProvider` implements `IDistributedLockProvider`.
+- `DistributedReaderWriterLockProvider` implements `IDistributedReaderWriterLockProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
+- `IDistributedReaderWriterLockStorage` defines read/write acquire, extend, release, and validation operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
+- `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
 
 ## Design Notes
 
@@ -38,6 +41,7 @@ builder.Services.AddDistributedLock(
         options.MaxResourceNameLength = 512;
     }
 );
+
 ```
 
 ## Configuration
@@ -78,5 +82,6 @@ await using var lease = await lockProvider.AcquireAsync(
 ## Side Effects
 
 - Registers `IDistributedLockProvider` as singleton.
+- Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
 - Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
