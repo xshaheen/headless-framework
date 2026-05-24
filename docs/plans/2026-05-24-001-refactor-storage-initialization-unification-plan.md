@@ -1,7 +1,7 @@
 ---
 title: Storage Initialization Unification (Settings/Permissions/Features/Identity/Audit + Messaging renames)
 type: refactor
-status: active
+status: completed
 date: 2026-05-24
 origin: docs/brainstorms/2026-05-24-storage-initialization-unification-requirements.md
 ---
