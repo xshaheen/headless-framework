@@ -24,7 +24,7 @@ namespace Headless.Messaging;
 ///     ILogger&lt;OrderPlacedHandler&gt; logger
 /// ) : IConsume&lt;OrderPlaced&gt;
 /// {
-///     public async ValueTask Consume(
+///     public async ValueTask ConsumeAsync(
 ///         ConsumeContext&lt;OrderPlaced&gt; context,
 ///         CancellationToken cancellationToken
 ///     )
@@ -44,5 +44,5 @@ public interface IConsume<TMessage>
     /// <param name="context">The consumption context containing the message payload and metadata.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
     /// <returns>A <see cref="ValueTask"/> representing the asynchronous operation.</returns>
-    ValueTask Consume(ConsumeContext<TMessage> context, CancellationToken cancellationToken);
+    ValueTask ConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken);
 }

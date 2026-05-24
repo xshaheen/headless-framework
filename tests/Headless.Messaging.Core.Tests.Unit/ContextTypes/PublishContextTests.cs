@@ -69,10 +69,10 @@ public sealed class PublishContextTests : TestBase
         );
 
         // when
-        context.WithCancellationToken(second.Token);
+        context.SetCancellationToken(second.Token);
         var observedBeforeCompletion = context.CancellationToken;
         context.MarkCompleted();
-        var act = () => context.WithCancellationToken(first.Token);
+        var act = () => context.SetCancellationToken(first.Token);
 
         // then
         observedBeforeCompletion.Should().Be(second.Token);

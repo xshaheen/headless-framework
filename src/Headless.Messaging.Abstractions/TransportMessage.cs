@@ -98,7 +98,25 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
 
     public bool Equals(TransportMessage other)
     {
-        return Headers.Equals(other.Headers) && Body.Equals(other.Body);
+        if (Headers.Count != other.Headers.Count)
+        {
+            return false;
+        }
+
+        foreach (var pair in Headers)
+        {
+            if (!other.Headers.TryGetValue(pair.Key, out var otherValue))
+            {
+                return false;
+            }
+
+            if (!string.Equals(pair.Value, otherValue, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return Body.Span.SequenceEqual(other.Body.Span);
     }
 
     public override bool Equals(object? obj)
@@ -108,7 +126,17 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(Headers, Body);
+        var hash = new HashCode();
+        hash.Add(Body.Length);
+        hash.Add(Headers.Count);
+
+        foreach (var pair in Headers)
+        {
+            hash.Add(pair.Key, StringComparer.Ordinal);
+            hash.Add(pair.Value, StringComparer.Ordinal);
+        }
+
+        return hash.ToHashCode();
     }
 
     public static bool operator ==(TransportMessage left, TransportMessage right)

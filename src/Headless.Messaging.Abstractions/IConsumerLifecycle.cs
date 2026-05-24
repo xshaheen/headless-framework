@@ -50,7 +50,7 @@ namespace Headless.Messaging;
 ///         await _repository.PreloadActiveOrdersAsync(cancellationToken);
 ///     }
 ///
-///     public async ValueTask Consume(ConsumeContext&lt;OrderPlaced&gt; context, CancellationToken cancellationToken)
+///     public async ValueTask ConsumeAsync(ConsumeContext&lt;OrderPlaced&gt; context, CancellationToken cancellationToken)
 ///     {
 ///         _logger.LogInformation("Processing order {OrderId}", context.Message.OrderId);
 ///         await _repository.CreateAsync(context.Message, cancellationToken);

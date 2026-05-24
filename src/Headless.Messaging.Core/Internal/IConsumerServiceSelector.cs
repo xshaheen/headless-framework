@@ -127,7 +127,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             // Build ConsumerExecutorDescriptor from metadata
             var consumeMethod = typeof(IConsume<>)
                 .MakeGenericType(consumer.MessageType)
-                .GetMethod(nameof(IConsume<>.Consume))!;
+                .GetMethod(nameof(IConsume<>.ConsumeAsync))!;
 
             var descriptor = new ConsumerExecutorDescriptor
             {

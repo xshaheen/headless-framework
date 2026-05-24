@@ -50,7 +50,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
         var context = _CreateContext(new OrderPlaced("order-1"));
 
         // when
-        context.WithCancellationToken(cts.Token);
+        context.SetCancellationToken(cts.Token);
 
         // then
         context.CancellationToken.Should().Be(cts.Token);

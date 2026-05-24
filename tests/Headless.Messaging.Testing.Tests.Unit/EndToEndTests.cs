@@ -19,7 +19,7 @@ public sealed record OrderCreatedEvent(string OrderId, decimal Amount);
 
 public sealed class OrderCreatedConsumer : IConsume<OrderCreatedEvent>
 {
-    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
         ValueTask.CompletedTask;
 }
 
@@ -29,7 +29,7 @@ public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
     // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
     // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
     // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
-    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
         throw new TimeoutException("Test failure");
 }
 
@@ -40,7 +40,7 @@ public interface INotificationService
 
 public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
     {
         notifier.Notify(context.Message.OrderId);
         return ValueTask.CompletedTask;
@@ -58,7 +58,7 @@ public sealed class IntentRecorder
 
 public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
     {
         recorder.Record(context.IntentType);
         return ValueTask.CompletedTask;
@@ -67,7 +67,7 @@ public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderC
 
 public sealed class QueueIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask Consume(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
     {
         recorder.Record(context.IntentType);
         return ValueTask.CompletedTask;

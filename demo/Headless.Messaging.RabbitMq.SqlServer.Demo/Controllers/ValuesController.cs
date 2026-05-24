@@ -143,7 +143,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
 
 public sealed class PersonConsumer : IConsume<Person>
 {
-    public ValueTask Consume(ConsumeContext<Person> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<Person> context, CancellationToken cancellationToken)
     {
         Console.WriteLine($@"{DateTime.UtcNow} Subscriber invoked, Info: {context.Message}");
         return ValueTask.CompletedTask;

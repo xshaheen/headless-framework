@@ -99,7 +99,7 @@ public record KafkaMessage(DateTime Value);
 
 public sealed class KafkaMessageConsumer : IConsume<KafkaMessage>
 {
-    public ValueTask Consume(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<KafkaMessage> context, CancellationToken cancellationToken)
     {
         Console.WriteLine(
             $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"

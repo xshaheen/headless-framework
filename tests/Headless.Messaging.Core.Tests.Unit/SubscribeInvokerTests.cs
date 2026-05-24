@@ -446,7 +446,7 @@ public sealed class SubscribeInvokerTests : TestBase
         where TConsumer : IConsume<TMessage>
     {
         var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.Consume),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
@@ -478,7 +478,7 @@ public sealed class SubscribeInvokerTests : TestBase
     {
         // For tests, we assume InvokerTestConsumer handles InvokerTestMessage
         var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.Consume),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
@@ -513,7 +513,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 {
     public static ConsumeContext<InvokerTestMessage>? LastConsumed { get; private set; }
 
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         LastConsumed = context;
         return ValueTask.CompletedTask;
@@ -527,7 +527,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 
 public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.CompletedTask;
@@ -536,7 +536,7 @@ public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
 
 public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         context.Headers.AddResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;

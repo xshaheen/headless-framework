@@ -214,7 +214,7 @@ public sealed class TypeSafePublishApiTests
     [UsedImplicitly]
     private sealed class OrderCreatedHandler : IConsume<OrderCreated>
     {
-        public ValueTask Consume(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<OrderCreated> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }

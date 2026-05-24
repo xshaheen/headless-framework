@@ -43,7 +43,7 @@ public record ConsumeContext
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
-    public void WithCancellationToken(CancellationToken cancellationToken)
+    public void SetCancellationToken(CancellationToken cancellationToken)
     {
         if (_isCompleted)
         {

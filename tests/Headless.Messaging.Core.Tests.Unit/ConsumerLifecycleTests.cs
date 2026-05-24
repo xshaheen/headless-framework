@@ -286,7 +286,7 @@ public sealed class ConsumerLifecycleTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             ConsumeCallCount++;
             return ValueTask.CompletedTask;
@@ -309,7 +309,7 @@ public sealed class ConsumerLifecycleTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             throw new InvalidOperationException("Consume failed");
         }
@@ -323,7 +323,7 @@ public sealed class ConsumerLifecycleTests
 
     private sealed class SimpleConsumer : IConsume<TestMessage>
     {
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
@@ -338,7 +338,7 @@ public sealed class ConsumerLifecycleTests
             return ValueTask.CompletedTask;
         }
 
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
@@ -359,7 +359,7 @@ public sealed class ConsumerLifecycleTests
             throw new InvalidOperationException("Starting failed");
         }
 
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             ConsumeCalled = true;
             return ValueTask.CompletedTask;

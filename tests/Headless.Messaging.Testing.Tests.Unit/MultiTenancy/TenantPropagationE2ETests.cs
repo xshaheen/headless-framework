@@ -23,7 +23,7 @@ public sealed record TenantOrderEvent(string OrderId);
 public sealed class TenantCapturingConsumer(ICurrentTenant currentTenant, TenantCapture capture)
     : IConsume<TenantOrderEvent>
 {
-    public ValueTask Consume(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
     {
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
         return ValueTask.CompletedTask;
@@ -39,7 +39,7 @@ public sealed record TenantOrderUpstream(string OrderId);
 /// </summary>
 public sealed class ChainedRepublishConsumer(IBus publisher) : IConsume<TenantOrderUpstream>
 {
-    public async ValueTask Consume(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
+    public async ValueTask ConsumeAsync(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
     {
         await publisher.PublishAsync(new TenantOrderEvent($"chained-{context.Message.OrderId}"), cancellationToken: ct);
     }
@@ -51,7 +51,7 @@ public sealed class FlakyTenantConsumer(ICurrentTenant currentTenant, TenantCapt
 {
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
 
-    public ValueTask Consume(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
     {
         var attempt = _attempts.AddOrUpdate(context.Message.OrderId, 1, (_, prev) => prev + 1);
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);

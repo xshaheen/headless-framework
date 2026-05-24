@@ -43,15 +43,38 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// </summary>
     /// <param name="name">
     /// The broker type name (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
-    /// Can be empty or null for generic addresses.
+    /// Can be empty or null for generic addresses. Must not contain the '$' character — it is the
+    /// reserved delimiter for the single-string form used by <see cref="ToString"/> and the
+    /// string-only constructor.
     /// </param>
     /// <param name="endpoint">
     /// The network endpoint or connection address of the broker (e.g., "localhost:5672", "kafka:9092").
-    /// If null, it is treated as an empty string.
+    /// If null, it is treated as an empty string. Must not contain the '$' character — see
+    /// <paramref name="name"/>.
     /// </param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="name"/> or <paramref name="endpoint"/> contains the reserved
+    /// '$' separator.
+    /// </exception>
     public BrokerAddress(string name, string? endpoint)
     {
-        Name = name;
+        if (name is not null && name.Contains('$', StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "BrokerAddress.Name must not contain the reserved '$' separator.",
+                nameof(name)
+            );
+        }
+
+        if (endpoint is not null && endpoint.Contains('$', StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "BrokerAddress.Endpoint must not contain the reserved '$' separator.",
+                nameof(endpoint)
+            );
+        }
+
+        Name = name ?? string.Empty;
         Endpoint = endpoint ?? string.Empty;
     }
 

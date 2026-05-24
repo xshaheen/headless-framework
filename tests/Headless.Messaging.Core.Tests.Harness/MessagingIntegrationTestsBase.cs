@@ -445,7 +445,7 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
     /// </remarks>
     public int FailedAttempts => Volatile.Read(ref _failedAttempts);
 
-    public ValueTask Consume(ConsumeContext<FailingTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<FailingTestMessage> context, CancellationToken cancellationToken)
     {
         lock (_lock)
         {

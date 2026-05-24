@@ -532,7 +532,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
     private sealed class TestConsumer : IConsume<TestMessage>
     {
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
@@ -540,7 +540,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
     private sealed class OtherConsumer : IConsume<TestMessage>
     {
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }
@@ -762,7 +762,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
     private sealed class OtherMessageConsumer : IConsume<OtherMessage>
     {
-        public ValueTask Consume(ConsumeContext<OtherMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<OtherMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }

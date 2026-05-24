@@ -228,7 +228,7 @@ internal sealed class ConsumeMiddlewarePipeline(
     {
         var factory = _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
         var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId, intentType);
-        context.WithCancellationToken(cancellationToken);
+        context.SetCancellationToken(cancellationToken);
 
         return context;
     }

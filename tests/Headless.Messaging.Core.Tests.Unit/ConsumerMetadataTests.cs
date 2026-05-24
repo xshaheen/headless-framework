@@ -183,7 +183,7 @@ public sealed record MetadataTestMessage(string Value);
 
 public sealed class MetadataTestConsumer : IConsume<MetadataTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<MetadataTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

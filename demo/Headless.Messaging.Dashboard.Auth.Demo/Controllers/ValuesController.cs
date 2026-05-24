@@ -30,7 +30,7 @@ public sealed class ValuesController(IOutboxBus publisher) : Controller
 
 public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<ValuesController.Person>
 {
-    public ValueTask Consume(ConsumeContext<ValuesController.Person> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<ValuesController.Person> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {

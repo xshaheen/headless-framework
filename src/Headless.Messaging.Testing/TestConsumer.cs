@@ -39,7 +39,7 @@ public sealed class TestConsumer<TMessage> : IConsume<TMessage>
     }
 
     /// <inheritdoc />
-    public ValueTask Consume(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
     {
         _receivedContexts.Enqueue(context);
         return ValueTask.CompletedTask;

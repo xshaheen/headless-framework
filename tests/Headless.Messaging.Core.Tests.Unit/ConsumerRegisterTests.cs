@@ -361,7 +361,10 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private sealed class BootstrapReadyConsumer : IConsume<BootstrapReadyMessage>
     {
-        public ValueTask Consume(ConsumeContext<BootstrapReadyMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(
+            ConsumeContext<BootstrapReadyMessage> context,
+            CancellationToken cancellationToken
+        )
         {
             return ValueTask.CompletedTask;
         }
@@ -371,7 +374,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
     private sealed class QueueOnlyConsumer : IConsume<QueueOnlyMessage>
     {
-        public ValueTask Consume(ConsumeContext<QueueOnlyMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<QueueOnlyMessage> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
         }

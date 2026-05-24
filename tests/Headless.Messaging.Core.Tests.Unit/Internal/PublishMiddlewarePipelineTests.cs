@@ -395,7 +395,7 @@ internal sealed class SwallowingOuterCancellationPublishMiddleware(CancellationT
     public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
     {
         await source.CancelAsync();
-        context.WithCancellationToken(source.Token);
+        context.SetCancellationToken(source.Token);
 
         try
         {

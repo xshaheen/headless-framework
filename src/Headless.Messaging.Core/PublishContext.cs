@@ -71,7 +71,7 @@ public abstract class PublishContext
     private protected TimeSpan? DelayTimeCore { get; set; }
 
     /// <summary>Replaces the active cancellation token for downstream middleware and the inner publisher.</summary>
-    public void WithCancellationToken(CancellationToken cancellationToken)
+    public void SetCancellationToken(CancellationToken cancellationToken)
     {
         _ThrowIfCompleted();
         CancellationToken = cancellationToken;

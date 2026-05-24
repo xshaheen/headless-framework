@@ -416,7 +416,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
         var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.Consume),
+            nameof(TestBusConsumer.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
         )!;
@@ -448,7 +448,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var comparer = new ConsumerExecutorDescriptorComparer(NullLogger<ConsumerExecutorDescriptorComparer>.Instance);
         var implTypeInfo = typeof(TestBusConsumer).GetTypeInfo();
         var methodInfo = typeof(TestBusConsumer).GetMethod(
-            nameof(TestBusConsumer.Consume),
+            nameof(TestBusConsumer.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             [typeof(ConsumeContext<TestMessage>), typeof(CancellationToken)]
         )!;
@@ -478,13 +478,13 @@ public sealed class MessagingIntentSplitTests : TestBase
 
     private sealed class TestBusConsumer : IConsume<TestMessage>
     {
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 
     private sealed class TestQueueConsumer : IConsume<TestMessage>
     {
-        public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 

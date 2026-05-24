@@ -398,7 +398,7 @@ public sealed class DirectTestConsumer : IConsume<DirectTestMessage>
         }
     }
 
-    public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
         _ReceivedMessages.Enqueue(context.Message);
         var count = Interlocked.Increment(ref _currentCount);
@@ -473,7 +473,7 @@ public sealed class DirectAnalyticsConsumer : IConsume<DirectTestMessage>
         _messageReceivedTcs = new TaskCompletionSource<bool>();
     }
 
-    public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
         lock (_Lock)
         {
@@ -518,7 +518,7 @@ public sealed class DirectTestConsumerWithHeaders : IConsume<DirectTestMessage>
         _contextReceivedTcs = new TaskCompletionSource<bool>();
     }
 
-    public ValueTask Consume(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<DirectTestMessage> context, CancellationToken cancellationToken)
     {
         _ReceivedContexts.Enqueue(context);
         _contextReceivedTcs.TrySetResult(true);

@@ -19,7 +19,7 @@ public record AmazonSqsMessage(DateTime Value);
 
 public sealed class AmazonSqsMessageConsumer : IConsume<AmazonSqsMessage>
 {
-    public ValueTask Consume(ConsumeContext<AmazonSqsMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<AmazonSqsMessage> context, CancellationToken cancellationToken)
     {
         Console.WriteLine(
             $@"Subscriber output message: {context.Message.Value.ToString(CultureInfo.InvariantCulture)}"

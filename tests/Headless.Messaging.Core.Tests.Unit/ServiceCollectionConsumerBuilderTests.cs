@@ -447,7 +447,7 @@ public sealed record TestOrderEvent(Guid OrderId, decimal Amount);
 
 public sealed class TestOrderHandler : IConsume<TestOrderEvent>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderEvent> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderEvent> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

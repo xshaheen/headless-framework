@@ -88,16 +88,16 @@ public static class Headers
 
     /// <summary>
     /// Timestamp indicating when the message was sent/published, in UTC ISO 8601 format.
-    /// Value: "headless-senttime"
+    /// Value: "headless-sent-time"
     /// </summary>
-    public const string SentTime = "headless-senttime";
+    public const string SentTime = "headless-sent-time";
 
     /// <summary>
     /// Timestamp indicating when a delayed message should be published, in UTC ISO 8601 format.
     /// This header is only present for messages scheduled for delayed delivery.
-    /// Value: "headless-delaytime"
+    /// Value: "headless-delay-time"
     /// </summary>
-    public const string DelayTime = "headless-delaytime";
+    public const string DelayTime = "headless-delay-time";
 
     /// <summary>
     /// Exception information if the message processing failed.

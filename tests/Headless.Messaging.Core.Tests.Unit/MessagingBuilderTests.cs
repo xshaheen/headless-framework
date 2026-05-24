@@ -676,7 +676,7 @@ public sealed record TestPaymentMessage(string PaymentId, decimal Amount);
 // Test consumer implementations
 public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -684,7 +684,7 @@ public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 
 public sealed class AnotherOrderConsumer : IConsume<TestOrderMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -692,7 +692,7 @@ public sealed class AnotherOrderConsumer : IConsume<TestOrderMessage>
 
 public sealed class TestPaymentConsumer : IConsume<TestPaymentMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
@@ -700,12 +700,12 @@ public sealed class TestPaymentConsumer : IConsume<TestPaymentMessage>
 
 public sealed class MultiMessageConsumer : IConsume<TestOrderMessage>, IConsume<TestPaymentMessage>
 {
-    public ValueTask Consume(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask Consume(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestPaymentMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

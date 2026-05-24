@@ -22,7 +22,7 @@ public record PulsarMessage(string Value);
 
 public sealed class PulsarMessageConsumer : IConsume<PulsarMessage>
 {
-    public ValueTask Consume(ConsumeContext<PulsarMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<PulsarMessage> context, CancellationToken cancellationToken)
     {
         Console.WriteLine($"Subscriber output message: {context.Message.Value}");
         return ValueTask.CompletedTask;

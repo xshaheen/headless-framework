@@ -899,7 +899,10 @@ public sealed class DistributedLockProvider(
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
         : IConsume<DistributedLockReleased>
     {
-        public ValueTask Consume(ConsumeContext<DistributedLockReleased> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(
+            ConsumeContext<DistributedLockReleased> context,
+            CancellationToken cancellationToken
+        )
         {
             if (cancellationToken.IsCancellationRequested)
             {

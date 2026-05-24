@@ -154,7 +154,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
     private sealed class ScopedClassConsumer(ScopedExecutionRecorder recorder, ScopedExecutionDependency dependency)
         : IConsume<ScopedMessage>
     {
-        public ValueTask Consume(ConsumeContext<ScopedMessage> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(ConsumeContext<ScopedMessage> context, CancellationToken cancellationToken)
         {
             recorder.RecordClassHandler(dependency.Id);
             return ValueTask.CompletedTask;

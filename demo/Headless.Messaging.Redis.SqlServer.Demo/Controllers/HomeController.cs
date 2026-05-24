@@ -25,7 +25,7 @@ public class Person
 
 public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Person>
 {
-    public ValueTask Consume(ConsumeContext<Person> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<Person> context, CancellationToken cancellationToken)
     {
         if (logger.IsEnabled(LogLevel.Information))
         {
