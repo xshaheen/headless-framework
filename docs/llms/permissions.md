@@ -1,6 +1,6 @@
 ---
 domain: Permissions
-packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework
+packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer
 ---
 
 # Permissions
@@ -38,13 +38,30 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
   - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
   - [Side Effects](#side-effects-2)
+- [Headless.Permissions.Storage.PostgreSql](#headlesspermissionsstoragepostgresql)
+  - [Problem Solved](#problem-solved-3)
+  - [Key Features](#key-features-3)
+  - [Installation](#installation-3)
+  - [Quick Start](#quick-start-2)
+  - [Configuration](#configuration-3)
+  - [Dependencies](#dependencies-3)
+  - [Side Effects](#side-effects-3)
+- [Headless.Permissions.Storage.SqlServer](#headlesspermissionsstoragesqlserver)
+  - [Problem Solved](#problem-solved-4)
+  - [Key Features](#key-features-4)
+  - [Installation](#installation-4)
+  - [Quick Start](#quick-start-3)
+  - [Configuration](#configuration-4)
+  - [Dependencies](#dependencies-4)
+  - [Side Effects](#side-effects-4)
 
 > Dynamic permission management with hierarchical grant resolution, caching, and ASP.NET Core authorization integration.
 
 ## Quick Orientation
 - Install `Headless.Permissions.Abstractions` to depend on interfaces only (e.g., in domain/application layers).
 - Install `Headless.Permissions.Core` for the full runtime: grant resolution, caching, background init, and `[HasPermission]` authorization attribute.
-- Install `Headless.Permissions.Storage.EntityFramework` for database-backed persistence of permission definitions and grants.
+- Install `Headless.Permissions.Storage.EntityFramework` for EF Core-backed persistence using the consumer's `DbContext`.
+- Install `Headless.Permissions.Storage.PostgreSql` or `Headless.Permissions.Storage.SqlServer` for raw DDL storage that initializes permissions tables at host startup without requiring an app EF context.
 - Register with `AddPermissionsManagementCore(options => ...)`, then add a definition provider via `AddPermissionDefinitionProvider<T>()`, and wire storage via `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())`.
 - Permissions follow AWS IAM-style resolution: explicit Deny overrides all Grants; default is Deny.
 
@@ -56,6 +73,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - Three states: **Granted** (record with `IsGranted = true`), **Prohibited** (record with `IsGranted = false`), **Undefined** (no record, defaults to deny).
 - Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered. Ensure these are wired before adding permissions.
 - Storage.EntityFramework uses the consumer's `DbContext`. Register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessPermissions(options)` in `OnModelCreating`.
+- Storage.PostgreSql and Storage.SqlServer provide Mode 2 raw providers. Use `AddHeadlessPermissions(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - `PermissionsInitializationBackgroundService` runs on startup — permission definitions are synced to the database automatically.
 - For testing, use `AlwaysAllowPermissionManager` from Core to bypass all permission checks.
 
@@ -311,3 +329,95 @@ The registration validates these values on startup. The startup gate also inspec
 - Registers `IPermissionGrantRepository` as singleton
 - Registers validated `PermissionsStorageOptions`
 - Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+---
+# Headless.Permissions.Storage.PostgreSql
+
+PostgreSQL raw-DDL storage for permission management.
+
+## Problem Solved
+
+Provides permission repositories and startup schema initialization without requiring the consumer to use Entity Framework for permissions persistence.
+
+## Key Features
+
+- `AddHeadlessPermissions(setup => setup.UsePostgreSql(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for permission grants, permission definitions, and permission group definitions
+- Shares `PermissionsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Permissions.Storage.PostgreSql
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddPermissionsManagementCore();
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "permissions");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `PermissionsStorageOptions` on the shared permissions builder. Configure the connection string through `PostgreSqlPermissionsOptions`.
+
+## Dependencies
+
+- `Headless.Permissions.Storage.EntityFramework`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlPermissionsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw PostgreSQL implementations of `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository`
+---
+# Headless.Permissions.Storage.SqlServer
+
+SQL Server raw-DDL storage for permission management.
+
+## Problem Solved
+
+Provides permission repositories and startup schema initialization without requiring the consumer to use Entity Framework for permissions persistence.
+
+## Key Features
+
+- `AddHeadlessPermissions(setup => setup.UseSqlServer(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for permission grants, permission definitions, and permission group definitions
+- Shares `PermissionsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Permissions.Storage.SqlServer
+```
+
+## Quick Start
+
+```csharp
+builder.Services.AddPermissionsManagementCore();
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "permissions");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `PermissionsStorageOptions` on the shared permissions builder. Configure the connection string through `SqlServerPermissionsOptions`.
+
+## Dependencies
+
+- `Headless.Permissions.Storage.EntityFramework`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Registers `SqlServerPermissionsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw SQL Server implementations of `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository`

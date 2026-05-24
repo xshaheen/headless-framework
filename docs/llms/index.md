@@ -226,6 +226,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Abstractions` — Permission management interface.
 - `Headless.Permissions.Core` — Permission management with caching, providers, authorization.
 - `Headless.Permissions.Storage.EntityFramework` — EF Core storage.
+- `Headless.Permissions.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
 
 ### Push Notifications
 - `Headless.PushNotifications.Abstractions` — Push notification interface.
