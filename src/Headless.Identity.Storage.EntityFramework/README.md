@@ -37,17 +37,19 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions o
 // Registration
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessDbContext<
-    AppDbContext,
-    AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken, AppUserPasskey
->(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessIdentity(setup =>
+    setup.UseEntityFramework<
+        AppDbContext,
+        AppUser, AppRole, Guid,
+        AppUserClaim, AppUserRole, AppUserLogin,
+        AppRoleClaim, AppUserToken, AppUserPasskey
+    >(options => options.UseNpgsql(connectionString))
+);
 ```
 
 ## Configuration
 
-`AddHeadlessDbContext<...>()` configures `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3` by default so new applications get the modern Identity model, including passkey storage. If a host must target an older Identity schema, override it after registration with `Configure<IdentityOptions>()`.
+`AddHeadlessIdentity(setup => setup.UseEntityFramework<...>())` configures `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3` by default so new applications get the modern Identity model, including passkey storage. If a host must target an older Identity schema, override it after registration with `Configure<IdentityOptions>()`.
 
 ## Dependencies
 

@@ -34,18 +34,20 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessDbContext<
-            TestIdentityDbContext,
-            TestUser,
-            TestRole,
-            string,
-            IdentityUserClaim<string>,
-            IdentityUserRole<string>,
-            IdentityUserLogin<string>,
-            IdentityRoleClaim<string>,
-            IdentityUserToken<string>,
-            IdentityUserPasskey<string>
-        >(_ => { });
+        services.AddHeadlessIdentity(setup =>
+            setup.UseEntityFramework<
+                TestIdentityDbContext,
+                TestUser,
+                TestRole,
+                string,
+                IdentityUserClaim<string>,
+                IdentityUserRole<string>,
+                IdentityUserLogin<string>,
+                IdentityRoleClaim<string>,
+                IdentityUserToken<string>,
+                IdentityUserPasskey<string>
+            >(_ => { })
+        );
 
         using var provider = services.BuildServiceProvider();
 
@@ -59,18 +61,20 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddHeadlessDbContext<
-            TestIdentityDbContext,
-            TestUser,
-            TestRole,
-            string,
-            IdentityUserClaim<string>,
-            IdentityUserRole<string>,
-            IdentityUserLogin<string>,
-            IdentityRoleClaim<string>,
-            IdentityUserToken<string>,
-            IdentityUserPasskey<string>
-        >(_ => { });
+        services.AddHeadlessIdentity(setup =>
+            setup.UseEntityFramework<
+                TestIdentityDbContext,
+                TestUser,
+                TestRole,
+                string,
+                IdentityUserClaim<string>,
+                IdentityUserRole<string>,
+                IdentityUserLogin<string>,
+                IdentityRoleClaim<string>,
+                IdentityUserToken<string>,
+                IdentityUserPasskey<string>
+            >(_ => { })
+        );
 
         // when
         services.Configure<IdentityOptions>(options =>

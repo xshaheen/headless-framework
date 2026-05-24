@@ -4,15 +4,32 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Headless.Checks;
 
 namespace Headless.EntityFramework;
 
 [PublicAPI]
-public static class OrmEntityFrameworkIdentitySetup
+public static class SetupIdentity
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddHeadlessDbContext<
+        public IServiceCollection AddHeadlessIdentity(Action<HeadlessIdentitySetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            configure(new HeadlessIdentitySetupBuilder(services));
+
+            return services;
+        }
+    }
+}
+
+[PublicAPI]
+public static class SetupIdentityEntityFramework
+{
+    extension(HeadlessIdentitySetupBuilder setup)
+    {
+        public HeadlessIdentitySetupBuilder UseEntityFramework<
             TDbContext,
             TUser,
             TRole,
@@ -46,7 +63,7 @@ public static class OrmEntityFrameworkIdentitySetup
             where TRoleClaim : IdentityRoleClaim<TKey>
             where TUserToken : IdentityUserToken<TKey>
         {
-            return services.AddHeadlessDbContext<
+            return setup.UseEntityFramework<
                 TDbContext,
                 TUser,
                 TRole,
@@ -60,7 +77,7 @@ public static class OrmEntityFrameworkIdentitySetup
             >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
         }
 
-        public IServiceCollection AddHeadlessDbContext<
+        public HeadlessIdentitySetupBuilder UseEntityFramework<
             TDbContext,
             TUser,
             TRole,
@@ -94,7 +111,7 @@ public static class OrmEntityFrameworkIdentitySetup
             where TRoleClaim : IdentityRoleClaim<TKey>
             where TUserToken : IdentityUserToken<TKey>
         {
-            return services.AddHeadlessDbContext<
+            return setup.UseEntityFramework<
                 TDbContext,
                 TUser,
                 TRole,
@@ -108,7 +125,7 @@ public static class OrmEntityFrameworkIdentitySetup
             >(optionsAction, contextLifetime, optionsLifetime);
         }
 
-        public IServiceCollection AddHeadlessDbContext<
+        public HeadlessIdentitySetupBuilder UseEntityFramework<
             TDbContext,
             TUser,
             TRole,
@@ -145,7 +162,7 @@ public static class OrmEntityFrameworkIdentitySetup
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
-            return services.AddHeadlessDbContext<
+            return setup.UseEntityFramework<
                 TDbContext,
                 TUser,
                 TRole,
@@ -159,7 +176,7 @@ public static class OrmEntityFrameworkIdentitySetup
             >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
         }
 
-        public IServiceCollection AddHeadlessDbContext<
+        public HeadlessIdentitySetupBuilder UseEntityFramework<
             TDbContext,
             TUser,
             TRole,
@@ -196,6 +213,8 @@ public static class OrmEntityFrameworkIdentitySetup
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
+            var services = setup.Services;
+
             services._ConfigureHeadlessIdentityDefaults();
 
             services.AddDbContext<TDbContext>(
@@ -208,7 +227,7 @@ public static class OrmEntityFrameworkIdentitySetup
                 optionsLifetime
             );
 
-            return services;
+            return setup;
         }
     }
 
