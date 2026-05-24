@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.Abstractions;
@@ -336,6 +337,52 @@ public sealed class SetupApiTests
 
         // then
         options.ClaimType.Should().Be(UserClaimTypes.TenantId);
+    }
+
+    [Fact]
+    public void configure_global_settings_should_apply_only_once()
+    {
+        // Reset guard so we start from a clean slate.
+        SetupApi.ResetForTesting();
+
+        // First call should apply (returns without skipping).
+        SetupApi.ConfigureGlobalSettings();
+        var cascadeAfterFirst = ValidatorOptions.Global.DefaultRuleLevelCascadeMode;
+
+        // Mutate a setting that ConfigureGlobalSettings would override.
+        ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Continue;
+
+        // Second call must be a no-op.
+        SetupApi.ConfigureGlobalSettings();
+
+        ValidatorOptions.Global.DefaultRuleLevelCascadeMode
+            .Should()
+            .Be(CascadeMode.Continue, "second call must not overwrite settings");
+
+        // Restore for other tests.
+        ValidatorOptions.Global.DefaultRuleLevelCascadeMode = cascadeAfterFirst;
+        SetupApi.ResetForTesting();
+    }
+
+    [Fact]
+    public void reset_for_testing_should_allow_configure_global_settings_to_reapply()
+    {
+        // Ensure guard is set (call once or it may already be set from test isolation).
+        SetupApi.ConfigureGlobalSettings();
+
+        // Mutate.
+        ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Continue;
+
+        // After reset, ConfigureGlobalSettings should run again.
+        SetupApi.ResetForTesting();
+        SetupApi.ConfigureGlobalSettings();
+
+        ValidatorOptions.Global.DefaultRuleLevelCascadeMode
+            .Should()
+            .Be(CascadeMode.Stop, "ConfigureGlobalSettings should re-apply Stop after reset");
+
+        // Leave in a consistent state.
+        SetupApi.ResetForTesting();
     }
 
     private sealed class ApiCustomCurrentTenant : ICurrentTenant

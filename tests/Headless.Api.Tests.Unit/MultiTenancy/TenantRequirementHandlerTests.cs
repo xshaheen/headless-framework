@@ -47,6 +47,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Fact]
@@ -94,6 +95,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Theory]
@@ -117,12 +119,12 @@ public sealed class TenantRequirementHandlerTests
     }
 
     [Fact]
-    public async Task should_stash_marker_on_http_context_items_when_failing()
+    public async Task should_set_typed_feature_on_http_context_when_failing()
     {
-        // given - StatusCodesRewriterMiddleware reads this marker to enrich the bare 403 with the
-        // g:tenant_required discriminator; without it, the response degrades to the generic 403
-        // ProblemDetails body. Asserting the marker here guards the contract between the handler
-        // and the rewriter middleware.
+        // given - StatusCodesRewriterMiddleware reads this typed feature to enrich the bare 403
+        // with the g:tenant_required discriminator; without it, the response degrades to the
+        // generic 403 ProblemDetails body. Asserting the feature here guards the contract between
+        // the handler and the rewriter middleware.
         var requirement = new TenantRequirement();
         var httpContext = new DefaultHttpContext();
         var context = _CreateContext(requirement, httpContext);
@@ -133,12 +135,11 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasFailed.Should().BeTrue();
-        httpContext.Items.Should().ContainKey(TenantRequirement.HttpContextItemKey);
-        httpContext.Items[TenantRequirement.HttpContextItemKey].Should().Be(true);
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().NotBeNull();
     }
 
     [Fact]
-    public async Task should_not_stash_marker_when_succeeding()
+    public async Task should_not_set_typed_feature_when_succeeding()
     {
         // given
         var requirement = new TenantRequirement();
@@ -151,7 +152,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
-        httpContext.Items.Should().NotContainKey(TenantRequirement.HttpContextItemKey);
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Fact]

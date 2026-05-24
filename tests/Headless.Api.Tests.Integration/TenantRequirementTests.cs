@@ -9,6 +9,7 @@ using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -151,6 +152,23 @@ public sealed class TenantRequirementTests : TestBase
     }
 
     [Fact]
+    public async Task should_emit_g_tenant_required_discriminator_when_consumer_auth_result_handler_registered_after_require_tenant()
+    {
+        // given - the g:tenant_required discriminator is injected via the typed IFeatureCollection
+        // feature, not via the IAuthorizationMiddlewareResultHandler pipeline. This test verifies
+        // the discriminator survives even when a consumer registers a custom
+        // IAuthorizationMiddlewareResultHandler after AddHeadlessTenancy(), which would otherwise
+        // shadow the tenant feature handler.
+        await using var app = await _CreateAppAsync(configureProblemDetails: null, registerCustomAuthResultHandler: true);
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        using var response = await _SendAsync(client, "/tenant-required", user: "alice");
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        await _AssertTenantRequiredProblemDetailsAsync(response);
+    }
+
+    [Fact]
     public async Task should_apply_customize_problem_details_to_auth_path_tenant_response()
     {
         // Both the auth-path (this test) and exception-path (next test) responses must include the
@@ -196,7 +214,10 @@ public sealed class TenantRequirementTests : TestBase
             .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
     }
 
-    private async Task<WebApplication> _CreateAppAsync(Action<ProblemDetailsOptions>? configureProblemDetails = null)
+    private async Task<WebApplication> _CreateAppAsync(
+        Action<ProblemDetailsOptions>? configureProblemDetails = null,
+        bool registerCustomAuthResultHandler = false
+    )
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
@@ -209,6 +230,7 @@ public sealed class TenantRequirementTests : TestBase
             options.Validation.ValidateServiceProviderOnStartup = false;
             options.Validation.RequireUseHeadless = false;
             options.Validation.RequireMapHeadlessEndpoints = false;
+            options.Validation.RequireStatusCodesRewriter = false;
             options.OpenTelemetry.Enabled = false;
             options.OpenApi.Enabled = false;
         });
@@ -237,6 +259,13 @@ public sealed class TenantRequirementTests : TestBase
                         .AddRequirements(new TenantRequirement(), new AlwaysFailRequirement())
             );
         });
+        if (registerCustomAuthResultHandler)
+        {
+            // Registered after AddHeadlessTenancy() to verify the typed-feature contract survives
+            // any IAuthorizationMiddlewareResultHandler registration order.
+            builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, PassthroughAuthorizationResultHandler>();
+        }
+
         builder.Services.AddControllers().AddApplicationPart(typeof(TenantRequirementController).Assembly);
 
         var app = builder.Build();
@@ -311,6 +340,23 @@ public sealed class TenantRequirementTests : TestBase
 
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>
+    /// A no-op <see cref="IAuthorizationMiddlewareResultHandler"/> that delegates directly to the
+    /// default handler. Registered after <c>AddHeadlessTenancy()</c> to verify that the
+    /// <c>TenantContextRequiredFeature</c> typed-feature contract is order-independent.
+    /// </summary>
+    private sealed class PassthroughAuthorizationResultHandler : IAuthorizationMiddlewareResultHandler
+    {
+        private readonly AuthorizationMiddlewareResultHandler _default = new();
+
+        public Task HandleAsync(
+            RequestDelegate next,
+            HttpContext context,
+            AuthorizationPolicy policy,
+            PolicyAuthorizationResult authorizeResult
+        ) => _default.HandleAsync(next, context, policy, authorizeResult);
     }
 }
 

@@ -240,6 +240,7 @@ public sealed class SkipTenantResolutionTests : TestBase
             hl.Validation.ValidateServiceProviderOnStartup = false;
             hl.Validation.RequireUseHeadless = false;
             hl.Validation.RequireMapHeadlessEndpoints = false;
+            hl.Validation.RequireStatusCodesRewriter = false;
             hl.OpenTelemetry.Enabled = false;
             hl.OpenApi.Enabled = false;
         });

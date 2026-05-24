@@ -102,8 +102,8 @@ Additional packages:
 - For idempotent-replay middleware, register `services.AddIdempotency(o => { ... })` and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. Idempotency reads `ICurrentTenant.Id` for cache-key composition; tenant and auth must be resolved first so unauthenticated/unauthorized requests do not allocate cache slots. `InFlightStrategy = WaitAndReplay` requires `IDistributedLockProvider`; the DI startup validator fails fast if it is missing.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`.
 - Keep `TrustForwardedHeadersFromAnyProxy` disabled unless the service is reachable only through trusted proxy infrastructure.
-- `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()` and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false` and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- `AddHeadless()` invokes `ApiSetup.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
+- `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
+- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`) for `IFormFile` validation — do not write manual file validation logic.
@@ -168,6 +168,13 @@ app.Run();
 builder.AddHeadless(configureServices: options =>
 {
     options.OpenTelemetry.Enabled = true;
+    options.OpenTelemetry.RecordException = true;         // record exceptions on spans (default: true)
+    // Tracing filter: null (default) skips /health and /alive via SkipOperationalEndpointFunc.
+    // Set to a custom predicate to fully replace — compose SkipOperationalEndpointFunc to keep the default skip:
+    //   options.OpenTelemetry.Filter = ctx => !options.OpenTelemetry.SkipOperationalEndpointFunc(ctx) && ...;
+    // For full AspNetCoreTraceInstrumentationOptions control (runs AFTER framework defaults):
+    //   options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instr => { instr.RecordException = false; };
+
     options.OpenApi.Enabled = true;
     options.HttpClient.UseServiceDiscovery = true;
     options.HttpClient.UseStandardResilienceHandler = true;
@@ -175,6 +182,7 @@ builder.AddHeadless(configureServices: options =>
     options.Validation.ValidateServiceProviderOnStartup = true;
     options.Validation.RequireUseHeadless = true;
     options.Validation.RequireMapHeadlessEndpoints = true;
+    options.Validation.RequireStatusCodesRewriter = true; // validated on IStartupFilter path only
     // Antiforgery defaults to false. Set to true for cookie-auth apps; bearer-token APIs leave it off.
     options.Antiforgery.Enabled = false;
 });

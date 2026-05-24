@@ -50,5 +50,12 @@ internal sealed class HeadlessServiceDefaultsValidationStartupFilter(HeadlessSer
         {
             throw new InvalidOperationException("Call MapHeadlessEndpoints before the application starts.");
         }
+
+        if (options.Validation.RequireStatusCodesRewriter && !options.UseStatusCodesRewriterCalled)
+        {
+            throw new InvalidOperationException(
+                "Call UseStatusCodesRewriter (or UseHeadless) before the application starts."
+            );
+        }
     }
 }
