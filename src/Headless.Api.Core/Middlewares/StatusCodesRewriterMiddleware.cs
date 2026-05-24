@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Abstractions;
+using Headless.Api.MultiTenancy;
+using Headless.Constants;
 using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.Middlewares;
@@ -35,7 +37,17 @@ public sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator problem
             }
             case StatusCodes.Status403Forbidden:
             {
-                var problemDetails = problemDetailsCreator.Forbidden();
+                // TenantRequirementHandler stashes this marker when it fails the request, so the
+                // bare 403 produced by ASP.NET Core's default IAuthorizationMiddlewareResultHandler
+                // can be enriched with the structured g:tenant_required discriminator here — no
+                // dependency on the consumer's IAuthorizationMiddlewareResultHandler registration
+                // order.
+                var problemDetails = context.Items.ContainsKey(TenantRequirement.HttpContextItemKey)
+                    ? problemDetailsCreator.Forbidden(
+                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                    )
+                    : problemDetailsCreator.Forbidden();
                 await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
 
                 break;

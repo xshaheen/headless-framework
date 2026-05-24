@@ -4,6 +4,7 @@
 
 using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -242,6 +243,68 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
         root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
+    }
+
+    [Fact]
+    public async Task should_return_tenant_required_problem_details_when_marker_set()
+    {
+        // given - TenantRequirementHandler stashes this marker on HttpContext.Items when it fails
+        // authorization. The rewriter detects it and substitutes the structured g:tenant_required
+        // body for the generic Forbidden body. This is the path that decouples tenant 403s from
+        // the IAuthorizationMiddlewareResultHandler registration order.
+        var problemCreator = Substitute.For<IProblemDetailsCreator>();
+        problemCreator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+                    Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                    Extensions =
+                    {
+                        ["error"] = new { code = HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code },
+                    },
+                }
+            );
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        context.Items[TenantRequirement.HttpContextItemKey] = true;
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        context.Response.ContentType.Should().StartWith("application/problem+json");
+
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync(AbortToken);
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
+        root.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        problemCreator
+            .Received(1)
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            );
+        problemCreator.DidNotReceive().Forbidden();
     }
 
     [Fact]

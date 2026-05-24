@@ -117,6 +117,44 @@ public sealed class TenantRequirementHandlerTests
     }
 
     [Fact]
+    public async Task should_stash_marker_on_http_context_items_when_failing()
+    {
+        // given - StatusCodesRewriterMiddleware reads this marker to enrich the bare 403 with the
+        // g:tenant_required discriminator; without it, the response degrades to the generic 403
+        // ProblemDetails body. Asserting the marker here guards the contract between the handler
+        // and the rewriter middleware.
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasFailed.Should().BeTrue();
+        httpContext.Items.Should().ContainKey(TenantRequirement.HttpContextItemKey);
+        httpContext.Items[TenantRequirement.HttpContextItemKey].Should().Be(true);
+    }
+
+    [Fact]
+    public async Task should_not_stash_marker_when_succeeding()
+    {
+        // given
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = "tenant-a" });
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasSucceeded.Should().BeTrue();
+        httpContext.Items.Should().NotContainKey(TenantRequirement.HttpContextItemKey);
+    }
+
+    [Fact]
     public async Task should_not_throw_when_resource_is_not_http_context()
     {
         // given

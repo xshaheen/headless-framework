@@ -2,13 +2,11 @@
 
 using FluentValidation;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -189,14 +187,6 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     /// <summary>Diagnostic code emitted when authorization tenancy is configured without a tenant policy.</summary>
     public const string AuthorizationPolicyMissingDiagnosticCode = "HEADLESS_TENANCY_AUTHORIZATION_POLICY_MISSING";
 
-    /// <summary>
-    /// Diagnostic code emitted when a consumer registers an
-    /// <see cref="IAuthorizationMiddlewareResultHandler"/> after <see cref="RequireTenant"/>,
-    /// replacing the framework's tenant-mapping handler.
-    /// </summary>
-    public const string AuthorizationResultHandlerReplacedDiagnosticCode =
-        "HEADLESS_TENANCY_AUTHORIZATION_RESULT_HANDLER_REPLACED";
-
     private readonly HeadlessTenancyBuilder _builder;
 
     internal HeadlessAuthorizationTenancyBuilder(HeadlessTenancyBuilder builder)
@@ -207,18 +197,17 @@ public sealed class HeadlessAuthorizationTenancyBuilder
     /// <summary>Requires an ambient tenant through ASP.NET Core authorization.</summary>
     /// <returns>The same authorization tenancy builder.</returns>
     /// <remarks>
-    /// Call <c>RequireTenant()</c> AFTER any custom <see cref="IAuthorizationMiddlewareResultHandler"/>
-    /// registrations. ASP.NET Core resolves the last-registered handler at runtime; consumer
-    /// registrations made after <c>RequireTenant()</c> replace the framework's tenant-mapping
-    /// handler and silently disable the structured <c>g:tenant_required</c> 403 response. The
-    /// startup validator emits <see cref="AuthorizationResultHandlerReplacedDiagnosticCode"/> when
-    /// it detects this misordering.
+    /// The structured <c>g:tenant_required</c> 403 body is written by
+    /// <c>StatusCodesRewriterMiddleware</c> after authorization rejects the request. The middleware
+    /// is wired in by <see cref="SetupApiServices.AddHeadlessProblemDetails"/> /
+    /// <c>Headless.Api.ServiceDefaults</c>; consumers that do not use ServiceDefaults must register
+    /// it via <see cref="SetupMiddlewares.UseStatusCodesRewriter"/> to receive the discriminator.
     ///
     /// <para>
-    /// <c>TenantRequirement</c> in named policies
-    /// (<c>options.AddPolicy("name", ...)</c>) is NOT detected by the startup validator and does
-    /// NOT satisfy the framework's enforcement guarantee. Place <c>TenantRequirement</c> in
-    /// <c>DefaultPolicy</c> or <c>FallbackPolicy</c> for framework-level enforcement.
+    /// <c>TenantRequirement</c> in named policies (<c>options.AddPolicy("name", ...)</c>) is NOT
+    /// detected by the startup validator and does NOT satisfy the framework's enforcement
+    /// guarantee. Place <c>TenantRequirement</c> in <c>DefaultPolicy</c> or <c>FallbackPolicy</c>
+    /// for framework-level enforcement.
     /// </para>
     /// </remarks>
     public HeadlessAuthorizationTenancyBuilder RequireTenant()
@@ -229,31 +218,12 @@ public sealed class HeadlessAuthorizationTenancyBuilder
         _builder.Services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IHeadlessTenancyValidator, HeadlessAuthorizationTenancyValidator>()
         );
-        _RegisterAuthorizationResultHandler(_builder.Services);
 
         _builder.RecordSeam(Seam, TenantPostureStatus.Enforcing, RequireTenantCapability);
 
         return this;
     }
-
-    private static void _RegisterAuthorizationResultHandler(IServiceCollection services)
-    {
-        if (
-            services.Any(descriptor =>
-                descriptor.ServiceType == typeof(TenantAuthorizationMiddlewareResultHandlerRegistration)
-            )
-        )
-        {
-            return;
-        }
-
-        services.TryAddTransient<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
-        services.Decorate<IAuthorizationMiddlewareResultHandler, TenantAuthorizationMiddlewareResultHandler>();
-        services.AddSingleton<TenantAuthorizationMiddlewareResultHandlerRegistration>();
-    }
 }
-
-internal sealed class TenantAuthorizationMiddlewareResultHandlerRegistration;
 
 internal sealed class HeadlessAuthorizationTenancyValidator : IHeadlessTenancyValidator
 {
@@ -288,33 +258,6 @@ internal sealed class HeadlessAuthorizationTenancyValidator : IHeadlessTenancyVa
                     + "DefaultPolicy / FallbackPolicy are inspected. Named-policy enforcement is the "
                     + "consumer's responsibility."
             );
-        }
-
-        // Detect when a consumer registered a custom IAuthorizationMiddlewareResultHandler AFTER
-        // RequireTenant(). ASP.NET Core resolves the last-registered handler, so later registrations
-        // silently replace the framework's tenant-mapping handler. Only check when RequireTenant()
-        // actually ran (proven by the registration marker); otherwise the framework's handler was
-        // never registered and a foreign handler is not a misordering.
-        var requireTenantInvoked =
-            context.Services.GetService<TenantAuthorizationMiddlewareResultHandlerRegistration>() is not null;
-
-        if (requireTenantInvoked)
-        {
-            var resolved = context.Services.GetService<IAuthorizationMiddlewareResultHandler>();
-
-            if (resolved is not null and not TenantAuthorizationMiddlewareResultHandler)
-            {
-                yield return HeadlessTenancyDiagnostic.Error(
-                    HeadlessAuthorizationTenancyBuilder.Seam,
-                    HeadlessAuthorizationTenancyBuilder.AuthorizationResultHandlerReplacedDiagnosticCode,
-                    "Authorization tenant enforcement is configured, but the resolved "
-                        + $"IAuthorizationMiddlewareResultHandler is '{resolved.GetType().FullName}' — not the "
-                        + "framework's TenantAuthorizationMiddlewareResultHandler. The tenant-mapping handler "
-                        + "has been replaced, so tenant authorization failures will not produce the structured "
-                        + "g:tenant_required 403 response. Call .Authorization(a => a.RequireTenant()) AFTER "
-                        + "all custom IAuthorizationMiddlewareResultHandler registrations."
-                );
-            }
         }
     }
 

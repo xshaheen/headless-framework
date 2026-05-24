@@ -241,6 +241,11 @@ public sealed class TenantRequirementTests : TestBase
 
         var app = builder.Build();
         app.UseExceptionHandler();
+        // Wires StatusCodesRewriterMiddleware so bare 403s produced by ASP.NET Core's default
+        // AuthorizationMiddlewareResultHandler get rewritten into normalized ProblemDetails.
+        // Headless.Api.ServiceDefaults registers this automatically; the test opts out of
+        // UseHeadless() via RequireUseHeadless = false, so we wire it explicitly here.
+        app.UseStatusCodesRewriter();
         app.UseAuthentication();
         app.UseHeadlessTenancy();
         app.UseAuthorization();
