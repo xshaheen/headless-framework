@@ -13,7 +13,7 @@ public sealed class SqlServerOptions : SqlServerEntityFrameworkMessagingOptions
     /// <summary>
     /// Gets or sets the database's connection string that will be used to store database entities.
     /// </summary>
-    public required string ConnectionString { get; set; }
+    public string? ConnectionString { get; set; }
 }
 
 internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOptions>

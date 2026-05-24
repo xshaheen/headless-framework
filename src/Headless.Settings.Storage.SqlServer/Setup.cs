@@ -42,9 +42,6 @@ public static class SetupSettingsSqlServer
         {
             services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(configure);
             services.AddInitializerHostedService<SqlServerSettingsStorageInitializer>();
-            services.TryAddSingleton<ISettingsStorageInitializer>(sp =>
-                sp.GetRequiredService<SqlServerSettingsStorageInitializer>()
-            );
             services.TryAddSingleton<ISettingValueRecordRepository, SqlServerSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, SqlServerSettingDefinitionRecordRepository>();
         }

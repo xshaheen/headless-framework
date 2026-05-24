@@ -9,7 +9,7 @@ using Npgsql;
 
 namespace Headless.Settings.PostgreSql;
 
-public sealed class PostgreSqlSettingDefinitionRecordRepository(
+internal sealed class PostgreSqlSettingDefinitionRecordRepository(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions
 ) : ISettingDefinitionRecordRepository

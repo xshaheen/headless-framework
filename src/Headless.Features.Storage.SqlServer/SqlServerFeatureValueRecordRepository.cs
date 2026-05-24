@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.SqlServer;
 
-public sealed class SqlServerFeatureValueRecordRepository(
+internal sealed class SqlServerFeatureValueRecordRepository(
     IOptions<SqlServerFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IServiceProvider services
@@ -164,7 +164,9 @@ public sealed class SqlServerFeatureValueRecordRepository(
 
     private async ValueTask _PublishAsync(FeatureValueRecord feature, CancellationToken cancellationToken)
     {
-        var publisher = services.GetService<ILocalMessagePublisher>();
+        // Resolve the scoped publisher inside a fresh scope to avoid capturing it from the singleton's root provider.
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
 
         if (publisher is not null)
         {

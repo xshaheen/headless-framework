@@ -42,9 +42,6 @@ public static class SetupPermissionsSqlServer
         {
             services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(configure);
             services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
-            services.TryAddSingleton<IPermissionsStorageInitializer>(sp =>
-                sp.GetRequiredService<SqlServerPermissionsStorageInitializer>()
-            );
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, SqlServerPermissionDefinitionRecordRepository>();
         }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Hosting.Storage;
 
 namespace Headless.Settings;
 
@@ -18,8 +19,8 @@ internal sealed class SettingsStorageOptionsValidator : AbstractValidator<Settin
 {
     public SettingsStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.SettingValuesTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
     }
 }

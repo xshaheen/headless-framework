@@ -40,7 +40,7 @@ services.AddHeadlessAuditLog(setup =>
     setup.ConfigureStorage(options =>
     {
         options.Schema = "audit";
-        options.JsonColumnType = "jsonb";
+        options.JsonColumnType = AuditLogJsonColumnType.Jsonb;
     });
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -106,7 +106,7 @@ var entries = await readAuditLog.QueryAsync(
 
 ### Storage Options
 
-Set `JsonColumnType` to store `OldValues`, `NewValues`, and `ChangedFields` as native JSONB on PostgreSQL:
+Set `JsonColumnType` to store `OldValues`, `NewValues`, and `ChangedFields` as native JSONB on PostgreSQL. The property is an allowlist enum (`AuditLogJsonColumnType`) — `Jsonb`, `Json`, or `NvarcharMax` — to prevent SQL identifier injection through the column-type string. `CreatedAtColumnType` is a free string override for the timestamp column (defaults: `timestamp with time zone` on Postgres, `datetime2` on SQL Server):
 
 ```csharp
 services.AddHeadlessAuditLog(setup =>
@@ -115,7 +115,8 @@ services.AddHeadlessAuditLog(setup =>
     {
         options.TableName = "audit_entries";
         options.Schema = "audit";
-        options.JsonColumnType = "jsonb";
+        options.JsonColumnType = AuditLogJsonColumnType.Jsonb;
+        options.CreatedAtColumnType = "timestamp with time zone"; // optional explicit override
     });
     setup.UseEntityFramework<AppDbContext>();
 });

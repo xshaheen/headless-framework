@@ -8,17 +8,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.SqlServer;
 
-public sealed class SqlServerAuditLogStorageInitializer(
+internal sealed class SqlServerAuditLogStorageInitializer(
     IOptions<SqlServerAuditLogOptions> providerOptions,
     IOptions<AuditLogStorageOptions> storageOptions
-) : IAuditLogStorageInitializer, IHostedService, IInitializer
+) : IHostedLifecycleService, IInitializer
 {
-    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         try
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -32,6 +34,14 @@ public sealed class SqlServerAuditLogStorageInitializer(
         }
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
@@ -43,26 +53,23 @@ public sealed class SqlServerAuditLogStorageInitializer(
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection);
+        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
+        {
+            CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
+        };
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    internal static string Qualified(AuditLogStorageOptions options) =>
-        string.IsNullOrWhiteSpace(options.Schema)
-            ? $"[{options.TableName}]"
-            : $"[{options.Schema}].[{options.TableName}]";
+    internal static string Qualified(AuditLogStorageOptions options) => $"[{options.Schema}].[{options.TableName}]";
 
-    internal static string ObjectName(AuditLogStorageOptions options) =>
-        string.IsNullOrWhiteSpace(options.Schema) ? options.TableName : $"{options.Schema}.{options.TableName}";
+    internal static string ObjectName(AuditLogStorageOptions options) => $"{options.Schema}.{options.TableName}";
 
     private static string _CreateScript(AuditLogStorageOptions options)
     {
         var table = Qualified(options);
         var objectName = ObjectName(options);
-        var jsonColumnType = options.JsonColumnType ?? "nvarchar(max)";
-        var createSchema = string.IsNullOrWhiteSpace(options.Schema)
-            ? string.Empty
-            : $"""
+        var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
+        var createSchema = $"""
                 BEGIN TRY
                     IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{options.Schema}')
                         EXEC(N'CREATE SCHEMA [{options.Schema}]');

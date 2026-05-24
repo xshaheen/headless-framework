@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Hosting.Storage;
 
 namespace Headless.Permissions;
 
@@ -20,9 +21,9 @@ internal sealed class PermissionsStorageOptionsValidator : AbstractValidator<Per
 {
     public PermissionsStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
     }
 }

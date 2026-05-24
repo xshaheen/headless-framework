@@ -57,12 +57,20 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
                 v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, _JsonOptions)
             );
 
-        // Optional: override to native JSON column type (e.g., "jsonb" for PostgreSQL)
-        if (options.JsonColumnType is not null)
+        // Optional: override to native JSON column type (e.g., "jsonb" for PostgreSQL).
+        if (options.JsonColumnType is { } jsonColumnType)
         {
-            builder.Property(e => e.OldValues).HasColumnType(options.JsonColumnType);
-            builder.Property(e => e.NewValues).HasColumnType(options.JsonColumnType);
-            builder.Property(e => e.ChangedFields).HasColumnType(options.JsonColumnType);
+            var sqlFragment = jsonColumnType.ToSqlFragment();
+            builder.Property(e => e.OldValues).HasColumnType(sqlFragment);
+            builder.Property(e => e.NewValues).HasColumnType(sqlFragment);
+            builder.Property(e => e.ChangedFields).HasColumnType(sqlFragment);
+        }
+
+        // Optional: override the CreatedAt column type (e.g., "timestamp with time zone" for Postgres,
+        // "datetime2" for SQL Server). Defaults to the provider's stock mapping when unset.
+        if (!string.IsNullOrWhiteSpace(options.CreatedAtColumnType))
+        {
+            builder.Property(e => e.CreatedAt).HasColumnType(options.CreatedAtColumnType);
         }
 
         // Indexes optimized for common query patterns

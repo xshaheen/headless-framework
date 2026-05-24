@@ -10,13 +10,16 @@ public sealed class PostgreSqlPermissionsOptions
 {
     public string ConnectionString { get; set; } = string.Empty;
 
-    public NpgsqlConnection CreateConnection() => new(ConnectionString);
+    /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    internal NpgsqlConnection CreateConnection() => new(ConnectionString);
 }
 
 internal sealed class PostgreSqlPermissionsOptionsValidator : AbstractValidator<PostgreSqlPermissionsOptions>
 {
     public PostgreSqlPermissionsOptionsValidator()
     {
-        RuleFor(x => x.ConnectionString).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.ConnectionString).NotEmpty();
     }
 }

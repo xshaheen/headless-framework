@@ -9,18 +9,27 @@ using Npgsql;
 
 namespace Headless.Features.PostgreSql;
 
-public sealed class PostgreSqlFeatureDefinitionRecordRepository(
+internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions
 ) : IFeatureDefinitionRecordRepository
 {
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private string? _insertGroupSql;
+    private string? _updateGroupSql;
+    private string? _deleteGroupSql;
+    private string? _insertFeatureSql;
+    private string? _updateFeatureSql;
+    private string? _deleteFeatureSql;
+    private string? _selectFeaturesSql;
+    private string? _selectGroupsSql;
+
     public async Task<List<FeatureDefinitionRecord>> GetFeaturesListAsync(
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
+        var sql = _selectFeaturesSql ??=
             $"""SELECT "Id","GroupName","Name","ParentName","DisplayName","Description","DefaultValue","IsVisibleToClients","IsAvailableToHost","Providers","ExtraProperties" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)};""";
 
         var result = new List<FeatureDefinitionRecord>();
@@ -59,7 +68,7 @@ public sealed class PostgreSqlFeatureDefinitionRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        var sql =
+        var sql = _selectGroupsSql ??=
             $"""SELECT "Id","Name","DisplayName","ExtraProperties" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)};""";
 
         var result = new List<FeatureGroupDefinitionRecord>();
@@ -183,22 +192,28 @@ public sealed class PostgreSqlFeatureDefinitionRecordRepository(
     }
 
     private string _InsertGroupSql() =>
-        $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+        _insertGroupSql ??=
+            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
 
     private string _UpdateGroupSql() =>
-        $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+        _updateGroupSql ??=
+            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} SET "Name"=@Name,"DisplayName"=@DisplayName,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
 
     private string _DeleteGroupSql() =>
-        $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
+        _deleteGroupSql ??=
+            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
 
     private string _InsertFeatureSql() =>
-        $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} ("Id","GroupName","Name","DisplayName","ParentName","Description","DefaultValue","IsVisibleToClients","IsAvailableToHost","Providers","ExtraProperties") VALUES (@Id,@GroupName,@Name,@DisplayName,@ParentName,@Description,@DefaultValue,@IsVisibleToClients,@IsAvailableToHost,@Providers,@ExtraProperties);""";
+        _insertFeatureSql ??=
+            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} ("Id","GroupName","Name","DisplayName","ParentName","Description","DefaultValue","IsVisibleToClients","IsAvailableToHost","Providers","ExtraProperties") VALUES (@Id,@GroupName,@Name,@DisplayName,@ParentName,@Description,@DefaultValue,@IsVisibleToClients,@IsAvailableToHost,@Providers,@ExtraProperties);""";
 
     private string _UpdateFeatureSql() =>
-        $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} SET "GroupName"=@GroupName,"Name"=@Name,"DisplayName"=@DisplayName,"ParentName"=@ParentName,"Description"=@Description,"DefaultValue"=@DefaultValue,"IsVisibleToClients"=@IsVisibleToClients,"IsAvailableToHost"=@IsAvailableToHost,"Providers"=@Providers,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
+        _updateFeatureSql ??=
+            $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} SET "GroupName"=@GroupName,"Name"=@Name,"DisplayName"=@DisplayName,"ParentName"=@ParentName,"Description"=@Description,"DefaultValue"=@DefaultValue,"IsVisibleToClients"=@IsVisibleToClients,"IsAvailableToHost"=@IsAvailableToHost,"Providers"=@Providers,"ExtraProperties"=@ExtraProperties WHERE "Id"=@Id;""";
 
     private string _DeleteFeatureSql() =>
-        $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} WHERE "Id"=@Id;""";
+        _deleteFeatureSql ??=
+            $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} WHERE "Id"=@Id;""";
 
     private static ExtraProperties _DeserializeExtraProperties(string json) =>
         JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];

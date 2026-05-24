@@ -42,9 +42,6 @@ public static class SetupPermissionsPostgreSql
         {
             services.Configure<PostgreSqlPermissionsOptions, PostgreSqlPermissionsOptionsValidator>(configure);
             services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
-            services.TryAddSingleton<IPermissionsStorageInitializer>(sp =>
-                sp.GetRequiredService<PostgreSqlPermissionsStorageInitializer>()
-            );
             services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, PostgreSqlPermissionDefinitionRecordRepository>();
         }

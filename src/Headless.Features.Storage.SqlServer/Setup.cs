@@ -42,9 +42,6 @@ public static class SetupFeaturesSqlServer
         {
             services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(configure);
             services.AddInitializerHostedService<SqlServerFeaturesStorageInitializer>();
-            services.TryAddSingleton<IFeaturesStorageInitializer>(sp =>
-                sp.GetRequiredService<SqlServerFeaturesStorageInitializer>()
-            );
             services.TryAddSingleton<IFeatureValueRecordRepository, SqlServerFeatureValueRecordRepository>();
             services.TryAddSingleton<IFeatureDefinitionRecordRepository, SqlServerFeatureDefinitionRecordRepository>();
         }

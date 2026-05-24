@@ -14,6 +14,8 @@ internal sealed class SqlServerAuditLogWriter(
 {
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
+    private string? _cachedSql;
+
     public async Task WriteAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken = default)
     {
         if (entries.Count == 0)
@@ -21,19 +23,51 @@ internal sealed class SqlServerAuditLogWriter(
             return;
         }
 
-        var sql =
-            $"""INSERT INTO {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)} ([CreatedAt],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode]) VALUES (@CreatedAt,@UserId,@AccountId,@TenantId,@IpAddress,@UserAgent,@CorrelationId,@Action,@ChangeType,@EntityType,@EntityId,@OldValues,@NewValues,@ChangedFields,@Success,@ErrorCode);""";
+        var sql = _cachedSql ??= _BuildInsertSql();
 
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         foreach (var entry in entries)
         {
-            await using var command = new SqlCommand(sql, connection);
+            await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction);
             command.Parameters.AddRange(_CreateParameters(entry));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// True-sync writer using <see cref="SqlCommand.ExecuteNonQuery"/>. Used by the sync
+    /// <c>IAuditLogStore.Save</c> path to avoid <c>.GetAwaiter().GetResult()</c> on the async path.
+    /// </summary>
+    public void WriteSync(IReadOnlyList<AuditLogEntryData> entries)
+    {
+        if (entries.Count == 0)
+        {
+            return;
+        }
+
+        var sql = _cachedSql ??= _BuildInsertSql();
+
+        using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+
+        foreach (var entry in entries)
+        {
+            using var command = new SqlCommand(sql, connection, transaction);
+            command.Parameters.AddRange(_CreateParameters(entry));
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    private string _BuildInsertSql() =>
+        $"""INSERT INTO {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)} ([CreatedAt],[UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode]) VALUES (@CreatedAt,@UserId,@AccountId,@TenantId,@IpAddress,@UserAgent,@CorrelationId,@Action,@ChangeType,@EntityType,@EntityId,@OldValues,@NewValues,@ChangedFields,@Success,@ErrorCode);""";
 
     private static SqlParameter[] _CreateParameters(AuditLogEntryData entry) =>
     [

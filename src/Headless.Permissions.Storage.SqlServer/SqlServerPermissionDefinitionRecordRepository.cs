@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.SqlServer;
 
-public sealed class SqlServerPermissionDefinitionRecordRepository(
+internal sealed class SqlServerPermissionDefinitionRecordRepository(
     IOptions<SqlServerPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions
 ) : IPermissionDefinitionRecordRepository

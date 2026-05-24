@@ -24,10 +24,10 @@ public static class SetupPermissions
             var setup = new HeadlessPermissionsSetupBuilder(services);
             configure(setup);
 
-            return _RegisterCorePermissionsServices(services, setup);
+            return _AddPermissionsCore(services, setup);
         }
 
-        private static HeadlessPermissionsBuilder _RegisterCorePermissionsServices(
+        private static HeadlessPermissionsBuilder _AddPermissionsCore(
             IServiceCollection serviceCollection,
             HeadlessPermissionsSetupBuilder setup
         )

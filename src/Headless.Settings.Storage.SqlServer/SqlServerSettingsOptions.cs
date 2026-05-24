@@ -8,12 +8,15 @@ namespace Headless.Settings.SqlServer;
 public sealed class SqlServerSettingsOptions
 {
     public string ConnectionString { get; set; } = string.Empty;
+
+    /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 internal sealed class SqlServerSettingsOptionsValidator : AbstractValidator<SqlServerSettingsOptions>
 {
     public SqlServerSettingsOptionsValidator()
     {
-        RuleFor(x => x.ConnectionString).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.ConnectionString).NotEmpty();
     }
 }

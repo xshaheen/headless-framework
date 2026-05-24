@@ -7,5 +7,9 @@ namespace Headless.EntityFramework;
 [PublicAPI]
 public sealed class HeadlessIdentitySetupBuilder(IServiceCollection services)
 {
-    public IServiceCollection Services { get; } = services;
+    internal IServiceCollection Services { get; } = services;
+
+    internal List<object> Extensions { get; } = [];
+
+    internal void RegisterExtension(object extension) => Extensions.Add(extension);
 }

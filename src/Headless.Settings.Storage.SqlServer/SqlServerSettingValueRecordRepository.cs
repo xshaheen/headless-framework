@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
 
-public sealed class SqlServerSettingValueRecordRepository(
+internal sealed class SqlServerSettingValueRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
     IServiceProvider services

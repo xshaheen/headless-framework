@@ -27,6 +27,8 @@ internal sealed class EfAuditLog<TContext>(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (!options.Value.IsEnabled)
         {
             return Task.CompletedTask;

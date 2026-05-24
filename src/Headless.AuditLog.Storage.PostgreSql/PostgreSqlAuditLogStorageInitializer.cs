@@ -8,17 +8,20 @@ using Npgsql;
 
 namespace Headless.AuditLog.PostgreSql;
 
-public sealed class PostgreSqlAuditLogStorageInitializer(
+internal sealed class PostgreSqlAuditLogStorageInitializer(
     IOptions<PostgreSqlAuditLogOptions> providerOptions,
     IOptions<AuditLogStorageOptions> storageOptions
-) : IAuditLogStorageInitializer, IHostedService, IInitializer
+) : IHostedLifecycleService, IInitializer
 {
-    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        // Recreate the completion source so retries (host re-starts) get a fresh promise.
+        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         try
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -31,6 +34,14 @@ public sealed class PostgreSqlAuditLogStorageInitializer(
             throw;
         }
     }
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -49,28 +60,27 @@ public sealed class PostgreSqlAuditLogStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            await using var command = new NpgsqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
+            };
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P05" or "42P06" or "42P07")
+        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710")
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }
 
     internal static string Qualified(AuditLogStorageOptions options) =>
-        string.IsNullOrWhiteSpace(options.Schema)
-            ? $@"""{options.TableName}"""
-            : $@"""{options.Schema}"".""{options.TableName}""";
+        $@"""{options.Schema}"".""{options.TableName}""";
 
     private static string _CreateScript(AuditLogStorageOptions options)
     {
         var table = Qualified(options);
-        var createSchema = string.IsNullOrWhiteSpace(options.Schema)
-            ? string.Empty
-            : $"""CREATE SCHEMA IF NOT EXISTS "{options.Schema}";""";
-        var jsonColumnType = options.JsonColumnType ?? "jsonb";
+        var createSchema = $"""CREATE SCHEMA IF NOT EXISTS "{options.Schema}";""";
+        var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
 
         return $"""
             {createSchema}

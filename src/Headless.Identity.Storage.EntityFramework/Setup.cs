@@ -13,13 +13,23 @@ public static class SetupIdentity
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddHeadlessIdentity(Action<HeadlessIdentitySetupBuilder> configure)
+        public HeadlessIdentityBuilder AddHeadlessIdentity(Action<HeadlessIdentitySetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
 
-            configure(new HeadlessIdentitySetupBuilder(services));
+            var setup = new HeadlessIdentitySetupBuilder(services);
+            configure(setup);
 
-            return services;
+            if (setup.Extensions.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    setup.Extensions.Count == 0
+                        ? "Headless.Identity requires exactly one storage provider. Call `UseEntityFramework`."
+                        : "Headless.Identity requires exactly one storage provider. Multiple storage providers were configured."
+                );
+            }
+
+            return new HeadlessIdentityBuilder(services);
         }
     }
 }
@@ -226,6 +236,8 @@ public static class SetupIdentityEntityFramework
                 contextLifetime,
                 optionsLifetime
             );
+
+            setup.RegisterExtension(typeof(TDbContext));
 
             return setup;
         }

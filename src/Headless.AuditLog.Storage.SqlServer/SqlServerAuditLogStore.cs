@@ -8,7 +8,7 @@ internal sealed class SqlServerAuditLogStore(SqlServerAuditLogWriter writer) : I
 {
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
-        writer.WriteAsync(entries).GetAwaiter().GetResult();
+        writer.WriteSync(entries);
         return _Entries(entries.Count);
     }
 

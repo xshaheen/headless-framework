@@ -7,17 +7,19 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Settings.SqlServer;
 
-public sealed class SqlServerSettingsStorageInitializer(
+internal sealed class SqlServerSettingsStorageInitializer(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions
-) : ISettingsStorageInitializer, IHostedService, IInitializer
+) : IHostedLifecycleService, IInitializer
 {
-    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         try
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -31,6 +33,14 @@ public sealed class SqlServerSettingsStorageInitializer(
         }
     }
 
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
@@ -42,7 +52,10 @@ public sealed class SqlServerSettingsStorageInitializer(
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection);
+        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
+        {
+            CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
+        };
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

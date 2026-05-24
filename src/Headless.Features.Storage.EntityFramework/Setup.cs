@@ -24,10 +24,10 @@ public static class SetupFeatures
             var setup = new HeadlessFeaturesSetupBuilder(services);
             configure(setup);
 
-            return _RegisterCoreFeaturesServices(services, setup);
+            return _AddFeaturesCore(services, setup);
         }
 
-        private static HeadlessFeaturesBuilder _RegisterCoreFeaturesServices(
+        private static HeadlessFeaturesBuilder _AddFeaturesCore(
             IServiceCollection serviceCollection,
             HeadlessFeaturesSetupBuilder setup
         )

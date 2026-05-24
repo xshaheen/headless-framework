@@ -42,9 +42,6 @@ public static class SetupSettingsPostgreSql
         {
             services.Configure<PostgreSqlSettingsOptions, PostgreSqlSettingsOptionsValidator>(configure);
             services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
-            services.TryAddSingleton<ISettingsStorageInitializer>(sp =>
-                sp.GetRequiredService<PostgreSqlSettingsStorageInitializer>()
-            );
             services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();
         }

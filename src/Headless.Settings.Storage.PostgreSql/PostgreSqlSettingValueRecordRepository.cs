@@ -10,7 +10,7 @@ using Npgsql;
 #pragma warning disable CA2100 // SQL text only interpolates validated schema/table identifiers; values remain parameterized.
 namespace Headless.Settings.PostgreSql;
 
-public sealed class PostgreSqlSettingValueRecordRepository(
+internal sealed class PostgreSqlSettingValueRecordRepository(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
     IServiceProvider services

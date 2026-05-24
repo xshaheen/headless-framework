@@ -20,6 +20,10 @@ public static class SetupAuditLog
         {
             Argument.IsNotNull(configure);
 
+            // Ensure the AuditLogOptions abstraction registration happens once so consumers don't
+            // have to call AddHeadlessAuditLog twice (abstractions + builder overload).
+            services.AddHeadlessAuditLog();
+
             var setup = new HeadlessAuditLogSetupBuilder(services);
             configure(setup);
 

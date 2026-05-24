@@ -65,24 +65,24 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
     }
 
     [Fact]
-    public void should_store_published_message()
+    public async Task should_store_published_message()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
-        var mdMessage = _storage.StoreMessageAsync("test.name", message, cancellationToken: AbortToken);
+        var mdMessage = await _storage.StoreMessageAsync("test.name", message, cancellationToken: AbortToken);
         mdMessage.Should().NotBeNull();
     }
 
     [Fact]
-    public void should_store_received_message()
+    public async Task should_store_received_message()
     {
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
-        var mdMessage = _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
+        var mdMessage = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
         mdMessage.Should().NotBeNull();
     }
 

@@ -16,6 +16,11 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         ReferenceEqualityComparer.Instance
     );
 
+    // Guards mutations of _entriesByContext and the inner HashSet values. The store is scoped
+    // but a DbContext can legitimately be used across awaited continuations (e.g. concurrent
+    // SaveChangesAsync followed by retry), so all reads/writes funnel through this lock.
+    private readonly Lock _gate = new();
+
     /// <inheritdoc />
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
@@ -42,30 +47,33 @@ internal sealed class EfAuditLogStore : IAuditLogStore
     {
         var context = _AsDbContext(savingContext);
 
-        if (!_entriesByContext.TryGetValue(context, out var entries))
+        lock (_gate)
         {
-            return;
-        }
-
-        // Snapshot before mutating: HashSet enumeration must not be modified during iteration.
-        foreach (var auditEntity in entries.ToArray())
-        {
-            var entry = context.Entry(auditEntity);
-
-            if (entry.State == EntityState.Added)
+            if (!_entriesByContext.TryGetValue(context, out var entries))
             {
-                entry.State = EntityState.Detached;
+                return;
             }
 
-            if (entry.State != EntityState.Added)
+            // Snapshot before mutating: HashSet enumeration must not be modified during iteration.
+            foreach (var auditEntity in entries.ToArray())
             {
-                entries.Remove(auditEntity);
-            }
-        }
+                var entry = context.Entry(auditEntity);
 
-        if (entries.Count == 0)
-        {
-            _entriesByContext.Remove(context);
+                if (entry.State == EntityState.Added)
+                {
+                    entry.State = EntityState.Detached;
+                }
+
+                if (entry.State != EntityState.Added)
+                {
+                    entries.Remove(auditEntity);
+                }
+            }
+
+            if (entries.Count == 0)
+            {
+                _entriesByContext.Remove(context);
+            }
         }
     }
 
@@ -127,23 +135,26 @@ internal sealed class EfAuditLogStore : IAuditLogStore
             // does not surface half-applied audit rows on retry or surface-level inspection.
             if (addedThisCall is not null)
             {
-                _entriesByContext.TryGetValue(context, out var trackedEntries);
-
-                foreach (var added in addedThisCall)
+                lock (_gate)
                 {
-                    var entry = context.Entry(added);
+                    _entriesByContext.TryGetValue(context, out var trackedEntries);
 
-                    if (entry.State != EntityState.Detached)
+                    foreach (var added in addedThisCall)
                     {
-                        entry.State = EntityState.Detached;
+                        var entry = context.Entry(added);
+
+                        if (entry.State != EntityState.Detached)
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+
+                        trackedEntries?.Remove(added);
                     }
 
-                    trackedEntries?.Remove(added);
-                }
-
-                if (trackedEntries is { Count: 0 })
-                {
-                    _entriesByContext.Remove(context);
+                    if (trackedEntries is { Count: 0 })
+                    {
+                        _entriesByContext.Remove(context);
+                    }
                 }
             }
 
@@ -153,27 +164,33 @@ internal sealed class EfAuditLogStore : IAuditLogStore
 
     private void _TrackEntry(DbContext context, AuditLogEntry entry)
     {
-        if (!_entriesByContext.TryGetValue(context, out var entries))
+        lock (_gate)
         {
-            entries = new HashSet<AuditLogEntry>(ReferenceEqualityComparer.Instance);
-            _entriesByContext.Add(context, entries);
-        }
+            if (!_entriesByContext.TryGetValue(context, out var entries))
+            {
+                entries = new HashSet<AuditLogEntry>(ReferenceEqualityComparer.Instance);
+                _entriesByContext.Add(context, entries);
+            }
 
-        entries.Add(entry);
+            entries.Add(entry);
+        }
     }
 
     private void _ReleaseEntry(DbContext context, AuditLogEntry entry)
     {
-        if (!_entriesByContext.TryGetValue(context, out var entries))
+        lock (_gate)
         {
-            return;
-        }
+            if (!_entriesByContext.TryGetValue(context, out var entries))
+            {
+                return;
+            }
 
-        entries.Remove(entry);
+            entries.Remove(entry);
 
-        if (entries.Count == 0)
-        {
-            _entriesByContext.Remove(context);
+            if (entries.Count == 0)
+            {
+                _entriesByContext.Remove(context);
+            }
         }
     }
 

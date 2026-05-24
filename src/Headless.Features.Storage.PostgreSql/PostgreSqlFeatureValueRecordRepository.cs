@@ -10,7 +10,7 @@ using Npgsql;
 #pragma warning disable CA2100 // SQL text only interpolates validated schema/table identifiers; values remain parameterized.
 namespace Headless.Features.PostgreSql;
 
-public sealed class PostgreSqlFeatureValueRecordRepository(
+internal sealed class PostgreSqlFeatureValueRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     IServiceProvider services
@@ -159,7 +159,9 @@ public sealed class PostgreSqlFeatureValueRecordRepository(
 
     private async ValueTask _PublishAsync(FeatureValueRecord feature, CancellationToken cancellationToken)
     {
-        var publisher = services.GetService<ILocalMessagePublisher>();
+        // Resolve the scoped publisher inside a fresh scope to avoid capturing it from the singleton's root provider.
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
 
         if (publisher is not null)
         {

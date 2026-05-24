@@ -33,7 +33,7 @@ services.AddHeadlessAuditLog(o =>
 });
 services.AddHeadlessAuditLog(setup =>
 {
-    setup.ConfigureStorage(options => options.JsonColumnType = "jsonb");
+    setup.ConfigureStorage(options => options.JsonColumnType = AuditLogJsonColumnType.Jsonb);
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
@@ -193,11 +193,14 @@ services.AddHeadlessAuditLog(setup =>
     {
         options.TableName = "audit_entries";
         options.Schema = "audit";
-        options.JsonColumnType = "jsonb";
+        options.JsonColumnType = AuditLogJsonColumnType.Jsonb;
+        options.CreatedAtColumnType = "timestamp with time zone"; // optional explicit override
     });
     setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+`AuditLogJsonColumnType` is an allowlist enum (`Jsonb`, `Json`, `NvarcharMax`) so the column-type string cannot be used to inject SQL identifiers. `CreatedAtColumnType` is a free string override for the timestamp column; the provider defaults are `timestamp with time zone` on PostgreSQL and `datetime2` on SQL Server when unset.
 
 ### Sensitive data strategies
 

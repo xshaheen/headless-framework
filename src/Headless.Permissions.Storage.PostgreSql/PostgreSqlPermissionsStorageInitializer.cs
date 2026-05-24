@@ -7,17 +7,19 @@ using Npgsql;
 
 namespace Headless.Permissions.PostgreSql;
 
-public sealed class PostgreSqlPermissionsStorageInitializer(
+internal sealed class PostgreSqlPermissionsStorageInitializer(
     IOptions<PostgreSqlPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions
-) : IPermissionsStorageInitializer, IHostedService, IInitializer
+) : IHostedLifecycleService, IInitializer
 {
-    private readonly TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
         try
         {
             await InitializeAsync(cancellationToken).ConfigureAwait(false);
@@ -30,6 +32,14 @@ public sealed class PostgreSqlPermissionsStorageInitializer(
             throw;
         }
     }
+
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
@@ -48,13 +58,16 @@ public sealed class PostgreSqlPermissionsStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            await using var command = new NpgsqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
+            };
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P05" or "42P06" or "42P07")
+        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710")
         {
-            await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         }
     }
 

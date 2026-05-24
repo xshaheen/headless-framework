@@ -9,7 +9,7 @@ using Npgsql;
 
 namespace Headless.Permissions.PostgreSql;
 
-public sealed class PostgreSqlPermissionDefinitionRecordRepository(
+internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
     IOptions<PostgreSqlPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions
 ) : IPermissionDefinitionRecordRepository

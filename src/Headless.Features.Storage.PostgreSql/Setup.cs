@@ -42,9 +42,6 @@ public static class SetupFeaturesPostgreSql
         {
             services.Configure<PostgreSqlFeaturesOptions, PostgreSqlFeaturesOptionsValidator>(configure);
             services.AddInitializerHostedService<PostgreSqlFeaturesStorageInitializer>();
-            services.TryAddSingleton<IFeaturesStorageInitializer>(sp =>
-                sp.GetRequiredService<PostgreSqlFeaturesStorageInitializer>()
-            );
             services.TryAddSingleton<IFeatureValueRecordRepository, PostgreSqlFeatureValueRecordRepository>();
             services.TryAddSingleton<IFeatureDefinitionRecordRepository, PostgreSqlFeatureDefinitionRecordRepository>();
         }

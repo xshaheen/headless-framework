@@ -24,10 +24,10 @@ public static class SetupSettings
             var setup = new HeadlessSettingsSetupBuilder(services);
             configure(setup);
 
-            return _RegisterCoreSettingsServices(services, setup);
+            return _AddSettingsCore(services, setup);
         }
 
-        private static HeadlessSettingsBuilder _RegisterCoreSettingsServices(
+        private static HeadlessSettingsBuilder _AddSettingsCore(
             IServiceCollection serviceCollection,
             HeadlessSettingsSetupBuilder setup
         )

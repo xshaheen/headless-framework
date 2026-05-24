@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.SqlServer;
 
-public sealed class SqlServerPermissionGrantRepository(
+internal sealed class SqlServerPermissionGrantRepository(
     IOptions<SqlServerPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions,
     IServiceProvider services

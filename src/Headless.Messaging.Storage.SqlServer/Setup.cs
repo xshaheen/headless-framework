@@ -14,6 +14,7 @@ using Microsoft.Extensions.Options;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
+[PublicAPI]
 public static class SetupSqlServerMessaging
 {
     extension(MessagingSetupBuilder setup)

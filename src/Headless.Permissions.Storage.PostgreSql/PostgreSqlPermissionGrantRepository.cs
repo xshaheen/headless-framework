@@ -10,7 +10,7 @@ using Npgsql;
 #pragma warning disable CA2100 // SQL text only interpolates validated schema/table identifiers; values remain parameterized.
 namespace Headless.Permissions.PostgreSql;
 
-public sealed class PostgreSqlPermissionGrantRepository(
+internal sealed class PostgreSqlPermissionGrantRepository(
     IOptions<PostgreSqlPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions,
     IServiceProvider services

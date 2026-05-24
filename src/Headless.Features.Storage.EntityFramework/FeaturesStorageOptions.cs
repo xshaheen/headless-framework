@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Hosting.Storage;
 
 namespace Headless.Features;
 
@@ -20,9 +21,9 @@ internal sealed class FeaturesStorageOptionsValidator : AbstractValidator<Featur
 {
     public FeaturesStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.FeatureValuesTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
-        RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Must(x => !string.IsNullOrWhiteSpace(x));
+        RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
     }
 }
