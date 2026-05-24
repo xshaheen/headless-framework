@@ -1,23 +1,23 @@
-# Headless.Messaging.PostgreSql
+# Headless.Messaging.Storage.SqlServer
 
-PostgreSQL outbox storage provider for the messaging system.
+SQL Server outbox storage provider for the messaging system.
 
 ## Problem Solved
 
-Provides durable, transactional message storage using PostgreSQL with automatic schema management, message archival, and high-performance queries.
+Provides durable, transactional message storage using SQL Server with automatic schema management, message archival, and optimized queries for Windows environments.
 
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
 - **Auto-Migration**: Automatic table creation and schema updates
 - **Archival**: Automatic cleanup of old messages
-- **Performance**: Optimized indexes and queries for high throughput
+- **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.PostgreSql
+dotnet add package Headless.Messaging.Storage.SqlServer
 ```
 
 ## Quick Start
@@ -25,9 +25,9 @@ dotnet add package Headless.Messaging.PostgreSql
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.UsePostgreSql(config =>
+    options.UseSqlServer(config =>
     {
-        config.ConnectionString = "Host=localhost;Database=myapp;...";
+        config.ConnectionString = "Server=localhost;Database=myapp;...";
         config.Schema = "messaging";
     });
 
@@ -40,7 +40,7 @@ builder.Services.AddHeadlessMessaging(options =>
 ## Configuration
 
 ```csharp
-options.UsePostgreSql(config =>
+options.UseSqlServer(config =>
 {
     config.ConnectionString = "connection_string";
     config.Schema = "messaging";
@@ -50,13 +50,13 @@ options.UsePostgreSql(config =>
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `Npgsql`
+- `Microsoft.Data.SqlClient`
 
 ## Side Effects
 
 - Creates database tables in configured schema:
-  - `{schema}.published` - Published messages
-  - `{schema}.received` - Received messages
-  - `{schema}.lock` - Distributed lock table
+  - `{schema}.Published` - Published messages
+  - `{schema}.Received` - Received messages
+  - `{schema}.Lock` - Distributed lock table
 - Creates indexes for message queries
 - Periodically cleans up expired messages

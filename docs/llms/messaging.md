@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.Storage.PostgreSql, Messaging.Storage.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -157,7 +157,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-12)
     - [Dependencies](#dependencies-12)
     - [Side Effects](#side-effects-12)
-- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
+- [Headless.Messaging.Storage.PostgreSql](#headlessmessagingpostgresql)
     - [Problem Solved](#problem-solved-13)
     - [Key Features](#key-features-13)
     - [Installation](#installation-13)
@@ -165,7 +165,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-13)
     - [Dependencies](#dependencies-13)
     - [Side Effects](#side-effects-13)
-- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
+- [Headless.Messaging.Storage.SqlServer](#headlessmessagingsqlserver)
     - [Problem Solved](#problem-solved-14)
     - [Key Features](#key-features-14)
     - [Installation](#installation-14)
@@ -214,8 +214,8 @@ Always install four packages together: **Abstractions + Core + one transport + o
 
 **Storage** (pick one):
 
-- `Headless.Messaging.PostgreSql` -- PostgreSQL outbox with `CREATE TABLE IF NOT EXISTS` initialization
-- `Headless.Messaging.SqlServer` -- SQL Server outbox with `CREATE TABLE IF NOT EXISTS` initialization
+- `Headless.Messaging.Storage.PostgreSql` -- PostgreSQL outbox with `CREATE TABLE IF NOT EXISTS` initialization
+- `Headless.Messaging.Storage.SqlServer` -- SQL Server outbox with `CREATE TABLE IF NOT EXISTS` initialization
 - `Headless.Messaging.InMemoryStorage` -- dev/testing only, ephemeral
 
 **Optional add-ons:**
@@ -231,7 +231,7 @@ Always install four packages together: **Abstractions + Core + one transport + o
 dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.RabbitMq
-dotnet add package Headless.Messaging.PostgreSql
+dotnet add package Headless.Messaging.Storage.PostgreSql
 ```
 
 **Minimal dev/testing setup:**
@@ -313,7 +313,7 @@ How to read each column:
 - **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
 - **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
 
-Internal-wiring asymmetries (for example, `Headless.Messaging.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
+Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
 ---
 
@@ -470,7 +470,7 @@ No configuration required. This is an abstractions package. Implementations are 
 
 - `Headless.Messaging.Core` (base implementation)
 - Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
-- Storage packages: `Headless.Messaging.PostgreSql`, `Headless.Messaging.SqlServer`, etc.
+- Storage packages: `Headless.Messaging.Storage.PostgreSql`, `Headless.Messaging.Storage.SqlServer`, etc.
 
 ## Dependencies
 
@@ -2050,7 +2050,7 @@ No configuration required. Just call `UseInMemoryQueue()`.
 
 ## None. Messages are stored in memory only and lost on restart.
 
-# Headless.Messaging.PostgreSql
+# Headless.Messaging.Storage.PostgreSql
 
 PostgreSQL outbox storage provider for the messaging system.
 
@@ -2069,7 +2069,7 @@ Provides durable, transactional message storage using PostgreSQL with schema ini
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.PostgreSql
+dotnet add package Headless.Messaging.Storage.PostgreSql
 ```
 
 ## Quick Start
@@ -2115,7 +2115,7 @@ options.UsePostgreSql(config =>
 
 ---
 
-# Headless.Messaging.SqlServer
+# Headless.Messaging.Storage.SqlServer
 
 SQL Server outbox storage provider for the messaging system.
 
@@ -2134,7 +2134,7 @@ Provides durable, transactional message storage using SQL Server with schema ini
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.SqlServer
+dotnet add package Headless.Messaging.Storage.SqlServer
 ```
 
 ## Quick Start

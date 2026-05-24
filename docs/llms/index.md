@@ -208,8 +208,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
 - `Headless.Messaging.RedisStreams` — Redis Streams transport.
 - `Headless.Messaging.InMemoryQueue` — In-memory transport (dev/testing).
-- `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
-- `Headless.Messaging.SqlServer` — SQL Server durable storage.
+- `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
+- `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
 - `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
 
 ### OpenAPI

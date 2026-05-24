@@ -141,7 +141,7 @@ Use it for per-delivery setup and teardown. Do not rely on it for application-wi
 No configuration required. This is an abstractions package. Implementations are provided by:
 - `Headless.Messaging.Core` (base implementation)
 - Transport packages: `Headless.Messaging.RabbitMQ`, `Headless.Messaging.Kafka`, etc.
-- Storage packages: `Headless.Messaging.PostgreSql`, `Headless.Messaging.SqlServer`, etc.
+- Storage packages: `Headless.Messaging.Storage.PostgreSql`, `Headless.Messaging.Storage.SqlServer`, etc.
 
 ## Dependencies
 
