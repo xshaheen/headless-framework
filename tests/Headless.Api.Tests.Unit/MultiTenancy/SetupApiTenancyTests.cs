@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
-using Headless.Api.Abstractions;
 using Headless.Api.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Authorization.Infrastructure;
-using Microsoft.AspNetCore.Authorization.Policy;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -31,13 +28,15 @@ public sealed class SetupApiTenancyTests
             .ContainSingle()
             .Subject.Lifetime.Should()
             .Be(ServiceLifetime.Singleton);
-        var resultHandlerDescriptor = builder
+
+        // RequireTenant() must not register an IAuthorizationMiddlewareResultHandler — the
+        // structured g:tenant_required 403 is produced by StatusCodesRewriterMiddleware reading
+        // a HttpContext.Items marker, not by decorating the result handler. Verifying the absence
+        // guards against regressing back into the ordering-sensitive design.
+        builder
             .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
             .Should()
-            .ContainSingle()
-            .Subject;
-        resultHandlerDescriptor.Lifetime.Should().Be(ServiceLifetime.Transient);
-        resultHandlerDescriptor.ImplementationFactory.Should().NotBeNull();
+            .BeEmpty();
 
         var manifest = _GetManifest(builder.Services);
         var seam = manifest.GetSeam(HeadlessAuthorizationTenancyBuilder.Seam);
@@ -70,38 +69,27 @@ public sealed class SetupApiTenancyTests
             )
             .Should()
             .ContainSingle();
-        builder
-            .Services.Where(descriptor => descriptor.ServiceType == typeof(IAuthorizationMiddlewareResultHandler))
-            .Should()
-            .ContainSingle();
     }
 
     [Fact]
-    public async Task should_delegate_non_tenant_authorization_results_to_existing_customer_handler()
+    public void should_preserve_consumer_authorization_result_handler_registered_after_require_tenant()
     {
-        // given
+        // given - regression guard: the old decorator design forced consumers to register their
+        // custom IAuthorizationMiddlewareResultHandler BEFORE RequireTenant(); reversing the order
+        // silently disabled the framework's tenant 403 mapping. The new marker-based design must
+        // not register anything against IAuthorizationMiddlewareResultHandler, so a consumer
+        // registration in any order continues to be the resolved handler unchanged.
         var builder = Host.CreateApplicationBuilder();
         var customerHandler = new RecordingAuthorizationMiddlewareResultHandler();
-        builder.Services.AddSingleton(Substitute.For<IProblemDetailsCreator>());
+
+        // when - register the consumer handler AFTER RequireTenant().
+        builder.AddHeadlessTenancy(tenancy => tenancy.Authorization(auth => auth.RequireTenant()));
         builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler>(customerHandler);
 
-        // when
-        builder.AddHeadlessTenancy(tenancy => tenancy.Authorization(auth => auth.RequireTenant()));
+        // then
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var handler = serviceProvider.GetRequiredService<IAuthorizationMiddlewareResultHandler>();
-        var context = new DefaultHttpContext { RequestServices = serviceProvider };
-        var failure = AuthorizationFailure.Failed([new DenyAnonymousAuthorizationRequirement()]);
-        await handler.HandleAsync(
-            _ => Task.CompletedTask,
-            context,
-            new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build(),
-            PolicyAuthorizationResult.Forbid(failure)
-        );
-
-        // then
-        handler.Should().BeOfType<TenantAuthorizationMiddlewareResultHandler>();
-        customerHandler.Calls.Should().Be(1);
-        context.Response.StatusCode.Should().Be(StatusCodes.Status418ImATeapot);
+        handler.Should().BeSameAs(customerHandler);
     }
 
     [Fact]
@@ -212,45 +200,6 @@ public sealed class SetupApiTenancyTests
             );
     }
 
-    [Fact]
-    public void should_emit_diagnostic_when_authorization_result_handler_is_replaced_after_require_tenant()
-    {
-        // given - simulate the canonical wiring, then register a foreign result handler AFTER
-        // RequireTenant(). ASP.NET Core resolves the last-registered handler, so the foreign
-        // handler wins and the framework's tenant-mapping handler never sees the failure.
-        var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddAuthorization(options =>
-        {
-            options.FallbackPolicy = new AuthorizationPolicyBuilder()
-                .RequireAuthenticatedUser()
-                .AddRequirements(new TenantRequirement())
-                .Build();
-        });
-        builder.Services.AddSingleton(Substitute.For<IProblemDetailsCreator>());
-        builder.AddHeadlessTenancy(tenancy => tenancy.Authorization(auth => auth.RequireTenant()));
-        builder.Services.AddSingleton<
-            IAuthorizationMiddlewareResultHandler,
-            ForeignAuthorizationMiddlewareResultHandler
-        >();
-        var manifest = _GetManifest(builder.Services);
-        using var serviceProvider = builder.Services.BuildServiceProvider();
-        var validator = new HeadlessAuthorizationTenancyValidator();
-
-        // when
-        var diagnostics = validator.Validate(new HeadlessTenancyValidationContext(serviceProvider, manifest)).ToList();
-
-        // then
-        diagnostics
-            .Should()
-            .Contain(diagnostic =>
-                diagnostic.Code == HeadlessAuthorizationTenancyBuilder.AuthorizationResultHandlerReplacedDiagnosticCode
-                && diagnostic.Message.Contains(
-                    typeof(ForeignAuthorizationMiddlewareResultHandler).FullName!,
-                    StringComparison.Ordinal
-                )
-            );
-    }
-
     private static bool _IsTenantRequirementHandlerDescriptor(ServiceDescriptor descriptor)
     {
         return descriptor.ServiceType == typeof(IAuthorizationHandler)
@@ -270,29 +219,11 @@ public sealed class SetupApiTenancyTests
 
     private sealed class RecordingAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
     {
-        public int Calls { get; private set; }
-
         public Task HandleAsync(
-            RequestDelegate next,
-            HttpContext context,
+            Microsoft.AspNetCore.Http.RequestDelegate next,
+            Microsoft.AspNetCore.Http.HttpContext context,
             AuthorizationPolicy policy,
-            PolicyAuthorizationResult authorizeResult
-        )
-        {
-            Calls++;
-            context.Response.StatusCode = StatusCodes.Status418ImATeapot;
-
-            return Task.CompletedTask;
-        }
-    }
-
-    private sealed class ForeignAuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResultHandler
-    {
-        public Task HandleAsync(
-            RequestDelegate next,
-            HttpContext context,
-            AuthorizationPolicy policy,
-            PolicyAuthorizationResult authorizeResult
+            Microsoft.AspNetCore.Authorization.Policy.PolicyAuthorizationResult authorizeResult
         )
         {
             return Task.CompletedTask;

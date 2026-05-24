@@ -1,14 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using Scalar.AspNetCore;
 
 namespace Headless.Api;
 
-public static class ScalarSetup
+public static class SetupScalar
 {
-    public static WebApplication MapScalarOpenApi(
-        this WebApplication app,
+    public static IEndpointRouteBuilder MapScalarOpenApi(
+        this IEndpointRouteBuilder app,
         Action<ScalarOptions>? setupAction = null,
         string endpointPrefix = "/scalar"
     )

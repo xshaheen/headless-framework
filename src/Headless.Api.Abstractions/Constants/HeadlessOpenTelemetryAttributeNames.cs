@@ -4,115 +4,94 @@
 namespace Headless.Constants;
 
 /// <summary>
-/// Constants for semantic attribute names outlined by the OpenTelemetry specifications.
-/// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/README.md"/>.
+/// Constants for OpenTelemetry semantic-convention attribute names (stable semconv 1.x).
+/// <see href="https://opentelemetry.io/docs/specs/semconv/"/>.
 /// </summary>
+/// <remarks>
+/// Grouped by attribute prefix to mirror the semconv document. Span attributes (<see cref="Client"/>,
+/// <see cref="EndUser"/>) describe individual operations; <see cref="Resource"/> attributes describe the
+/// emitting service/host/environment and apply to every signal it produces.
+/// </remarks>
 [PublicAPI]
 public static class HeadlessOpenTelemetryAttributes
 {
     /// <summary>
-    /// Constants for deployment semantic attribute names outlined by the OpenTelemetry specifications.
-    /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/11cc73939a32e3a2e6f11bdeab843c61cf8594e9/specification/resource/semantic_conventions/deployment_environment.md"/>.
+    /// Client-side network identity. Replaces the deprecated <c>http.client_ip</c>.
+    /// <see href="https://opentelemetry.io/docs/specs/semconv/attributes-registry/client/"/>.
     /// </summary>
-    public static class Deployments
+    public static class Client
     {
         /// <summary>
-        /// The name of the deployment environment (aka deployment tier).
+        /// Client address — domain name (if available without reverse DNS), IPv4, or IPv6.
+        /// For HTTP servers behind a proxy, populate from the original client (e.g. <c>X-Forwarded-For</c>)
+        /// rather than the immediate peer.
         /// </summary>
-        /// <example>staging; production.</example>
-        public const string Environment = "deployment.environment";
+        /// <example>E.g. <c>client.example.com</c>, <c>83.164.160.102</c>.</example>
+        public const string Address = "client.address";
+
+        /// <summary>Client port number.</summary>
+        /// <example>E.g. <c>65123</c>.</example>
+        public const string Port = "client.port";
     }
 
     /// <summary>
-    /// Constants for end user semantic attribute names outlined by the OpenTelemetry specifications.
-    /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/span-general.md"/>.
+    /// End-user identity attributes.
+    /// <see href="https://opentelemetry.io/docs/specs/semconv/attributes-registry/enduser/"/>.
     /// </summary>
+    /// <remarks>
+    /// These attributes are <b>opt-in</b> in stable semconv because they typically contain PII. Enable
+    /// only when the telemetry backend's access controls and retention satisfy your compliance posture.
+    /// Prefer stable opaque identifiers (e.g. the OIDC <c>sub</c> claim) over usernames or email addresses.
+    /// </remarks>
     public static class EndUser
     {
-        /// <summary>
-        /// Username or client_id extracted from the access token or Authorization header in the inbound request from outside the system.
-        /// </summary>
-        /// <example>E.g. username.</example>
+        /// <summary>Username, opaque user identifier (e.g. OIDC <c>sub</c>), or <c>client_id</c>.</summary>
+        /// <example>E.g. <c>username</c>.</example>
         public const string Id = "enduser.id";
 
-        /// <summary>
-        /// Actual/assumed role the client is making the request under extracted from token or application security context.
-        /// </summary>
-        /// <example>E.g. admin.</example>
+        /// <summary>Actual or assumed role the client is making the request under.</summary>
+        /// <example>E.g. <c>admin</c>.</example>
         public const string Role = "enduser.role";
 
-        /// <summary>
-        /// Scopes or granted authorities the client currently possesses extracted from token or application security context.
-        /// The value would come from the scope associated with an OAuth 2.0 Access Token or an attribute value in a SAML 2.0 Assertion.
-        /// </summary>
-        /// <example>E.g. read:message,write:files.</example>
+        /// <summary>OAuth scopes or granted authorities the client currently possesses.</summary>
+        /// <example>E.g. <c>read:message,write:files</c>.</example>
         public const string Scope = "enduser.scope";
     }
 
     /// <summary>
-    /// Constants for HTTP semantic attribute names outlined by the OpenTelemetry specifications.
-    /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/http.md"/>.
+    /// Resource-level attributes (attached to the producing service, not to individual spans).
+    /// <see href="https://opentelemetry.io/docs/specs/semconv/resource/"/>.
     /// </summary>
-    public static class Http
+    public static class Resource
     {
-        /// <summary>
-        /// The IP address of the original client behind all proxies, if known (e.g. from X-Forwarded-For).
-        /// </summary>
-        /// <example>E.g. 83.164.160.102.</example>
-        public const string ClientIp = "http.client_ip";
+        /// <summary>Service identity (<c>service.*</c>).</summary>
+        public static class Service
+        {
+            /// <summary>Logical name of the service.</summary>
+            /// <example>E.g. <c>shopping-cart</c>.</example>
+            public const string Name = "service.name";
+        }
 
-        /// <summary>
-        /// The size of the request payload body in bytes. This is the number of bytes transferred excluding headers and is often,
-        /// but not always, present as the Content-Length header. For requests using transport encoding, this should be the
-        /// compressed size.
-        /// </summary>
-        /// <example>E.g. 3495.</example>
-        public const string RequestContentLength = "http.request_content_length";
+        /// <summary>Host identity (<c>host.*</c>).</summary>
+        public static class Host
+        {
+            /// <summary>
+            /// Name of the host. On Unix systems it may be what <c>hostname</c> returns, the FQDN,
+            /// or a user-specified name.
+            /// </summary>
+            /// <example>E.g. <c>opentelemetry-test</c>.</example>
+            public const string Name = "host.name";
+        }
 
-        /// <summary>
-        /// The content type of the request body.
-        /// </summary>
-        /// <example>E.g. application/json.</example>
-        public const string RequestContentType = "http.request_content_type";
-
-        /// <summary>
-        /// The size of the response payload body in bytes. This is the number of bytes transferred excluding headers and is often,
-        /// but not always, present as the Content-Length header. For requests using transport encoding, this should be the
-        /// compressed size.
-        /// </summary>
-        /// <example>E.g. 3495.</example>
-        public const string ResponseContentLength = "http.response_content_length";
-
-        /// <summary>
-        /// The content type of the response body.
-        /// </summary>
-        /// <example>E.g. application/json.</example>
-        public const string ResponseContentType = "http.response_content_type";
-    }
-
-    /// <summary>
-    /// Constants for host semantic attribute names outlined by the OpenTelemetry specifications.
-    /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/11cc73939a32e3a2e6f11bdeab843c61cf8594e9/specification/resource/semantic_conventions/host.md"/>.
-    /// </summary>
-    public static class Host
-    {
-        /// <summary>
-        /// Name of the host. On Unix systems, it may contain what the hostname command returns, or the fully qualified hostname,
-        /// or another name specified by the user.
-        /// </summary>
-        /// <example>E.g. opentelemetry-test.</example>
-        public const string Name = "host.name";
-    }
-
-    /// <summary>
-    /// Constants for service semantic attribute names outlined by the OpenTelemetry specifications.
-    /// <see href="https://github.com/open-telemetry/opentelemetry-specification/blob/master/specification/trace/semantic_conventions/messaging.md"/>.
-    /// </summary>
-    public static class Service
-    {
-        /// <summary>
-        /// The name of the service sending messages.
-        /// </summary>
-        public const string Name = "service.name";
+        /// <summary>Deployment metadata (<c>deployment.*</c>).</summary>
+        public static class Deployment
+        {
+            /// <summary>
+            /// Name of the deployment environment (aka tier). Replaces the deprecated
+            /// <c>deployment.environment</c> in semconv 1.27.
+            /// </summary>
+            /// <example>E.g. <c>staging</c>, <c>production</c>.</example>
+            public const string EnvironmentName = "deployment.environment.name";
+        }
     }
 }

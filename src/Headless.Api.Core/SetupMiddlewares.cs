@@ -1,11 +1,25 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Api.Middlewares;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Api;
+
+/// <summary>
+/// Allows higher-level packages (e.g. <c>Headless.Api.ServiceDefaults</c>) to receive a callback when
+/// <see cref="SetupMiddlewares.UseStatusCodesRewriter"/> is wired into the pipeline, without creating a
+/// circular package dependency.
+/// </summary>
+/// <remarks>Framework coordination interface — not intended for direct consumer use.</remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public interface IStatusCodesRewriterCalledNotifier
+{
+    /// <summary>Called immediately when <see cref="SetupMiddlewares.UseStatusCodesRewriter"/> is added to the pipeline.</summary>
+    void OnCalled();
+}
 
 [PublicAPI]
 public static class SetupMiddlewares
@@ -46,6 +60,12 @@ public static class SetupMiddlewares
     /// </summary>
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
     {
+        // Notify any registered observer (e.g. HeadlessServiceDefaultsValidationStartupFilter) that the middleware was wired.
+        if (app.ApplicationServices.GetService(typeof(IStatusCodesRewriterCalledNotifier)) is IStatusCodesRewriterCalledNotifier notifier)
+        {
+            notifier.OnCalled();
+        }
+
         return app.UseMiddleware<StatusCodesRewriterMiddleware>();
     }
 
