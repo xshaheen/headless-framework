@@ -207,7 +207,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
                 return match;
             }
         }
-        else if (_typeOnlyIndex.TryGetValue((messageType, type), out var typeIndexed))
+        else if (intentType is null && _typeOnlyIndex.TryGetValue((messageType, type), out var typeIndexed))
         {
             var match = typeIndexed.FirstOrDefault(m => predicate == null || predicate(m.Message));
             if (match != null)

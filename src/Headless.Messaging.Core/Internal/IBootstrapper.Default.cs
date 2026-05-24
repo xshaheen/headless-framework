@@ -333,25 +333,18 @@ internal sealed class Bootstrapper(
         var consumerRequiresBus = consumers.Any(static consumer => consumer.IntentType == IntentType.Bus);
         var consumerRequiresQueue = consumers.Any(static consumer => consumer.IntentType == IntentType.Queue);
 
-        // Publisher-side fences: if any IBus/IOutboxBus (or queue equivalents) is resolvable,
-        // a matching IBusTransport/IQueueTransport must be wired before bootstrap completes.
-        var publisherRequiresBus =
-            serviceProvider.GetService<IBus>() is not null || serviceProvider.GetService<IOutboxBus>() is not null;
-        var publisherRequiresQueue =
-            serviceProvider.GetService<IQueue>() is not null || serviceProvider.GetService<IOutboxQueue>() is not null;
-
         _RequireTransportFor<IBusTransport>(
             "bus",
-            consumerRequiresBus || publisherRequiresBus,
+            consumerRequiresBus,
             consumerSide: consumerRequiresBus,
-            publisherSide: publisherRequiresBus
+            publisherSide: false
         );
 
         _RequireTransportFor<IQueueTransport>(
             "queue",
-            consumerRequiresQueue || publisherRequiresQueue,
+            consumerRequiresQueue,
             consumerSide: consumerRequiresQueue,
-            publisherSide: publisherRequiresQueue
+            publisherSide: false
         );
     }
 

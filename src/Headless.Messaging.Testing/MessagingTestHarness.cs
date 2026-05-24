@@ -166,8 +166,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForPublished<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
             intentType: null,
@@ -175,6 +176,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Waits until a published message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -184,8 +186,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
             intentType: null,
@@ -193,13 +196,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     public Task<RecordedMessage> WaitForPublished<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Published,
             intentType,
@@ -207,6 +212,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Consumed
@@ -219,8 +225,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForConsumed<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
             intentType: null,
@@ -228,6 +235,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Waits until a consumed message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -237,8 +245,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
             intentType: null,
@@ -246,13 +255,15 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     public Task<RecordedMessage> WaitForConsumed<T>(
         IntentType intentType,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Consumed,
             intentType,
@@ -260,6 +271,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Faulted
@@ -272,8 +284,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForFaulted<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
             intentType: null,
@@ -281,6 +294,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Waits until a faulted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -290,8 +304,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Faulted,
             intentType: null,
@@ -299,6 +314,23 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
+
+    public Task<RecordedMessage> WaitForFaulted<T>(
+        IntentType intentType,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Faulted,
+            intentType,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+    }
 
     // -------------------------------------------------------------------------
     // Awaitable assertions — Exhausted
@@ -312,8 +344,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public Task<RecordedMessage> WaitForExhausted<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
             intentType: null,
@@ -321,6 +354,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
 
     /// <summary>
     /// Waits until an exhausted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
@@ -330,8 +364,9 @@ public sealed class MessagingTestHarness : IAsyncDisposable
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
-    ) =>
-        _store.WaitForAsync(
+    )
+    {
+        return _store.WaitForAsync(
             typeof(T),
             MessageObservationType.Exhausted,
             intentType: null,
@@ -339,6 +374,23 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             timeout ?? DefaultTimeout,
             cancellationToken
         );
+    }
+
+    public Task<RecordedMessage> WaitForExhausted<T>(
+        IntentType intentType,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _store.WaitForAsync(
+            typeof(T),
+            MessageObservationType.Exhausted,
+            intentType,
+            predicate: null,
+            timeout ?? DefaultTimeout,
+            cancellationToken
+        );
+    }
 
     // -------------------------------------------------------------------------
     // State management
@@ -379,7 +431,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
 
     /// <summary>Resolves an arbitrary service from the harness container.</summary>
     public T GetRequiredService<T>()
-        where T : notnull => ServiceProvider.GetRequiredService<T>();
+        where T : notnull
+    {
+        return ServiceProvider.GetRequiredService<T>();
+    }
 
     /// <summary>Provides direct access to the harness <see cref="IServiceProvider"/>.</summary>
     public IServiceProvider ServiceProvider { get; }

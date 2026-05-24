@@ -679,6 +679,36 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         captured.Count(e => e.Id is 74 or 3110).Should().Be(3);
     }
 
+    [Fact]
+    public async Task ProcessAsync_DoesNotTreatStoragePickupFailureAsCleanCycle()
+    {
+        var (sut, _, _) = _Create(baseIntervalSeconds: 1);
+        var dataStorage = Substitute.For<IDataStorage>();
+
+        var receivedCalls = 0;
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                Interlocked.Increment(ref receivedCalls) == 1
+                    ? ValueTask.FromException<IEnumerable<MediumMessage>>(new InvalidOperationException("storage down"))
+                    : ValueTask.FromResult<IEnumerable<MediumMessage>>([])
+            );
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        await sut.ProcessAsync(context);
+        sut.CurrentPollingInterval.Should().Be(TimeSpan.FromSeconds(2));
+
+        await sut.ProcessAsync(context);
+        sut.CurrentPollingInterval.Should().Be(
+            TimeSpan.FromSeconds(2),
+            "the successful empty poll after a storage failure should not count as a clean cycle"
+        );
+    }
+
     // -------------------------------------------------------------------------
     // #3 — Lock-acquire exception escalation (EventIds 81 / 82)
     // -------------------------------------------------------------------------

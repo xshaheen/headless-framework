@@ -99,10 +99,16 @@ internal sealed class MessageSender : IMessageSender
         CancellationToken cancellationToken
     )
     {
-        var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
-        if (!leased)
+        // Atomic pickup already wrote a live lease. Re-leasing would immediately fail against the
+        // storage lease predicate and strand rows returned by GetPublishedMessagesOfNeedRetryAsync.
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        if (message.LockedUntil is not { } lockedUntil || lockedUntil <= now)
         {
-            return (RetryDecision.Stop, OperateResult.Success);
+            var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
+            if (!leased)
+            {
+                return (RetryDecision.Stop, OperateResult.Success);
+            }
         }
 
         var transportMsg = await _serializer.SerializeToTransportMessageAsync(message.Origin).ConfigureAwait(false);

@@ -165,6 +165,43 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
+    public async Task bootstrap_should_not_require_bus_transport_for_queue_only_consumer()
+    {
+        var services = new ServiceCollection();
+        var registry = new ConsumerRegistry();
+        registry.Register(
+            new ConsumerMetadata(
+                typeof(TestMessage),
+                typeof(TestQueueConsumer),
+                "jobs.orders",
+                "workers",
+                1,
+                IntentType: IntentType.Queue
+            )
+        );
+
+        services.AddSingleton(new MessagingMarkerService("Messaging"));
+        services.AddSingleton(new MessageQueueMarkerService("QueueOnlyTransport"));
+        services.AddSingleton(new MessageStorageMarkerService("TestStorage"));
+        services.AddSingleton<IConsumerRegistry>(registry);
+        services.AddSingleton(registry);
+        services.AddSingleton(Substitute.For<IQueueTransport>());
+        services.AddSingleton(Substitute.For<IBus>());
+        services.AddSingleton(Substitute.For<IOutboxBus>());
+
+        await using var provider = services.BuildServiceProvider();
+        var bootstrapper = new Bootstrapper(
+            [],
+            new NoOpStorageInitializer(),
+            provider,
+            Options.Create(new MessagingOptions()),
+            NullLogger<IBootstrapper>.Instance
+        );
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task bus_publish_should_throw_publisher_sent_failed_when_transport_reports_failure()
     {
         // given

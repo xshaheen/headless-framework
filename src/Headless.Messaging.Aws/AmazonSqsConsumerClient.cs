@@ -68,7 +68,7 @@ internal sealed class AmazonSqsConsumerClient(
         var topicArns = new List<string>();
         foreach (var topic in topicNames)
         {
-            var createTopicRequest = new CreateTopicRequest(topic.NormalizeForAws());
+            var createTopicRequest = topic.ToSnsCreateTopicRequest();
 
             var createTopicResponse = await _snsClient!.CreateTopicAsync(createTopicRequest).ConfigureAwait(false);
 
