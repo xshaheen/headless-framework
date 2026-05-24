@@ -10,7 +10,17 @@ public interface IMonitoringApi
 {
     ValueTask<MediumMessage?> GetPublishedMessageAsync(long storageId, CancellationToken cancellationToken = default);
 
+    ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    );
+
     ValueTask<MediumMessage?> GetReceivedMessageAsync(long storageId, CancellationToken cancellationToken = default);
+
+    ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    );
 
     ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default);
 

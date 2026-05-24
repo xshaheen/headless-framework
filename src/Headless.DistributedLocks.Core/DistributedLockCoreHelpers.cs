@@ -129,17 +129,17 @@ internal static class DistributedLockCoreHelpers
     }
 
     /// <summary>
-    /// Configures the outbox publisher reference used by the providers. Logs once when no publisher
+    /// Configures the outbox bus reference used by the providers. Logs once when no bus
     /// is registered so operators see why waiters fall back to polling.
     /// </summary>
-    public static IOutboxPublisher? ConfigureOutboxPublisher(IOutboxPublisher? outboxPublisher, ILogger logger)
+    public static IOutboxBus? ConfigureOutboxBus(IOutboxBus? outboxBus, ILogger logger)
     {
-        if (outboxPublisher is null)
+        if (outboxBus is null)
         {
-            logger.LogOutboxPublisherAbsent();
+            logger.LogOutboxBusAbsent();
         }
 
-        return outboxPublisher;
+        return outboxBus;
     }
 
     /// <summary>

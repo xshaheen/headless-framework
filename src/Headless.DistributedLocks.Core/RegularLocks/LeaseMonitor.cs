@@ -13,7 +13,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private readonly CancellationTokenSource _disposalSource = new();
     private readonly CancellationTokenSource _handleLostSource = new();
     private readonly ILeaseHandle _leaseHandle;
-    private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly TimeSpan _leaseDuration;
     private readonly Lock _syncLock = new();
@@ -34,7 +33,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     public LeaseMonitor(ILeaseHandle leaseHandle, TimeProvider timeProvider, ILogger logger)
     {
         _leaseHandle = Argument.IsNotNull(leaseHandle);
-        _timeProvider = Argument.IsNotNull(timeProvider);
+        timeProvider = Argument.IsNotNull(timeProvider);
         _logger = Argument.IsNotNull(logger);
         _leaseDuration = Argument.IsGreaterThanOrEqualTo(
             leaseHandle.LeaseDuration,
@@ -47,7 +46,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         var loopState = new MonitoringLoopState(
             new WeakReference<LeaseMonitor>(this),
             _nudgeSignal,
-            _timeProvider,
+            timeProvider,
             leaseHandle.MonitoringCadence,
             leaseHandle.Resource,
             leaseHandle.LockId,

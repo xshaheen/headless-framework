@@ -72,7 +72,14 @@ internal sealed class SubscribeExecutor(
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
-            if (!selector.TryGetTopicExecutor(message.Origin.GetName(), message.Origin.GetGroup()!, out descriptor))
+            if (
+                !selector.TryGetTopicExecutor(
+                    message.Origin.GetName(),
+                    message.Origin.GetGroup()!,
+                    message.IntentType,
+                    out descriptor
+                )
+            )
             {
                 var safeName = LogSanitizer.Sanitize(message.Origin.GetName());
                 var safeGroup = LogSanitizer.Sanitize(message.Origin.GetGroup());
@@ -87,6 +94,7 @@ internal sealed class SubscribeExecutor(
                 _TracingError(
                     timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                     message.Origin,
+                    message.IntentType,
                     method: null,
                     exception,
                     retryCount: 0,
@@ -137,6 +145,7 @@ internal sealed class SubscribeExecutor(
             var leased = await _LeaseAsync(message, cancellationToken).ConfigureAwait(false);
             if (!leased)
             {
+                _ReleaseHalfOpenProbe(message);
                 return (RetryDecision.Stop, OperateResult.Success);
             }
         }
@@ -207,7 +216,8 @@ internal sealed class SubscribeExecutor(
 
         if (circuitBreakerStateManager is not null)
         {
-            await circuitBreakerStateManager.ReportSuccessAsync(message.Origin.GetGroup()!).ConfigureAwait(false);
+            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
+            await circuitBreakerStateManager.ReportSuccessAsync(circuitBreakerGroup).ConfigureAwait(false);
         }
     }
 
@@ -228,6 +238,7 @@ internal sealed class SubscribeExecutor(
         if (isCancellation)
         {
             logger.StoredMessageExecutionCanceled(message.StorageId);
+            _ReleaseHalfOpenProbe(message);
             return RetryDecision.Stop;
         }
 
@@ -354,6 +365,7 @@ internal sealed class SubscribeExecutor(
                 logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
             }
 
+            _ReleaseHalfOpenProbe(message);
             return RetryDecision.Stop;
         }
 
@@ -366,12 +378,23 @@ internal sealed class SubscribeExecutor(
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
 
+            var circuitBreakerGroup = CircuitBreakerGroupKeys.For(message);
             await circuitBreakerStateManager
-                .ReportFailureAsync(message.Origin.GetGroup()!, reportedException, cancellationToken)
+                .ReportFailureAsync(circuitBreakerGroup, reportedException, cancellationToken)
                 .ConfigureAwait(false);
         }
 
         return decision;
+    }
+
+    private void _ReleaseHalfOpenProbe(MediumMessage message)
+    {
+        if (circuitBreakerStateManager is null)
+        {
+            return;
+        }
+
+        circuitBreakerStateManager.ReleaseHalfOpenProbe(CircuitBreakerGroupKeys.For(message));
     }
 
     private async Task<bool> _LeaseAsync(MediumMessage message, CancellationToken cancellationToken)
@@ -414,6 +437,7 @@ internal sealed class SubscribeExecutor(
         var consumerContext = new ConsumerContext(descriptor, message);
         var tracingTimestamp = _TracingBefore(
             message.Origin,
+            message.IntentType,
             descriptor.MethodInfo,
             message.Retries,
             cancellationToken
@@ -422,7 +446,14 @@ internal sealed class SubscribeExecutor(
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
-            _TracingAfter(tracingTimestamp, message.Origin, descriptor.MethodInfo, message.Retries, cancellationToken);
+            _TracingAfter(
+                tracingTimestamp,
+                message.Origin,
+                message.IntentType,
+                descriptor.MethodInfo,
+                message.Retries,
+                cancellationToken
+            );
 
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
@@ -438,7 +469,7 @@ internal sealed class SubscribeExecutor(
                 }
 
                 await provider
-                    .GetRequiredService<IOutboxPublisher>()
+                    .GetRequiredService<IOutboxBus>()
                     .PublishAsync(
                         ret.Result,
                         new PublishOptions { Topic = ret.CallbackName, Headers = ret.CallbackHeader },
@@ -457,6 +488,7 @@ internal sealed class SubscribeExecutor(
                 _TracingError(
                     tracingTimestamp,
                     message.Origin,
+                    message.IntentType,
                     descriptor.MethodInfo,
                     e,
                     message.Retries,
@@ -474,6 +506,7 @@ internal sealed class SubscribeExecutor(
             _TracingError(
                 tracingTimestamp,
                 message.Origin,
+                message.IntentType,
                 descriptor.MethodInfo,
                 e,
                 message.Retries,
@@ -488,6 +521,7 @@ internal sealed class SubscribeExecutor(
 
     private long? _TracingBefore(
         Message message,
+        IntentType intentType,
         MethodInfo method,
         int retryCount,
         CancellationToken cancellationToken
@@ -500,6 +534,7 @@ internal sealed class SubscribeExecutor(
                 OperationTimestamp = timeProvider.GetUtcNow().ToUnixTimeMilliseconds(),
                 Operation = message.GetName(),
                 Message = message,
+                IntentType = intentType,
                 MethodInfo = method,
                 RetryCount = retryCount,
                 CancellationToken = cancellationToken,
@@ -516,6 +551,7 @@ internal sealed class SubscribeExecutor(
     private void _TracingAfter(
         long? tracingTimestamp,
         Message message,
+        IntentType intentType,
         MethodInfo method,
         int retryCount,
         CancellationToken cancellationToken
@@ -533,6 +569,7 @@ internal sealed class SubscribeExecutor(
                 OperationTimestamp = now,
                 Operation = message.GetName(),
                 Message = message,
+                IntentType = intentType,
                 MethodInfo = method,
                 ElapsedTimeMs = now - tracingTimestamp.Value,
                 RetryCount = retryCount,
@@ -546,6 +583,7 @@ internal sealed class SubscribeExecutor(
     private void _TracingError(
         long? tracingTimestamp,
         Message message,
+        IntentType intentType,
         MethodInfo? method,
         Exception ex,
         int retryCount,
@@ -564,6 +602,7 @@ internal sealed class SubscribeExecutor(
             OperationTimestamp = now,
             Operation = message.GetName(),
             Message = message,
+            IntentType = intentType,
             MethodInfo = method,
             ElapsedTimeMs = now - tracingTimestamp,
             Exception = ex,

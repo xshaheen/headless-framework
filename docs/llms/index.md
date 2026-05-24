@@ -107,7 +107,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [imaging.md](imaging.md) — ImageSharp-based resizing and compression.
 - [logging.md](logging.md) — Serilog configuration with structured logging defaults.
 - [media.md](media.md) — Text extraction from PDF, Word, PowerPoint for indexing.
-- [messaging.md](messaging.md) — Distributed messaging with transactional outbox, 7 transports, 3 storage backends.
+- [messaging.md](messaging.md) — Distributed messaging with transactional outbox, 8 transports, 3 storage backends.
 - [openapi.md](openapi.md) — NSwag OpenAPI generation and Scalar documentation UI.
 - [orm.md](orm.md) — Entity Framework Core and Couchbase with DDD support.
 - [payments.md](payments.md) — Paymob Accept (cash-in / cash-out).
@@ -192,18 +192,20 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Messaging (Distributed Bus)
 - `Headless.Messaging.Abstractions` — Standardized contracts for reliable messaging.
+- `Headless.Messaging.Bus.Abstractions` — Broadcast (pub/subscribe) publisher contracts: `IBus` and `IOutboxBus`.
+- `Headless.Messaging.Queue.Abstractions` — Point-to-point (work-queue) publisher contracts: `IQueue` and `IOutboxQueue`.
 - `Headless.Messaging.Core` — Outbox runtime, retries, delayed delivery, consumer orchestration.
 - `Headless.Messaging.Dashboard` — Web UI for monitoring messages, failures, retries.
 - `Headless.Messaging.Dashboard.K8s` — Kubernetes node auto-discovery for the dashboard.
 - `Headless.Messaging.OpenTelemetry` — Tracing, metrics, context propagation.
 - `Headless.Messaging.RabbitMq` — RabbitMQ (AMQP) transport.
 - `Headless.Messaging.Kafka` — Apache Kafka transport.
-- `Headless.Messaging.AwsSqs` — AWS SQS + SNS transport.
+- `Headless.Messaging.Aws` — AWS SQS + SNS transport.
 - `Headless.Messaging.AzureServiceBus` — Azure Service Bus transport.
 - `Headless.Messaging.Nats` — NATS with JetStream transport.
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
-- `Headless.Messaging.RedisStreams` — Redis Streams transport.
-- `Headless.Messaging.InMemoryQueue` — In-memory transport (dev/testing).
+- `Headless.Messaging.Redis` — Redis Streams queue transport and Redis Pub/Sub bus transport.
+- `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
 - `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
 - `Headless.Messaging.SqlServer` — SQL Server durable storage.
 - `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).

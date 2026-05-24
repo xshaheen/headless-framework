@@ -22,6 +22,11 @@ public sealed class MessageSenderTests : TestBase
 {
     private static MediumMessage _CreateMediumMessage()
     {
+        return _CreateMediumMessage(IntentType.Bus);
+    }
+
+    private static MediumMessage _CreateMediumMessage(IntentType intentType)
+    {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
@@ -33,8 +38,21 @@ public sealed class MessageSenderTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = intentType,
             Added = DateTime.UtcNow,
         };
+    }
+
+    private static TransportMessage _CreateTransportMessage()
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = Guid.NewGuid().ToString(),
+                [Headers.MessageName] = "test.topic",
+            },
+            ReadOnlyMemory<byte>.Empty
+        );
     }
 
     private static MessageSender _CreateSender(
@@ -54,11 +72,46 @@ public sealed class MessageSenderTests : TestBase
         services.AddSingleton(storage);
         services.AddSingleton(serializer);
         services.AddSingleton(transport);
+        services.AddSingleton<IBusTransport>(new TestBusTransportAdapter(transport));
+        services.AddSingleton<IQueueTransport>(new TestQueueTransportAdapter(transport));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton(Options.Create(options));
         if (lifetime is not null)
         {
             services.AddSingleton(lifetime);
+        }
+
+        var provider = services.BuildServiceProvider();
+        return new MessageSender(provider.GetRequiredService<ILogger<MessageSender>>(), provider);
+    }
+
+    private static MessageSender _CreateSenderWithTransports(
+        IDataStorage storage,
+        ISerializer serializer,
+        MessagingOptions options,
+        IBusTransport? busTransport = null,
+        IQueueTransport? queueTransport = null
+    )
+    {
+        storage
+            .LeasePublishAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(true));
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(storage);
+        services.AddSingleton(serializer);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Options.Create(options));
+
+        if (busTransport is not null)
+        {
+            services.AddSingleton(busTransport);
+        }
+
+        if (queueTransport is not null)
+        {
+            services.AddSingleton(queueTransport);
         }
 
         var provider = services.BuildServiceProvider();
@@ -82,10 +135,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -145,10 +195,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -212,10 +259,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -278,10 +322,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -354,10 +395,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -431,10 +469,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(false));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -520,10 +555,7 @@ public sealed class MessageSenderTests : TestBase
             )
             .Returns(ValueTask.FromResult(true));
 
-        var transportMessage = new TransportMessage(
-            new Dictionary<string, string?>(StringComparer.Ordinal),
-            ReadOnlyMemory<byte>.Empty
-        );
+        var transportMessage = _CreateTransportMessage();
         var serializer = Substitute.For<ISerializer>();
         serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
 
@@ -595,6 +627,282 @@ public sealed class MessageSenderTests : TestBase
         transport.ReceivedCalls().Should().BeEmpty();
         serializer.ReceivedCalls().Should().BeEmpty();
         storage.ReceivedCalls().Select(c => c.GetMethodInfo().Name).Should().NotContain("ChangePublishStateAsync");
+    }
+
+    [Fact]
+    public async Task should_dispatch_bus_message_through_bus_transport_only()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
+        busTransport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+
+        var queueTransport = Substitute.For<IQueueTransport>();
+        queueTransport.BrokerAddress.Returns(new BrokerAddress("queue", "localhost"));
+
+        var sender = _CreateSenderWithTransports(
+            storage,
+            serializer,
+            new MessagingOptions(),
+            busTransport,
+            queueTransport
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage(IntentType.Bus));
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        busTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Should()
+            .Be(1);
+        queueTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Should()
+            .Be(0);
+    }
+
+    [Fact]
+    public async Task should_dispatch_queue_message_through_queue_transport_only()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var transportMessage = _CreateTransportMessage();
+        var serializer = Substitute.For<ISerializer>();
+        serializer.SerializeToTransportMessageAsync(Arg.Any<Message>()).Returns(ValueTask.FromResult(transportMessage));
+
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
+
+        var queueTransport = Substitute.For<IQueueTransport>();
+        queueTransport.BrokerAddress.Returns(new BrokerAddress("queue", "localhost"));
+        queueTransport.SendAsync(transportMessage, Arg.Any<CancellationToken>()).Returns(OperateResult.Success);
+
+        var sender = _CreateSenderWithTransports(
+            storage,
+            serializer,
+            new MessagingOptions(),
+            busTransport,
+            queueTransport
+        );
+
+        // when
+        var result = await sender.SendAsync(_CreateMediumMessage(IntentType.Queue));
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        queueTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Should()
+            .Be(1);
+        busTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Should()
+            .Be(0);
+    }
+
+    [Fact]
+    public async Task should_mark_row_terminal_failed_when_stored_intent_is_invalid()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .Returns(ValueTask.FromResult(_CreateTransportMessage()));
+
+        var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions());
+        var message = _CreateMediumMessage((IntentType)42);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                message,
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                null,
+                null,
+                message.Retries,
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_mark_row_terminal_failed_when_bus_transport_is_missing()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .Returns(ValueTask.FromResult(_CreateTransportMessage()));
+
+        var queueTransport = Substitute.For<IQueueTransport>();
+        queueTransport.BrokerAddress.Returns(new BrokerAddress("queue", "localhost"));
+
+        var sender = _CreateSenderWithTransports(
+            storage,
+            serializer,
+            new MessagingOptions(),
+            queueTransport: queueTransport
+        );
+        var message = _CreateMediumMessage(IntentType.Bus);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                message,
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                null,
+                null,
+                message.Retries,
+                Arg.Any<CancellationToken>()
+            );
+        queueTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IQueueTransport.SendAsync))
+            .Should()
+            .Be(0);
+    }
+
+    [Fact]
+    public async Task should_mark_row_terminal_failed_when_queue_transport_is_missing()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ChangePublishStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<object?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(true));
+
+        var serializer = Substitute.For<ISerializer>();
+        serializer
+            .SerializeToTransportMessageAsync(Arg.Any<Message>())
+            .Returns(ValueTask.FromResult(_CreateTransportMessage()));
+
+        var busTransport = Substitute.For<IBusTransport>();
+        busTransport.BrokerAddress.Returns(new BrokerAddress("bus", "localhost"));
+
+        var sender = _CreateSenderWithTransports(storage, serializer, new MessagingOptions(), busTransport);
+        var message = _CreateMediumMessage(IntentType.Queue);
+
+        // when
+        var result = await sender.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        await storage
+            .Received(1)
+            .ChangePublishStateAsync(
+                message,
+                StatusName.Failed,
+                Arg.Any<object?>(),
+                null,
+                null,
+                message.Retries,
+                Arg.Any<CancellationToken>()
+            );
+        busTransport
+            .ReceivedCalls()
+            .Count(call => call.GetMethodInfo().Name == nameof(IBusTransport.SendAsync))
+            .Should()
+            .Be(0);
+    }
+
+    private sealed class TestBusTransportAdapter(ITransport transport) : IBusTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
+    }
+
+    private sealed class TestQueueTransportAdapter(ITransport transport) : IQueueTransport
+    {
+        public BrokerAddress BrokerAddress => transport.BrokerAddress;
+
+        public Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default) =>
+            transport.SendAsync(message, cancellationToken);
+
+        public ValueTask DisposeAsync() => transport.DisposeAsync();
     }
 
     private sealed class ScopedMarker;

@@ -100,7 +100,11 @@ public sealed class LeaseMonitorTests : TestBase
     [InlineData(true, false, false)]
     [InlineData(false, true, false)]
     [InlineData(false, false, true)]
-    public void should_throw_argument_null_exception_on_constructor_null_parameters(bool nullHandle, bool nullTimeProvider, bool nullLogger)
+    public void should_throw_argument_null_exception_on_constructor_null_parameters(
+        bool nullHandle,
+        bool nullTimeProvider,
+        bool nullLogger
+    )
     {
         var handle = nullHandle ? null : new FakeLeaseHandle();
         var timeProvider = nullTimeProvider ? null : _timeProvider;
@@ -197,7 +201,11 @@ public sealed class LeaseMonitorTests : TestBase
         // loop must observe a dead WeakReference<LeaseMonitor> on its next cadence iteration
         // and exit. The OnlyOnFaulted continuation MUST NOT capture `this` (otherwise it would
         // strong-root the monitor for the lifetime of MonitoringTask, defeating this invariant).
-        var handle = new FakeLeaseHandle { LeaseDuration = TimeSpan.FromMinutes(1), MonitoringCadence = TimeSpan.FromSeconds(1) };
+        var handle = new FakeLeaseHandle
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            MonitoringCadence = TimeSpan.FromSeconds(1),
+        };
         var monitoringTask = _CreateMonitorAndDropReference(handle);
 
         // when - force GC then drive a cadence so the loop's WeakReference.TryGetTarget fails.

@@ -28,7 +28,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
         _realLockProvider = new DistributedLockProvider(
             storage,
-            Substitute.For<IOutboxPublisher>(),
+            Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
@@ -170,11 +170,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLockProvider>();
         alwaysGranted
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
 
         var storage = Substitute.For<IDataStorage>();
@@ -241,11 +237,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLockProvider>();
         alwaysGranted
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
 
         // The TCS fires from inside GetPublishedMessagesOfNeedRetryAsync so the test knows

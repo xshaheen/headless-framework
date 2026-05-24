@@ -11,6 +11,8 @@ public class MediumMessage
 
     public required string Content { get; set; }
 
+    public required IntentType IntentType { get; set; }
+
     public DateTime Added { get; set; }
 
     public DateTime? ExpiresAt { get; set; }

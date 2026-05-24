@@ -240,6 +240,7 @@ public sealed class SkipTenantResolutionTests : TestBase
             hl.Validation.ValidateServiceProviderOnStartup = false;
             hl.Validation.RequireUseHeadless = false;
             hl.Validation.RequireMapHeadlessEndpoints = false;
+            hl.Validation.RequireStatusCodesRewriter = false;
             hl.OpenTelemetry.Enabled = false;
             hl.OpenApi.Enabled = false;
         });
@@ -274,6 +275,11 @@ public sealed class SkipTenantResolutionTests : TestBase
 
         if (options.RequireTenancyAuthorization)
         {
+            // Headless.Api.ServiceDefaults wires UseStatusCodesRewriter() automatically; tests
+            // opt out of UseHeadless() via RequireUseHeadless = false, so wire it explicitly so
+            // bare 403s produced by the default IAuthorizationMiddlewareResultHandler get
+            // rewritten into the structured g:tenant_required ProblemDetails.
+            app.UseStatusCodesRewriter();
             app.UseAuthentication();
             app.UseHeadlessTenancy();
             app.UseAuthorization();

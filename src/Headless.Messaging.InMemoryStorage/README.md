@@ -12,6 +12,7 @@ Provides ephemeral message storage without database dependencies for local devel
 - **Fast**: In-memory operations
 - **Testing**: Deterministic behavior for tests
 - **Full API**: Complete outbox storage implementation
+- **Intent-Aware Identity**: Mirrors durable providers by storing bus/queue intent and including it in received-message de-duplication
 - **Monitoring**: In-memory dashboard data
 
 ## Installation

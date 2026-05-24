@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Exceptions;
 using Headless.Testing.Tests;
@@ -534,6 +535,31 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
     {
         var sut = _Create();
         sut.IsOpen("never-registered").Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task intent_aware_monitor_methods_translate_group_name_to_internal_key()
+    {
+        // given
+        var sut = _Create(failureThreshold: 1);
+        var circuitGroup = "1:test.group";
+        sut.RegisterGroupCallbacks(
+            circuitGroup,
+            onPause: () => ValueTask.CompletedTask,
+            onResume: () => ValueTask.CompletedTask
+        );
+
+        // when
+        await sut.ReportFailureAsync(circuitGroup, new TimeoutException());
+
+        // then
+        sut.IsOpen(IntentType.Queue, _Group).Should().BeTrue();
+        sut.GetState(IntentType.Queue, _Group).Should().Be(CircuitBreakerState.Open);
+        sut.GetSnapshot(IntentType.Queue, _Group).Should().NotBeNull();
+
+        var reset = await sut.ResetAsync(IntentType.Queue, _Group);
+        reset.Should().BeTrue();
+        sut.IsOpen(IntentType.Queue, _Group).Should().BeFalse();
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -662,6 +663,7 @@ public sealed class DispatcherTests : TestBase
             StorageId = storageId,
             Origin = message,
             Content = JsonSerializer.Serialize(message),
+            IntentType = IntentType.Bus,
         };
     }
 

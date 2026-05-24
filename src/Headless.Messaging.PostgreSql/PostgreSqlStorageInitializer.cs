@@ -54,15 +54,13 @@ public sealed class PostgreSqlStorageInitializer(
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-        // #8 — Retry-pickup partial indexes use CREATE INDEX CONCURRENTLY so the AccessExclusiveLock
-        // is replaced with a ShareUpdateExclusiveLock — readers and writers stay live during the
-        // rebuild. CONCURRENTLY cannot run inside a transaction (PG raises 25001), so these run on
-        // an autocommit connection AFTER the schema/table DDL has committed above. Each statement is
-        // standalone (no transaction wrapping); CREATE INDEX CONCURRENTLY's own internal scan handles
-        // crash recovery via an INVALID index that is dropped on a subsequent initialize pass.
+        // Retry-pickup partial indexes and trigram content indexes use CREATE INDEX CONCURRENTLY so
+        // the AccessExclusiveLock is replaced with a ShareUpdateExclusiveLock — readers and writers
+        // stay live during the create. CONCURRENTLY cannot run inside a transaction (PG raises 25001),
+        // so these run on an autocommit connection AFTER the schema/table DDL has committed above.
+        // Each statement is standalone (no transaction wrapping).
         await _EnsureRetryPickupIndexConcurrentlyAsync(
                 connection,
-                postgreSqlOptions.Value.Schema,
                 GetReceivedTableName(),
                 indexName: "idx_received_Version_NextRetryAt",
                 cancellationToken
@@ -71,9 +69,24 @@ public sealed class PostgreSqlStorageInitializer(
 
         await _EnsureRetryPickupIndexConcurrentlyAsync(
                 connection,
-                postgreSqlOptions.Value.Schema,
                 GetPublishedTableName(),
                 indexName: "idx_published_Version_NextRetryAt",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureContentTrgmIndexConcurrentlyAsync(
+                connection,
+                GetReceivedTableName(),
+                indexName: "idx_received_Content_trgm",
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        await _EnsureContentTrgmIndexConcurrentlyAsync(
+                connection,
+                GetPublishedTableName(),
+                indexName: "idx_published_Content_trgm",
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -83,69 +96,35 @@ public sealed class PostgreSqlStorageInitializer(
 
     private async Task _EnsureRetryPickupIndexConcurrentlyAsync(
         NpgsqlConnection connection,
-        string schema,
         string qualifiedTable,
         string indexName,
         CancellationToken cancellationToken
     )
     {
-        // Detect the older-shape index (missing LockedUntil from INCLUDE) so we only pay the
-        // rebuild cost when the columns drifted. Mirrors the gated check in the in-transaction
-        // script for the SchemaIfMissing path. When the existing index already includes
-        // LockedUntil, this is a no-op.
-        //
-        // #12 — Also drop the index when pg_index.indisvalid = false. A CREATE INDEX CONCURRENTLY
-        // that was aborted mid-build leaves the system catalog entry behind but with indisvalid=false;
-        // the subsequent CREATE INDEX CONCURRENTLY IF NOT EXISTS is then a no-op, leaving an invalid
-        // (and unusable) index in place. Dropping it forces the next CREATE to rebuild a healthy index.
-        var dropOnDrift = $"""
-            DO $do$
-            DECLARE
-                _has_locked_until BOOLEAN;
-                _is_valid BOOLEAN;
-            BEGIN
-                IF EXISTS (
-                    SELECT 1 FROM pg_indexes
-                    WHERE schemaname = '{schema}' AND indexname = '{indexName}'
-                ) THEN
-                    SELECT EXISTS (
-                        SELECT 1 FROM pg_index i
-                        JOIN pg_class c ON c.oid = i.indexrelid
-                        JOIN pg_namespace n ON n.oid = c.relnamespace
-                        JOIN pg_attribute a ON a.attrelid = c.oid
-                        WHERE n.nspname = '{schema}'
-                          AND c.relname = '{indexName}'
-                          AND a.attname = 'LockedUntil'
-                    ) INTO _has_locked_until;
-
-                    SELECT COALESCE((
-                        SELECT i.indisvalid FROM pg_index i
-                        JOIN pg_class c ON c.oid = i.indexrelid
-                        JOIN pg_namespace n ON n.oid = c.relnamespace
-                        WHERE n.nspname = '{schema}' AND c.relname = '{indexName}'
-                    ), TRUE) INTO _is_valid;
-
-                    IF NOT _has_locked_until OR NOT _is_valid THEN
-                        EXECUTE 'DROP INDEX CONCURRENTLY IF EXISTS "{schema}"."{indexName}"';
-                    END IF;
-                END IF;
-            END $do$;
+        var createIndex = $"""
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             """;
 
-        // DROP INDEX CONCURRENTLY also cannot run inside a transaction, so the DO block uses
-        // EXECUTE for the concurrent drop. Npgsql treats DO as a standalone statement when no
-        // outer transaction is open.
         await connection
             .ExecuteNonQueryAsync(
-                dropOnDrift,
+                createIndex,
                 commandTimeout: messagingOptions.Value.CommandTimeout,
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
 
-        // CREATE INDEX CONCURRENTLY is idempotent via IF NOT EXISTS; the DROP above handles drift.
+    private async Task _EnsureContentTrgmIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string qualifiedTable,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        // pg_trgm GIN index accelerates ILIKE / similarity searches on the Content column used by
+        // the dashboard message-list filter. CONCURRENTLY avoids an AccessExclusiveLock on hot tables.
         var createIndex = $"""
-            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
+            CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("Content" gin_trgm_ops);
             """;
 
         await connection
@@ -160,6 +139,10 @@ public sealed class PostgreSqlStorageInitializer(
     private string _CreateDbTablesScript(string schema)
     {
         var batchSql = $"""
+            -- pg_trgm is required for GIN trigram indexes on the Content column (dashboard search).
+            -- CREATE EXTENSION is idempotent and safe inside a transaction on PostgreSQL 9.1+.
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             CREATE TABLE IF NOT EXISTS {GetReceivedTableName()}(
@@ -168,6 +151,7 @@ public sealed class PostgreSqlStorageInitializer(
             	"Name" VARCHAR(200) NOT NULL,
             	"Group" VARCHAR(200) NULL,
             	"Content" TEXT NULL,
+                "IntentType" SMALLINT NOT NULL,
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
@@ -190,7 +174,7 @@ public sealed class PostgreSqlStorageInitializer(
             -- on a violation is non-deterministic. The plain index would fire first for non-null
             -- groups and produce a raw 23505 that bypasses the ON CONFLICT target, breaking
             -- concurrent-insert convergence under load.
-            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_MessageId_GroupCoalesced" ON {GetReceivedTableName()} ("MessageId", (COALESCE("Group", '')));
+            CREATE UNIQUE INDEX IF NOT EXISTS "uq_received_Version_MessageId_GroupCoalesced_IntentType" ON {GetReceivedTableName()} ("Version", "MessageId", (COALESCE("Group", '')), "IntentType");
             CREATE INDEX IF NOT EXISTS "idx_received_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("ExpiresAt","StatusName");
             CREATE INDEX IF NOT EXISTS "idx_received_Version_ExpiresAt_StatusName" ON {GetReceivedTableName()} ("Version","ExpiresAt","StatusName");
             -- #8 — The partial retry-pickup index (idx_received_Version_NextRetryAt) is created
@@ -205,6 +189,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "Version" VARCHAR(20) NOT NULL,
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,
+                "IntentType" SMALLINT NOT NULL,
             	"Retries" INT NOT NULL,
             	"Added" TIMESTAMPTZ NOT NULL,
                 "ExpiresAt" TIMESTAMPTZ NULL,
@@ -220,6 +205,7 @@ public sealed class PostgreSqlStorageInitializer(
             -- retry-pickup index for published is also created post-transaction via
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
+
             """;
 
         return batchSql;

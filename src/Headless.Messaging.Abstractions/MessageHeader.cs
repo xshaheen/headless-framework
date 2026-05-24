@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 
 namespace Headless.Messaging;
 
+[PublicAPI]
 public sealed class MessageHeader(IDictionary<string, string?> dictionary)
     : ReadOnlyDictionary<string, string?>(dictionary)
 {

@@ -142,6 +142,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
     {
         var descriptor = new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             MethodInfo = typeof(ConsumeMiddlewarePipelineTests).GetMethod(
                 nameof(_BuildConsumerContext),
                 BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly,
@@ -170,6 +171,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 StorageId = 1,
                 Origin = origin,
                 Content = "{}",
+                IntentType = IntentType.Bus,
                 Added = DateTime.UtcNow,
             }
         );
@@ -237,7 +239,7 @@ internal sealed class SwallowingOuterCancellationConsumeMiddleware(CancellationT
     public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
     {
         await source.CancelAsync();
-        context.WithCancellationToken(source.Token);
+        context.SetCancellationToken(source.Token);
 
         try
         {

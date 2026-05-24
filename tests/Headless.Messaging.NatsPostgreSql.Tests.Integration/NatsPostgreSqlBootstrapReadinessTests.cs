@@ -54,7 +54,7 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
             Payload = "bootstrap",
         };
 
-        await DirectPublisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Bus.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
 
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 

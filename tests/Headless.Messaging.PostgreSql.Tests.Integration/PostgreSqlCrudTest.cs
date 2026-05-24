@@ -101,7 +101,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_store_published_message_with_maximum_supported_message_id_length()
     {
         // given
-        var msgId = new string('m', PublishOptions.MessageIdMaxLength);
+        var msgId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
 
@@ -110,7 +110,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // then
         stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
-        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(PublishOptions.MessageIdMaxLength);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(MessagePublishOptionsBase.MessageIdMaxLength);
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","StatusName","MessageId")
-                VALUES (@Id,'v1','test.topic','{}',0,@Added,@ExpiresAt,'Succeeded',@MessageId)
+                INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic','{}',0,0,@Added,@ExpiresAt,'Succeeded',@MessageId)
                 """,
                 new
                 {
@@ -250,8 +250,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
-                VALUES (@Id,'v1','test.topic',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
                 """,
                 new
                 {
@@ -287,8 +287,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
-                INSERT INTO messaging.received ("Id","Version","Name","Group","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
-                VALUES (@Id,'v1','test.topic','test.group',@Content,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+                INSERT INTO messaging.received ("Id","Version","Name","Group","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+                VALUES (@Id,'v1','test.topic','test.group',@Content,0,0,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
                 """,
                 new
                 {
@@ -323,8 +323,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             """
-            INSERT INTO messaging.published ("Id","Version","Name","Content","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
-            VALUES (@Id,'v1','test.topic',@Content,10,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
+            INSERT INTO messaging.published ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","StatusName","MessageId")
+            VALUES (@Id,'v1','test.topic',@Content,0,10,@Added,NULL,@NextRetryAt,'Failed',@MessageId)
             """,
             new
             {

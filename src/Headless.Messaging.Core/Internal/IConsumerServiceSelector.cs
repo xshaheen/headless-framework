@@ -42,7 +42,14 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     /// <summary>
     /// since this class be designed as a Singleton service,the following two list must be thread safe!
     /// </summary>
-    private readonly ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>> _cacheList;
+    private readonly ConcurrentDictionary<
+        WildcardCacheKey,
+        List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
+    > _cacheList;
+
+    // Per-message-type MethodInfo cache. Each registered consumer message type otherwise pays a
+    // MakeGenericType + GetMethod hit on every cache rebuild (Invalidate -> SelectCandidates).
+    private static readonly ConcurrentDictionary<Type, MethodInfo> _ConsumeMethodCache = new();
 
     private readonly MessagingOptions _messagingOptions;
     private readonly ILogger<ConsumerServiceSelector> _logger;
@@ -59,9 +66,8 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         _logger = serviceProvider.GetRequiredService<ILogger<ConsumerServiceSelector>>();
         _runtimeConsumerRegistry =
             serviceProvider.GetService<IRuntimeConsumerRegistry>() ?? EmptyRuntimeConsumerRegistry.Instance;
-        _cacheList = new ConcurrentDictionary<string, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>(
-            StringComparer.Ordinal
-        );
+        _cacheList =
+            new ConcurrentDictionary<WildcardCacheKey, List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>>();
     }
 
     public void Invalidate()
@@ -111,7 +117,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         // Get registered consumers from the ConsumerRegistry
         var registry = provider.GetService<ConsumerRegistry>();
 
-        // If no registry found, return empty (backwards compatibility with old pattern)
+        // If no registry was registered, there are no consumers to select.
         if (registry == null)
         {
             return [];
@@ -123,9 +129,11 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         foreach (var consumer in metadata)
         {
             // Build ConsumerExecutorDescriptor from metadata
-            var consumeMethod = typeof(IConsume<>)
-                .MakeGenericType(consumer.MessageType)
-                .GetMethod(nameof(IConsume<>.Consume))!;
+            var consumeMethod = _ConsumeMethodCache.GetOrAdd(
+                consumer.MessageType,
+                static messageType =>
+                    typeof(IConsume<>).MakeGenericType(messageType).GetMethod(nameof(IConsume<>.ConsumeAsync))!
+            );
 
             var descriptor = new ConsumerExecutorDescriptor
             {
@@ -138,6 +146,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
                 TopicNamePrefix = _messagingOptions.TopicNamePrefix,
                 Concurrency = consumer.Concurrency,
                 HandlerId = consumer.ResolvedHandlerId,
+                IntentType = consumer.IntentType,
             };
 
             results.Add(descriptor);
@@ -192,8 +201,8 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor
     )
     {
-        var group = executeDescriptor[0].GroupName;
-        if (!_cacheList.TryGetValue(group, out var tmpList))
+        var cacheKey = _CreateWildcardCacheKey(executeDescriptor);
+        if (!_cacheList.TryGetValue(cacheKey, out var tmpList))
         {
             tmpList = executeDescriptor
                 .Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
@@ -202,7 +211,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
                     Descriptor = x,
                 })
                 .ToList();
-            _cacheList.TryAdd(group, tmpList);
+            _cacheList.TryAdd(cacheKey, tmpList);
         }
 
         foreach (var red in tmpList)
@@ -216,10 +225,28 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         return null;
     }
 
+    private static WildcardCacheKey _CreateWildcardCacheKey(IReadOnlyList<ConsumerExecutorDescriptor> executeDescriptor)
+    {
+        var group = executeDescriptor[0].GroupName;
+        var intentType = executeDescriptor[0].IntentType;
+
+        for (var i = 1; i < executeDescriptor.Count; i++)
+        {
+            if (executeDescriptor[i].IntentType != intentType)
+            {
+                return new WildcardCacheKey(group, null);
+            }
+        }
+
+        return new WildcardCacheKey(group, intentType);
+    }
+
     private sealed class RegexExecuteDescriptor<T>
     {
         public required string Name { get; init; }
 
         public required T Descriptor { get; init; }
     }
+
+    private readonly record struct WildcardCacheKey(string GroupName, IntentType? IntentType);
 }

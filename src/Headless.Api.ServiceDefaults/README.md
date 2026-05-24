@@ -15,7 +15,6 @@ dotnet add package Headless.Api.ServiceDefaults
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-ApiSetup.ConfigureGlobalSettings();
 builder.AddHeadless();
 
 var app = builder.Build();
@@ -38,7 +37,16 @@ builder.AddHeadless(configureServices: options =>
 
     options.OpenTelemetry.Enabled = true;
     options.OpenTelemetry.UseOtlpExporterWhenEndpointConfigured = true;
+    options.OpenTelemetry.RecordException = true;        // record exceptions on spans (default: true)
     options.OpenTelemetry.ConfigureMetrics = metrics => metrics.AddMeter("MyApp.*");
+    // Tracing filter: null (default) skips /health and /alive; set to replace entirely.
+    // Compose SkipOperationalEndpointFunc if you want to keep the default skip.
+    options.OpenTelemetry.Filter = ctx => !options.OpenTelemetry.SkipOperationalEndpointFunc(ctx) && ...; // example
+    // Full ASP.NET Core instrumentation override (runs after framework defaults):
+    options.OpenTelemetry.ConfigureAspNetCoreInstrumentation = instr =>
+    {
+        instr.EnrichWithHttpRequest = (activity, request) => { ... };
+    };
 
     options.OpenApi.Enabled = true;
     options.OpenApi.RoutePattern = "/openapi/{documentName}.json";
@@ -131,13 +139,14 @@ app.MapHeadlessEndpoints();
 
 ## Startup Validation
 
-By default, the runtime validates that `UseHeadless()` and `MapHeadlessEndpoints()` were called before the host starts. This catches forgotten middleware/endpoint wiring in deployment. Disable per environment if you build a custom pipeline:
+By default, the runtime validates that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were called before the host starts. This catches forgotten middleware/endpoint wiring in deployment. Disable per environment if you build a custom pipeline:
 
 ```csharp
 builder.AddHeadless(configureServices: options =>
 {
     options.Validation.RequireUseHeadless = false;
     options.Validation.RequireMapHeadlessEndpoints = false;
+    options.Validation.RequireStatusCodesRewriter = false;
 });
 ```
 

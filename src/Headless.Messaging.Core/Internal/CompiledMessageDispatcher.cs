@@ -52,7 +52,7 @@ public interface IMessageDispatcher
     /// Thrown when no consumer is registered for the specified message type.
     /// </exception>
     /// <exception cref="Exception">
-    /// Any exception thrown by the consumer's <see cref="IConsume{TMessage}.Consume"/> method
+    /// Any exception thrown by the consumer's <see cref="IConsume{TMessage}.ConsumeAsync"/> method
     /// is propagated to allow retry/DLQ logic to handle the failure.
     /// </exception>
     /// <remarks>
@@ -279,9 +279,9 @@ internal sealed class CompiledMessageDispatcher : IMessageDispatcher
         var contextParam = Expression.Parameter(typeof(ConsumeContext<TMessage>), "context");
         var cancellationTokenParam = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
 
-        // Build method call: handler.Consume(context, cancellationToken)
+        // Build method call: handler.ConsumeAsync(context, cancellationToken)
         var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.Consume),
+            nameof(IConsume<>.ConsumeAsync),
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)]
         )!;
 

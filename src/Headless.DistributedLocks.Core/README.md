@@ -18,7 +18,7 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 ## Design Notes
 
-- `IOutboxPublisher` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
@@ -84,4 +84,4 @@ await using var lease = await lockProvider.AcquireAsync(
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
-- Registers a `DistributedLockReleased` consumer only when an `IOutboxPublisher` registration exists.
+- Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.

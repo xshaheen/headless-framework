@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
@@ -39,16 +40,24 @@ using MvcJsonOptions = Microsoft.AspNetCore.Mvc.JsonOptions;
 namespace Headless.Api;
 
 [PublicAPI]
-public static class ApiSetup
+public static class SetupApi
 {
     private const string _StringEncryptionSectionName = "Headless:StringEncryption";
     private const string _StringHashSectionName = "Headless:StringHash";
     private const string _HeadlessWildcardSourceName = "Headless.*";
+    private static int _globalSettingsConfigured;
 
-    public static readonly FileFormatInspector FileFormatInspector = new(FileFormatLocator.GetFormats());
-
+    /// <summary>
+    /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and JWT claim mapping.
+    /// Idempotent — subsequent calls are no-ops.
+    /// </summary>
     public static void ConfigureGlobalSettings()
     {
+        if (Interlocked.Exchange(ref _globalSettingsConfigured, 1) == 1)
+        {
+            return;
+        }
+
         AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
         ValidatorOptions.Global.LanguageManager.Enabled = true;
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
@@ -56,8 +65,24 @@ public static class ApiSetup
         JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
+    /// <summary>
+    /// Resets the global-settings guard so the next <see cref="ConfigureGlobalSettings"/> call re-applies all defaults.
+    /// Intended for unit tests only — never call this in production code.
+    /// </summary>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    internal static void ResetForTesting()
+    {
+        Volatile.Write(ref _globalSettingsConfigured, 0);
+    }
+
     extension(WebApplicationBuilder builder)
     {
+        /// <summary>
+        /// Registers all Headless service defaults (OpenTelemetry, OpenAPI, HttpClient, service discovery,
+        /// problem details, multi-tenancy stubs, etc.) and reads encryption/hash secrets from the default
+        /// <c>Headless:StringEncryption</c> and <c>Headless:StringHash</c> configuration sections.
+        /// </summary>
+        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
         public WebApplicationBuilder AddHeadless(Action<HeadlessServiceDefaultsOptions>? configureServices = null)
         {
             Argument.IsNotNull(builder);
@@ -144,6 +169,8 @@ public static class ApiSetup
 
         private WebApplicationBuilder _AddApiCore(Action<HeadlessServiceDefaultsOptions>? configureServices)
         {
+            ConfigureGlobalSettings();
+
             var options = new HeadlessServiceDefaultsOptions();
             configureServices?.Invoke(options);
 
@@ -157,6 +184,9 @@ public static class ApiSetup
             }
 
             builder.Services.TryAddSingleton(options);
+            builder.Services.TryAddSingleton<IStatusCodesRewriterCalledNotifier>(
+                _ => new StatusCodesRewriterCalledNotifier(options)
+            );
             builder.Services.TryAddSingleton<HeadlessServiceDefaultsValidationStartupFilter>();
             builder.Services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IStartupFilter, HeadlessServiceDefaultsValidationStartupFilter>(sp =>
@@ -201,7 +231,9 @@ public static class ApiSetup
             builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
 
             builder.Services.TryAddSingleton<IPasswordGenerator, PasswordGenerator>();
-            builder.Services.TryAddSingleton<IFileFormatInspector>(FileFormatInspector);
+            builder.Services.TryAddSingleton<IFileFormatInspector>(_ => new FileFormatInspector(
+                FileFormatLocator.GetFormats()
+            ));
             builder.Services.TryAddSingleton<IMimeTypeProvider, MimeTypeProvider>();
             builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
@@ -257,10 +289,10 @@ public static class ApiSetup
                     http.ConfigureHttpClient(
                         (serviceProvider, client) =>
                         {
-                            var environment = serviceProvider.GetRequiredService<IHostEnvironment>();
-                            var version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString() ?? "unknown";
+                            var appAccessor = serviceProvider.GetRequiredService<IApplicationInformationAccessor>();
+                            var buildAccessor = serviceProvider.GetRequiredService<IBuildInformationAccessor>();
                             client.DefaultRequestHeaders.UserAgent.Add(
-                                new ProductInfoHeaderValue(environment.ApplicationName, version)
+                                new ProductInfoHeaderValue(appAccessor.ApplicationName, buildAccessor.GetBuildNumber())
                             );
                         }
                     );
@@ -314,9 +346,17 @@ public static class ApiSetup
                         .AddSource(builder.Environment.ApplicationName)
                         .AddAspNetCoreInstrumentation(instrumentation =>
                         {
+                            var otel = options.OpenTelemetry;
                             instrumentation.EnableAspNetCoreSignalRSupport = true;
-                            instrumentation.Filter = context =>
-                                context.Request.Path != "/health" && context.Request.Path != "/alive";
+                            instrumentation.RecordException = otel.RecordException;
+
+                            // Capture otel by reference so MapHeadlessEndpoints() can replace
+                            // SkipOperationalEndpointFunc with a delegate built from the actual
+                            // configured paths before any requests start flowing.
+                            instrumentation.Filter = otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
+
+                            // User hook runs LAST so it can override Filter, add enrichers, etc.
+                            otel.ConfigureAspNetCoreInstrumentation?.Invoke(instrumentation);
                         })
                         .AddHttpClientInstrumentation()
                         .AddSource(_HeadlessWildcardSourceName);
@@ -437,6 +477,23 @@ public static class ApiSetup
 
         applicationBuilder.Properties[HeadlessApiDefaultEndpointOptions.AppliedKey] = true;
 
+        var serviceOptions = app.Services.GetService<HeadlessServiceDefaultsOptions>();
+
+        // Publish the configured operational paths to the default OTel tracing filter, so consumer
+        // overrides (e.g. options.HealthPath = "/healthz") are excluded from traces. The delegate is
+        // replaced atomically here; no mutable fields are read after the tracing provider captures
+        // its snapshot.
+        if (serviceOptions is not null)
+        {
+            serviceOptions.OpenTelemetry.SkipOperationalEndpointFunc =
+                HeadlessServiceDefaultsOpenTelemetryOptions.BuildSkipFunc(
+                    healthPath: options.HealthPath,
+                    alivePath: options.AlivePath,
+                    healthMapped: options.MapHealthEndpoint,
+                    aliveMapped: options.MapAliveEndpoint
+                );
+        }
+
         if (options.MapHealthEndpoint)
         {
             var healthChecks = app.MapHealthChecks(
@@ -456,8 +513,6 @@ public static class ApiSetup
 
             _ConfigureOperationalEndpoint(aliveCheck, options.AliveEndpointName, options);
         }
-
-        var serviceOptions = app.Services.GetService<HeadlessServiceDefaultsOptions>();
 
         if (serviceOptions?.StaticAssets.Enabled is true && _StaticWebAssetsManifestExists(app))
         {

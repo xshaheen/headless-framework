@@ -34,7 +34,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
     private readonly ConcurrentDictionary<
         Type,
-        Func<object, MediumMessage, MessageHeader, string?, object>
+        Func<object, MediumMessage, MessageHeader, string?, IntentType, object>
     > _compiledConsumeContextFactories = new();
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
@@ -49,6 +49,11 @@ internal sealed class ConsumeMiddlewarePipeline(
         var descriptor = context.ConsumerDescriptor;
         var originHeaders = context.MediumMessage.Origin.Headers;
         var tenantId = TenantContextScope.ResolveTenantId(originHeaders, logger);
+
+        // Warn when the wire intent disagrees with the registered consumer intent so misconfigured
+        // producers surface early without breaking the consume path.
+        _ValidateIntentHeader(originHeaders, descriptor, logger);
+
         var consumeHeaders = new MessageHeader(originHeaders);
         var consumeContext = _BuildConsumeContext(
             messageInstance,
@@ -56,6 +61,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             messageType,
             consumeHeaders,
             tenantId,
+            descriptor.IntentType,
             cancellationToken
         );
 
@@ -216,23 +222,27 @@ internal sealed class ConsumeMiddlewarePipeline(
         Type messageType,
         MessageHeader headers,
         string? tenantId,
+        IntentType intentType,
         CancellationToken cancellationToken
     )
     {
         var factory = _compiledConsumeContextFactories.GetOrAdd(messageType, _CompileFactory);
-        var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId);
-        context.WithCancellationToken(cancellationToken);
+        var context = (ConsumeContext)factory(messageInstance, mediumMessage, headers, tenantId, intentType);
+        context.SetCancellationToken(cancellationToken);
 
         return context;
     }
 
-    private static Func<object, MediumMessage, MessageHeader, string?, object> _CompileFactory(Type messageType)
+    private static Func<object, MediumMessage, MessageHeader, string?, IntentType, object> _CompileFactory(
+        Type messageType
+    )
     {
         var consumeContextType = typeof(ConsumeContext<>).MakeGenericType(messageType);
         var messageParam = Expression.Parameter(typeof(object), "message");
         var mediumParam = Expression.Parameter(typeof(MediumMessage), "medium");
         var consumeHeadersParam = Expression.Parameter(typeof(MessageHeader), "headers");
         var tenantIdParam = Expression.Parameter(typeof(string), "tenantId");
+        var intentTypeParam = Expression.Parameter(typeof(IntentType), "intentType");
         var originProperty = Expression.Property(mediumParam, nameof(MediumMessage.Origin));
         var addedProperty = Expression.Property(mediumParam, nameof(MediumMessage.Added));
         var headersProperty = Expression.Property(originProperty, nameof(Message.Headers));
@@ -247,6 +257,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
         var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
         var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Topic))!;
+        var intentTypeProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.IntentType))!;
 
         var dictionaryIndexer = typeof(IDictionary<string, string?>).GetProperty(
             "Item",
@@ -286,6 +297,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         var correlationIdBinding = Expression.Bind(correlationIdProperty, correlationIdExpression);
         var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
+        var intentTypeBinding = Expression.Bind(intentTypeProperty, intentTypeParam);
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
         var timestampBinding = Expression.Bind(
             timestampProperty,
@@ -312,17 +324,19 @@ internal sealed class ConsumeMiddlewarePipeline(
             messageIdBinding,
             correlationIdBinding,
             tenantIdBinding,
+            intentTypeBinding,
             headersBinding,
             timestampBinding,
             topicBinding
         );
 
-        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, string?, object>>(
+        var lambda = Expression.Lambda<Func<object, MediumMessage, MessageHeader, string?, IntentType, object>>(
             newExpr,
             messageParam,
             mediumParam,
             consumeHeadersParam,
-            tenantIdParam
+            tenantIdParam,
+            intentTypeParam
         );
         return lambda.CompileFast();
     }
@@ -397,6 +411,28 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
 
         await task.ConfigureAwait(false);
+    }
+
+    private static void _ValidateIntentHeader(
+        IDictionary<string, string?> headers,
+        ConsumerExecutorDescriptor descriptor,
+        ILogger? logger
+    )
+    {
+        if (
+            logger is null
+            || !headers.TryGetValue(Headers.Intent, out var wireIntent)
+            || string.IsNullOrWhiteSpace(wireIntent)
+        )
+        {
+            return;
+        }
+
+        var consumerIntent = descriptor.IntentType.ToString();
+        if (!string.Equals(wireIntent, consumerIntent, StringComparison.OrdinalIgnoreCase))
+        {
+            logger.ConsumeIntentMismatch(descriptor.TopicName, wireIntent, consumerIntent);
+        }
     }
 
     private static bool _ShouldRethrowOce(Exception exception, CancellationToken cancellationToken)

@@ -126,6 +126,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 null
             ), // null value
             Content = string.Empty,
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
 
@@ -159,6 +160,7 @@ public sealed class SubscribeInvokerTests : TestBase
         // Manually create descriptor with wrong method
         var badDescriptor = new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = typeof(InvokerTestConsumer).GetMethod(
@@ -343,7 +345,7 @@ public sealed class SubscribeInvokerTests : TestBase
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
-        var maxLengthTenantId = new string('x', PublishOptions.TenantIdMaxLength);
+        var maxLengthTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-boundary"),
             "test.topic",
@@ -374,7 +376,7 @@ public sealed class SubscribeInvokerTests : TestBase
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
-        var oversizedTenantId = new string('x', PublishOptions.TenantIdMaxLength + 1);
+        var oversizedTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength + 1);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-oversized"),
             "test.topic",
@@ -434,6 +436,7 @@ public sealed class SubscribeInvokerTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, json),
             Content = json,
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }
@@ -443,7 +446,7 @@ public sealed class SubscribeInvokerTests : TestBase
         where TConsumer : IConsume<TMessage>
     {
         var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.Consume),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
@@ -452,6 +455,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -474,7 +478,7 @@ public sealed class SubscribeInvokerTests : TestBase
     {
         // For tests, we assume InvokerTestConsumer handles InvokerTestMessage
         var consumeMethod = typeof(IConsume<TMessage>).GetMethod(
-            nameof(IConsume<>.Consume),
+            nameof(IConsume<>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<TMessage>), typeof(CancellationToken)],
@@ -483,6 +487,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -508,7 +513,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 {
     public static ConsumeContext<InvokerTestMessage>? LastConsumed { get; private set; }
 
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         LastConsumed = context;
         return ValueTask.CompletedTask;
@@ -522,7 +527,7 @@ public sealed class InvokerTestConsumer : IConsume<InvokerTestMessage>
 
 public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.CompletedTask;
@@ -531,7 +536,7 @@ public sealed class CancellableConsumer : IConsume<InvokerTestMessage>
 
 public sealed class ResponseHeaderConsumer : IConsume<InvokerTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
         context.Headers.AddResponseHeader("response-key", "response-value");
         return ValueTask.CompletedTask;

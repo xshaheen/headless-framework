@@ -11,6 +11,7 @@ namespace Headless.Messaging;
 /// This base type is used by object-typed consume middleware that should apply to every message type.
 /// Use <see cref="ConsumeContext{TMessage}"/> when the middleware or consumer needs strongly-typed payload access.
 /// </remarks>
+[PublicAPI]
 public record ConsumeContext
 {
     private CancellationToken _cancellationToken;
@@ -42,7 +43,7 @@ public record ConsumeContext
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
-    public void WithCancellationToken(CancellationToken cancellationToken)
+    public void SetCancellationToken(CancellationToken cancellationToken)
     {
         if (_isCompleted)
         {
@@ -138,9 +139,9 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
-    /// (<c>"headless-tenant-id"</c>), populated from <see cref="PublishOptions"/>.TenantId at publish time.
+    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
-    /// <see cref="PublishOptions.TenantIdMaxLength"/> (lenient consume-side handling).
+    /// <see cref="MessagePublishOptionsBase.TenantIdMaxLength"/> (lenient consume-side handling).
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty or whitespace string.
@@ -234,6 +235,25 @@ public record ConsumeContext
     /// </list>
     /// </remarks>
     public required string Topic { get; init; }
+
+    /// <summary>
+    /// Gets the delivery intent that produced this consume call: <see cref="IntentType.Bus"/> for
+    /// broadcast (publish/subscribe) dispatch, <see cref="IntentType.Queue"/> for point-to-point
+    /// (work-queue) dispatch.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The intent is registration-derived, not envelope-derived: the framework stamps this value
+    /// from the consumer registration (<c>AddBusConsumer&lt;T,H&gt;()</c> vs
+    /// <c>AddQueueConsumer&lt;T,H&gt;()</c>) that delivered the message. No on-wire header carries
+    /// intent; the receiving runtime knows the dispatch path because it owns it.
+    /// </para>
+    /// <para>
+    /// A handler type registered under both intents (one bus, one queue) is invoked once per
+    /// dispatch path, and each call observes the matching <see cref="IntentType"/> value.
+    /// </para>
+    /// </remarks>
+    public required IntentType IntentType { get; init; }
 }
 
 /// <summary>
@@ -250,6 +270,7 @@ public record ConsumeContext
 /// </list>
 /// </para>
 /// </remarks>
+[PublicAPI]
 public record ConsumeContext<TMessage> : ConsumeContext
     where TMessage : class
 {

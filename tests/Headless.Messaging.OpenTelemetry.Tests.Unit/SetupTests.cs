@@ -74,10 +74,11 @@ public sealed class SetupTests : TestBase
         var enrichers = options.BuildEnrichers();
 
         // then - built-in defaults precede the custom enricher, in declared order
-        enrichers.Should().HaveCount(3);
+        enrichers.Should().HaveCount(4);
         enrichers[0].Should().BeOfType<TenantIdTagEnricher>();
-        enrichers[1].Should().BeOfType<RetryCountTagEnricher>();
-        enrichers[2].Should().BeSameAs(customEnricher);
+        enrichers[1].Should().BeOfType<IntentTagEnricher>();
+        enrichers[2].Should().BeOfType<RetryCountTagEnricher>();
+        enrichers[3].Should().BeSameAs(customEnricher);
 
         // and TracerProvider build still succeeds end-to-end
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
@@ -97,7 +98,8 @@ public sealed class SetupTests : TestBase
 
         // then - no TenantIdTagEnricher is composed when suppression is requested
         enrichers.Should().NotContain(e => e is TenantIdTagEnricher);
-        // and the retry-count built-in remains
+        // and the other built-ins remain
+        enrichers.Should().ContainSingle(e => e is IntentTagEnricher);
         enrichers.Should().ContainSingle(e => e is RetryCountTagEnricher);
 
         // and TracerProvider build still succeeds end-to-end
@@ -118,8 +120,9 @@ public sealed class SetupTests : TestBase
 
         // then - no RetryCountTagEnricher is composed when suppression is requested
         enrichers.Should().NotContain(e => e is RetryCountTagEnricher);
-        // and the tenant-id built-in remains
+        // and the other built-ins remain
         enrichers.Should().ContainSingle(e => e is TenantIdTagEnricher);
+        enrichers.Should().ContainSingle(e => e is IntentTagEnricher);
 
         // and TracerProvider build still succeeds end-to-end
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
@@ -137,10 +140,31 @@ public sealed class SetupTests : TestBase
         // when
         var enrichers = options.BuildEnrichers();
 
-        // then - both built-ins are included by default, tenant first then retry-count
-        enrichers.Should().HaveCount(2);
+        // then - built-ins are included by default, in declared order
+        enrichers.Should().HaveCount(3);
         enrichers[0].Should().BeOfType<TenantIdTagEnricher>();
-        enrichers[1].Should().BeOfType<RetryCountTagEnricher>();
+        enrichers[1].Should().BeOfType<IntentTagEnricher>();
+        enrichers[2].Should().BeOfType<RetryCountTagEnricher>();
+    }
+
+    [Fact]
+    public void should_suppress_intent_tags_when_configured()
+    {
+        // given
+        var options = new MessagingInstrumentationOptions { SuppressIntentTags = true };
+
+        // when
+        var enrichers = options.BuildEnrichers();
+
+        // then
+        enrichers.Should().NotContain(e => e is IntentTagEnricher);
+        enrichers.Should().ContainSingle(e => e is TenantIdTagEnricher);
+        enrichers.Should().ContainSingle(e => e is RetryCountTagEnricher);
+
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .AddMessagingInstrumentation(o => o.SuppressIntentTags = true)
+            .Build();
+        tracerProvider.Should().NotBeNull();
     }
 
     [Fact]

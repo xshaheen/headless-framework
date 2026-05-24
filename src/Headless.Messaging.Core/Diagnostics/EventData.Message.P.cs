@@ -14,6 +14,8 @@ public class MessageEventDataPubStore
 
     public Message Message { get; set; } = null!;
 
+    public IntentType IntentType { get; set; } = IntentType.Bus;
+
     public long? ElapsedTimeMs { get; set; }
 
     public Exception? Exception { get; set; }
@@ -36,6 +38,8 @@ public class MessageEventDataPubSend
     public TransportMessage TransportMessage { get; set; }
 
     public BrokerAddress BrokerAddress { get; set; }
+
+    public IntentType IntentType { get; set; } = IntentType.Bus;
 
     public long? ElapsedTimeMs { get; set; }
 

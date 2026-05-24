@@ -11,16 +11,19 @@ namespace Headless.Messaging;
 /// <param name="Group">The consumer group name (Kafka group.id or RabbitMQ queue name).</param>
 /// <param name="Concurrency">The maximum number of messages to process concurrently.</param>
 /// <param name="HandlerId">The deterministic handler identity used for duplicate detection and diagnostics.</param>
+/// <param name="IntentType">The delivery intent used to subscribe this consumer.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
 /// <see cref="IMessagingBuilder.SubscribeFromAssembly"/> or <see cref="IMessagingBuilder.Subscribe{T}(string)"/>.
 /// </remarks>
+[PublicAPI]
 public sealed record ConsumerMetadata(
     Type MessageType,
     Type ConsumerType,
     string Topic,
     string? Group,
     byte Concurrency,
+    IntentType IntentType,
     string? HandlerId = null
 )
 {
@@ -34,7 +37,7 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// Per-consumer circuit breaker overrides registered via
-    /// <c>AddConsumer().WithCircuitBreaker()</c>. Applied to the
+    /// <c>AddBusConsumer().WithCircuitBreaker()</c>. Applied to the
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }

@@ -10,13 +10,25 @@ internal sealed class RabbitMqConsumerClientFactory(
     IOptions<RabbitMqOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
     IServiceProvider serviceProvider
-) : IConsumerClientFactory
+) : IIntentAwareConsumerClientFactory
 {
-    public async Task<IConsumerClient> CreateAsync(string groupId, byte concurrent)
+    public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
+    {
+        return CreateAsync(groupName, groupConcurrent, IntentType.Bus);
+    }
+
+    public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
         try
         {
-            var client = new RabbitMqConsumerClient(groupId, concurrent, channelPool, rabbitMqOptions, serviceProvider);
+            var client = new RabbitMqConsumerClient(
+                groupName,
+                groupConcurrent,
+                channelPool,
+                rabbitMqOptions,
+                serviceProvider,
+                intentType
+            );
 
             await client.ConnectAsync().ConfigureAwait(false);
 

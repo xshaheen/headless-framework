@@ -47,6 +47,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Fact]
@@ -94,6 +95,7 @@ public sealed class TenantRequirementHandlerTests
 
         // then
         context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Theory]
@@ -114,6 +116,43 @@ public sealed class TenantRequirementHandlerTests
         context.HasFailed.Should().BeTrue();
         context.PendingRequirements.Should().Contain(requirement);
         context.FailureReasons.Should().ContainSingle(reason => reason.Message == TenantRequirement.FailureReason);
+    }
+
+    [Fact]
+    public async Task should_set_typed_feature_on_http_context_when_failing()
+    {
+        // given - StatusCodesRewriterMiddleware reads this typed feature to enrich the bare 403
+        // with the g:tenant_required discriminator; without it, the response degrades to the
+        // generic 403 ProblemDetails body. Asserting the feature here guards the contract between
+        // the handler and the rewriter middleware.
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant());
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasFailed.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_not_set_typed_feature_when_succeeding()
+    {
+        // given
+        var requirement = new TenantRequirement();
+        var httpContext = new DefaultHttpContext();
+        var context = _CreateContext(requirement, httpContext);
+        var handler = new TenantRequirementHandler(new TestCurrentTenant { Id = "tenant-a" });
+
+        // when
+        await handler.HandleAsync(context);
+
+        // then
+        context.HasSucceeded.Should().BeTrue();
+        httpContext.Features.Get<TenantContextRequiredFeature>().Should().BeNull();
     }
 
     [Fact]

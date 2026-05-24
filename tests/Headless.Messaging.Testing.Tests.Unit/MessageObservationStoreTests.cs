@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;
 
@@ -7,7 +8,12 @@ namespace Tests;
 
 public sealed class MessageObservationStoreTests : TestBase
 {
-    private static RecordedMessage _MakeMessage(Type type, string id = "msg-1", object? payload = null) =>
+    private static RecordedMessage _MakeMessage(
+        Type type,
+        string id = "msg-1",
+        object? payload = null,
+        IntentType intentType = IntentType.Bus
+    ) =>
         new()
         {
             MessageType = type,
@@ -17,6 +23,7 @@ public sealed class MessageObservationStoreTests : TestBase
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal),
             Topic = "test-topic",
             Timestamp = DateTimeOffset.UtcNow,
+            IntentType = intentType,
         };
 
     // --- Record ---
@@ -102,9 +109,10 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Published,
+            intentType: null,
             predicate: null,
             timeout: TimeSpan.FromMilliseconds(50),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -123,9 +131,10 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
+            intentType: null,
             predicate: null,
             timeout: TimeSpan.FromMilliseconds(50),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         // then
@@ -144,9 +153,10 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
+            intentType: null,
             predicate: null,
             timeout: TimeSpan.FromSeconds(5),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         // record from a background "thread"
@@ -181,9 +191,10 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Published,
+            intentType: null,
             predicate: p => p is SimpleMessage sm && sm.Value == "yes",
             timeout: TimeSpan.FromSeconds(5),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         _ = Task.Run(
@@ -213,13 +224,49 @@ public sealed class MessageObservationStoreTests : TestBase
         var result = await store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
+            intentType: null,
             predicate: p => p is SimpleMessage sm && sm.Value == "match-me",
             timeout: TimeSpan.FromMilliseconds(50),
-            AbortToken
+            cancellationToken: AbortToken
         );
 
         // then
         result.Should().Be(msg);
+    }
+
+    [Fact]
+    public async Task WaitForAsync_with_intent_type_skips_same_payload_under_other_intent()
+    {
+        // given
+        var store = new MessageObservationStore();
+        var busMessage = _MakeMessage(
+            typeof(SimpleMessage),
+            "bus",
+            new SimpleMessage { Value = "same" },
+            IntentType.Bus
+        );
+        var queueMessage = _MakeMessage(
+            typeof(SimpleMessage),
+            "queue",
+            new SimpleMessage { Value = "same" },
+            IntentType.Queue
+        );
+
+        store.Record(busMessage, MessageObservationType.Published);
+        store.Record(queueMessage, MessageObservationType.Published);
+
+        // when
+        var result = await store.WaitForAsync(
+            typeof(SimpleMessage),
+            MessageObservationType.Published,
+            intentType: IntentType.Queue,
+            predicate: p => p is SimpleMessage sm && sm.Value == "same",
+            timeout: TimeSpan.FromMilliseconds(50),
+            cancellationToken: AbortToken
+        );
+
+        // then
+        result.Should().Be(queueMessage);
     }
 
     // --- WaitForAsync — timeout ---
@@ -235,9 +282,10 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(SimpleMessage),
                 MessageObservationType.Published,
+                intentType: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(50),
-                AbortToken
+                cancellationToken: AbortToken
             );
 
         // then
@@ -262,9 +310,10 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(OtherMessage),
                 MessageObservationType.Published,
+                intentType: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(60),
-                AbortToken
+                cancellationToken: AbortToken
             );
         }
         catch (MessageObservationTimeoutException caught)
@@ -295,9 +344,10 @@ public sealed class MessageObservationStoreTests : TestBase
             await store.WaitForAsync(
                 typeof(SimpleMessage),
                 MessageObservationType.Faulted,
+                intentType: null,
                 predicate: null,
                 timeout: TimeSpan.FromMilliseconds(50),
-                AbortToken
+                cancellationToken: AbortToken
             );
         }
         catch (MessageObservationTimeoutException caught)
@@ -323,9 +373,10 @@ public sealed class MessageObservationStoreTests : TestBase
         var waitTask = store.WaitForAsync(
             typeof(SimpleMessage),
             MessageObservationType.Consumed,
+            intentType: null,
             predicate: null,
             timeout: TimeSpan.FromSeconds(30),
-            cts.Token
+            cancellationToken: cts.Token
         );
 
         // when

@@ -17,6 +17,25 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         );
     }
 
+    public ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = new List<MediumMessage>(storageIds.Count);
+
+        foreach (var id in storageIds)
+        {
+            if (storage.PublishedMessages.TryGetValue(id, out var message))
+            {
+                result.Add(message);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
+    }
+
     public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -25,19 +44,88 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         );
     }
 
+    public ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = new List<MediumMessage>(storageIds.Count);
+
+        foreach (var id in storageIds)
+        {
+            if (storage.ReceivedMessages.TryGetValue(id, out var message))
+            {
+                result.Add(message);
+            }
+        }
+
+        return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
+    }
+
     public ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        int publishedSucceeded = 0;
+        int publishedFailed = 0;
+        int publishedDelayed = 0;
+        int publishedPendingRetry = 0;
+
+        // Single pass over each value collection — the original implementation enumerated the
+        // dictionary up to 4× per side; this collapses it to 1×.
+        foreach (var msg in storage.PublishedMessages.Values)
+        {
+            switch (msg.StatusName)
+            {
+                case StatusName.Succeeded:
+                    publishedSucceeded++;
+                    break;
+                case StatusName.Failed:
+                    publishedFailed++;
+                    break;
+                case StatusName.Delayed:
+                    publishedDelayed++;
+                    break;
+            }
+
+            if (msg.NextRetryAt is not null)
+            {
+                publishedPendingRetry++;
+            }
+        }
+
+        int receivedSucceeded = 0;
+        int receivedFailed = 0;
+        int receivedPendingRetry = 0;
+
+        foreach (var msg in storage.ReceivedMessages.Values)
+        {
+            switch (msg.StatusName)
+            {
+                case StatusName.Succeeded:
+                    receivedSucceeded++;
+                    break;
+                case StatusName.Failed:
+                    receivedFailed++;
+                    break;
+            }
+
+            if (msg.NextRetryAt is not null)
+            {
+                receivedPendingRetry++;
+            }
+        }
+
         var stats = new StatisticsView
         {
-            PublishedSucceeded = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded),
-            ReceivedSucceeded = storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Succeeded),
-            PublishedFailed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
-            ReceivedFailed = storage.ReceivedMessages.Values.Count(x => x.StatusName == StatusName.Failed),
-            PublishedDelayed = storage.PublishedMessages.Values.Count(x => x.StatusName == StatusName.Delayed),
-            PublishedPendingRetry = storage.PublishedMessages.Values.Count(x => x.NextRetryAt is not null),
-            ReceivedPendingRetry = storage.ReceivedMessages.Values.Count(x => x.NextRetryAt is not null),
+            PublishedSucceeded = publishedSucceeded,
+            ReceivedSucceeded = receivedSucceeded,
+            PublishedFailed = publishedFailed,
+            ReceivedFailed = receivedFailed,
+            PublishedDelayed = publishedDelayed,
+            PublishedPendingRetry = publishedPendingRetry,
+            ReceivedPendingRetry = receivedPendingRetry,
         };
 
         return ValueTask.FromResult(stats);
@@ -89,10 +177,20 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
+            if (query.IntentType is { } intentType)
+            {
+                expression = expression.Where(x => x.IntentType == intentType);
+            }
+
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
-            var allItems = expression
+            // Materialize the filtered list once, then skip/take to project only the requested
+            // page — avoids allocating MessageView instances for the rows we discard.
+            var filtered = expression.ToList();
+            var pageItems = filtered
+                .Skip(offset)
+                .Take(size)
                 .Select(x => new MessageView
                 {
                     Added = x.Added,
@@ -100,6 +198,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
+                    IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
@@ -110,12 +209,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 .ToList();
 
             return ValueTask.FromResult(
-                new IndexPage<MessageView>(
-                    allItems.Skip(offset).Take(size).ToList(),
-                    query.CurrentPage,
-                    query.PageSize,
-                    allItems.Count
-                )
+                new IndexPage<MessageView>(pageItems, query.CurrentPage, query.PageSize, filtered.Count)
             );
         }
         else
@@ -146,10 +240,18 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 expression = expression.Where(x => x.Content.Contains(query.Content, StringComparison.Ordinal));
             }
 
+            if (query.IntentType is { } intentType)
+            {
+                expression = expression.Where(x => x.IntentType == intentType);
+            }
+
             var offset = query.CurrentPage * query.PageSize;
             var size = query.PageSize;
 
-            var allItems = expression
+            var filtered = expression.ToList();
+            var pageItems = filtered
+                .Skip(offset)
+                .Take(size)
                 .Select(x => new MessageView
                 {
                     Added = x.Added,
@@ -158,6 +260,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                     MessageId = x.Origin.GetId(),
                     Version = "N/A",
                     Content = x.Content,
+                    IntentType = x.IntentType,
                     ExpiresAt = x.ExpiresAt,
                     Name = x.Name,
                     Retries = x.Retries,
@@ -168,12 +271,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 .ToList();
 
             return ValueTask.FromResult(
-                new IndexPage<MessageView>(
-                    allItems.Skip(offset).Take(size).ToList(),
-                    query.CurrentPage,
-                    query.PageSize,
-                    allItems.Count
-                )
+                new IndexPage<MessageView>(pageItems, query.CurrentPage, query.PageSize, filtered.Count)
             );
         }
     }

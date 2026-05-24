@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
@@ -9,89 +10,134 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Testing.Internal;
 
-internal sealed class RecordingTransport(
-    ITransport inner,
+internal sealed class RecordingBusTransport(
+    IBusTransport inner,
     MessageObservationStore store,
     ISerializer serializer,
-    ILogger<RecordingTransport>? logger = null
-) : ITransport
+    ILogger<RecordingBusTransport>? logger = null
+) : IBusTransport
 {
-    private static readonly ConcurrentDictionary<string, Type?> _TypeCache = new(StringComparer.Ordinal);
     public BrokerAddress BrokerAddress => inner.BrokerAddress;
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        var result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
-
-        if (result.Succeeded)
+        OperateResult result;
+        using (RecordingTransportRecorder.SuppressNestedRecording())
         {
-            var headers = message.Headers;
-            var messageTypeName = headers.TryGetValue(Headers.Type, out var typeName) ? typeName : null;
-
-            object messageObj = message;
-            var messageType = typeof(TransportMessage);
-
-            if (message.Body.Length > 0 && messageTypeName != null)
-            {
-                var resolvedType = _ResolveType(messageTypeName);
-
-                if (resolvedType != null)
-                {
-                    try
-                    {
-                        var deserialized = await serializer
-                            .DeserializeAsync(message, resolvedType)
-                            .ConfigureAwait(false);
-
-                        if (deserialized.Value != null)
-                        {
-                            messageObj = deserialized.Value;
-                            messageType = resolvedType;
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
-                    {
-                        // Record observation with the fallback (TransportMessage) type so the publish
-                        // pipeline isn't disrupted by a recording-only serializer mismatch. The original
-                        // SendAsync already succeeded; throwing here would mask infrastructure errors
-                        // as application errors. Log so a WaitForPublished<T> that subsequently times
-                        // out has a diagnostic trail; otherwise the deserialization failure is invisible.
-                        logger?.LogDeserializeObservedPayloadFailed(ex, resolvedType.FullName);
-                    }
-                }
-            }
-
-            var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow());
-
-            store.Record(recorded, MessageObservationType.Published);
+            result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
         }
 
+        await RecordingTransportRecorder
+            .RecordPublishedAsync(result, message, IntentType.Bus, store, serializer, logger)
+            .ConfigureAwait(false);
         return result;
     }
 
     public ValueTask DisposeAsync() => inner.DisposeAsync();
+}
 
-    /// <summary>
-    /// Resolves a CLR type from the header value. The framework may write either
-    /// an assembly-qualified name or a short type name; this method handles both.
-    /// </summary>
-    private static Type? _ResolveType(string typeName) =>
+internal sealed class RecordingQueueTransport(
+    IQueueTransport inner,
+    MessageObservationStore store,
+    ISerializer serializer,
+    ILogger<RecordingQueueTransport>? logger = null
+) : IQueueTransport
+{
+    public BrokerAddress BrokerAddress => inner.BrokerAddress;
+
+    public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
+    {
+        OperateResult result;
+        using (RecordingTransportRecorder.SuppressNestedRecording())
+        {
+            result = await inner.SendAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+
+        await RecordingTransportRecorder
+            .RecordPublishedAsync(result, message, IntentType.Queue, store, serializer, logger)
+            .ConfigureAwait(false);
+        return result;
+    }
+
+    public ValueTask DisposeAsync() => inner.DisposeAsync();
+}
+
+internal static class RecordingTransportRecorder
+{
+    private static readonly ConcurrentDictionary<string, Type?> _TypeCache = new(StringComparer.Ordinal);
+    private static readonly AsyncLocal<int> _NestedRecordingSuppression = new();
+
+    public static IDisposable SuppressNestedRecording()
+    {
+        _NestedRecordingSuppression.Value++;
+        return new SuppressionScope();
+    }
+
+    public static async Task RecordPublishedAsync(
+        OperateResult result,
+        TransportMessage message,
+        IntentType intentType,
+        MessageObservationStore store,
+        ISerializer serializer,
+        ILogger? logger
+    )
+    {
+        if (_NestedRecordingSuppression.Value > 0)
+        {
+            return;
+        }
+
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        var headers = message.Headers;
+        var messageTypeName = headers.TryGetValue(Headers.Type, out var typeName) ? typeName : null;
+
+        object messageObj = message;
+        var messageType = typeof(TransportMessage);
+
+        if (message.Body.Length > 0 && messageTypeName != null)
+        {
+            var resolvedType = ResolveType(messageTypeName);
+
+            if (resolvedType != null)
+            {
+                try
+                {
+                    var deserialized = await serializer.DeserializeAsync(message, resolvedType).ConfigureAwait(false);
+
+                    if (deserialized.Value != null)
+                    {
+                        messageObj = deserialized.Value;
+                        messageType = resolvedType;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+                {
+                    logger?.LogDeserializeObservedPayloadFailed(ex, resolvedType.FullName);
+                }
+            }
+        }
+
+        var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow(), intentType);
+        store.Record(recorded, MessageObservationType.Published);
+    }
+
+    private static Type? ResolveType(string typeName) =>
         _TypeCache.GetOrAdd(
             typeName,
             static name =>
             {
-                // Try assembly-qualified name first (fast path)
                 var type = Type.GetType(name);
                 if (type != null)
                 {
                     return type;
                 }
 
-                // Fall back to scanning loaded assemblies by full name or short name.
-                // This covers the case where the framework writes messageType.Name.
                 foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
                 {
-                    // Skip dynamic assemblies — they cannot be scanned reliably
                     if (assembly.IsDynamic)
                     {
                         continue;
@@ -116,6 +162,14 @@ internal sealed class RecordingTransport(
                 return null;
             }
         );
+
+    private sealed class SuppressionScope : IDisposable
+    {
+        public void Dispose()
+        {
+            _NestedRecordingSuppression.Value--;
+        }
+    }
 }
 
 internal static partial class RecordingTransportLog

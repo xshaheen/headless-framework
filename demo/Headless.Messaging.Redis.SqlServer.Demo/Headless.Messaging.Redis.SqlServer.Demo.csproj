@@ -9,7 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.RedisStreams\Headless.Messaging.RedisStreams.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Redis\Headless.Messaging.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.SqlServer\Headless.Messaging.SqlServer.csproj" />
   </ItemGroup>
 </Project>

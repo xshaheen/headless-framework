@@ -355,7 +355,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         return new DistributedReaderWriterLockProvider(
             storage ?? _storage,
-            outboxPublisher: null,
+            outboxBus: null,
             new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,

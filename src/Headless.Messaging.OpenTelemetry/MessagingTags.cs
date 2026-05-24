@@ -8,6 +8,12 @@ namespace Headless.Messaging.OpenTelemetry;
 [PublicAPI]
 public static class MessagingTags
 {
+    /// <summary>Messaging delivery intent: <c>bus</c> for broadcast, <c>queue</c> for point-to-point.</summary>
+    public const string Intent = "headless.messaging.intent";
+
+    /// <summary>Messaging destination kind aligned with OpenTelemetry messaging conventions.</summary>
+    public const string DestinationKind = "messaging.destination.kind";
+
     /// <summary>Number of persisted retry pickups for a subscriber invocation.</summary>
     public const string RetryCount = "headless.messaging.retry_count";
 

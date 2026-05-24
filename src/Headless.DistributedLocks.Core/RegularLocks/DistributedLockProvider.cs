@@ -15,19 +15,19 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedLockProvider(
     IDistributedLockStorage storage,
-    IOutboxPublisher? outboxPublisher,
-    DistributedLockOptions options,
+    IOutboxBus? outboxBus,
+    DistributedLockOptions lockOptions,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLockProvider> logger
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
-    private readonly ScopedDistributedLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxPublisher? _outboxPublisher = DistributedLockCoreHelpers.ConfigureOutboxPublisher(
-        outboxPublisher,
+    private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
+    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(
+        outboxBus,
         logger
     );
-    private readonly TimeSpan _disposeTimeout = options.DisposeTimeout;
+    private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`. Shared
@@ -74,9 +74,9 @@ public sealed class DistributedLockProvider(
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
 
     // Configurable limits from options
-    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly int? _maxConcurrentWaitingResources = options.MaxConcurrentWaitingResources;
-    private readonly int? _maxWaitersPerResource = options.MaxWaitersPerResource;
+    private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
+    private readonly int? _maxConcurrentWaitingResources = lockOptions.MaxConcurrentWaitingResources;
+    private readonly int? _maxWaitersPerResource = lockOptions.MaxWaitersPerResource;
 
     public TimeSpan DefaultTimeUntilExpires { get; } = TimeSpan.FromMinutes(20);
 
@@ -387,7 +387,7 @@ public sealed class DistributedLockProvider(
             this,
             releaseOnDispose,
             autoExtend,
-            options,
+            lockOptions,
             timeProvider,
             _DeregisterMonitor,
             logger
@@ -560,13 +560,13 @@ public sealed class DistributedLockProvider(
 
         // Only publish if we actually removed the lock.
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
-        if (removed && _outboxPublisher is not null)
+        if (removed && _outboxBus is not null)
         {
             var distributedLockReleased = new DistributedLockReleased(resource, lockId);
 
             try
             {
-                await _outboxPublisher
+                await _outboxBus
                     .PublishAsync(distributedLockReleased, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -831,7 +831,10 @@ public sealed class DistributedLockProvider(
     internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
         : IConsume<DistributedLockReleased>
     {
-        public ValueTask Consume(ConsumeContext<DistributedLockReleased> context, CancellationToken cancellationToken)
+        public ValueTask ConsumeAsync(
+            ConsumeContext<DistributedLockReleased> context,
+            CancellationToken cancellationToken
+        )
         {
             if (cancellationToken.IsCancellationRequested)
             {

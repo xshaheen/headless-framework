@@ -24,9 +24,9 @@ public sealed class SetupTests : TestBase
 
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
-        provider.GetService<IOutboxPublisher>().Should().BeNull();
+        provider.GetService<IOutboxBus>().Should().BeNull();
         // The LockReleasedConsumer's only job is to wake waiters on DistributedLockReleased outbox
-        // messages; without IOutboxPublisher no such messages ever flow, so the consumer is
+        // messages; without IOutboxBus no such messages ever flow, so the consumer is
         // intentionally NOT registered in polling-only mode.
         services
             .Should()
@@ -39,7 +39,7 @@ public sealed class SetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSingleton(Substitute.For<IOutboxPublisher>());
+        services.AddSingleton(Substitute.For<IOutboxBus>());
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
@@ -47,7 +47,7 @@ public sealed class SetupTests : TestBase
 
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
-        provider.GetRequiredService<IOutboxPublisher>().Should().NotBeNull();
+        provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ConsumerMetadata));
     }
@@ -55,7 +55,7 @@ public sealed class SetupTests : TestBase
     [Fact]
     public void should_warn_when_outbox_publisher_is_registered_after_add_distributed_lock()
     {
-        // given — call AddDistributedLock BEFORE AddSingleton<IOutboxPublisher>, mirroring the
+        // given — call AddDistributedLock BEFORE AddSingleton<IOutboxBus>, mirroring the
         // real-world footgun: the registration-time consumer-registration block in Setup.cs sees
         // no publisher and silently skips the consumer; AddMessages(...) later in Program.cs is
         // too late.
@@ -65,7 +65,7 @@ public sealed class SetupTests : TestBase
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddSingleton(Substitute.For<IOutboxPublisher>()); // too late
+        services.AddSingleton(Substitute.For<IOutboxBus>()); // too late
         using var provider = services.BuildServiceProvider();
 
         // resolving the options instance triggers the IValidateOptions pipeline (the Headless
@@ -90,7 +90,7 @@ public sealed class SetupTests : TestBase
         var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
         var services = new ServiceCollection();
         services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
-        services.AddSingleton(Substitute.For<IOutboxPublisher>());
+        services.AddSingleton(Substitute.For<IOutboxBus>());
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });

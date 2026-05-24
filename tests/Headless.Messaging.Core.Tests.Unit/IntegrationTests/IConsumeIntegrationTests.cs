@@ -61,6 +61,7 @@ public sealed class IConsumeIntegrationTests
         var message = new OrderPlaced("ORDER-123", 99.99m);
         var context = new ConsumeContext<OrderPlaced>
         {
+            IntentType = IntentType.Bus,
             Message = message,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -219,6 +220,7 @@ public sealed class IConsumeIntegrationTests
 
         var placedContext = new ConsumeContext<OrderPlaced>
         {
+            IntentType = IntentType.Bus,
             Message = orderPlaced,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -229,6 +231,7 @@ public sealed class IConsumeIntegrationTests
 
         var cancelledContext = new ConsumeContext<OrderCancelled>
         {
+            IntentType = IntentType.Bus,
             Message = orderCancelled,
             MessageId = Guid.NewGuid().ToString(),
             CorrelationId = null,
@@ -260,7 +263,7 @@ public sealed class OrderPlacedConsumer : IConsume<OrderPlaced>
 {
     public static OrderPlaced? LastProcessed { get; private set; }
 
-    public ValueTask Consume(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
     {
         LastProcessed = context.Message;
         return ValueTask.CompletedTask;
@@ -271,7 +274,7 @@ public sealed class OrderAnalyticsConsumer : IConsume<OrderPlaced>
 {
     public static OrderPlaced? LastProcessed { get; private set; }
 
-    public ValueTask Consume(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
     {
         LastProcessed = context.Message;
         return ValueTask.CompletedTask;
@@ -282,7 +285,7 @@ public sealed class OrderCancelledConsumer : IConsume<OrderCancelled>
 {
     public static OrderCancelled? LastProcessed { get; private set; }
 
-    public ValueTask Consume(ConsumeContext<OrderCancelled> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCancelled> context, CancellationToken cancellationToken)
     {
         LastProcessed = context.Message;
         return ValueTask.CompletedTask;
@@ -291,12 +294,12 @@ public sealed class OrderCancelledConsumer : IConsume<OrderCancelled>
 
 public sealed class MultiEventConsumer : IConsume<OrderPlaced>, IConsume<OrderCancelled>
 {
-    public ValueTask Consume(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }
 
-    public ValueTask Consume(ConsumeContext<OrderCancelled> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCancelled> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

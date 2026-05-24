@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
-using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Tests.Capabilities;
@@ -31,13 +31,17 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
         };
 
     /// <inheritdoc />
-    protected override ITransport GetTransport()
+    protected override IBusTransport GetBusTransport()
     {
         var logger = NullLogger<RabbitMqTransport>.Instance;
         _connectionChannelPool = _CreateConnectionChannelPool();
 
         return new RabbitMqTransport(logger, _connectionChannelPool);
     }
+
+    protected override IQueueTransport GetQueueTransport() =>
+        GetBusTransport() as IQueueTransport
+        ?? throw new InvalidOperationException("RabbitMQ transport must support queue intent.");
 
     /// <inheritdoc />
     protected override async ValueTask DisposeAsyncCore()

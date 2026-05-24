@@ -68,7 +68,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
     private async Task PublishBatch(int count, CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
-        var publisher = scope.ServiceProvider.GetRequiredService<IOutboxPublisher>();
+        var publisher = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
 
         for (var i = 0; i < count; i++)
         {
@@ -77,7 +77,7 @@ public sealed class DemoMessagePublisher(IServiceScopeFactory scopeFactory, ILog
         }
     }
 
-    private async Task PublishRandomMessage(IOutboxPublisher publisher, CancellationToken ct)
+    private async Task PublishRandomMessage(IOutboxBus publisher, CancellationToken ct)
     {
         switch (Random.Shared.Next(4))
         {

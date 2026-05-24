@@ -22,6 +22,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 {
     private const string _TopicName = "cb.test.topic";
     private const string _GroupName = "cb.test.group";
+    private const string _CircuitBreakerGroupName = "0:cb.test.group";
 
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
@@ -43,6 +44,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }
@@ -50,7 +52,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CbTestMessage>).GetMethod(
-            nameof(IConsume<CbTestMessage>.Consume),
+            nameof(IConsume<CbTestMessage>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CbTestMessage>), typeof(CancellationToken)],
@@ -59,6 +61,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -90,7 +93,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Subscribe<CbTestConsumer>().Topic(_TopicName);
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
@@ -155,7 +158,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportFailureAsync(_GroupName, original);
+        await cbMock.Received(1).ReportFailureAsync(_CircuitBreakerGroupName, original);
     }
 
     [Fact]
@@ -174,7 +177,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then
-        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
     }
 
     [Fact]
@@ -195,7 +198,9 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
 
         // then — must receive HttpRequestException, not SubscriberExecutionFailedException
-        await cbMock.Received(1).ReportFailureAsync(_GroupName, Arg.Is<Exception>(e => e is HttpRequestException));
+        await cbMock
+            .Received(1)
+            .ReportFailureAsync(_CircuitBreakerGroupName, Arg.Is<Exception>(e => e is HttpRequestException));
     }
 
     [Fact]
@@ -228,6 +233,59 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     }
 
     [Fact]
+    public async Task should_release_half_open_probe_when_receive_lease_is_not_acquired()
+    {
+        // given
+        var storage = _CreateStorage();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var (executor, cbMock) = _CreateExecutor(invoker, storage);
+
+        storage
+            .LeaseReceiveAsync(Arg.Any<MediumMessage>(), Arg.Any<DateTime>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(false));
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+    }
+
+    [Fact]
+    public async Task should_release_half_open_probe_when_failed_state_write_is_already_terminal()
+    {
+        // given
+        var storage = _CreateStorage();
+        storage
+            .ChangeReceiveStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<DateTime?>(),
+                Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(ValueTask.FromResult(false));
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ConsumerExecutedResult>>(_ =>
+                Task.FromException<ConsumerExecutedResult>(new TimeoutException("downstream timeout"))
+            );
+        var (executor, cbMock) = _CreateExecutor(invoker, storage);
+
+        // when
+        await executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), CancellationToken.None);
+
+        // then
+        cbMock.Received(1).ReleaseHalfOpenProbe(_CircuitBreakerGroupName);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportSuccessAsync(default!);
+        await cbMock.DidNotReceiveWithAnyArgs().ReportFailureAsync(default!, default!);
+    }
+
+    [Fact]
     public async Task should_persist_db_success_state_and_report_to_circuit_breaker()
     {
         // given
@@ -253,7 +311,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
             );
-        await cbMock.Received(1).ReportSuccessAsync(_GroupName);
+        await cbMock.Received(1).ReportSuccessAsync(_CircuitBreakerGroupName);
     }
 }
 
@@ -263,7 +321,7 @@ public sealed record CbTestMessage(string Id);
 
 public sealed class CbTestConsumer : IConsume<CbTestMessage>
 {
-    public ValueTask Consume(ConsumeContext<CbTestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<CbTestMessage> context, CancellationToken cancellationToken)
     {
         return ValueTask.CompletedTask;
     }

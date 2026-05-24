@@ -75,7 +75,7 @@ static void addRedisDistributedLock(IServiceCollection services)
     // Messages
     services.AddHeadlessMessaging(setup =>
     {
-        setup.UseInMemoryMessageQueue();
+        setup.UseInMemory();
         setup.UseInMemoryStorage();
     });
 

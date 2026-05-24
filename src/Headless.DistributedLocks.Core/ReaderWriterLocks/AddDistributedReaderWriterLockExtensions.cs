@@ -54,7 +54,7 @@ public static class AddDistributedReaderWriterLockExtensions
             services.TryAddSingleton<DistributedReaderWriterLockProvider>(provider =>
                 new DistributedReaderWriterLockProvider(
                     provider.GetRequiredService<TStorage>(),
-                    provider.GetService<IOutboxPublisher>(),
+                    provider.GetService<IOutboxBus>(),
                     provider.GetRequiredService<DistributedLockOptions>(),
                     provider.GetRequiredService<ILongIdGenerator>(),
                     provider.GetRequiredService<TimeProvider>(),

@@ -56,7 +56,9 @@ public sealed class DistributedLockOptionsValidatorTests : TestBase
         // then
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.PollingCadenceFraction));
-        result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.AutoExtensionCadenceFraction));
+        result
+            .Errors.Should()
+            .Contain(e => e.PropertyName == nameof(DistributedLockOptions.AutoExtensionCadenceFraction));
     }
 
     [Fact]

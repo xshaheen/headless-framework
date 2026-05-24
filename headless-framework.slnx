@@ -180,7 +180,7 @@
     </Folder>
     <Folder Name="/Messaging/" />
     <Folder Name="/Messaging/Demo/">
-        <Project Path="demo/Headless.Messaging.AwsSqs.InMemory.Demo/Headless.Messaging.AwsSqs.InMemory.Demo.csproj" />
+        <Project Path="demo/Headless.Messaging.Aws.InMemory.Demo/Headless.Messaging.Aws.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.AzureServiceBus.InMemory.Demo/Headless.Messaging.AzureServiceBus.InMemory.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Console.Demo/Headless.Messaging.Console.Demo.csproj" />
         <Project Path="demo/Headless.Messaging.Dashboard.Auth.Demo/Headless.Messaging.Dashboard.Auth.Demo.csproj" />
@@ -192,20 +192,22 @@
     </Folder>
     <Folder Name="/Messaging/Src/">
         <Project Path="src/Headless.Messaging.Abstractions/Headless.Messaging.Abstractions.csproj" />
-        <Project Path="src/Headless.Messaging.AwsSqs/Headless.Messaging.AwsSqs.csproj" />
+        <Project Path="src/Headless.Messaging.Aws/Headless.Messaging.Aws.csproj" />
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
+        <Project Path="src/Headless.Messaging.Bus.Abstractions/Headless.Messaging.Bus.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.Core/Headless.Messaging.Core.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
-        <Project Path="src/Headless.Messaging.InMemoryQueue/Headless.Messaging.InMemoryQueue.csproj" />
+        <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
         <Project Path="src/Headless.Messaging.InMemoryStorage/Headless.Messaging.InMemoryStorage.csproj" />
         <Project Path="src/Headless.Messaging.Kafka/Headless.Messaging.Kafka.csproj" />
         <Project Path="src/Headless.Messaging.Nats/Headless.Messaging.Nats.csproj" />
         <Project Path="src/Headless.Messaging.OpenTelemetry/Headless.Messaging.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Messaging.PostgreSql/Headless.Messaging.PostgreSql.csproj" />
         <Project Path="src/Headless.Messaging.Pulsar/Headless.Messaging.Pulsar.csproj" />
+        <Project Path="src/Headless.Messaging.Queue.Abstractions/Headless.Messaging.Queue.Abstractions.csproj" />
         <Project Path="src/Headless.Messaging.RabbitMq/Headless.Messaging.RabbitMq.csproj" />
-        <Project Path="src/Headless.Messaging.RedisStreams/Headless.Messaging.RedisStreams.csproj" />
+        <Project Path="src/Headless.Messaging.Redis/Headless.Messaging.Redis.csproj" />
         <Project Path="src/Headless.Messaging.SqlServer/Headless.Messaging.SqlServer.csproj" />
         <Project Path="src/Headless.Messaging.Testing/Headless.Messaging.Testing.csproj" />
     </Folder>
@@ -214,14 +216,15 @@
         <Project Path="tests/Headless.Messaging.Kafka.Tests.Unit/Headless.Messaging.Kafka.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.OpenTelemetry.Tests.Unit/Headless.Messaging.OpenTelemetry.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Abstractions.Tests.Unit/Headless.Messaging.Abstractions.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Integration/Headless.Messaging.AwsSqs.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.Messaging.AwsSqs.Tests.Unit/Headless.Messaging.AwsSqs.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Aws.Tests.Integration/Headless.Messaging.Aws.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Messaging.Aws.Tests.Unit/Headless.Messaging.Aws.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.K8s.Tests.Unit/Headless.Messaging.Dashboard.K8s.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Dashboard.Tests.Unit/Headless.Messaging.Dashboard.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.InMemoryQueue.Tests.Unit/Headless.Messaging.InMemoryQueue.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.InMemory.Tests.Unit/Headless.Messaging.InMemory.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.InMemoryStorage.Tests.Unit/Headless.Messaging.InMemoryStorage.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Integration/Headless.Messaging.Nats.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.Nats.Tests.Unit/Headless.Messaging.Nats.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.PackageReference.Tests.Unit/Headless.Messaging.PackageReference.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Unit/Headless.Messaging.PostgreSql.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Pulsar.Tests.Unit/Headless.Messaging.Pulsar.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.RabbitMq.Tests.Unit/Headless.Messaging.RabbitMq.Tests.Unit.csproj" />
@@ -232,7 +235,7 @@
         <Project Path="tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.PostgreSql.Tests.Integration/Headless.Messaging.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.Messaging.SqlServer.Tests.Integration/Headless.Messaging.SqlServer.Tests.Integration.csproj" />
-        <Project Path="tests/Headless.Messaging.RedisStreams.Tests.Unit/Headless.Messaging.RedisStreams.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Redis.Tests.Unit/Headless.Messaging.Redis.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.NatsPostgreSql.Tests.Integration/Headless.Messaging.NatsPostgreSql.Tests.Integration.csproj" />
     </Folder>
     <Folder Name="/Observability/">

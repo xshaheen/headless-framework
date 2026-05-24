@@ -18,7 +18,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
     private DistributedReaderWriterLockProvider _CreateProvider(
         IDistributedReaderWriterLockStorage? storage = null,
-        IOutboxPublisher? outboxPublisher = null,
+        IOutboxBus? outboxBus = null,
         DistributedLockOptions? options = null
     )
     {
@@ -26,7 +26,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
         return new DistributedReaderWriterLockProvider(
             storage ?? new FakeReaderWriterLockStorage(),
-            outboxPublisher,
+            outboxBus,
             options ?? new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,

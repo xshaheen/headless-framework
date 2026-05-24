@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
@@ -50,7 +51,10 @@ public static class SetupAzureServiceBusMessaging
             services.Configure<AzureServiceBusOptions, AzureServiceBusOptionsValidator>(configure);
 
             services.AddSingleton<IConsumerClientFactory, AzureServiceBusConsumerClientFactory>();
-            services.AddSingleton<ITransport, AzureServiceBusTransport>();
+            services.AddSingleton<AzureServiceBusTransport>();
+            services.AddSingleton<AzureServiceBusQueueTransport>();
+            services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<AzureServiceBusTransport>());
+            services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<AzureServiceBusQueueTransport>());
         }
     }
 }

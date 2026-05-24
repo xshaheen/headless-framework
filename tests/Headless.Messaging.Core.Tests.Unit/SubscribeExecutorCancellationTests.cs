@@ -37,6 +37,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             StorageId = 1L,
             Origin = new Message(headers, "{}"),
             Content = "{}",
+            IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,
         };
     }
@@ -44,7 +45,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
     private static ConsumerExecutorDescriptor _CreateDescriptor()
     {
         var consumeMethod = typeof(IConsume<CancellationExecutorTestMessage>).GetMethod(
-            nameof(IConsume<CancellationExecutorTestMessage>.Consume),
+            nameof(IConsume<CancellationExecutorTestMessage>.ConsumeAsync),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             null,
             [typeof(ConsumeContext<CancellationExecutorTestMessage>), typeof(CancellationToken)],
@@ -53,6 +54,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         return new ConsumerExecutorDescriptor
         {
+            IntentType = IntentType.Bus,
             ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
@@ -86,7 +88,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
@@ -283,7 +285,7 @@ public sealed record CancellationExecutorTestMessage(string Id);
 
 public sealed class CancellationExecutorTestConsumer : IConsume<CancellationExecutorTestMessage>
 {
-    public ValueTask Consume(
+    public ValueTask ConsumeAsync(
         ConsumeContext<CancellationExecutorTestMessage> context,
         CancellationToken cancellationToken
     )

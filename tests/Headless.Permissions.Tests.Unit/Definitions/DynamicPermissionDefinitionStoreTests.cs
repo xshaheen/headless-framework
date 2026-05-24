@@ -30,7 +30,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         var serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
         _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
-        var messagePublisher = Substitute.For<IDirectPublisher>();
+        var messagePublisher = Substitute.For<IBus>();
         var guidGenerator = Substitute.For<IGuidGenerator>();
         var application = Substitute.For<IApplicationInformationAccessor>();
         _options = new PermissionManagementOptions { IsDynamicPermissionStoreEnabled = true };
@@ -228,11 +228,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 
         var lockHandle = Substitute.For<IDistributedLock>();
         _distributedLockProvider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(lockHandle);
     }
 

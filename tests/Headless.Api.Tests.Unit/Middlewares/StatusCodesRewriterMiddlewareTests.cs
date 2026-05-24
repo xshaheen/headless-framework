@@ -4,7 +4,9 @@
 
 using Headless.Api.Abstractions;
 using Headless.Api.Middlewares;
+using Headless.Api.MultiTenancy;
 using Headless.Constants;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
@@ -245,6 +247,68 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_tenant_required_problem_details_when_typed_feature_set()
+    {
+        // given - TenantRequirementHandler sets this typed feature on the IFeatureCollection when
+        // it fails authorization. The rewriter detects it and substitutes the structured
+        // g:tenant_required body for the generic Forbidden body. This is the path that decouples
+        // tenant 403s from the IAuthorizationMiddlewareResultHandler registration order.
+        var problemCreator = Substitute.For<IProblemDetailsCreator>();
+        problemCreator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+                    Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                    Extensions =
+                    {
+                        ["error"] = new { code = HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code },
+                    },
+                }
+            );
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        context.Features.Set(new TenantContextRequiredFeature());
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        context.Response.ContentType.Should().StartWith("application/problem+json");
+
+        context.Response.Body.Position = 0;
+        using var reader = new StreamReader(context.Response.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync(AbortToken);
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
+        root.GetProperty("error")
+            .GetProperty("code")
+            .GetString()
+            .Should()
+            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        problemCreator
+            .Received(1)
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            );
+        problemCreator.DidNotReceive().Forbidden();
+    }
+
+    [Fact]
     public async Task should_return_problem_details_for_404()
     {
         // given
@@ -272,6 +336,74 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status404NotFound);
         root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.EndpointNotFound);
+    }
+
+    [Fact]
+    public async Task should_not_rewrite_when_status_is_401_and_tenant_feature_set()
+    {
+        // given - the tenant feature is scoped to 403; a 401 with the feature set must not be
+        // mistakenly rewritten as a g:tenant_required response.
+        var problemCreator = Substitute.For<IProblemDetailsCreator>();
+        problemCreator.Unauthorized().Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized });
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        context.Features.Set(new TenantContextRequiredFeature());
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        problemCreator.Received(1).Unauthorized();
+        problemCreator.DidNotReceive().Forbidden(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>());
+        problemCreator.DidNotReceive().Forbidden();
+    }
+
+    [Fact]
+    public async Task should_rewrite_when_typed_feature_set_even_if_content_type_already_set()
+    {
+        // given - the tenant feature bypasses the Content-Type/Content-Length short-circuit so that
+        // a partial response written by a consumer's IAuthorizationMiddlewareResultHandler is
+        // replaced with the structured g:tenant_required body.
+        var problemCreator = Substitute.For<IProblemDetailsCreator>();
+        problemCreator
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            )
+            .Returns(
+                new ProblemDetails
+                {
+                    Status = StatusCodes.Status403Forbidden,
+                    Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
+                }
+            );
+        var middleware = _CreateMiddleware(problemCreator);
+        var context = _CreateContext();
+        context.Features.Set(new TenantContextRequiredFeature());
+        Task next(HttpContext ctx)
+        {
+            ctx.Response.StatusCode = StatusCodes.Status403Forbidden;
+            ctx.Response.ContentType = "text/plain"; // partial upstream write
+            return Task.CompletedTask;
+        }
+
+        // when
+        await middleware.InvokeAsync(context, next);
+
+        // then
+        context.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
+        problemCreator
+            .Received(1)
+            .Forbidden(
+                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            );
     }
 
     [Theory]

@@ -235,6 +235,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
                 options.Validation.ValidateServiceProviderOnStartup = false;
                 options.Validation.RequireUseHeadless = false;
                 options.Validation.RequireMapHeadlessEndpoints = false;
+                options.Validation.RequireStatusCodesRewriter = false;
                 options.OpenTelemetry.Enabled = false;
                 options.OpenApi.Enabled = false;
             });

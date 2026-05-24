@@ -29,7 +29,7 @@ public sealed class TestSubscriber : IConsume<TestMessage>
     /// <summary>Gets the received messages.</summary>
     public IReadOnlyCollection<TestMessage> ReceivedMessages => _receivedContexts.Select(c => c.Message).ToList();
 
-    public ValueTask Consume(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
     {
         lock (_lock)
         {

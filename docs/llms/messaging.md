@@ -1,6 +1,6 @@
 ---
 domain: Messaging
-packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.AwsSqs, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.RedisStreams, Messaging.InMemoryQueue, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
+packages: Messaging.Abstractions, Messaging.Bus.Abstractions, Messaging.Queue.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging.Dashboard.K8s, Messaging.OpenTelemetry, Messaging.Aws, Messaging.AzureServiceBus, Messaging.Kafka, Messaging.Nats, Messaging.Pulsar, Messaging.RabbitMq, Messaging.Redis, Messaging.InMemory, Messaging.PostgreSql, Messaging.SqlServer, Messaging.InMemoryStorage, Messaging.Testing, MultiTenancy
 ---
 
 # Messaging
@@ -19,23 +19,58 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Quick Start](#quick-start)
     - [Envelope](#envelope)
         - [Reserved Wire Headers](#reserved-wire-headers)
-        - [PublishOptions](#publishoptions)
+        - [`PublishOptions`](#publishoptions)
         - [Tenant Header Integrity](#tenant-header-integrity)
     - [Transport Pause/Resume](#transport-pauseresume)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
-- [Headless.Messaging.Core](#headlessmessagingcore)
+- [Headless.Messaging.Bus.Abstractions](#headlessmessagingbusabstractions)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
     - [Installation](#installation-1)
     - [Quick Start](#quick-start-1)
+    - [Configuration](#configuration-1)
+    - [Dependencies](#dependencies-1)
+    - [Side Effects](#side-effects-1)
+- [Headless.Messaging.Queue.Abstractions](#headlessmessagingqueueabstractions)
+    - [Problem Solved](#problem-solved-2)
+    - [Key Features](#key-features-2)
+    - [Installation](#installation-2)
+    - [Quick Start](#quick-start-2)
+    - [Configuration](#configuration-2)
+    - [Dependencies](#dependencies-2)
+    - [Side Effects](#side-effects-2)
+- [Headless.Messaging.Core](#headlessmessagingcore)
+    - [Problem Solved](#problem-solved-3)
+    - [Key Features](#key-features-3)
+    - [Installation](#installation-3)
+    - [Quick Start](#quick-start-3)
     - [Publisher Options](#publisher-options)
-        - [IOutboxPublisher (Reliable Delivery)](#ioutboxpublisher-reliable-delivery)
-        - [IDirectPublisher (Fire-and-Forget)](#idirectpublisher-fire-and-forget)
+        - [Bus Publishers](#bus-publishers)
+        - [Queue Publishers](#queue-publishers)
+        - [Legacy Migration](#legacy-migration)
         - [Callback Headers (Async Response Routing)](#callback-headers-async-response-routing)
     - [Configuration](#configuration-1)
+        - [Retry Policy](#retry-policy)
+            - [Shape](#shape)
+            - [Retry decisions](#retry-decisions)
+            - [Exhausted vs Stop](#exhausted-vs-stop)
+            - [MaxInlineRetries — inline vs persisted retry paths](#maxinlineretries-inline-vs-persisted-retry-paths)
+            - [FailedInfo construction (for tests / fakes)](#failedinfo-construction-for-tests-fakes)
+            - [RetryProcessorOptions](#retryprocessoroptions)
+            - [Migration from pre-RetryPolicy primitives](#migration-from-pre-retrypolicy-primitives)
+    - [Distributed Lock Integration](#distributed-lock-integration)
+        - [What this is and isn't (correctness vs coordination)](#what-this-is-and-isnt-correctness-vs-coordination)
+        - [When to enable](#when-to-enable)
+        - [When to skip](#when-to-skip)
+        - [Requirements](#requirements)
+        - [Lock names](#lock-names)
+        - [EventIds](#eventids)
+        - [Pros and cons](#pros-and-cons)
     - [Strict Publish Tenancy](#strict-publish-tenancy)
+    - [Middleware](#middleware)
+        - [Multi-tenancy](#multi-tenancy)
     - [Message Ordering Guarantees](#message-ordering-guarantees)
         - [Transport-Specific Ordering](#transport-specific-ordering)
         - [Configuration Impact on Ordering](#configuration-impact-on-ordering)
@@ -55,8 +90,11 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
-        - [With Authorization Policy](#with-authorization-policy)
-        - [Anonymous Access (Dev/Testing Only)](#anonymous-access-devtesting-only)
+        - [No Authentication](#no-authentication)
+        - [Basic Authentication](#basic-authentication)
+        - [API Key Authentication](#api-key-authentication)
+        - [Host Authentication](#host-authentication)
+        - [Custom Authentication](#custom-authentication)
         - [All Options](#all-options)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
@@ -78,9 +116,10 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [Built-in Tag Reference](#built-in-tag-reference)
     - [Dependencies](#dependencies-4)
     - [Side Effects](#side-effects-4)
-- [Headless.Messaging.AwsSqs](#headlessmessagingawssqs)
+- [Headless.Messaging.Aws](#headlessmessagingaws)
     - [Problem Solved](#problem-solved-5)
     - [Key Features](#key-features-5)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-5)
     - [Quick Start](#quick-start-5)
     - [Configuration](#configuration-5)
@@ -112,12 +151,13 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [Ordering Guarantees](#ordering-guarantees-1)
     - [Dependencies](#dependencies-7)
     - [Side Effects](#side-effects-7)
-- [Headless.Messaging.NATS](#headlessmessagingnats)
+- [Headless.Messaging.Nats](#headlessmessagingnats)
     - [Problem Solved](#problem-solved-8)
     - [Key Features](#key-features-8)
     - [Installation](#installation-8)
     - [Quick Start](#quick-start-8)
     - [Configuration](#configuration-8)
+        - [Stream Auto-Creation](#stream-auto-creation)
     - [Dependencies](#dependencies-8)
     - [Side Effects](#side-effects-8)
 - [Headless.Messaging.Pulsar](#headlessmessagingpulsar)
@@ -141,31 +181,25 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
         - [Recommendations](#recommendations-1)
     - [Dependencies](#dependencies-10)
     - [Side Effects](#side-effects-10)
-- [Headless.Messaging.RedisStreams](#headlessmessagingredisstreams)
+- [Headless.Messaging.Redis](#headlessmessagingredis)
     - [Problem Solved](#problem-solved-11)
     - [Key Features](#key-features-11)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-11)
     - [Quick Start](#quick-start-11)
     - [Configuration](#configuration-11)
     - [Dependencies](#dependencies-11)
     - [Side Effects](#side-effects-11)
-- [Headless.Messaging.InMemoryQueue](#headlessmessaginginmemoryqueue)
+- [Headless.Messaging.InMemory](#headlessmessaginginmemory)
     - [Problem Solved](#problem-solved-12)
     - [Key Features](#key-features-12)
     - [Installation](#installation-12)
     - [Quick Start](#quick-start-12)
-    - [Configuration](#configuration-12)
-    - [Dependencies](#dependencies-12)
-    - [Side Effects](#side-effects-12)
-- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
-    - [Problem Solved](#problem-solved-13)
-    - [Key Features](#key-features-13)
-    - [Installation](#installation-13)
-    - [Quick Start](#quick-start-13)
     - [Configuration](#configuration-13)
     - [Dependencies](#dependencies-13)
     - [Side Effects](#side-effects-13)
-- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
+    - [None. Messages are stored in memory only and lost on restart.](#none-messages-are-stored-in-memory-only-and-lost-on-restart)
+- [Headless.Messaging.PostgreSql](#headlessmessagingpostgresql)
     - [Problem Solved](#problem-solved-14)
     - [Key Features](#key-features-14)
     - [Installation](#installation-14)
@@ -173,7 +207,7 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-14)
     - [Dependencies](#dependencies-14)
     - [Side Effects](#side-effects-14)
-- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
+- [Headless.Messaging.SqlServer](#headlessmessagingsqlserver)
     - [Problem Solved](#problem-solved-15)
     - [Key Features](#key-features-15)
     - [Installation](#installation-15)
@@ -181,36 +215,45 @@ packages: Messaging.Abstractions, Messaging.Core, Messaging.Dashboard, Messaging
     - [Configuration](#configuration-15)
     - [Dependencies](#dependencies-15)
     - [Side Effects](#side-effects-15)
-- [Headless.Messaging.Testing](#headlessmessagingtesting)
+- [Headless.Messaging.InMemoryStorage](#headlessmessaginginmemorystorage)
     - [Problem Solved](#problem-solved-16)
     - [Key Features](#key-features-16)
     - [Installation](#installation-16)
-    - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
-    - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory--ihost)
-    - [Observable Collections](#observable-collections)
-    - [WaitFor\* Methods](#waitfor-methods)
-    - [TestConsumer\<T\>](#testconsumert)
+    - [Quick Start](#quick-start-16)
     - [Configuration](#configuration-16)
     - [Dependencies](#dependencies-16)
     - [Side Effects](#side-effects-16)
-- [Appendix: Deferred to Phase 2](#appendix-deferred-to-phase-2)
+    - [None. All messages are stored in memory and lost on restart. Not suitable for production.](#none-all-messages-are-stored-in-memory-and-lost-on-restart-not-suitable-for-production)
+- [Headless.Messaging.Testing](#headlessmessagingtesting)
+    - [Problem Solved](#problem-solved-17)
+    - [Key Features](#key-features-17)
+    - [Installation](#installation-17)
+    - [Quick Start -- Standalone Harness](#quick-start----standalone-harness)
+    - [Quick Start -- Host Integration (WebApplicationFactory / IHost)](#quick-start----host-integration-webapplicationfactory-ihost)
+    - [Observable Collections](#observable-collections)
+    - [WaitFor\* Methods](#waitfor-methods)
+    - [TestConsumer\<T\>](#testconsumert)
+    - [Configuration](#configuration-17)
+    - [Dependencies](#dependencies-17)
+    - [Side Effects](#side-effects-17)
+- [Appendix: Future Work](#appendix-future-work)
 
 > Type-safe distributed messaging with transactional outbox, pluggable transports, and pluggable storage providers.
 
 ## Quick Orientation
 
-Always install four packages together: **Abstractions + Core + one transport + one storage**.
+For applications, install **Core + one transport + one storage**. `Messaging.Core` brings the shared, bus, and queue abstractions transitively; install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only for library packages that expose messaging contracts without hosting the runtime.
 
 **Transports** (pick one):
 
 - `Headless.Messaging.RabbitMq` -- AMQP, exchanges/queues, flexible routing
 - `Headless.Messaging.Kafka` -- high-throughput event streaming, partition-based ordering
 - `Headless.Messaging.AzureServiceBus` -- enterprise Azure messaging, session-based ordering
-- `Headless.Messaging.AwsSqs` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
+- `Headless.Messaging.Aws` -- AWS SQS/SNS, auto-provisioning, dead-letter queues
 - `Headless.Messaging.Nats` -- lightweight cloud-native, JetStream persistence
 - `Headless.Messaging.Pulsar` -- multi-tenant, geo-replicated streaming
-- `Headless.Messaging.RedisStreams` -- sub-millisecond latency, consumer groups
-- `Headless.Messaging.InMemoryQueue` -- dev/testing only, zero infrastructure
+- `Headless.Messaging.Redis` -- Redis Streams queues and Redis Pub/Sub broadcast modes
+- `Headless.Messaging.InMemory` -- dev/testing only, zero infrastructure
 
 **Storage** (pick one):
 
@@ -228,7 +271,6 @@ Always install four packages together: **Abstractions + Core + one transport + o
 **Minimal production setup:**
 
 ```
-dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
 dotnet add package Headless.Messaging.RabbitMq
 dotnet add package Headless.Messaging.PostgreSql
@@ -237,9 +279,8 @@ dotnet add package Headless.Messaging.PostgreSql
 **Minimal dev/testing setup:**
 
 ```
-dotnet add package Headless.Messaging.Abstractions
 dotnet add package Headless.Messaging.Core
-dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemory
 dotnet add package Headless.Messaging.InMemoryStorage
 ```
 
@@ -247,15 +288,18 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 ## Agent Instructions
 
-- **Install pattern**: Always install `Messaging.Abstractions` + `Messaging.Core` + exactly one transport + exactly one storage. Missing any of these causes runtime failures.
-- **Use `InMemoryQueue` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
+- **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Core brings shared/bus/queue abstractions transitively for applications.
+- **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
+- **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
 - **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
-- **Two publisher modes**: Use `IOutboxPublisher` for reliable at-least-once delivery (transactional outbox). Use `IDirectPublisher` for fire-and-forget low-latency scenarios (metrics, cache invalidation).
-- **One publish shape**: `IDirectPublisher` and `IOutboxPublisher` both use `PublishAsync(message, options, cancellationToken)`. Prefer mappings or conventions for topics, and use `PublishOptions` only for explicit overrides.
+- **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
+- **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
+- **Publisher services are capability-gated**: Core registers `IBus` / `IOutboxBus` only when a provider registers `IBusTransport`, and registers `IQueue` / `IOutboxQueue` only when a provider registers `IQueueTransport`. A manually registered publisher without its matching transport fails during messaging bootstrap.
+- **Outbox intent is durable**: Storage rows carry `IntentType`; retry drainers dispatch bus rows through `IBusTransport` and queue rows through `IQueueTransport`. A persisted row whose intent has no registered transport is terminally failed and the drainer continues.
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
@@ -265,7 +309,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
-- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic via `IOutboxPublisher` with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
+- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic through the durable bus path with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
@@ -276,25 +320,24 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 These matrices summarize the current Phase 1 surface for each transport and storage package. Every cell is derived from the package's `Setup.cs`, transport, or consumer-client source — when this doc and a sibling README disagree, the package source is authoritative and the sibling README is the one with drift. The carry-forward rule for future PRs: any change to a transport or storage's public surface (interfaces wired, broker-API calls, capability seams) MUST update the corresponding row in the same change.
 
-The matrices intentionally do not include columns for Phase 2 concepts (`DeliveryKind`, send vs broadcast intent). See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for what is scheduled later.
-
 ### Transport Providers
 
-| Provider          | Direct publish | Consume | Native scheduled              | Ordering shape                    | Tenant header round-trip | Broker reject                       | Auto-provisioning                          |
-|-------------------|----------------|---------|-------------------------------|-----------------------------------|--------------------------|-------------------------------------|--------------------------------------------|
-| `RabbitMq`        | yes            | yes     | no (broker plugin not wired)  | FIFO per queue                    | yes                      | `BasicReject` (nack)                | exchange + queue declare on subscribe      |
-| `Nats`            | yes            | yes     | no                            | per-subject (sequential consumer) | yes                      | broker nack                         | stream + subject create (when opt-in)      |
-| `AzureServiceBus` | yes            | yes     | **yes** (`ScheduledEnqueueTime`) | FIFO per session               | yes                      | broker `Abandon`                    | topic + subscription create                |
-| `AwsSqs`          | yes            | yes     | no                            | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)   | SNS topic create + SQS policy generation   |
-| `Kafka`           | yes            | yes     | no                            | per-partition with partition key  | yes                      | seek to offset (re-read partition)  | auto-create concrete topics                |
-| `Pulsar`          | yes            | yes     | no (`DeliverAfter` not wired) | per-key when partition key set    | yes                      | `NegativeAcknowledge`               | passthrough (broker auto-creates)          |
-| `RedisStreams`    | yes            | yes     | no                            | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)    | passthrough (`XADD` creates on publish)    |
-| `InMemoryQueue`   | yes            | yes     | n/a (framework-owned queue)   | FIFO per queue with single thread | yes                      | **no-op** (test transport)          | n/a                                        |
+| Provider          | Bus transport | Queue transport | Native scheduled                | Ordering shape                    | Tenant header round-trip | Broker reject                      | Auto-provisioning                        |
+|-------------------|---------------|-----------------|---------------------------------|-----------------------------------|--------------------------|------------------------------------|------------------------------------------|
+| `RabbitMq`        | yes           | yes             | no (broker plugin not wired)    | FIFO per queue                    | yes                      | `BasicReject` (nack)               | exchange + queue declare on subscribe    |
+| `Nats`            | yes           | yes             | no                              | per-subject (sequential consumer) | yes                      | broker nack                        | stream + subject create (when opt-in)    |
+| `AzureServiceBus` | yes           | yes             | **yes** (`ScheduledEnqueueTime`) | FIFO per session                  | yes                      | broker `Abandon`                   | topic + subscription create              |
+| `Aws`             | yes           | yes             | no                              | FIFO only with SQS FIFO queues    | yes                      | visibility extend (3s re-deliver)  | SNS topic, SQS queue, and policy create  |
+| `Kafka`           | no            | yes             | no                              | per-partition with partition key  | yes                      | seek to offset (re-read partition) | auto-create concrete topics              |
+| `Pulsar`          | yes           | yes             | no (`DeliverAfter` not wired)   | per-key when partition key set    | yes                      | `NegativeAcknowledge`              | passthrough (broker auto-creates)        |
+| `Redis (Streams)` | no            | yes             | no                              | FIFO per stream                   | yes                      | **no-op** (message stays in PEL)   | passthrough (`XADD` creates on publish)  |
+| `Redis (Pub/Sub)` | yes           | no              | no                              | connected subscribers only        | yes                      | **no-op** (volatile delivery)      | passthrough (Redis channel subscription) |
+| `InMemory`        | yes           | yes             | n/a (framework-owned queue)     | FIFO per queue with single thread | yes                      | **no-op** (test transport)         | n/a                                      |
 
 How to read each column:
 
-- **Direct publish / Consume** — the transport implements `ITransport.SendAsync` and `IConsumerClient.ListeningAsync`. Uniformly yes across the Phase 1 surface; the columns anchor each row.
-- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through the framework's outbox-backed `IScheduledPublisher` regardless of transport.
+- **Bus transport / Queue transport** — whether the package registers `IBusTransport` and/or `IQueueTransport`.
+- **Native scheduled** — does the transport's `SendAsync` consume the `Headers.DelayTime` envelope value and call a broker-side delay API? "no" means scheduling flows through `IOutboxBus` / `IOutboxQueue` with `PublishOptions.Delay` / `EnqueueOptions.Delay`.
 - **Ordering shape** — the strongest guarantee the broker offers within the named scope. The framework's outbox preserves publish order within a transaction; everything beyond that is broker semantics.
 - **Tenant header round-trip** — whether `headless-tenant-id` (the wire form of `PublishOptions.TenantId`) is preserved through publish + consume. The four-case integrity check is enforced by Core, not the transport.
 - **Broker reject** — what `IConsumerClient.RejectAsync` actually does. "no-op" means the transport cannot signal rejection back to the broker; persisted-retry pickup is the only path to re-delivery.
@@ -319,22 +362,18 @@ Internal-wiring asymmetries (for example, `Headless.Messaging.SqlServer` additio
 
 # Headless.Messaging.Abstractions
 
-Core abstractions for type-safe, high-performance message consumption and publishing with outbox pattern support.
+Shared contracts for type-safe message payloads, consumer handlers, envelopes, headers, and publish options.
 
 ## Problem Solved
 
-Provides standardized interfaces for building reliable distributed messaging systems with compile-time type safety, avoiding reflection overhead and enabling transactional outbox patterns for guaranteed message delivery.
+Provides standardized contracts for libraries that need to define message shapes or consumers without taking a runtime dependency on `Headless.Messaging.Core`.
 
 ## Key Features
 
-- **Type-Safe Consumption**: `IConsume<TMessage>` interface with `ConsumeContext<TMessage>` for compile-time verification (5-8x faster than reflection)
-- **Outbox Publishing**: `IOutboxPublisher` for transactional message publishing with database consistency
-- **Direct Publishing**: `IDirectPublisher` for fire-and-forget, low-latency message delivery
-- **Scheduled Publishing**: `IScheduledPublisher` for delayed message delivery (bound to the same instance as `IOutboxPublisher`)
-- **Rich Metadata**: Message ID, correlation ID, timestamps, headers, and topic routing
-- **Runtime Subscriptions**: `IRuntimeSubscriber` for ephemeral broker-attached delegates with scoped DI
-- **Consumer Configuration**: `IMessagingBuilder` for deterministic assembly scanning, conventions, and manual consumer registration
-- **Multi-Type Consumers**: Single consumer can handle multiple message types
+- **Type-Safe Consumption**: `IConsume<TMessage>` with `ConsumeContext<TMessage>` for compile-time verification.
+- **Shared Envelope Contracts**: message IDs, correlation IDs, timestamps, headers, tenant IDs, and topic names.
+- **Publish Options**: `PublishOptions`, `EnqueueOptions`, callback routing, delay, and tenant fields.
+- **Intent Metadata**: `IntentType` distinguishes bus broadcast from queue point-to-point work in storage, dashboard, and telemetry.
 - **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods (DIM) for backpressure — idempotent, backward compatible
 
 ## Installation
@@ -346,7 +385,9 @@ dotnet add package Headless.Messaging.Abstractions
 ## Quick Start
 
 ```csharp
-// Define message consumer
+// Contract library: define a message and consumer without bootstrapping Core.
+public sealed record OrderPlacedEvent(long OrderId, decimal Total);
+
 public sealed class OrderPlacedHandler(
     IOrderRepository orders,
     ILogger<OrderPlacedHandler> logger) : IConsume<OrderPlacedEvent>
@@ -363,55 +404,24 @@ public sealed class OrderPlacedHandler(
         await orders.CreateAsync(context.Message, cancellationToken);
     }
 }
-
-// Register consumers
-builder.Services.AddHeadlessMessaging(options =>
-{
-    options.SubscribeFromAssemblyContaining<Program>();
-    options.WithTopicMapping<OrderPlacedEvent>("orders.placed");
-});
-
-// Publish with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher)
-{
-    public async Task PlaceOrderAsync(Order order, CancellationToken ct)
-    {
-        // Publish transactionally with database changes
-        await publisher.PublishAsync(
-            new OrderPlacedEvent
-            {
-                OrderId = order.Id,
-                Total = order.Total
-            },
-            new PublishOptions { Topic = "orders.placed" },
-            ct);
-    }
-}
-
-// Publish directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
-{
-    public async Task TrackAsync(MetricEvent metric, CancellationToken ct)
-    {
-        // Topic resolved from WithTopicMapping<MetricEvent>()
-        await publisher.PublishAsync(metric, ct);
-    }
-}
 ```
+
+Applications install `Headless.Messaging.Core` plus one transport and one storage package to register consumers and publish messages. Libraries that expose publisher-facing contracts should reference `Headless.Messaging.Bus.Abstractions` for `IBus` / `IOutboxBus`, or `Headless.Messaging.Queue.Abstractions` for `IQueue` / `IOutboxQueue`.
 
 ## Envelope
 
-The current Phase 1 publish surface exposes three publisher interfaces in `Headless.Messaging.Abstractions`:
+The current publish surface separates delivery intent from durability:
 
-- `IDirectPublisher` — fire-and-forget, transport-direct delivery. No outbox involvement.
-- `IOutboxPublisher` — durable, transactional delivery. The publish writes to storage; a background drainer hands the row to the transport once the ambient transaction commits.
-- `IScheduledPublisher` — delayed delivery via `PublishDelayAsync<T>(TimeSpan, ...)`. Bound to the same singleton as `IOutboxPublisher`, so scheduled publishing inherits the outbox's durability and tenant integrity. Broker-native scheduling is a separate concept — see [Provider Capabilities](#provider-capabilities) for which transports natively delay delivery.
+- `IBus` — direct broadcast publish/subscribe delivery through `IBusTransport`.
+- `IOutboxBus` — durable broadcast delivery; the publish writes to storage and a background drainer dispatches via `IBusTransport`.
+- `IQueue` — direct point-to-point delivery through `IQueueTransport`.
+- `IOutboxQueue` — durable point-to-point delivery; the enqueue writes to storage and a background drainer dispatches via `IQueueTransport`.
 
-> **Deferred to Phase 2 (#232).** The send-versus-broadcast intent split (`ISendPublisher`, `IBroadcastPublisher`) and the `DeliveryKind` envelope metadata are scheduled for the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2) for the full deferred list.
+Outbox rows carry `IntentType.Bus` or `IntentType.Queue`, so retry drainers, dashboard projections, consume contexts, and telemetry preserve the caller's selected intent. Publisher registrations are transport-gated: bus publishers require `IBusTransport`, and queue publishers require `IQueueTransport`.
 
 ### Reserved Wire Headers
 
-Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through `PublishOptions.Headers` is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use the typed `PublishOptions` properties or the `TimeSpan delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through options headers is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use typed options properties such as `PublishOptions.Delay` or `EnqueueOptions.Delay`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
 
 | Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
 |---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
@@ -422,7 +432,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 | `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
 | `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
 | `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
-| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from the `delayTime` argument to `IScheduledPublisher.PublishDelayAsync`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
+| `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from `PublishOptions.Delay` or `EnqueueOptions.Delay`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
 | `TenantId`          | `headless-tenant-id`           | rule     | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — enforced by its own four-case rule, NOT the reserved-set rejection. See Strict Publish Tenancy below. |
 | `Group`             | `headless-msg-group`           | no       | framework    | Active consumer group; injected on consume, never on publish.                                            |
 | `ExecutionInstanceId` | `headless-exec-instance-id`  | no       | framework    | Identifier of the application instance that produced / consumed the message.                             |
@@ -481,7 +491,107 @@ No configuration required. This is an abstractions package. Implementations are 
 
 ## Side Effects
 
-## None. This is an abstractions package.
+None. This package registers no services.
+
+---
+
+# Headless.Messaging.Bus.Abstractions
+
+Broadcast publisher contracts for Headless Messaging.
+
+## Problem Solved
+
+Gives application code a compile-time bus surface for publish/subscribe delivery where every matching subscriber group receives its own copy of a message.
+
+## Key Features
+
+- `IBus` publishes directly to the configured bus transport.
+- `IOutboxBus` persists messages first, then drains them through the configured bus transport.
+- `PublishOptions.Delay` schedules delayed outbox bus delivery.
+- Every bus publish carries `IntentType.Bus` through storage, tracing, dashboard projections, and consume context.
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Bus.Abstractions
+```
+
+## Quick Start
+
+```csharp
+public sealed class OrderEvents(IOutboxBus bus)
+{
+    public Task PublishAsync(OrderPlaced message, CancellationToken cancellationToken)
+    {
+        return bus.PublishAsync(
+            message,
+            new PublishOptions { Topic = "orders.placed" },
+            cancellationToken);
+    }
+}
+```
+
+## Configuration
+
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IBusTransport`; without that provider, `IBus` and `IOutboxBus` are not registered.
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+
+## Side Effects
+
+None. This package registers no services.
+
+---
+
+# Headless.Messaging.Queue.Abstractions
+
+Point-to-point publisher contracts for Headless Messaging.
+
+## Problem Solved
+
+Gives application code a compile-time queue surface for work-queue delivery where exactly one competing worker handles each message.
+
+## Key Features
+
+- `IQueue` enqueues directly to the configured queue transport.
+- `IOutboxQueue` persists messages first, then drains them through the configured queue transport.
+- `EnqueueOptions.Delay` schedules delayed outbox queue delivery.
+- Every queue enqueue carries `IntentType.Queue` through storage, tracing, dashboard projections, and consume context.
+
+## Installation
+
+```bash
+dotnet add package Headless.Messaging.Queue.Abstractions
+```
+
+## Quick Start
+
+```csharp
+public sealed class ImportJobs(IOutboxQueue queue)
+{
+    public Task EnqueueAsync(ImportRequested message, CancellationToken cancellationToken)
+    {
+        return queue.EnqueueAsync(
+            message,
+            new EnqueueOptions { Topic = "imports.requested" },
+            cancellationToken);
+    }
+}
+```
+
+## Configuration
+
+None. Runtime wiring is provided by `Headless.Messaging.Core` plus a provider that registers `IQueueTransport`; without that provider, `IQueue` and `IOutboxQueue` are not registered.
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+
+## Side Effects
+
+None. This package registers no services.
 
 # Headless.Messaging.Core
 
@@ -495,7 +605,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 
 - **Outbox Publisher**: Transactional message publishing with database consistency
 - **Consumer Management**: Automatic registration, invocation, and per-dispatch lifecycle handling
-- **Message Processing**: Retry processor, delayed message scheduler, transport health checks
+- **Message Processing**: Retry processor, delayed message scheduler, transport health checks, and intent-aware drainer dispatch
 - **Type-Safe Dispatch**: Reflection-free consumer invocation via compile-time generated code
 - **Extension System**: Pluggable storage and transport providers
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
@@ -532,8 +642,8 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.SubscribeFromAssemblyContaining<Program>();
 });
 
-// Publish messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction transaction)
+// Publish broadcast messages with outbox (reliable delivery)
+public sealed class OrderService(IOutboxBus publisher, IOutboxTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
@@ -546,64 +656,59 @@ public sealed class OrderService(IOutboxPublisher publisher, IOutboxTransaction 
     }
 }
 
-// Publish messages directly (fire-and-forget)
-public sealed class MetricsService(IDirectPublisher publisher)
+// Enqueue point-to-point work directly (fire-and-forget)
+public sealed class ImportService(IQueue queue)
 {
-    public async Task TrackEventAsync(MetricEvent metric, CancellationToken ct)
+    public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        // Bypasses outbox - sent directly to transport
-        await publisher.PublishAsync(metric, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
     }
 }
 ```
 
 ## Publisher Options
 
-> **Deferred to Phase 2 (#232).** The Phase 1 surface listed below — `IOutboxPublisher`, `IDirectPublisher`, and `IScheduledPublisher` (covered in the [Envelope](#envelope) section) — does not split publish intent into send-one and broadcast-many variants. `ISendPublisher` / `IBroadcastPublisher` and the `DeliveryKind` envelope metadata land in the Phase 2 publisher rename. See the [Deferred to Phase 2 appendix](#appendix-deferred-to-phase-2).
+### Bus Publishers
 
-### IOutboxPublisher (Reliable Delivery)
+Use `IBus` for transport-direct broadcast and `IOutboxBus` for durable broadcast:
 
-Use `IOutboxPublisher` for messages that must not be lost:
-
-- **Transactional**: Messages are stored in database before sending
-- **At-least-once**: Automatic retries with configurable backoff
-- **Delayed delivery**: Schedule messages for future delivery
-- **Ordering**: Preserves publish order within transactions
-
-### IDirectPublisher (Fire-and-Forget)
-
-Use `IDirectPublisher` for high-throughput, low-latency scenarios where occasional message loss is acceptable:
+- `IBus.PublishAsync(...)` sends immediately through `IBusTransport`.
+- `IOutboxBus.PublishAsync(...)` writes to storage first and drains later through `IBusTransport`.
+- `PublishOptions.Delay` schedules durable bus delivery when used with `IOutboxBus`.
+- Bus messages carry `IntentType.Bus` and emit `headless.messaging.intent = "bus"`.
 
 ```csharp
-// Configure topic mapping
-options.WithTopicMapping<MetricEvent>("metrics.events");
-
-// Inject and publish
-public sealed class MetricsPublisher(IDirectPublisher publisher)
+public sealed class OrderEvents(IOutboxBus bus)
 {
-    public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
+    public Task PublishAsync(OrderPlaced message, CancellationToken ct)
     {
-        // Sent immediately to transport, no persistence
-        await publisher.PublishAsync(metric, ct);
-
-        // With custom headers (using Headers constants)
-        var headers = new Dictionary<string, string?>
-        {
-            [Headers.CorrelationId] = Guid.NewGuid().ToString(),
-        };
-        await publisher.PublishAsync(metric, headers, ct);
+        return bus.PublishAsync(message, new PublishOptions { Topic = "orders.placed" }, ct);
     }
 }
 ```
 
-**Characteristics:**
+### Queue Publishers
 
-- **No persistence**: Messages bypass outbox storage
-- **Lower latency**: Direct transport send without database round-trip
-- **No retries**: Transport failures throw immediately
-- **Topic from type**: Topic resolved from `WithTopicMapping<T>()` or conventions
+Use `IQueue` for transport-direct point-to-point delivery and `IOutboxQueue` for durable point-to-point delivery:
 
-**Use cases:** Metrics, telemetry, cache invalidation, real-time notifications
+- `IQueue.EnqueueAsync(...)` sends immediately through `IQueueTransport`.
+- `IOutboxQueue.EnqueueAsync(...)` writes to storage first and drains later through `IQueueTransport`.
+- `EnqueueOptions.Delay` schedules durable queue delivery when used with `IOutboxQueue`.
+- Queue messages carry `IntentType.Queue` and emit `headless.messaging.intent = "queue"`.
+
+```csharp
+public sealed class ImportJobs(IOutboxQueue queue)
+{
+    public Task EnqueueAsync(ImportRequested message, CancellationToken ct)
+    {
+        return queue.EnqueueAsync(message, new EnqueueOptions { Topic = "imports.requested" }, ct);
+    }
+}
+```
+
+### Legacy Migration
+
+Legacy publisher contracts remain as compatibility shims. Move old direct publish calls to `IBus` or `IQueue`, old durable publish calls to `IOutboxBus` or `IOutboxQueue`, and old delayed publish calls to `PublishOptions.Delay` / `EnqueueOptions.Delay` on the matching outbox interface.
 
 ### Callback Headers (Async Response Routing)
 
@@ -633,7 +738,7 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 **Constraints:**
 
 - `CallbackName` is a reserved header — cannot be set via `PublishOptions.Headers`
-- Response delivery uses `IOutboxPublisher`, so a storage provider must be configured
+- Response delivery uses the durable bus path, so a storage provider must be configured
 - The caller does NOT await the response — this is async message chaining, not RPC
 
 ## Configuration
@@ -960,7 +1065,7 @@ Message ordering guarantees depend on the transport provider and configuration:
 - **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
 - **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
 - **Pulsar**: Ordered within partitions when using partition key
-- **InMemoryQueue**: FIFO ordering with single consumer thread
+- **InMemory**: FIFO ordering with single consumer thread
 
 ### Configuration Impact on Ordering
 
@@ -1042,18 +1147,18 @@ IReadOnlySet<string> groups = monitor.KnownGroups;
 
 // Check state
 var states = monitor.GetAllStates(); // all groups with current state
-var isOpen = monitor.IsOpen("payments");
-var state = monitor.GetState("payments"); // Closed, Open, HalfOpen, or null if unregistered
+var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
+var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, HalfOpen, or null if unregistered
 
 // Rich snapshot with escalation and timing details
-CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot("payments");
+CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(IntentType.Bus, "payments");
 // snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
 // snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
 // snapshot.EffectiveOpenDuration
 
 // Manual recovery (operator/agent action)
-var wasReset = await monitor.ResetAsync("payments"); // true if reset performed
-var wasOpened = await monitor.ForceOpenAsync("payments"); // true if force-opened
+var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
+var wasOpened = await monitor.ForceOpenAsync(IntentType.Bus, "payments"); // true if force-opened
 ```
 
 Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
@@ -1323,6 +1428,7 @@ builder.Services.AddOpenTelemetry()
         {
             o.EnableMetrics = true;
             o.SuppressTenantIdTag = false;   // set true in shared-backend scenarios
+            o.SuppressIntentTags = false;    // set true to omit intent and destination-kind tags
             o.SuppressRetryCountTag = false; // set true to omit headless.messaging.retry_count
             o.AddEnricher(new MyCustomEnricher());
         })
@@ -1348,12 +1454,13 @@ public sealed class MyCustomEnricher : IActivityTagEnricher
 }
 ```
 
-`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
+`MessagingEnrichmentContext` (passed by `in` reference; never store it) exposes `Kind` (which span type — Persist / Publish / Consume / SubscriberInvoke), `MessageId`, `MessageName`, `IntentType`, `TenantId`, `CorrelationId`, `RetryCount`, and `Headers` (read-only raw wire headers).
 
 **Ordering.** Built-in enrichers run first in this fixed order, each gated by its suppression option:
 
 1. `TenantIdTagEnricher` — emits `headless.messaging.tenant_id` (gated by `SuppressTenantIdTag`).
-2. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
+2. `IntentTagEnricher` — emits `headless.messaging.intent` and `messaging.destination.kind` (gated by `SuppressIntentTags`).
+3. `RetryCountTagEnricher` — emits `headless.messaging.retry_count` on subscriber-invoke spans when `RetryCount > 0` (gated by `SuppressRetryCountTag`).
 
 Custom enrichers registered via `AddEnricher(...)` are appended after the built-ins, in insertion order. The enricher list is snapshotted at `AddMessagingInstrumentation` time; calls to `AddEnricher` afterwards are ignored.
 
@@ -1365,7 +1472,7 @@ Custom enrichers registered via `AddEnricher(...)` are appended after the built-
 
 - `messaging.*` — OpenTelemetry messaging semantic conventions.
 - `server.*` — broker / destination addressing.
-- `headless.messaging.*` — framework ground truth (`tenant_id`, `retry_count`, duration metrics).
+- `headless.messaging.*` — framework ground truth (`intent`, `tenant_id`, `retry_count`, duration metrics).
 - `exception.*` — OTel exception convention emitted at activity stop.
 
 Use an application- or product-scoped namespace such as `app.<feature>.<field>` for custom tags.
@@ -1378,6 +1485,8 @@ The `MessagingTags` static class exposes built-in tag names as public constants 
 
 | Constant                              | Wire tag                                       | Emitted on                                | Suppression                |
 |---------------------------------------|------------------------------------------------|-------------------------------------------|----------------------------|
+| `MessagingTags.Intent`                | `headless.messaging.intent`                    | every messaging span (`bus` / `queue`)    | `SuppressIntentTags`       |
+| `MessagingTags.DestinationKind`       | `messaging.destination.kind`                   | every messaging span (`topic` / `queue`)  | `SuppressIntentTags`       |
 | `MessagingTags.TenantId`              | `headless.messaging.tenant_id`                 | every span when the message has a tenant  | `SuppressTenantIdTag`      |
 | `MessagingTags.RetryCount`            | `headless.messaging.retry_count`               | subscriber-invoke spans when `RetryCount > 0` | `SuppressRetryCountTag` |
 | `MessagingTags.PersistenceDurationMs` | `headless.messaging.persistence.duration_ms`   | persist activity success event            | — (always emitted)         |
@@ -1399,38 +1508,48 @@ The `MessagingTags` static class exposes built-in tag names as public constants 
 
 ---
 
-# Headless.Messaging.AwsSqs
+## Headless.Messaging.Aws
 
 Amazon SQS and SNS transport provider for the messaging system.
 
-## Problem Solved
+### Problem Solved
 
-Enables reliable message delivery using AWS SQS queues and SNS topics with automatic queue creation, dead-letter queues, and IAM policy management.
+Enables bus fan-out through SNS topics and queue work delivery through SQS queues with automatic topic, queue, and policy provisioning.
 
-## Key Features
+### Key Features
 
-- **SQS Consumer**: Reliable queue-based message consumption
-- **SNS Publisher**: Topic-based message distribution
+- **SNS Bus**: Broadcasts messages through SNS topics.
+- **SQS Queue**: Sends queue-intent messages directly to SQS queues.
+- **SQS Consumer**: Receives both SNS-enveloped bus messages and direct queue messages.
 - **Auto-Provisioning**: Automatic queue and topic creation
 - **Dead Letter Queues**: Built-in failure handling
 - **IAM Integration**: Automatic policy configuration
+- **FIFO Support**: Preserves `.fifo` suffixes and configures FIFO topics/queues when message names end with `.fifo`.
 
-## Installation
+### Design Notes
+
+The package registers both bus and queue capabilities. Bus publishes use SNS and subscribes SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message.
+
+Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from the `headless-msg-group` header when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
+
+SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
+
+### Installation
 
 ```bash
-dotnet add package Headless.Messaging.AwsSqs
+dotnet add package Headless.Messaging.Aws
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseAmazonSqs(sqs =>
+    options.UseAws(sqs =>
     {
-        sqs.Region = "us-east-1";
+        sqs.Region = RegionEndpoint.USEast1;
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
 
@@ -1438,29 +1557,30 @@ builder.Services.AddHeadlessMessaging(options =>
 });
 ```
 
-## Configuration
+### Configuration
 
 ```csharp
-options.UseAmazonSqs(sqs =>
+options.UseAws(sqs =>
 {
-    sqs.Region = "us-east-1";
+    sqs.Region = RegionEndpoint.USEast1;
     sqs.Credentials = awsCredentials;
-    sqs.SNSServiceUrl = "https://sns.us-east-1.amazonaws.com";
-    sqs.SQSServiceUrl = "https://sqs.us-east-1.amazonaws.com";
+    sqs.SnsServiceUrl = "https://sns.us-east-1.amazonaws.com";
+    sqs.SqsServiceUrl = "https://sqs.us-east-1.amazonaws.com";
 });
 ```
 
-## Dependencies
+### Dependencies
 
 - `Headless.Messaging.Core`
 - `AWSSDK.SimpleNotificationService`
 - `AWSSDK.SQS`
 
-## Side Effects
+### Side Effects
 
-- Creates SQS queues and SNS topics if they don't exist
-- Configures IAM policies for queue access
-- Establishes persistent connections to AWS services
+- Creates SQS queues and SNS topics when they do not exist.
+- Configures IAM policies for bus queue access.
+- Establishes persistent connections to AWS services.
+- Queue-intent consumers subscribe directly to queue URLs and do not create the bus group queue.
 
 ---
 
@@ -1941,70 +2061,91 @@ setup.Options.EnableSubscriberParallelExecute = false; // No parallel execution
 
 ---
 
-# Headless.Messaging.RedisStreams
+## Headless.Messaging.Redis
 
-Redis Streams transport provider for the messaging system.
+Redis transport provider for the messaging system.
 
-## Problem Solved
+### Problem Solved
 
-Enables lightweight, high-performance message streaming using Redis Streams with consumer groups, persistence, and at-least-once delivery guarantees.
+Provides both Redis Streams queue delivery and Redis Pub/Sub broadcast delivery from one package, so applications can choose queue or bus semantics without referencing separate Redis packages.
 
-## Key Features
+### Key Features
 
-- **Redis Streams**: Append-only log structure for message streaming
-- **Consumer Groups**: Load balancing and parallel processing
-- **Persistence**: Durable message storage with configurable retention
-- **Claim Messages**: Automatic reprocessing of unacknowledged messages
-- **Low Latency**: Sub-millisecond message delivery
+- Redis Streams queue transport through `UseRedis(...)`.
+- Redis Pub/Sub bus transport through `UseRedisPubSub(...)`.
+- Consumer groups, acknowledgment, pending-entry claiming, and durable queue delivery for Streams.
+- Volatile broadcast delivery for Pub/Sub to currently connected subscribers.
+- Shared StackExchange.Redis dependency and Redis configuration model.
 
-## Installation
+### Design Notes
+
+Redis Streams and Redis Pub/Sub are different broker semantics behind one package. Use Streams (`UseRedis`) for queue consumers and durable work distribution. Use Pub/Sub (`UseRedisPubSub`) for broadcast events where disconnected subscribers may miss messages.
+
+`IOutboxBus + UseRedisPubSub` persists the framework-side publish until Redis accepts `PUBLISH`; broker-side delivery remains volatile after that handoff. Choose Streams when Redis itself must retain messages for disconnected or competing consumers.
+
+### Installation
 
 ```bash
-dotnet add package Headless.Messaging.RedisStreams
+dotnet add package Headless.Messaging.Redis
 ```
 
-## Quick Start
+### Quick Start
 
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
 
-    options.UseRedisStreams(redis =>
-    {
-        redis.Configuration = "localhost:6379";
-    });
+    // Queue delivery through Redis Streams.
+    options.UseRedis("localhost:6379");
+
+    // Broadcast delivery through Redis Pub/Sub.
+    options.UseRedisPubSub("localhost:6379");
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
-## Configuration
+### Configuration
+
+`UseRedis(string)` configures Redis Streams queue delivery. For richer options use `UseRedis(Action<MessagingRedisOptions>)`; `MessagingRedisOptions.Configuration` is a StackExchange.Redis `ConfigurationOptions` instance:
 
 ```csharp
-options.UseRedisStreams(redis =>
+options.UseRedis(redis =>
 {
-    redis.Configuration = "localhost:6379,ssl=true,password=secret";
+    redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
     redis.StreamEntriesCount = 10;
     redis.ConnectionPoolSize = 10;
 });
 ```
 
-## Dependencies
+`UseRedisPubSub(string)` configures Redis Pub/Sub bus delivery. For richer options use `UseRedisPubSub(Action<RedisPubSubOptions>)`:
 
+```csharp
+options.UseRedisPubSub(redis =>
+{
+    redis.Configuration = ConfigurationOptions.Parse("localhost:6379,ssl=true,password=secret");
+});
+```
+
+### Dependencies
+
+- `Headless.Messaging.Bus.Abstractions`
 - `Headless.Messaging.Core`
+- `Headless.Messaging.Queue.Abstractions`
 - `StackExchange.Redis`
 
-## Side Effects
+### Side Effects
 
-- Creates Redis Streams for each topic
-- Creates consumer groups for message distribution
-- Maintains persistent connections to Redis
-- Periodically claims pending messages for retry
+- Registers `IQueueTransport` for Redis Streams when `UseRedis(...)` is called.
+- Registers `IBusTransport` for Redis Pub/Sub when `UseRedisPubSub(...)` is called.
+- Creates Redis Streams and consumer groups for stream topics as needed.
+- Maintains persistent Redis connections.
+- Periodically claims pending stream messages for retry.
 
 ---
 
-# Headless.Messaging.InMemoryQueue
+# Headless.Messaging.InMemory
 
 In-memory message queue transport for testing and development.
 
@@ -2023,7 +2164,7 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 ## Installation
 
 ```bash
-dotnet add package Headless.Messaging.InMemoryQueue
+dotnet add package Headless.Messaging.InMemory
 ```
 
 ## Quick Start
@@ -2032,7 +2173,7 @@ dotnet add package Headless.Messaging.InMemoryQueue
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
-    options.UseInMemoryQueue();
+    options.UseInMemory();
 
     options.SubscribeFromAssemblyContaining<Program>();
 });
@@ -2040,7 +2181,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
 ## Configuration
 
-No configuration required. Just call `UseInMemoryQueue()`.
+No configuration required. Just call `UseInMemory()`.
 
 ## Dependencies
 
@@ -2061,7 +2202,8 @@ Provides durable, transactional message storage using PostgreSQL with schema ini
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
 - **Monitoring**: Built-in dashboard data queries
@@ -2111,6 +2253,7 @@ options.UsePostgreSql(config =>
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
 - Creates indexes for message queries
+- Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages
 
 ---
@@ -2126,7 +2269,8 @@ Provides durable, transactional message storage using SQL Server with schema ini
 ## Key Features
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
-- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup. Does NOT add columns or indexes to pre-existing tables.
+- **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
 - **Monitoring**: Built-in dashboard data queries
@@ -2176,6 +2320,7 @@ options.UseSqlServer(config =>
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
 - Creates indexes for message queries
+- Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages
 
 ---
@@ -2194,6 +2339,7 @@ Provides ephemeral message storage without database dependencies for local devel
 - **Fast**: In-memory operations
 - **Testing**: Deterministic behavior for tests
 - **Full API**: Complete outbox storage implementation
+- **Intent-Aware Identity**: Mirrors durable providers by storing bus/queue intent and including it in received-message de-duplication
 - **Monitoring**: In-memory dashboard data
 
 ## Installation
@@ -2259,7 +2405,7 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
-        options.UseInMemoryMessageQueue();
+        options.UseInMemory();
         options.UseInMemoryStorage();
         options.Subscribe<OrderCreatedConsumer>("orders.created");
     });
@@ -2297,7 +2443,7 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 // With WebApplication (no factory)
 builder.Services.AddHeadlessMessaging(options =>
 {
-    options.UseInMemoryMessageQueue();
+    options.UseInMemory();
     options.UseInMemoryStorage();
     options.Subscribe<OrderCreatedConsumer>("orders.created");
 });
@@ -2359,12 +2505,12 @@ consumer.Clear(); // thread-safe reset between tests
 
 - `AddMessagingTestHarness()` must be called **after** `AddHeadlessMessaging()` so transport and pipeline registrations exist to be decorated.
 - Both modes disable parallel dispatch (`EnablePublishParallelSend = false`, `EnableSubscriberParallelExecute = false`) for deterministic test execution.
-- The harness validates that `UseInMemoryMessageQueue()` and `UseInMemoryStorage()` were configured -- throws `InvalidOperationException` if missing.
+- The harness validates that `UseInMemory()` and `UseInMemoryStorage()` were configured -- throws `InvalidOperationException` if missing.
 
 ## Dependencies
 
 - `Headless.Messaging.Core`
-- `Headless.Messaging.InMemoryQueue`
+- `Headless.Messaging.InMemory`
 - `Headless.Messaging.InMemoryStorage`
 
 ## Side Effects
@@ -2373,16 +2519,14 @@ None. Recording decorators wrap the existing transport and pipeline at DI regist
 
 ---
 
-# Appendix: Deferred to Phase 2
+# Appendix: Future Work
 
-The following items are intentionally NOT part of the current Phase 1 surface. Inline `> **Deferred to Phase 2 …**` callouts throughout the doc point readers here. None of these names are valid current behavior — code that targets them today will not compile.
+The following items are intentionally NOT part of the current surface. None of these names are valid current behavior — code that targets them today will not compile.
 
 | Item                                          | Tracked in                                                              | Scope                                                                                                              |
 |-----------------------------------------------|-------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
-| Send / broadcast publisher intent split       | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New `ISendPublisher` and `IBroadcastPublisher` interfaces replacing the single `PublishAsync` shape per intent.    |
-| `DeliveryKind` envelope metadata              | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | New envelope field marking send vs broadcast intent on the wire; consumed by publish/consume telemetry.            |
-| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring the Phase 2 outbox decorator model.                                            |
-| Rename / migration guide                      | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Concrete migration steps from `IDirectPublisher` / `IOutboxPublisher` to the Phase 2 send/broadcast surface.       |
+| NATS JetStream queue scope                    | [#233](https://github.com/xshaheen/headless-framework/issues/233)       | Dedicated JetStream follow-up for queue durability and scope decisions beyond the current NATS naming support.      |
+| Outbox-decorator telemetry tags               | [#232](https://github.com/xshaheen/headless-framework/issues/232)       | Per-decorator outbox tags requiring a future outbox decorator model.                                               |
 | Typed-behavior pipeline decision              | [#218](https://github.com/xshaheen/headless-framework/issues/218)       | RFC on whether `IPublishBehavior<T>` / `IConsumeBehavior<T>` exist alongside the current filter pipeline.          |
 
-This appendix is the consolidated index, not a written guide. The carry-forward rule for Phase 2 is that #232 / #218 own the implementation and the migration prose; this doc is updated in the same change that lands the rename.
+This appendix is the consolidated index, not a written guide. The carry-forward rule is that future implementation and migration prose update this doc in the same change.

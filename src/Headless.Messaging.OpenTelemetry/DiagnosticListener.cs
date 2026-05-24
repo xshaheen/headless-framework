@@ -73,6 +73,7 @@ internal sealed class DiagnosticListener(
                                     MessagingEventKind.Persist,
                                     eventData.Message.GetId(),
                                     eventData.Operation,
+                                    eventData.IntentType,
                                     eventData.Message.Headers,
                                     retryCount: 0
                                 ),
@@ -190,6 +191,7 @@ internal sealed class DiagnosticListener(
                                     MessagingEventKind.Publish,
                                     eventData.TransportMessage.GetId(),
                                     eventData.Operation,
+                                    eventData.IntentType,
                                     eventData.TransportMessage.Headers,
                                     retryCount: 0
                                 ),
@@ -313,6 +315,7 @@ internal sealed class DiagnosticListener(
                                     MessagingEventKind.Consume,
                                     eventData.TransportMessage.GetId(),
                                     eventData.Operation,
+                                    eventData.IntentType,
                                     eventData.TransportMessage.Headers,
                                     retryCount: 0
                                 ),
@@ -426,6 +429,7 @@ internal sealed class DiagnosticListener(
                                     MessagingEventKind.SubscriberInvoke,
                                     eventData.Message.GetId(),
                                     eventData.Operation,
+                                    eventData.IntentType,
                                     eventData.Message.Headers,
                                     retryCount: eventData.RetryCount
                                 ),
@@ -487,6 +491,7 @@ internal sealed class DiagnosticListener(
         MessagingEventKind kind,
         string messageId,
         string operation,
+        IntentType intentType,
         IDictionary<string, string?> headers,
         int retryCount
     )
@@ -496,6 +501,7 @@ internal sealed class DiagnosticListener(
             Kind = kind,
             MessageId = messageId,
             MessageName = operation,
+            IntentType = intentType,
             TenantId = headers.TryGetValue(Headers.TenantId, out var tid) ? tid : null,
             CorrelationId = headers.TryGetValue(Headers.CorrelationId, out var cid) ? cid : null,
             RetryCount = retryCount,

@@ -12,7 +12,7 @@ namespace Headless.DistributedLocks;
 
 public sealed class DistributedReaderWriterLockProvider(
     IDistributedReaderWriterLockStorage storage,
-    IOutboxPublisher? outboxPublisher,
+    IOutboxBus? outboxBus,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
@@ -24,8 +24,8 @@ public sealed class DistributedReaderWriterLockProvider(
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
 
     private readonly ScopedDistributedReaderWriterLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxPublisher? _outboxPublisher = DistributedLockCoreHelpers.ConfigureOutboxPublisher(
-        outboxPublisher,
+    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(
+        outboxBus,
         logger
     );
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
@@ -242,13 +242,13 @@ public sealed class DistributedReaderWriterLockProvider(
             }
         }
 
-        if (_outboxPublisher is not null)
+        if (_outboxBus is not null)
         {
             var released = new DistributedLockReleased(resource, lockId);
 
             try
             {
-                await _outboxPublisher.PublishAsync(released, cancellationToken: cancellationToken).ConfigureAwait(false);
+                await _outboxBus.PublishAsync(released, cancellationToken: cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception)
             {

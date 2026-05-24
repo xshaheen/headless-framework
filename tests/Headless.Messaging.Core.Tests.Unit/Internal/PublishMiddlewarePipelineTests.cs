@@ -23,6 +23,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -49,6 +50,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -75,6 +77,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -103,6 +106,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
+                IntentType.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -127,6 +131,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
+                IntentType.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -151,6 +156,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
+                IntentType.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, _) => Task.CompletedTask,
@@ -175,6 +181,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         var act = async () =>
             await pipeline.ExecuteAsync(
                 new MiddlewarePayload("hi"),
+                IntentType.Bus,
                 options: null,
                 delayTime: null,
                 innerPublish: (_, _, ct) =>
@@ -204,6 +211,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) => Task.CompletedTask,
@@ -230,6 +238,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new MiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) => Task.CompletedTask,
@@ -260,6 +269,7 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
         // when
         await pipeline.ExecuteAsync(
             new OtherMiddlewarePayload("hi"),
+            IntentType.Bus,
             options: null,
             delayTime: null,
             innerPublish: (_, _, _) =>
@@ -385,7 +395,7 @@ internal sealed class SwallowingOuterCancellationPublishMiddleware(CancellationT
     public async ValueTask InvokeAsync(PublishContext context, Func<ValueTask> next)
     {
         await source.CancelAsync();
-        context.WithCancellationToken(source.Token);
+        context.SetCancellationToken(source.Token);
 
         try
         {

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Kafka;
 using Headless.Messaging.Transport;
@@ -43,7 +44,7 @@ public static class SetupKafkaMessaging
 
             services.Configure<MessagingKafkaOptions, MessagingKafkaOptionsValidator>(configure);
 
-            services.AddSingleton<ITransport, KafkaTransport>();
+            services.AddSingleton<IQueueTransport, KafkaTransport>();
             services.AddSingleton<IConsumerClientFactory, KafkaConsumerClientFactory>();
             services.AddSingleton<IKafkaConnectionPool, KafkaConnectionPool>();
         }

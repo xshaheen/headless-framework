@@ -28,13 +28,13 @@ public interface ICircuitBreakerMonitor
     /// <example>
     /// <code>
     /// // Check if a registered group is paused/probing
-    /// if (monitor.IsOpen("payments"))
+    /// if (monitor.IsOpen(IntentType.Bus, "payments"))
     /// {
     ///     // Handle paused consumer group
     /// }
     ///
     /// // To distinguish between "not open" and "not registered", use GetState:
-    /// var state = monitor.GetState("payments");
+    /// var state = monitor.GetState(IntentType.Bus, "payments");
     /// if (state == null)
     /// {
     ///     // Group is not registered
@@ -49,12 +49,18 @@ public interface ICircuitBreakerMonitor
     bool IsOpen(string groupName);
 
     /// <summary>
+    /// Returns <c>true</c> if the circuit for the specified delivery intent and consumer group
+    /// is currently Open or HalfOpen.
+    /// </summary>
+    bool IsOpen(IntentType intentType, string groupName);
+
+    /// <summary>
     /// Returns the current <see cref="CircuitBreakerState"/> for the specified consumer group,
     /// or <see langword="null"/> if the group is not registered.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <strong>Registration check:</strong> Unlike <see cref="IsOpen"/>, this method distinguishes
+    /// <strong>Registration check:</strong> Unlike <see cref="IsOpen(string)"/>, this method distinguishes
     /// between "not registered" (<see langword="null"/>) and "registered but closed/open"
     /// (returns <see cref="CircuitBreakerState"/>). Use this when you need to verify whether
     /// a group is actually registered before making decisions.
@@ -62,7 +68,7 @@ public interface ICircuitBreakerMonitor
     /// <example>
     /// <code>
     /// // Get precise state information
-    /// var state = monitor.GetState("payments");
+    /// var state = monitor.GetState(IntentType.Bus, "payments");
     ///
     /// if (state == null)
     /// {
@@ -87,6 +93,12 @@ public interface ICircuitBreakerMonitor
     CircuitBreakerState? GetState(string groupName);
 
     /// <summary>
+    /// Returns the current <see cref="CircuitBreakerState"/> for the specified delivery intent and consumer group,
+    /// or <see langword="null"/> if the group is not registered.
+    /// </summary>
+    CircuitBreakerState? GetState(IntentType intentType, string groupName);
+
+    /// <summary>
     /// Returns a snapshot of current circuit breaker states for all tracked consumer groups.
     /// The returned dictionary is materialized at call time and safe to hold across async boundaries.
     /// </summary>
@@ -98,6 +110,11 @@ public interface ICircuitBreakerMonitor
     /// <param name="groupName">The consumer group name.</param>
     /// <returns>The snapshot, or <see langword="null"/> if the group has not been accessed.</returns>
     CircuitBreakerSnapshot? GetSnapshot(string groupName);
+
+    /// <summary>
+    /// Gets a rich snapshot of the circuit breaker state for a delivery intent and consumer group.
+    /// </summary>
+    CircuitBreakerSnapshot? GetSnapshot(IntentType intentType, string groupName);
 
     /// <summary>
     /// Returns the set of consumer group names registered via
@@ -127,6 +144,11 @@ public interface ICircuitBreakerMonitor
     ValueTask<bool> ResetAsync(string groupName);
 
     /// <summary>
+    /// Force-resets the circuit for the specified delivery intent and consumer group.
+    /// </summary>
+    ValueTask<bool> ResetAsync(IntentType intentType, string groupName);
+
+    /// <summary>
     /// Force-opens the circuit for the specified consumer group, transitioning it to
     /// <see cref="CircuitBreakerState.Open"/> and invoking the pause callback. Does not
     /// increment escalation level (forced opens bypass natural failure counting).
@@ -144,4 +166,9 @@ public interface ICircuitBreakerMonitor
     /// </para>
     /// </remarks>
     ValueTask<bool> ForceOpenAsync(string groupName);
+
+    /// <summary>
+    /// Force-opens the circuit for the specified delivery intent and consumer group.
+    /// </summary>
+    ValueTask<bool> ForceOpenAsync(IntentType intentType, string groupName);
 }

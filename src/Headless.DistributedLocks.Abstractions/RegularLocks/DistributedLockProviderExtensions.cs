@@ -243,7 +243,9 @@ public static class DistributedLockProviderExtensions
                 AcquireTimeout = acquireTimeout,
             };
 
-            return await provider.TryUsingAsync(resource, state, work, options, cancellationToken).ConfigureAwait(false);
+            return await provider
+                .TryUsingAsync(resource, state, work, options, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         /// <inheritdoc cref="TryUsingAsync{TState}(IDistributedLockProvider,string,TState,Action{TState},TimeSpan?,TimeSpan?,CancellationToken)"/>

@@ -185,7 +185,7 @@ Content indexing and metadata extraction for media files — images, video, and 
 
 ### Messaging
 
-Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 7 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
+Reliable distributed message bus with transactional outbox, automatic retries, delayed delivery, and type-safe consumers. 8 transport providers and 3 storage backends — swap the underlying infrastructure without changing application code.
 
 | Package | Description |
 |---------|-------------|
@@ -201,12 +201,12 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 |---------|-------------|
 | [Headless.Messaging.RabbitMq](src/Headless.Messaging.RabbitMq/README.md) | RabbitMQ (AMQP) |
 | [Headless.Messaging.Kafka](src/Headless.Messaging.Kafka/README.md) | Apache Kafka |
-| [Headless.Messaging.AwsSqs](src/Headless.Messaging.AwsSqs/README.md) | AWS SQS + SNS |
+| [Headless.Messaging.Aws](src/Headless.Messaging.Aws/README.md) | AWS SQS + SNS |
 | [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS with JetStream |
 | [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
-| [Headless.Messaging.RedisStreams](src/Headless.Messaging.RedisStreams/README.md) | Redis Streams |
-| [Headless.Messaging.InMemoryQueue](src/Headless.Messaging.InMemoryQueue/README.md) | In-memory (dev/testing) |
+| [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams queues and Redis Pub/Sub broadcast |
+| [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (dev/testing) |
 
 **Storage backends:**
 

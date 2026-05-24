@@ -34,4 +34,5 @@ public static class MessageDiagnosticListenerNames
     public const string ConsumePerSec = "consume-per-second";
     public const string InvokeSubscriberPerSec = "invoke-subscriber-per-second";
     public const string InvokeSubscriberElapsedMs = "invoke-subscriber-elapsed-ms";
+    public const string PubSubDispatchFailures = "redis-pubsub-dispatch-failures";
 }

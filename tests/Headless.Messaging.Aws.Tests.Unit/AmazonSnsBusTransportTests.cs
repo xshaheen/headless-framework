@@ -1,0 +1,510 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Reflection;
+using Amazon.SimpleNotificationService;
+using Amazon.SimpleNotificationService.Model;
+using Headless.Messaging;
+using Headless.Messaging.Aws;
+using Headless.Messaging.Messages;
+using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NSubstitute.ExceptionExtensions;
+
+namespace Tests;
+
+public sealed class AmazonSnsBusTransportTests : TestBase
+{
+    private static IOptions<AmazonSqsOptions> _CreateOptions() =>
+        Options.Create(
+            new AmazonSqsOptions
+            {
+                Region = Amazon.RegionEndpoint.USEast1,
+                SqsServiceUrl = "http://localhost:4566",
+                SnsServiceUrl = "http://localhost:4566",
+            }
+        );
+
+    [Fact]
+    public async Task should_return_correct_broker_address()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        // when
+        var brokerAddress = transport.BrokerAddress;
+
+        // then
+        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Endpoint.Should().Be("localhost:4566");
+    }
+
+    [Fact]
+    public async Task should_use_region_based_broker_endpoint_when_service_url_not_configured()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.USEast1 });
+        await using var transport = new AmazonSnsBusTransport(logger, options);
+
+        // when
+        var brokerAddress = transport.BrokerAddress;
+
+        // then
+        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Endpoint.Should().Be("sns.us-east-1.amazonaws.com");
+    }
+
+    [Fact]
+    public async Task should_use_partition_dns_suffix_for_non_standard_regions()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        var options = Options.Create(new AmazonSqsOptions { Region = Amazon.RegionEndpoint.CNNorth1 });
+        await using var transport = new AmazonSnsBusTransport(logger, options);
+
+        // when
+        var brokerAddress = transport.BrokerAddress;
+
+        // then
+        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Endpoint.Should().Be("sns.cn-north-1.amazonaws.com.cn");
+    }
+
+    [Fact]
+    public async Task should_send_message_to_topic()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "TestEvent",
+                [Headers.MessageId] = "test-id-123",
+            },
+            body: """{"data": "test"}"""u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<PublishRequest>(r =>
+                    r.TopicArn == "arn:aws:sns:us-east-1:123456789:TestEvent" && r.Message == """{"data": "test"}"""
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_include_message_attributes_in_request()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "TestEvent",
+                [Headers.MessageId] = "test-id-123",
+                ["custom-header"] = "custom-value",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<PublishRequest>(r =>
+                    r.MessageAttributes.ContainsKey(Headers.MessageName)
+                    && r.MessageAttributes[Headers.MessageName].StringValue == "TestEvent"
+                    && r.MessageAttributes.ContainsKey(Headers.MessageId)
+                    && r.MessageAttributes[Headers.MessageId].StringValue == "test-id-123"
+                    && r.MessageAttributes.ContainsKey("custom-header")
+                    && r.MessageAttributes["custom-header"].StringValue == "custom-value"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_create_topic_if_not_exists()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:NewTopic" });
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "NewTopic" },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient.Received(1).CreateTopicAsync("NewTopic", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_create_fifo_topic_and_publish_with_fifo_metadata()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .CreateTopicAsync(Arg.Any<CreateTopicRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:order-created.fifo" });
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(transport, snsClient, []);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "order.created.fifo",
+                [Headers.MessageId] = "message-1",
+                [Headers.Group] = "tenant-a",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .CreateTopicAsync(
+                Arg.Is<CreateTopicRequest>(r =>
+                    r.Name == "order-created.fifo"
+                    && r.Attributes["FifoTopic"] == "true"
+                    && r.Attributes["ContentBasedDeduplication"] == "true"
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await snsClient
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<PublishRequest>(r => r.MessageGroupId == "tenant-a" && r.MessageDeduplicationId == "message-1"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_handle_send_failure()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new AmazonSimpleNotificationServiceException("Network error"));
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().NotBeNull();
+        result.Exception!.Message.Should().Contain("Network error");
+    }
+
+    [Fact]
+    public async Task should_return_failed_when_topic_not_found_and_creation_fails()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = string.Empty }); // Empty ARN indicates failure
+
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "NonExistent" },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_normalize_topic_name_for_aws()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .CreateTopicAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateTopicResponse { TopicArn = "arn:aws:sns:us-east-1:123456789:my-topic_name" });
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        // Empty topic map forces CreateTopicAsync to be called
+        _SetSnsClient(transport, snsClient, []);
+
+        // Topic name with dots and colons should be normalized
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "my.topic:name",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        // Dots become dashes, colons become underscores
+        await snsClient.Received(1).CreateTopicAsync("my-topic_name", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_handle_empty_message_body()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
+            body: ReadOnlyMemory<byte>.Empty
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .PublishAsync(Arg.Is<PublishRequest>(r => r.Message == string.Empty), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_cache_topic_arns_after_first_fetch()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageName] = "TestEvent" },
+            body: "test"u8.ToArray()
+        );
+
+        // when - send multiple messages
+        await transport.SendAsync(message);
+        await transport.SendAsync(message);
+        await transport.SendAsync(message);
+
+        // then - _topicArnMaps is pre-populated, so ListTopicsAsync should never be called
+        await snsClient.DidNotReceive().ListTopicsAsync(Arg.Any<string?>(), Arg.Any<CancellationToken>());
+
+        // All three messages should be published successfully
+        await snsClient.Received(3).PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_skip_null_header_values()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        await using var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        snsClient
+            .PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new PublishResponse { MessageId = "msg-123" });
+
+        _SetSnsClient(
+            transport,
+            snsClient,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["TestEvent"] = "arn:aws:sns:us-east-1:123456789:TestEvent",
+            }
+        );
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "TestEvent",
+                ["null-header"] = null, // This should be skipped
+                ["valid-header"] = "value",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await snsClient
+            .Received(1)
+            .PublishAsync(
+                Arg.Is<PublishRequest>(r =>
+                    !r.MessageAttributes.ContainsKey("null-header") && r.MessageAttributes.ContainsKey("valid-header")
+                ),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_dispose_resources()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
+        var transport = new AmazonSnsBusTransport(logger, _CreateOptions());
+
+        var snsClient = Substitute.For<IAmazonSimpleNotificationService>();
+        _SetSnsClient(transport, snsClient);
+
+        // when
+        await transport.DisposeAsync();
+
+        // then
+        snsClient.Received(1).Dispose();
+    }
+
+    private static void _SetSnsClient(
+        AmazonSnsBusTransport transport,
+        IAmazonSimpleNotificationService snsClient,
+        Dictionary<string, string>? topicArnMaps = null
+    )
+    {
+        var snsClientField = typeof(AmazonSnsBusTransport).GetField(
+            "_snsClient",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        snsClientField!.SetValue(transport, snsClient);
+
+        // Must also set _topicArnMaps to prevent _FetchExistingTopicArns from overwriting the mock
+        var topicArnMapsField = typeof(AmazonSnsBusTransport).GetField(
+            "_topicArnMaps",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+        );
+        topicArnMapsField!.SetValue(
+            transport,
+            new ConcurrentDictionary<string, string>(topicArnMaps ?? [], StringComparer.Ordinal)
+        );
+    }
+}

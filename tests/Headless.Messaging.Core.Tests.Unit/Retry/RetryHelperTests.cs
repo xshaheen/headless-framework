@@ -225,7 +225,7 @@ public sealed class RetryHelperTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.RetryPolicy.MaxPersistedRetries = 5;
-            setup.UseInMemoryMessageQueue();
+            setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
 
@@ -251,6 +251,7 @@ public sealed class RetryHelperTests : TestBase
             StorageId = 1,
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             Content = "{}",
+            IntentType = IntentType.Bus,
         };
 
     private sealed class AlwaysRetryStrategy(TimeSpan delay) : IRetryBackoffStrategy
@@ -599,6 +600,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = 0,
             RetryCount = 0,
+            IntentType = IntentType.Bus,
         };
 
         var logger = Substitute.For<ILogger>();
@@ -630,6 +632,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = 0,
             RetryCount = 0,
+            IntentType = IntentType.Bus,
         };
 
         using var hostCts = new CancellationTokenSource();
@@ -681,6 +684,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = 0,
             RetryCount = 0,
+            IntentType = IntentType.Bus,
         };
 
         var observedCancellation = new TaskCompletionSource<bool>();
@@ -721,6 +725,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = 0,
             RetryCount = 0,
+            IntentType = IntentType.Bus,
         };
 
         Exception? observedException = null;
@@ -777,6 +782,7 @@ public sealed class RetryHelperTests : TestBase
             Exception = new InvalidOperationException("orig"),
             StorageId = 0,
             RetryCount = 0,
+            IntentType = IntentType.Bus,
         };
 
         // Pre-cancel the host token so the link fires immediately when WaitAsync observes it.

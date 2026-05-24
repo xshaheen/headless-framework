@@ -17,4 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Api.Tests.Unit" />
+  </ItemGroup>
 </Project>

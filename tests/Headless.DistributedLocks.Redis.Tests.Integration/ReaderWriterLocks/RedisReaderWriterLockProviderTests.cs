@@ -300,7 +300,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
     {
         return new DistributedReaderWriterLockProvider(
             fixture.ReaderWriterLockStorage,
-            outboxPublisher: null,
+            outboxBus: null,
             options ?? new DistributedLockOptions(),
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,

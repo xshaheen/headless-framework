@@ -22,9 +22,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
 
         // then
         await distributedLock.DidNotReceive().ReleaseAsync();
-        await provider
-            .Received(1)
-            .ReleaseAsync("resource", "lock-id", AbortToken);
+        await provider.Received(1).ReleaseAsync("resource", "lock-id", AbortToken);
     }
 
     [Fact]
@@ -33,11 +31,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         // given
         var provider = Substitute.For<IDistributedLockProvider>();
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(null));
 
         var workExecuted = false;
@@ -65,11 +59,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         var distributedLock = Substitute.For<IDistributedLock>();
 
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
 
         var workExecuted = false;
@@ -101,11 +91,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         var distributedLock = Substitute.For<IDistributedLock>();
 
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
 
         const string resource = "test-resource";
@@ -117,11 +103,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         await provider.TryUsingAsync(
             resource,
             () => Task.CompletedTask,
-            new DistributedLockAcquireOptions
-            {
-                TimeUntilExpires = timeUntilExpires,
-                AcquireTimeout = acquireTimeout,
-            },
+            new DistributedLockAcquireOptions { TimeUntilExpires = timeUntilExpires, AcquireTimeout = acquireTimeout },
             cancellationToken
         );
 
@@ -148,11 +130,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         var provider = Substitute.For<IDistributedLockProvider>();
         var distributedLock = Substitute.For<IDistributedLock>();
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
         var workExecuted = false;
         var options = new DistributedLockAcquireOptions
@@ -164,12 +142,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         };
 
         // when
-        var result = await provider.TryUsingAsync(
-            "resource",
-            () => workExecuted = true,
-            options,
-            AbortToken
-        );
+        var result = await provider.TryUsingAsync("resource", () => workExecuted = true, options, AbortToken);
 
         // then
         result.Should().BeTrue();
@@ -196,11 +169,7 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         var provider = Substitute.For<IDistributedLockProvider>();
         var distributedLock = Substitute.For<IDistributedLock>();
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
         var observedState = 0;
 
@@ -242,15 +211,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
         using var leaseLostCts = new CancellationTokenSource();
         distributedLock.IsMonitored.Returns(true);
         distributedLock.HandleLostToken.Returns(leaseLostCts.Token);
+
         provider
-            .TryAcquireAsync(
-                Arg.Any<string>(),
-                Arg.Any<DistributedLockAcquireOptions?>(),
-                Arg.Any<CancellationToken>()
-            )
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
 
-        CancellationToken observedToken = default;
+        var observedToken = CancellationToken.None;
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         // when
@@ -266,7 +232,8 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
                 }
                 catch (OperationCanceledException) { }
             },
-            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor }
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            AbortToken
         );
 
         await started.Task;
