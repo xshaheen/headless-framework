@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Features.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -82,33 +83,33 @@ internal sealed class PostgreSqlFeaturesStorageInitializer(
 
             CREATE TABLE IF NOT EXISTS {groupsTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
+                "Name" character varying({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "DisplayName" character varying({FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                 "ExtraProperties" text NOT NULL,
                 CONSTRAINT "PK_{options.FeatureGroupDefinitionsTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "Id" uuid NOT NULL,
-                "GroupName" character varying(128) NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "ParentName" character varying(128),
-                "Description" character varying(256),
-                "DefaultValue" character varying(256),
+                "GroupName" character varying({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "Name" character varying({FeatureDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "DisplayName" character varying({FeatureDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "ParentName" character varying({FeatureDefinitionRecordConstants.NameMaxLength}),
+                "Description" character varying({FeatureDefinitionRecordConstants.DescriptionMaxLength}),
+                "DefaultValue" character varying({FeatureDefinitionRecordConstants.DefaultValueMaxLength}),
                 "IsVisibleToClients" boolean NOT NULL,
                 "IsAvailableToHost" boolean NOT NULL,
-                "Providers" character varying(256),
+                "Providers" character varying({FeatureDefinitionRecordConstants.ProvidersMaxLength}),
                 "ExtraProperties" text NOT NULL,
                 CONSTRAINT "PK_{options.FeatureDefinitionsTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE TABLE IF NOT EXISTS {valuesTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
+                "Name" character varying({FeatureValueRecordConstants.NameMaxLength}) NOT NULL,
+                "Value" character varying({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
+                "ProviderName" character varying({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                "ProviderKey" character varying({FeatureValueRecordConstants.ProviderKeyMaxLength}),
                 CONSTRAINT "PK_{options.FeatureValuesTableName}" PRIMARY KEY ("Id")
             );
 
@@ -116,7 +117,8 @@ internal sealed class PostgreSqlFeaturesStorageInitializer(
             CREATE INDEX IF NOT EXISTS "IX_{options.FeatureDefinitionsTableName}_GroupName" ON {definitionsTable} ("GroupName");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.FeatureDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
             CREATE INDEX IF NOT EXISTS "IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey" ON {valuesTable} ("ProviderName", "ProviderKey");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.FeatureValuesTableName}_Name_ProviderName_NullProviderKey" ON {valuesTable} ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
             """;
     }
 

@@ -11,7 +11,7 @@ Provides features repositories and startup schema initialization without requiri
 - `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))`
 - Idempotent schema, table, and index creation at host startup
 - Raw ADO.NET repositories for feature values, definitions, and groups
-- Shares `FeaturesStorageOptions` with the EF provider
+- Shares `FeaturesStorageOptions` from `Headless.Features.Core`
 
 ## Installation
 
@@ -36,7 +36,7 @@ Configure schema and table names through `FeaturesStorageOptions` on the shared 
 
 ## Dependencies
 
-- `Headless.Features.Storage.EntityFramework`
+- `Headless.Features.Core`
 - `Npgsql`
 
 ## Side Effects

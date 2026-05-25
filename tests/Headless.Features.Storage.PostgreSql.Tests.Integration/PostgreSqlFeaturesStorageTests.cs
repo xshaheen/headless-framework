@@ -86,6 +86,28 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         storedFeatures.Select(f => f.Name).Should().BeEquivalentTo(features.Select(f => f.Name));
     }
 
+    [Fact]
+    public async Task should_reject_duplicate_feature_values_when_provider_key_is_null()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var first = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "DefaultValue", null);
+        var duplicate = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "false", "DefaultValue", null);
+        await valueRepository.InsertAsync(first, TestContext.Current.CancellationToken);
+
+        // when
+        var action = async () => await valueRepository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+
+        // then
+        await action
+            .Should()
+            .ThrowAsync<PostgresException>()
+            .Where(exception => exception.SqlState == PostgresErrorCodes.UniqueViolation);
+    }
+
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();

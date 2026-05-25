@@ -40,7 +40,10 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         var result = new List<FeatureDefinitionRecord>();
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -79,7 +82,10 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         var result = new List<FeatureGroupDefinitionRecord>();
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -115,24 +121,35 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
 
         foreach (var record in updatedGroups)
         {
-            await _ExecuteGroupAsync(connection, transaction, _UpdateGroupSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteGroupAsync(connection, transaction, _UpdateGroupSql(), _CommandTimeout(), record, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         foreach (var record in deletedGroups)
         {
-            await _DeleteAsync(connection, transaction, _DeleteGroupSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, transaction, _DeleteGroupSql(), _CommandTimeout(), record.Id, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await _BatchInsertFeaturesAsync(connection, transaction, newFeatures, cancellationToken).ConfigureAwait(false);
 
         foreach (var record in updatedFeatures)
         {
-            await _ExecuteFeatureAsync(connection, transaction, _UpdateFeatureSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteFeatureAsync(
+                    connection,
+                    transaction,
+                    _UpdateFeatureSql(),
+                    _CommandTimeout(),
+                    record,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         foreach (var record in deletedFeatures)
         {
-            await _DeleteAsync(connection, transaction, _DeleteFeatureSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, transaction, _DeleteFeatureSql(), _CommandTimeout(), record.Id, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -150,7 +167,10 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
             var sql = _insertGroupBatchSql.GetOrAdd(rowCount, _BuildInsertGroupSql);
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            await using var command = new SqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = _CommandTimeout(),
+            };
             for (var i = 0; i < rowCount; i++)
             {
                 var record = records[offset + i];
@@ -176,7 +196,10 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
             var sql = _insertFeatureBatchSql.GetOrAdd(rowCount, _BuildInsertFeatureSql);
 
-            await using var command = new SqlCommand(sql, connection, transaction);
+            await using var command = new SqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = _CommandTimeout(),
+            };
             for (var i = 0; i < rowCount; i++)
             {
                 var record = records[offset + i];
@@ -201,11 +224,15 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         SqlConnection connection,
         SqlTransaction transaction,
         string sql,
+        int commandTimeout,
         FeatureGroupDefinitionRecord record,
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction);
+        await using var command = new SqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = commandTimeout,
+        };
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@Name", record.Name);
         command.Parameters.AddWithValue("@DisplayName", record.DisplayName);
@@ -217,11 +244,15 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         SqlConnection connection,
         SqlTransaction transaction,
         string sql,
+        int commandTimeout,
         FeatureDefinitionRecord record,
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction);
+        await using var command = new SqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = commandTimeout,
+        };
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@GroupName", record.GroupName);
         command.Parameters.AddWithValue("@Name", record.Name);
@@ -240,11 +271,15 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         SqlConnection connection,
         SqlTransaction transaction,
         string sql,
+        int commandTimeout,
         Guid id,
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction);
+        await using var command = new SqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = commandTimeout,
+        };
         command.Parameters.AddWithValue("@Id", id);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -316,6 +351,8 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     private string _DeleteFeatureSql() =>
         _deleteFeatureSql ??=
             $"""DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} WHERE [Id]=@Id;""";
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private static ExtraProperties _DeserializeExtraProperties(string json) =>
         JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];

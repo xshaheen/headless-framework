@@ -15,6 +15,8 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     IServiceProvider services
 ) : IFeatureValueRecordRepository
 {
+    private const int _MaxDeleteParameters = 2000;
+
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
         string? providerName,
@@ -111,12 +113,15 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             return;
         }
 
-        var idParameters = features.Select((_, index) => $"@Id{index}").ToArray();
-        var parameters = features.Select((feature, index) => _Param($"Id{index}", feature.Id)).ToArray();
-        var sql =
-            $"""DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});""";
+        foreach (var chunk in features.Chunk(_MaxDeleteParameters))
+        {
+            var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
+            var parameters = chunk.Select((feature, index) => _Param($"Id{index}", feature.Id)).ToArray();
+            var sql =
+                $"""DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});""";
 
-        await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
+            await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
+        }
 
         foreach (var feature in features)
         {
@@ -133,7 +138,10 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         var result = new List<FeatureValueRecord>();
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -157,7 +165,10 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -173,6 +184,8 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken);
         }
     }
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

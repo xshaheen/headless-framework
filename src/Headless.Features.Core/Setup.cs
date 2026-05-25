@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
+using Headless.Checks;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Filters;
@@ -9,6 +10,7 @@ using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
+using Headless.Hosting.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -43,6 +45,16 @@ public static class CoreSetup
             services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
 
             return _AddCore(services);
+        }
+
+        public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessFeaturesSetupBuilder(services);
+            configure(setup);
+
+            return _AddFeaturesStorageCore(services, setup);
         }
 
         public IServiceCollection AddFeatureDefinitionProvider<T>()
@@ -88,6 +100,36 @@ public static class CoreSetup
             services.AddSingleton<EditionFeatureValueProvider>();
             services.AddSingleton<TenantFeatureValueProvider>();
         }
+    }
+
+    private static HeadlessFeaturesBuilder _AddFeaturesStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessFeaturesSetupBuilder setup
+    )
+    {
+        if (setup.Extensions.Count != 1)
+        {
+            throw new InvalidOperationException(
+                setup.Extensions.Count == 0
+                    ? "Headless.Features requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                    : "Headless.Features requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        serviceCollection.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(options =>
+        {
+            options.Schema = setup.StorageOptions.Schema;
+            options.FeatureValuesTableName = setup.StorageOptions.FeatureValuesTableName;
+            options.FeatureDefinitionsTableName = setup.StorageOptions.FeatureDefinitionsTableName;
+            options.FeatureGroupDefinitionsTableName = setup.StorageOptions.FeatureGroupDefinitionsTableName;
+        });
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessFeaturesBuilder(serviceCollection);
     }
 
     private static IServiceCollection _AddCore(IServiceCollection services)

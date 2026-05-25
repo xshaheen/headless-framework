@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Features.Entities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -85,8 +86,8 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                 BEGIN
                     CREATE TABLE {groupsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [DisplayName] nvarchar(256) NOT NULL,
+                        [Name] nvarchar({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [DisplayName] nvarchar({FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.FeatureGroupDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
@@ -102,15 +103,15 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                 BEGIN
                     CREATE TABLE {definitionsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [GroupName] nvarchar(128) NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [DisplayName] nvarchar(256) NOT NULL,
-                        [ParentName] nvarchar(128) NULL,
-                        [Description] nvarchar(256) NULL,
-                        [DefaultValue] nvarchar(256) NULL,
+                        [GroupName] nvarchar({FeatureGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [Name] nvarchar({FeatureDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [DisplayName] nvarchar({FeatureDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                        [ParentName] nvarchar({FeatureDefinitionRecordConstants.NameMaxLength}) NULL,
+                        [Description] nvarchar({FeatureDefinitionRecordConstants.DescriptionMaxLength}) NULL,
+                        [DefaultValue] nvarchar({FeatureDefinitionRecordConstants.DefaultValueMaxLength}) NULL,
                         [IsVisibleToClients] bit NOT NULL,
                         [IsAvailableToHost] bit NOT NULL,
-                        [Providers] nvarchar(256) NULL,
+                        [Providers] nvarchar({FeatureDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.FeatureDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
@@ -127,15 +128,55 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                 BEGIN
                     CREATE TABLE {valuesTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [Value] nvarchar(128) NOT NULL,
-                        [ProviderName] nvarchar(64) NOT NULL,
-                        [ProviderKey] nvarchar(64) NULL,
+                        [Name] nvarchar({FeatureValueRecordConstants.NameMaxLength}) NOT NULL,
+                        [Value] nvarchar({FeatureValueRecordConstants.ValueMaxLength}) NOT NULL,
+                        [ProviderName] nvarchar({FeatureValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                        [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
                         CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                     CREATE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
                 END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureGroupDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureDefinitionsTableName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;

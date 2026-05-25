@@ -128,7 +128,10 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var result = new List<FeatureValueRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -152,7 +155,10 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -168,6 +174,8 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
             await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken);
         }
     }
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
 }

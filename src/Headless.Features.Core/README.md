@@ -19,6 +19,7 @@ Provides the full feature management implementation including hierarchical value
 
 ```bash
 dotnet add package Headless.Features.Core
+dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -38,6 +39,9 @@ builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 // Add storage (e.g., Entity Framework)
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
+
+For Entity Framework storage, register an `IDbContextFactory<AppDbContext>` and call
+`modelBuilder.AddHeadlessFeatures(featuresStorageOptions)` from your DbContext model configuration.
 
 ### Custom Value Provider
 

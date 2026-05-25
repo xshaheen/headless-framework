@@ -8,6 +8,6 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
+    <ProjectReference Include="..\Headless.Features.Core\Headless.Features.Core.csproj" />
   </ItemGroup>
 </Project>
