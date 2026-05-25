@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Headless.AuditLog;
 using Microsoft.Extensions.Options;
@@ -12,8 +14,11 @@ internal sealed class PostgreSqlAuditLogWriter(
     IOptions<AuditLogStorageOptions> storageOptions
 )
 {
+    private const int _MaxRowsPerCommand = 500;
+
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-    private string? _cachedSql;
+
+    private readonly ConcurrentDictionary<int, string> _sqlByRowCount = new();
 
     /// <summary>
     /// Writes audit entries to the audit table. When <paramref name="sharedConnection"/> and
@@ -32,11 +37,9 @@ internal sealed class PostgreSqlAuditLogWriter(
             return;
         }
 
-        var sql = _cachedSql ??= _BuildInsertSql();
-
         if (sharedConnection is not null && sharedTransaction is not null)
         {
-            await _WriteOnSharedAsync(entries, sql, sharedConnection, sharedTransaction, cancellationToken)
+            await _WriteBatchedAsync(entries, sharedConnection, sharedTransaction, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -45,12 +48,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var entry in entries)
-        {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.Parameters.AddRange(_CreateParameters(entry));
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await _WriteBatchedAsync(entries, connection, transaction, cancellationToken).ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -72,17 +70,9 @@ internal sealed class PostgreSqlAuditLogWriter(
             return;
         }
 
-        var sql = _cachedSql ??= _BuildInsertSql();
-
         if (sharedConnection is not null && sharedTransaction is not null)
         {
-            foreach (var entry in entries)
-            {
-                using var command = new NpgsqlCommand(sql, sharedConnection, sharedTransaction);
-                command.Parameters.AddRange(_CreateParameters(entry));
-                command.ExecuteNonQuery();
-            }
-
+            _WriteBatchedSync(entries, sharedConnection, sharedTransaction);
             return;
         }
 
@@ -90,60 +80,116 @@ internal sealed class PostgreSqlAuditLogWriter(
         connection.Open();
         using var transaction = connection.BeginTransaction();
 
-        foreach (var entry in entries)
-        {
-            using var command = new NpgsqlCommand(sql, connection, transaction);
-            command.Parameters.AddRange(_CreateParameters(entry));
-            command.ExecuteNonQuery();
-        }
+        _WriteBatchedSync(entries, connection, transaction);
 
         transaction.Commit();
     }
 
-    private static async Task _WriteOnSharedAsync(
+    private async Task _WriteBatchedAsync(
         IReadOnlyList<AuditLogEntryData> entries,
-        string sql,
-        NpgsqlConnection sharedConnection,
-        NpgsqlTransaction sharedTransaction,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
         CancellationToken cancellationToken
     )
     {
-        foreach (var entry in entries)
+        for (var offset = 0; offset < entries.Count; offset += _MaxRowsPerCommand)
         {
-            await using var command = new NpgsqlCommand(sql, sharedConnection, sharedTransaction);
-            command.Parameters.AddRange(_CreateParameters(entry));
+            var rowCount = Math.Min(_MaxRowsPerCommand, entries.Count - offset);
+            var sql = _sqlByRowCount.GetOrAdd(rowCount, _BuildInsertSql);
+
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            _AddParameters(command, entries, offset, rowCount);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private string _BuildInsertSql()
+    private void _WriteBatchedSync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction
+    )
+    {
+        for (var offset = 0; offset < entries.Count; offset += _MaxRowsPerCommand)
+        {
+            var rowCount = Math.Min(_MaxRowsPerCommand, entries.Count - offset);
+            var sql = _sqlByRowCount.GetOrAdd(rowCount, _BuildInsertSql);
+
+            using var command = new NpgsqlCommand(sql, connection, transaction);
+            _AddParameters(command, entries, offset, rowCount);
+            command.ExecuteNonQuery();
+        }
+    }
+
+    private string _BuildInsertSql(int rowCount)
     {
         var options = storageOptions.Value;
         var table = PostgreSqlAuditLogStorageInitializer.Qualified(options);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.Jsonb).ToSqlFragment();
 
-        return $"""INSERT INTO {table} ("CreatedAt","UserId","AccountId","TenantId","IpAddress","UserAgent","CorrelationId","Action","ChangeType","EntityType","EntityId","OldValues","NewValues","ChangedFields","Success","ErrorCode") VALUES (@CreatedAt,@UserId,@AccountId,@TenantId,@IpAddress,@UserAgent,@CorrelationId,@Action,@ChangeType,@EntityType,@EntityId,CAST(@OldValues AS {jsonColumnType}),CAST(@NewValues AS {jsonColumnType}),CAST(@ChangedFields AS {jsonColumnType}),@Success,@ErrorCode);""";
+        var builder = new StringBuilder(256 + rowCount * 256);
+        builder.Append("INSERT INTO ").Append(table);
+        builder.Append(" (\"CreatedAt\",\"UserId\",\"AccountId\",\"TenantId\",\"IpAddress\",\"UserAgent\",\"CorrelationId\",\"Action\",\"ChangeType\",\"EntityType\",\"EntityId\",\"OldValues\",\"NewValues\",\"ChangedFields\",\"Success\",\"ErrorCode\") VALUES ");
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append("(@CreatedAt_").Append(i)
+                .Append(",@UserId_").Append(i)
+                .Append(",@AccountId_").Append(i)
+                .Append(",@TenantId_").Append(i)
+                .Append(",@IpAddress_").Append(i)
+                .Append(",@UserAgent_").Append(i)
+                .Append(",@CorrelationId_").Append(i)
+                .Append(",@Action_").Append(i)
+                .Append(",@ChangeType_").Append(i)
+                .Append(",@EntityType_").Append(i)
+                .Append(",@EntityId_").Append(i)
+                .Append(",CAST(@OldValues_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
+                .Append(",CAST(@NewValues_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
+                .Append(",CAST(@ChangedFields_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
+                .Append(",@Success_").Append(i)
+                .Append(",@ErrorCode_").Append(i)
+                .Append(')');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
     }
 
-    private static NpgsqlParameter[] _CreateParameters(AuditLogEntryData entry) =>
-    [
-        _Param("CreatedAt", entry.CreatedAt),
-        _Param("UserId", _Truncate(entry.UserId, 128)),
-        _Param("AccountId", _Truncate(entry.AccountId, 128)),
-        _Param("TenantId", _Truncate(entry.TenantId, 128)),
-        _Param("IpAddress", _Truncate(entry.IpAddress, 45)),
-        _Param("UserAgent", _Truncate(entry.UserAgent, 512)),
-        _Param("CorrelationId", _Truncate(entry.CorrelationId, 128)),
-        _Param("Action", _Truncate(entry.Action, 256)),
-        _Param("ChangeType", entry.ChangeType is null ? null : (int)entry.ChangeType.Value),
-        _Param("EntityType", _Truncate(entry.EntityType, 512)),
-        _Param("EntityId", _Truncate(entry.EntityId, 256)),
-        _Param("OldValues", _Serialize(entry.OldValues)),
-        _Param("NewValues", _Serialize(entry.NewValues)),
-        _Param("ChangedFields", _Serialize(entry.ChangedFields)),
-        _Param("Success", entry.Success),
-        _Param("ErrorCode", _Truncate(entry.ErrorCode, 256)),
-    ];
+    private static void _AddParameters(
+        NpgsqlCommand command,
+        IReadOnlyList<AuditLogEntryData> entries,
+        int offset,
+        int rowCount
+    )
+    {
+        var parameters = command.Parameters;
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            var entry = entries[offset + i];
+            parameters.Add(_Param($"CreatedAt_{i}", entry.CreatedAt));
+            parameters.Add(_Param($"UserId_{i}", _Truncate(entry.UserId, 128)));
+            parameters.Add(_Param($"AccountId_{i}", _Truncate(entry.AccountId, 128)));
+            parameters.Add(_Param($"TenantId_{i}", _Truncate(entry.TenantId, 128)));
+            parameters.Add(_Param($"IpAddress_{i}", _Truncate(entry.IpAddress, 45)));
+            parameters.Add(_Param($"UserAgent_{i}", _Truncate(entry.UserAgent, 512)));
+            parameters.Add(_Param($"CorrelationId_{i}", _Truncate(entry.CorrelationId, 128)));
+            parameters.Add(_Param($"Action_{i}", _Truncate(entry.Action, 256)));
+            parameters.Add(_Param($"ChangeType_{i}", entry.ChangeType is null ? null : (int)entry.ChangeType.Value));
+            parameters.Add(_Param($"EntityType_{i}", _Truncate(entry.EntityType, 512)));
+            parameters.Add(_Param($"EntityId_{i}", _Truncate(entry.EntityId, 256)));
+            parameters.Add(_Param($"OldValues_{i}", _Serialize(entry.OldValues)));
+            parameters.Add(_Param($"NewValues_{i}", _Serialize(entry.NewValues)));
+            parameters.Add(_Param($"ChangedFields_{i}", _Serialize(entry.ChangedFields)));
+            parameters.Add(_Param($"Success_{i}", entry.Success));
+            parameters.Add(_Param($"ErrorCode_{i}", _Truncate(entry.ErrorCode, 256)));
+        }
+    }
 
     private static string? _Serialize<T>(T? value) => value is null ? null : JsonSerializer.Serialize(value, _JsonOptions);
 
