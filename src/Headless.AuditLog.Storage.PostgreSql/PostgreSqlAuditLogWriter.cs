@@ -15,7 +15,17 @@ internal sealed class PostgreSqlAuditLogWriter(
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
     private string? _cachedSql;
 
-    public async Task WriteAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Writes audit entries to the audit table. When <paramref name="sharedConnection"/> and
+    /// <paramref name="sharedTransaction"/> are non-null, reuses them (atomic with the caller's
+    /// transaction). Otherwise opens its own connection + transaction (standalone path).
+    /// </summary>
+    public async Task WriteAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        NpgsqlConnection? sharedConnection = null,
+        NpgsqlTransaction? sharedTransaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
         if (entries.Count == 0)
         {
@@ -23,6 +33,13 @@ internal sealed class PostgreSqlAuditLogWriter(
         }
 
         var sql = _cachedSql ??= _BuildInsertSql();
+
+        if (sharedConnection is not null && sharedTransaction is not null)
+        {
+            await _WriteOnSharedAsync(entries, sql, sharedConnection, sharedTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -41,8 +58,14 @@ internal sealed class PostgreSqlAuditLogWriter(
     /// <summary>
     /// True-sync writer using <see cref="NpgsqlCommand.ExecuteNonQuery"/>. Used by the sync
     /// <c>IAuditLogStore.Save</c> path to avoid <c>.GetAwaiter().GetResult()</c> on the async path.
+    /// When <paramref name="sharedConnection"/> and <paramref name="sharedTransaction"/> are
+    /// supplied, writes through the caller's connection (atomic enrollment).
     /// </summary>
-    public void WriteSync(IReadOnlyList<AuditLogEntryData> entries)
+    public void WriteSync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        NpgsqlConnection? sharedConnection = null,
+        NpgsqlTransaction? sharedTransaction = null
+    )
     {
         if (entries.Count == 0)
         {
@@ -50,6 +73,18 @@ internal sealed class PostgreSqlAuditLogWriter(
         }
 
         var sql = _cachedSql ??= _BuildInsertSql();
+
+        if (sharedConnection is not null && sharedTransaction is not null)
+        {
+            foreach (var entry in entries)
+            {
+                using var command = new NpgsqlCommand(sql, sharedConnection, sharedTransaction);
+                command.Parameters.AddRange(_CreateParameters(entry));
+                command.ExecuteNonQuery();
+            }
+
+            return;
+        }
 
         using var connection = providerOptions.Value.CreateConnection();
         connection.Open();
@@ -63,6 +98,22 @@ internal sealed class PostgreSqlAuditLogWriter(
         }
 
         transaction.Commit();
+    }
+
+    private static async Task _WriteOnSharedAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        string sql,
+        NpgsqlConnection sharedConnection,
+        NpgsqlTransaction sharedTransaction,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var entry in entries)
+        {
+            await using var command = new NpgsqlCommand(sql, sharedConnection, sharedTransaction);
+            command.Parameters.AddRange(_CreateParameters(entry));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private string _BuildInsertSql()

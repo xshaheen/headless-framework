@@ -45,7 +45,7 @@ internal sealed class SqlServerAuditLog<TContext>(
             ErrorCode = _Truncate(errorCode, 256),
         };
 
-        return writer.WriteAsync([entry], cancellationToken);
+        return writer.WriteAsync([entry], cancellationToken: cancellationToken);
     }
 
     [return: NotNullIfNotNull(nameof(value))]

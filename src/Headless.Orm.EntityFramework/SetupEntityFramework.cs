@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.AuditLog;
 using Headless.Checks;
 using Headless.EntityFramework.Contexts.Runtime;
 using Headless.EntityFramework.GlobalFilters;
@@ -101,6 +102,7 @@ public static class SetupEntityFramework
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
+            services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 

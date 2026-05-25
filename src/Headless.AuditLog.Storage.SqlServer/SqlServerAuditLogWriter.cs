@@ -16,7 +16,17 @@ internal sealed class SqlServerAuditLogWriter(
 
     private string? _cachedSql;
 
-    public async Task WriteAsync(IReadOnlyList<AuditLogEntryData> entries, CancellationToken cancellationToken = default)
+    /// <summary>
+    /// Writes audit entries to the audit table. When <paramref name="sharedConnection"/> and
+    /// <paramref name="sharedTransaction"/> are non-null, reuses them (atomic with the caller's
+    /// transaction). Otherwise opens its own connection + transaction (standalone path).
+    /// </summary>
+    public async Task WriteAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        SqlConnection? sharedConnection = null,
+        SqlTransaction? sharedTransaction = null,
+        CancellationToken cancellationToken = default
+    )
     {
         if (entries.Count == 0)
         {
@@ -24,6 +34,13 @@ internal sealed class SqlServerAuditLogWriter(
         }
 
         var sql = _cachedSql ??= _BuildInsertSql();
+
+        if (sharedConnection is not null && sharedTransaction is not null)
+        {
+            await _WriteOnSharedAsync(entries, sql, sharedConnection, sharedTransaction, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
 
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -42,8 +59,14 @@ internal sealed class SqlServerAuditLogWriter(
     /// <summary>
     /// True-sync writer using <see cref="SqlCommand.ExecuteNonQuery"/>. Used by the sync
     /// <c>IAuditLogStore.Save</c> path to avoid <c>.GetAwaiter().GetResult()</c> on the async path.
+    /// When <paramref name="sharedConnection"/> and <paramref name="sharedTransaction"/> are
+    /// supplied, writes through the caller's connection (atomic enrollment).
     /// </summary>
-    public void WriteSync(IReadOnlyList<AuditLogEntryData> entries)
+    public void WriteSync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        SqlConnection? sharedConnection = null,
+        SqlTransaction? sharedTransaction = null
+    )
     {
         if (entries.Count == 0)
         {
@@ -51,6 +74,18 @@ internal sealed class SqlServerAuditLogWriter(
         }
 
         var sql = _cachedSql ??= _BuildInsertSql();
+
+        if (sharedConnection is not null && sharedTransaction is not null)
+        {
+            foreach (var entry in entries)
+            {
+                using var command = new SqlCommand(sql, sharedConnection, sharedTransaction);
+                command.Parameters.AddRange(_CreateParameters(entry));
+                command.ExecuteNonQuery();
+            }
+
+            return;
+        }
 
         using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         connection.Open();
@@ -64,6 +99,22 @@ internal sealed class SqlServerAuditLogWriter(
         }
 
         transaction.Commit();
+    }
+
+    private static async Task _WriteOnSharedAsync(
+        IReadOnlyList<AuditLogEntryData> entries,
+        string sql,
+        SqlConnection sharedConnection,
+        SqlTransaction sharedTransaction,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var entry in entries)
+        {
+            await using var command = new SqlCommand(sql, sharedConnection, sharedTransaction);
+            command.Parameters.AddRange(_CreateParameters(entry));
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private string _BuildInsertSql() =>
