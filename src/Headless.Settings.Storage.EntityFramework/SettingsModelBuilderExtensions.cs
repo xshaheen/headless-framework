@@ -14,11 +14,6 @@ public static class SettingsModelBuilderExtensions
         Argument.IsNotNull(modelBuilder);
         Argument.IsNotNull(options);
 
-        if (modelBuilder.Model.FindEntityType(typeof(SettingValueRecord)) is not null)
-        {
-            return modelBuilder;
-        }
-
         modelBuilder.ApplyConfiguration(new SettingValueRecordConfiguration(options));
         modelBuilder.ApplyConfiguration(new SettingDefinitionRecordConfiguration(options));
 

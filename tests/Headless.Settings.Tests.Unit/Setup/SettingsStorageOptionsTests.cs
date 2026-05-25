@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Settings;
+using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -91,5 +92,61 @@ public sealed class SettingsStorageOptionsTests
         resolved.SettingDefinitionsTableName.Should().Be("SettingDefinitions");
     }
 
+    [Fact]
+    public void should_reject_multiple_storage_provider_registrations()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
+
+        // when
+        var action = () => services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*exactly one storage provider*");
+    }
+
+    [Fact]
+    public void should_apply_setting_model_configuration_when_entities_are_already_discovered()
+    {
+        // given
+        var storageOptions = new SettingsStorageOptions
+        {
+            Schema = "custom_settings",
+            SettingValuesTableName = "custom_setting_values",
+            SettingDefinitionsTableName = "custom_setting_definitions",
+        };
+        using var context = new ExistingSettingsEntityDbContext(
+            new DbContextOptionsBuilder<ExistingSettingsEntityDbContext>().UseSqlite("DataSource=:memory:").Options,
+            storageOptions
+        );
+
+        // when
+        var settingValueEntity = context.Model.FindEntityType(typeof(SettingValueRecord));
+        var settingDefinitionEntity = context.Model.FindEntityType(typeof(SettingDefinitionRecord));
+
+        // then
+        settingValueEntity.Should().NotBeNull();
+        settingValueEntity!.GetSchema().Should().Be("custom_settings");
+        settingValueEntity.GetTableName().Should().Be("custom_setting_values");
+        settingDefinitionEntity.Should().NotBeNull();
+        settingDefinitionEntity!.GetTableName().Should().Be("custom_setting_definitions");
+    }
+
     private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);
+
+    private sealed class ExistingSettingsEntityDbContext(
+        DbContextOptions<ExistingSettingsEntityDbContext> options,
+        SettingsStorageOptions storageOptions
+    ) : DbContext(options)
+    {
+        public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
+
+        public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            modelBuilder.AddHeadlessSettings(storageOptions);
+        }
+    }
 }

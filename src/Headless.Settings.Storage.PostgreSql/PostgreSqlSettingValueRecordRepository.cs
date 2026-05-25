@@ -16,6 +16,9 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     IServiceProvider services
 ) : ISettingValueRecordRepository
 {
+    private const string _ValueColumns =
+        @"""Id"",""Name"",""Value"",""ProviderName"",""ProviderKey"",""DateCreated"",""DateUpdated""";
+
     public async Task<SettingValueRecord?> FindAsync(
         string name,
         string providerName,
@@ -24,7 +27,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name"=@Name AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey ORDER BY "Id" LIMIT 1;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name"=@Name AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey ORDER BY "Id" LIMIT 1;""";
 
         return await _ReadValuesAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey)).ConfigureAwait(false) is [var row, ..]
             ? row
@@ -54,7 +57,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         }
 
         var sql =
-            $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE {string.Join(" AND ", filters)};""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE {string.Join(" AND ", filters)};""";
 
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
@@ -67,7 +70,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(sql, cancellationToken, _Param("Names", names.ToArray()), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
     }
@@ -79,7 +82,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
+            $"""SELECT {_ValueColumns} FROM {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
 
         return _ReadValuesAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
     }
@@ -97,7 +100,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
                 _Param("Value", setting.Value),
                 _Param("ProviderName", setting.ProviderName),
                 _Param("ProviderKey", setting.ProviderKey),
-                _Param("DateCreated", DateTimeOffset.UtcNow)
+                _Param("DateCreated", _TimeProvider().GetUtcNow())
             )
             .ConfigureAwait(false);
     }
@@ -107,7 +110,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         var sql =
             $"""UPDATE {PostgreSqlSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET "Value"=@Value,"DateUpdated"=@DateUpdated WHERE "Id"=@Id;""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", setting.Id), _Param("Value", setting.Value), _Param("DateUpdated", DateTimeOffset.UtcNow)).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", setting.Id), _Param("Value", setting.Value), _Param("DateUpdated", _TimeProvider().GetUtcNow())).ConfigureAwait(false);
         await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
     }
 
@@ -141,19 +144,26 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
         var result = new List<SettingValueRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             result.Add(
-                new SettingValueRecord(
+                SettingValueRecord.FromStorage(
                     reader.GetGuid(0),
                     reader.GetString(1),
                     reader.GetString(2),
                     reader.GetString(3),
-                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4)
+                    await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4),
+                    await reader.GetFieldValueAsync<DateTimeOffset>(5, cancellationToken).ConfigureAwait(false),
+                    await reader.IsDBNullAsync(6, cancellationToken).ConfigureAwait(false)
+                        ? null
+                        : await reader.GetFieldValueAsync<DateTimeOffset>(6, cancellationToken).ConfigureAwait(false)
                 )
             );
         }
@@ -165,20 +175,28 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _PublishAsync(SettingValueRecord setting, CancellationToken cancellationToken)
     {
-        var publisher = services.GetService<ILocalMessagePublisher>();
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
 
         if (publisher is not null)
         {
             await publisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken);
         }
     }
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
+
+    private TimeProvider _TimeProvider() => services.GetService<TimeProvider>() ?? TimeProvider.System;
 
     private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
 }

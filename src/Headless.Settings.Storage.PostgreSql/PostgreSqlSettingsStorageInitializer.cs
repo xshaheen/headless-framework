@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Settings.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -81,31 +82,32 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
-                "Description" character varying(512),
-                "DefaultValue" character varying(2000),
+                "Name" character varying({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "DisplayName" character varying({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                "Description" character varying({SettingDefinitionRecordConstants.DescriptionMaxLength}),
+                "DefaultValue" character varying({SettingDefinitionRecordConstants.DefaultValueMaxLength}),
                 "IsVisibleToClients" boolean NOT NULL,
                 "IsInherited" boolean NOT NULL,
                 "IsEncrypted" boolean NOT NULL,
-                "Providers" character varying(1024),
+                "Providers" character varying({SettingDefinitionRecordConstants.ProvidersMaxLength}),
                 "ExtraProperties" text NOT NULL,
                 CONSTRAINT "PK_{options.SettingDefinitionsTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE TABLE IF NOT EXISTS {valuesTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "Value" character varying(2000) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64),
+                "Name" character varying({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
+                "Value" character varying({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
+                "ProviderName" character varying({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                "ProviderKey" character varying({SettingValueRecordConstants.ProviderKeyMaxLength}),
                 "DateCreated" timestamp with time zone NOT NULL,
                 "DateUpdated" timestamp with time zone,
                 CONSTRAINT "PK_{options.SettingValuesTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_NullProviderKey" ON {valuesTable} ("Name", "ProviderName") WHERE "ProviderKey" IS NULL;
             """;
     }
 

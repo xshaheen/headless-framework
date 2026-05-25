@@ -29,6 +29,9 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
         await repository.InsertAsync(record, TestContext.Current.CancellationToken);
         var stored = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
+        var changed = new SettingValueRecord(record.Id, "Theme", "Light", "Global");
+        await repository.UpdateAsync(changed, TestContext.Current.CancellationToken);
+        var updated = await repository.FindAsync("Theme", "Global", null, TestContext.Current.CancellationToken);
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -36,6 +39,34 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         (await _TableExistsAsync("SettingDefinitions")).Should().BeTrue();
         stored.Should().NotBeNull();
         stored!.Value.Should().Be("Dark");
+        stored.DateCreated.Should().NotBe(default);
+        stored.DateUpdated.Should().BeNull();
+        updated.Should().NotBeNull();
+        updated!.Value.Should().Be("Light");
+        updated.DateCreated.Should().NotBe(default);
+        updated.DateUpdated.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_reject_duplicate_setting_values_when_provider_key_is_null()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
+        var first = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global", null);
+        var duplicate = new SettingValueRecord(Guid.NewGuid(), "Theme", "Light", "Global", null);
+        await repository.InsertAsync(first, TestContext.Current.CancellationToken);
+
+        // when
+        var action = async () => await repository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+
+        // then
+        await action
+            .Should()
+            .ThrowAsync<PostgresException>()
+            .Where(exception => exception.SqlState == PostgresErrorCodes.UniqueViolation);
     }
 
     private IHost _CreateHost()

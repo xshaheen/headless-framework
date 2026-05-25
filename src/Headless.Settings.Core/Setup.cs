@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Domain;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
@@ -44,6 +45,16 @@ public static class CoreSettingsSetup
             services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
 
             return _AddCore(services);
+        }
+
+        public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessSettingsSetupBuilder(services);
+            configure(setup);
+
+            return _AddSettingsStorageCore(services, setup);
         }
 
         public IServiceCollection AddSettingDefinitionProvider<T>()
@@ -95,6 +106,46 @@ public static class CoreSettingsSetup
         }
     }
 
+    private static HeadlessSettingsBuilder _AddSettingsStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessSettingsSetupBuilder setup
+    )
+    {
+        if (setup.Extensions.Count != 1)
+        {
+            throw new InvalidOperationException(
+                setup.Extensions.Count == 0
+                    ? "Headless.Settings requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                    : "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        if (serviceCollection.Any(static service => service.ServiceType == typeof(SettingsStorageProviderRegistration)))
+        {
+            throw new InvalidOperationException(
+                "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        serviceCollection.AddSingleton(
+            new SettingsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        );
+
+        serviceCollection.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(options =>
+        {
+            options.Schema = setup.StorageOptions.Schema;
+            options.SettingValuesTableName = setup.StorageOptions.SettingValuesTableName;
+            options.SettingDefinitionsTableName = setup.StorageOptions.SettingDefinitionsTableName;
+        });
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessSettingsBuilder(serviceCollection);
+    }
+
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
@@ -138,4 +189,6 @@ public static class CoreSettingsSetup
 
         return services;
     }
+
+    private sealed record SettingsStorageProviderRegistration(string Provider);
 }

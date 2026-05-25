@@ -5,6 +5,7 @@ using Headless.Hosting.Storage;
 using Headless.Settings;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -25,7 +26,27 @@ public static class SetupSettingsPostgreSql
             });
         }
 
+        public HeadlessSettingsSetupBuilder UsePostgreSql(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterExtension(new PostgreSqlSettingsOptionsExtension(configuration));
+
+            return setup;
+        }
+
         public HeadlessSettingsSetupBuilder UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            setup.RegisterExtension(new PostgreSqlSettingsOptionsExtension(configure));
+
+            return setup;
+        }
+
+        public HeadlessSettingsSetupBuilder UsePostgreSql(
+            Action<PostgreSqlSettingsOptions, IServiceProvider> configure
+        )
         {
             Argument.IsNotNull(configure);
 
@@ -35,12 +56,44 @@ public static class SetupSettingsPostgreSql
         }
     }
 
-    private sealed class PostgreSqlSettingsOptionsExtension(Action<PostgreSqlSettingsOptions> configure)
-        : IStorageOptionsExtension
+    private sealed class PostgreSqlSettingsOptionsExtension : IStorageOptionsExtension
     {
+        private readonly IConfiguration? _configuration;
+        private readonly Action<PostgreSqlSettingsOptions>? _configure;
+        private readonly Action<PostgreSqlSettingsOptions, IServiceProvider>? _configureWithServices;
+
+        public PostgreSqlSettingsOptionsExtension(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public PostgreSqlSettingsOptionsExtension(Action<PostgreSqlSettingsOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public PostgreSqlSettingsOptionsExtension(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<PostgreSqlSettingsOptions, PostgreSqlSettingsOptionsValidator>(configure);
+            if (_configuration is not null)
+            {
+                services.Configure<PostgreSqlSettingsOptions, PostgreSqlSettingsOptionsValidator>(_configuration);
+            }
+            else if (_configure is not null)
+            {
+                services.Configure<PostgreSqlSettingsOptions, PostgreSqlSettingsOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<PostgreSqlSettingsOptions, PostgreSqlSettingsOptionsValidator>(
+                    _configureWithServices
+                );
+            }
+
             services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
             services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();

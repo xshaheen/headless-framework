@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
 using Headless.Hosting.Storage;
 using Headless.Settings;
 using Headless.Settings.Internal;
@@ -14,52 +13,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
 public static class SetupSettings
-{
-    extension(IServiceCollection services)
-    {
-        public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            var setup = new HeadlessSettingsSetupBuilder(services);
-            configure(setup);
-
-            return _AddSettingsCore(services, setup);
-        }
-
-        private static HeadlessSettingsBuilder _AddSettingsCore(
-            IServiceCollection serviceCollection,
-            HeadlessSettingsSetupBuilder setup
-        )
-        {
-            if (setup.Extensions.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    setup.Extensions.Count == 0
-                        ? "Headless.Settings requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
-                        : "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
-                );
-            }
-
-            serviceCollection.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(options =>
-            {
-                options.Schema = setup.StorageOptions.Schema;
-                options.SettingValuesTableName = setup.StorageOptions.SettingValuesTableName;
-                options.SettingDefinitionsTableName = setup.StorageOptions.SettingDefinitionsTableName;
-            });
-
-            foreach (var extension in setup.Extensions)
-            {
-                extension.AddServices(serviceCollection);
-            }
-
-            return new HeadlessSettingsBuilder(serviceCollection);
-        }
-    }
-}
-
-[PublicAPI]
-public static class SetupSettingsEntityFramework
 {
     extension(HeadlessSettingsSetupBuilder setup)
     {

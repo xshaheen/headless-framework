@@ -11,7 +11,7 @@ Provides settings repositories and startup schema initialization without requiri
 - `AddHeadlessSettings(setup => setup.UseSqlServer(connectionString))`
 - Idempotent schema, table, and index creation at host startup
 - Raw ADO.NET repositories for setting values and definitions
-- Shares `SettingsStorageOptions` with the EF provider
+- Shares `SettingsStorageOptions` from `Headless.Settings.Core`
 
 ## Installation
 
@@ -36,7 +36,7 @@ Configure schema and table names through `SettingsStorageOptions` on the shared 
 
 ## Dependencies
 
-- `Headless.Settings.Storage.EntityFramework`
+- `Headless.Settings.Core`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects

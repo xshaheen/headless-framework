@@ -16,7 +16,7 @@ Provides EF Core repository implementations for setting definitions and values u
 
 ## Design Notes
 
-The package no longer ships a dedicated a dedicated settings DbContext or settings-specific DbContext interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties.
+The package no longer ships a dedicated settings DbContext or settings-specific DbContext interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties.
 
 Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository, so they are not enlisted in the consumer's outer transaction.
 

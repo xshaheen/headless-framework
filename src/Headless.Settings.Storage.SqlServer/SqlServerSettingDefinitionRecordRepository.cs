@@ -24,7 +24,10 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         var result = new List<SettingDefinitionRecord>();
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -75,7 +78,10 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
 
         foreach (var record in deletedRecords)
         {
-            await using var command = new SqlCommand(_DeleteSql(), connection, (SqlTransaction)transaction);
+            await using var command = new SqlCommand(_DeleteSql(), connection, (SqlTransaction)transaction)
+            {
+                CommandTimeout = _CommandTimeout(),
+            };
             command.Parameters.AddWithValue("@Id", record.Id);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -83,7 +89,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task _ExecuteAsync(
+    private async Task _ExecuteAsync(
         SqlConnection connection,
         SqlTransaction transaction,
         string sql,
@@ -91,7 +97,10 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction);
+        await using var command = new SqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@Name", record.Name);
         command.Parameters.AddWithValue("@DisplayName", record.DisplayName);
@@ -116,4 +125,6 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
 
     private static ExtraProperties _DeserializeExtraProperties(string json) =>
         JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 }

@@ -24,6 +24,7 @@ Provides full settings management implementation with multiple value providers (
 
 ```bash
 dotnet add package Headless.Settings.Core
+dotnet add package Headless.Settings.Storage.EntityFramework
 ```
 
 ## Quick Start
@@ -44,7 +45,7 @@ builder.Services.AddSettingsManagementCore(options =>
     options.CacheKeyPrefix = "settings:";
 });
 
-// Add storage (EF Core)
+// Add storage (choose Entity Framework, PostgreSQL raw, or SQL Server raw)
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers

@@ -5,6 +5,7 @@ using Headless.Hosting.Storage;
 using Headless.Settings;
 using Headless.Settings.Repositories;
 using Headless.Settings.SqlServer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -25,7 +26,27 @@ public static class SetupSettingsSqlServer
             });
         }
 
+        public HeadlessSettingsSetupBuilder UseSqlServer(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterExtension(new SqlServerSettingsOptionsExtension(configuration));
+
+            return setup;
+        }
+
         public HeadlessSettingsSetupBuilder UseSqlServer(Action<SqlServerSettingsOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            setup.RegisterExtension(new SqlServerSettingsOptionsExtension(configure));
+
+            return setup;
+        }
+
+        public HeadlessSettingsSetupBuilder UseSqlServer(
+            Action<SqlServerSettingsOptions, IServiceProvider> configure
+        )
         {
             Argument.IsNotNull(configure);
 
@@ -35,12 +56,42 @@ public static class SetupSettingsSqlServer
         }
     }
 
-    private sealed class SqlServerSettingsOptionsExtension(Action<SqlServerSettingsOptions> configure)
-        : IStorageOptionsExtension
+    private sealed class SqlServerSettingsOptionsExtension : IStorageOptionsExtension
     {
+        private readonly IConfiguration? _configuration;
+        private readonly Action<SqlServerSettingsOptions>? _configure;
+        private readonly Action<SqlServerSettingsOptions, IServiceProvider>? _configureWithServices;
+
+        public SqlServerSettingsOptionsExtension(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public SqlServerSettingsOptionsExtension(Action<SqlServerSettingsOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public SqlServerSettingsOptionsExtension(Action<SqlServerSettingsOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(configure);
+            if (_configuration is not null)
+            {
+                services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(_configuration);
+            }
+            else if (_configure is not null)
+            {
+                services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(_configureWithServices);
+            }
+
             services.AddInitializerHostedService<SqlServerSettingsStorageInitializer>();
             services.TryAddSingleton<ISettingValueRecordRepository, SqlServerSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, SqlServerSettingDefinitionRecordRepository>();

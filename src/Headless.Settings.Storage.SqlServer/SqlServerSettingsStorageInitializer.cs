@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Settings.Entities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -83,14 +84,14 @@ internal sealed class SqlServerSettingsStorageInitializer(
                 BEGIN
                     CREATE TABLE {definitionsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [DisplayName] nvarchar(256) NOT NULL,
-                        [Description] nvarchar(512) NULL,
-                        [DefaultValue] nvarchar(2000) NULL,
+                        [Name] nvarchar({SettingDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [DisplayName] nvarchar({SettingDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
+                        [Description] nvarchar({SettingDefinitionRecordConstants.DescriptionMaxLength}) NULL,
+                        [DefaultValue] nvarchar({SettingDefinitionRecordConstants.DefaultValueMaxLength}) NULL,
                         [IsVisibleToClients] bit NOT NULL,
                         [IsInherited] bit NOT NULL,
                         [IsEncrypted] bit NOT NULL,
-                        [Providers] nvarchar(1024) NULL,
+                        [Providers] nvarchar({SettingDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.SettingDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
@@ -106,16 +107,32 @@ internal sealed class SqlServerSettingsStorageInitializer(
                 BEGIN
                     CREATE TABLE {valuesTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [Value] nvarchar(2000) NOT NULL,
-                        [ProviderName] nvarchar(64) NOT NULL,
-                        [ProviderKey] nvarchar(64) NULL,
+                        [Name] nvarchar({SettingValueRecordConstants.NameMaxLength}) NOT NULL,
+                        [Value] nvarchar({SettingValueRecordConstants.ValueMaxLength}) NOT NULL,
+                        [ProviderName] nvarchar({SettingValueRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                        [ProviderKey] nvarchar({SettingValueRecordConstants.ProviderKeyMaxLength}) NULL,
                         [DateCreated] datetimeoffset NOT NULL,
                         [DateUpdated] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.SettingValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
                     CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
                 END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.SettingDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{valuesObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
