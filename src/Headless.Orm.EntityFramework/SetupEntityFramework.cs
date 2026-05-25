@@ -84,6 +84,12 @@ public static class SetupEntityFramework
                 optionsLifetime
             );
 
+            // Register IDbContextFactory<TDbContext> alongside AddDbContext so consumers can
+            // resolve detached contexts (background work, IInitializer, BackgroundService) without
+            // a separate AddDbContextFactory call. Singleton wrapper that creates a fresh scope per
+            // call and transfers ownership to the returned context.
+            services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
+
             return services;
         }
 

@@ -2,6 +2,7 @@
 
 using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
@@ -58,6 +59,13 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         _runtime.Initialize();
     }
 
+    /// <summary>
+    /// Optional service scope owned by this context — set by <c>HeadlessDbContextFactory</c> when the
+    /// context is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>. Disposed alongside the context
+    /// so factory-created contexts don't leak per-call scopes.
+    /// </summary>
+    internal IServiceScope? OwnedScope { get; set; }
+
     public abstract string? DefaultSchema { get; }
 
     public string? TenantId => _runtime.TenantId;
@@ -96,6 +104,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
             disposeTask.AsTask().GetAwaiter().GetResult();
         }
         base.Dispose();
+        OwnedScope?.Dispose();
         GC.SuppressFinalize(this);
     }
 
@@ -106,6 +115,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // when the same DbContext type is resolved repeatedly under the same service provider.
         await _runtime.DisposeAsync().ConfigureAwait(false);
         await base.DisposeAsync().ConfigureAwait(false);
+        OwnedScope?.Dispose();
         GC.SuppressFinalize(this);
     }
 
