@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Permissions.Entities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -82,30 +83,30 @@ internal sealed class PostgreSqlPermissionsStorageInitializer(
 
             CREATE TABLE IF NOT EXISTS {groupsTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
+                "Name" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "DisplayName" character varying({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                 "ExtraProperties" text NOT NULL,
                 CONSTRAINT "PK_{options.PermissionGroupDefinitionsTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
                 "Id" uuid NOT NULL,
-                "GroupName" character varying(128) NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "DisplayName" character varying(256) NOT NULL,
+                "GroupName" character varying({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "Name" character varying({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                "DisplayName" character varying({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                 "IsEnabled" boolean NOT NULL,
-                "ParentName" character varying(128),
-                "Providers" character varying(128),
+                "ParentName" character varying({PermissionDefinitionRecordConstants.NameMaxLength}),
+                "Providers" character varying({PermissionDefinitionRecordConstants.ProvidersMaxLength}),
                 "ExtraProperties" text NOT NULL,
                 CONSTRAINT "PK_{options.PermissionDefinitionsTableName}" PRIMARY KEY ("Id")
             );
 
             CREATE TABLE IF NOT EXISTS {grantsTable} (
                 "Id" uuid NOT NULL,
-                "Name" character varying(128) NOT NULL,
-                "ProviderName" character varying(64) NOT NULL,
-                "ProviderKey" character varying(64) NOT NULL,
-                "TenantId" character varying(41),
+                "Name" character varying({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
+                "ProviderName" character varying({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                "ProviderKey" character varying({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
+                "TenantId" character varying({PermissionGrantRecordConstants.TenantIdMaxLength}),
                 "IsGranted" boolean NOT NULL DEFAULT TRUE,
                 CONSTRAINT "PK_{options.PermissionGrantsTableName}" PRIMARY KEY ("Id")
             );
@@ -113,7 +114,8 @@ internal sealed class PostgreSqlPermissionsStorageInitializer(
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGroupDefinitionsTableName}_Name" ON {groupsTable} ("Name");
             CREATE INDEX IF NOT EXISTS "IX_{options.PermissionDefinitionsTableName}_GroupName" ON {definitionsTable} ("GroupName");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
-            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey" ON {grantsTable} ("TenantId", "Name", "ProviderName", "ProviderKey");
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey" ON {grantsTable} ("TenantId", "Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId" ON {grantsTable} ("Name", "ProviderName", "ProviderKey") WHERE "TenantId" IS NULL;
             """;
     }
 

@@ -14,11 +14,6 @@ public static class PermissionsModelBuilderExtensions
         Argument.IsNotNull(modelBuilder);
         Argument.IsNotNull(options);
 
-        if (modelBuilder.Model.FindEntityType(typeof(PermissionGrantRecord)) is not null)
-        {
-            return modelBuilder;
-        }
-
         modelBuilder.ApplyConfiguration(new PermissionGrantRecordConfiguration(options));
         modelBuilder.ApplyConfiguration(new PermissionGroupDefinitionRecordConfiguration(options));
         modelBuilder.ApplyConfiguration(new PermissionDefinitionRecordConfiguration(options));

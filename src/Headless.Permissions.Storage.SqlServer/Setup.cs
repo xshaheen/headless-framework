@@ -5,6 +5,7 @@ using Headless.Hosting.Storage;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -25,7 +26,27 @@ public static class SetupPermissionsSqlServer
             });
         }
 
+        public HeadlessPermissionsSetupBuilder UseSqlServer(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterExtension(new SqlServerPermissionsOptionsExtension(configuration));
+
+            return setup;
+        }
+
         public HeadlessPermissionsSetupBuilder UseSqlServer(Action<SqlServerPermissionsOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            setup.RegisterExtension(new SqlServerPermissionsOptionsExtension(configure));
+
+            return setup;
+        }
+
+        public HeadlessPermissionsSetupBuilder UseSqlServer(
+            Action<SqlServerPermissionsOptions, IServiceProvider> configure
+        )
         {
             Argument.IsNotNull(configure);
 
@@ -35,12 +56,42 @@ public static class SetupPermissionsSqlServer
         }
     }
 
-    private sealed class SqlServerPermissionsOptionsExtension(Action<SqlServerPermissionsOptions> configure)
-        : IStorageOptionsExtension
+    private sealed class SqlServerPermissionsOptionsExtension : IStorageOptionsExtension
     {
+        private readonly IConfiguration? _configuration;
+        private readonly Action<SqlServerPermissionsOptions>? _configure;
+        private readonly Action<SqlServerPermissionsOptions, IServiceProvider>? _configureWithServices;
+
+        public SqlServerPermissionsOptionsExtension(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public SqlServerPermissionsOptionsExtension(Action<SqlServerPermissionsOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public SqlServerPermissionsOptionsExtension(Action<SqlServerPermissionsOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(configure);
+            if (_configuration is not null)
+            {
+                services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(_configuration);
+            }
+            else if (_configure is not null)
+            {
+                services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(_configureWithServices);
+            }
+
             services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, SqlServerPermissionDefinitionRecordRepository>();

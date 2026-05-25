@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
@@ -16,6 +17,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     IServiceProvider services
 ) : IPermissionGrantRepository
 {
+    private const string _GrantColumns = @"""Id"",""Name"",""ProviderName"",""ProviderKey"",""TenantId"",""IsGranted""";
+    private const string _TenantFilter = @"""TenantId"" IS NOT DISTINCT FROM @TenantId";
+
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
         string providerName,
@@ -24,9 +28,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT "Id","Name","ProviderName","ProviderKey","TenantId","IsGranted" FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Name"=@Name AND "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey ORDER BY "Id" LIMIT 1;""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Name"=@Name AND "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey AND {_TenantFilter} ORDER BY "Id" LIMIT 1;""";
 
-        return await _ReadAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey)).ConfigureAwait(false) is [var row, ..]
+        return await _ReadAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey), _TenantParam()).ConfigureAwait(false) is [var row, ..]
             ? row
             : null;
     }
@@ -38,9 +42,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT "Id","Name","ProviderName","ProviderKey","TenantId","IsGranted" FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey;""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey AND {_TenantFilter};""";
 
-        return _ReadAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
+        return _ReadAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey), _TenantParam());
     }
 
     public Task<List<PermissionGrantRecord>> GetListAsync(
@@ -56,9 +60,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         }
 
         var sql =
-            $"""SELECT "Id","Name","ProviderName","ProviderKey","TenantId","IsGranted" FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey;""";
+            $"""SELECT {_GrantColumns} FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Name" = ANY(@Names) AND "ProviderName"=@ProviderName AND "ProviderKey"=@ProviderKey AND {_TenantFilter};""";
 
-        return _ReadAsync(sql, cancellationToken, _Param("Names", names.ToArray()), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
+        return _ReadAsync(sql, cancellationToken, _Param("Names", names.ToArray()), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey), _TenantParam());
     }
 
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
@@ -82,7 +86,10 @@ internal sealed class PostgreSqlPermissionGrantRepository(
 
         foreach (var permissionGrant in permissionGrants)
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            await using var command = new NpgsqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = _CommandTimeout(),
+            };
             command.Parameters.AddRange(_Parameters(permissionGrant));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -93,9 +100,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         var sql =
-            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Id"=@Id;""";
+            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Id"=@Id AND {_TenantFilter};""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id)).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id), _TenantParam()).ConfigureAwait(false);
         await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
     }
 
@@ -110,9 +117,9 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         }
 
         var sql =
-            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Id" = ANY(@Ids);""";
+            $"""DELETE FROM {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE "Id" = ANY(@Ids) AND {_TenantFilter};""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", permissionGrants.Select(x => x.Id).ToArray())).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", permissionGrants.Select(x => x.Id).ToArray()), _TenantParam()).ConfigureAwait(false);
 
         foreach (var permissionGrant in permissionGrants)
         {
@@ -129,7 +136,10 @@ internal sealed class PostgreSqlPermissionGrantRepository(
         var result = new List<PermissionGrantRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -154,20 +164,28 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _PublishAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
-        var publisher = services.GetService<ILocalMessagePublisher>();
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
 
         if (publisher is not null)
         {
             await publisher.PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken);
         }
     }
+
+    private NpgsqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private static NpgsqlParameter[] _Parameters(PermissionGrantRecord permissionGrant) =>
     [

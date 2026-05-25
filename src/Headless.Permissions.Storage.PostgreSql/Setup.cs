@@ -5,6 +5,7 @@ using Headless.Hosting.Storage;
 using Headless.Permissions;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -25,7 +26,27 @@ public static class SetupPermissionsPostgreSql
             });
         }
 
+        public HeadlessPermissionsSetupBuilder UsePostgreSql(IConfiguration configuration)
+        {
+            Argument.IsNotNull(configuration);
+
+            setup.RegisterExtension(new PostgreSqlPermissionsOptionsExtension(configuration));
+
+            return setup;
+        }
+
         public HeadlessPermissionsSetupBuilder UsePostgreSql(Action<PostgreSqlPermissionsOptions> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            setup.RegisterExtension(new PostgreSqlPermissionsOptionsExtension(configure));
+
+            return setup;
+        }
+
+        public HeadlessPermissionsSetupBuilder UsePostgreSql(
+            Action<PostgreSqlPermissionsOptions, IServiceProvider> configure
+        )
         {
             Argument.IsNotNull(configure);
 
@@ -35,12 +56,44 @@ public static class SetupPermissionsPostgreSql
         }
     }
 
-    private sealed class PostgreSqlPermissionsOptionsExtension(Action<PostgreSqlPermissionsOptions> configure)
-        : IStorageOptionsExtension
+    private sealed class PostgreSqlPermissionsOptionsExtension : IStorageOptionsExtension
     {
+        private readonly IConfiguration? _configuration;
+        private readonly Action<PostgreSqlPermissionsOptions>? _configure;
+        private readonly Action<PostgreSqlPermissionsOptions, IServiceProvider>? _configureWithServices;
+
+        public PostgreSqlPermissionsOptionsExtension(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
+        public PostgreSqlPermissionsOptionsExtension(Action<PostgreSqlPermissionsOptions> configure)
+        {
+            _configure = configure;
+        }
+
+        public PostgreSqlPermissionsOptionsExtension(Action<PostgreSqlPermissionsOptions, IServiceProvider> configure)
+        {
+            _configureWithServices = configure;
+        }
+
         public void AddServices(IServiceCollection services)
         {
-            services.Configure<PostgreSqlPermissionsOptions, PostgreSqlPermissionsOptionsValidator>(configure);
+            if (_configuration is not null)
+            {
+                services.Configure<PostgreSqlPermissionsOptions, PostgreSqlPermissionsOptionsValidator>(_configuration);
+            }
+            else if (_configure is not null)
+            {
+                services.Configure<PostgreSqlPermissionsOptions, PostgreSqlPermissionsOptionsValidator>(_configure);
+            }
+            else
+            {
+                services.Configure<PostgreSqlPermissionsOptions, PostgreSqlPermissionsOptionsValidator>(
+                    _configureWithServices
+                );
+            }
+
             services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
             services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, PostgreSqlPermissionDefinitionRecordRepository>();

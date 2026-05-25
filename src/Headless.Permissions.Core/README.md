@@ -20,6 +20,7 @@ Provides the full permission management implementation including hierarchical gr
 
 ```bash
 dotnet add package Headless.Permissions.Core
+dotnet add package Headless.Permissions.Storage.EntityFramework # or PostgreSql / SqlServer
 ```
 
 ## Quick Start
@@ -36,7 +37,7 @@ builder.Services.AddPermissionsManagementCore(options =>
 // Register permission definition providers
 builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 
-// Add storage (e.g., Entity Framework)
+// Add exactly one storage provider (Entity Framework shown)
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 

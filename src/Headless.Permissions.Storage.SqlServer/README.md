@@ -11,7 +11,7 @@ Provides permissions repositories and startup schema initialization without requ
 - `AddHeadlessPermissions(setup => setup.UseSqlServer(connectionString))`
 - Idempotent schema, table, and index creation at host startup
 - Raw ADO.NET repositories for permission grants, definitions, and groups
-- Shares `PermissionsStorageOptions` with the EF provider
+- Uses the shared `PermissionsStorageOptions` from `Headless.Permissions.Core`
 
 ## Installation
 
@@ -36,7 +36,7 @@ Configure schema and table names through `PermissionsStorageOptions` on the shar
 
 ## Dependencies
 
-- `Headless.Permissions.Storage.EntityFramework`
+- `Headless.Permissions.Core`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects

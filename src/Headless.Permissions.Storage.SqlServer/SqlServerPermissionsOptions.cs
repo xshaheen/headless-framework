@@ -18,5 +18,6 @@ internal sealed class SqlServerPermissionsOptionsValidator : AbstractValidator<S
     public SqlServerPermissionsOptionsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
+        RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromSeconds(int.MaxValue));
     }
 }

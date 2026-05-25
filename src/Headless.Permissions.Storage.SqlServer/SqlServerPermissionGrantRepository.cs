@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
@@ -15,6 +16,11 @@ internal sealed class SqlServerPermissionGrantRepository(
     IServiceProvider services
 ) : IPermissionGrantRepository
 {
+    private const int _MaxDeleteParameters = 2000;
+    private const int _MaxNameParameters = 2000;
+    private const string _GrantColumns = "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted]";
+    private const string _TenantFilter = "(([TenantId] IS NULL AND @TenantId IS NULL) OR [TenantId]=@TenantId)";
+
     public async Task<PermissionGrantRecord?> FindAsync(
         string name,
         string providerName,
@@ -23,9 +29,9 @@ internal sealed class SqlServerPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT TOP(1) [Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey ORDER BY [Id];""";
+            $"""SELECT TOP(1) {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name]=@Name AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter} ORDER BY [Id];""";
 
-        return await _ReadAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey)).ConfigureAwait(false) is [var row, ..]
+        return await _ReadAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey), _TenantParam()).ConfigureAwait(false) is [var row, ..]
             ? row
             : null;
     }
@@ -37,12 +43,12 @@ internal sealed class SqlServerPermissionGrantRepository(
     )
     {
         var sql =
-            $"""SELECT [Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey;""";
+            $"""SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};""";
 
-        return _ReadAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
+        return _ReadAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey), _TenantParam());
     }
 
-    public Task<List<PermissionGrantRecord>> GetListAsync(
+    public async Task<List<PermissionGrantRecord>> GetListAsync(
         IReadOnlyCollection<string> names,
         string providerName,
         string providerKey,
@@ -51,18 +57,26 @@ internal sealed class SqlServerPermissionGrantRepository(
     {
         if (names.Count == 0)
         {
-            return Task.FromResult(new List<PermissionGrantRecord>());
+            return [];
         }
 
-        var nameParameters = names.Select((_, index) => $"@Name{index}").ToArray();
-        var parameters = names.Select((name, index) => _Param($"Name{index}", name)).ToList();
-        parameters.Add(_Param("ProviderName", providerName));
-        parameters.Add(_Param("ProviderKey", providerKey));
+        var result = new List<PermissionGrantRecord>();
 
-        var sql =
-            $"""SELECT [Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey;""";
+        foreach (var chunk in names.Chunk(_MaxNameParameters))
+        {
+            var nameParameters = chunk.Select((_, index) => $"@Name{index}").ToArray();
+            var parameters = chunk.Select((name, index) => _Param($"Name{index}", name)).ToList();
+            parameters.Add(_Param("ProviderName", providerName));
+            parameters.Add(_Param("ProviderKey", providerKey));
+            parameters.Add(_TenantParam());
 
-        return _ReadAsync(sql, cancellationToken, parameters.ToArray());
+            var sql =
+                $"""SELECT {_GrantColumns} FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Name] IN ({string.Join(",", nameParameters)}) AND [ProviderName]=@ProviderName AND [ProviderKey]=@ProviderKey AND {_TenantFilter};""";
+
+            result.AddRange(await _ReadAsync(sql, cancellationToken, parameters.ToArray()).ConfigureAwait(false));
+        }
+
+        return result;
     }
 
     public Task InsertAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken = default)
@@ -86,7 +100,10 @@ internal sealed class SqlServerPermissionGrantRepository(
 
         foreach (var permissionGrant in permissionGrants)
         {
-            await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction);
+            await using var command = new SqlCommand(sql, connection, (SqlTransaction)transaction)
+            {
+                CommandTimeout = _CommandTimeout(),
+            };
             command.Parameters.AddRange(_Parameters(permissionGrant));
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -97,9 +114,9 @@ internal sealed class SqlServerPermissionGrantRepository(
     public async Task DeleteAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         var sql =
-            $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id]=@Id;""";
+            $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id]=@Id AND {_TenantFilter};""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id)).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", permissionGrant.Id), _TenantParam()).ConfigureAwait(false);
         await _PublishAsync(permissionGrant, cancellationToken).ConfigureAwait(false);
     }
 
@@ -113,12 +130,16 @@ internal sealed class SqlServerPermissionGrantRepository(
             return;
         }
 
-        var idParameters = permissionGrants.Select((_, index) => $"@Id{index}").ToArray();
-        var parameters = permissionGrants.Select((permissionGrant, index) => _Param($"Id{index}", permissionGrant.Id)).ToArray();
-        var sql =
-            $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});""";
+        foreach (var chunk in permissionGrants.Chunk(_MaxDeleteParameters))
+        {
+            var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
+            var parameters = chunk.Select((permissionGrant, index) => _Param($"Id{index}", permissionGrant.Id)).ToList();
+            parameters.Add(_TenantParam());
+            var sql =
+                $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGrantsTableName)} WHERE [Id] IN ({string.Join(",", idParameters)}) AND {_TenantFilter};""";
 
-        await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
+            await _ExecuteAsync(sql, cancellationToken, parameters.ToArray()).ConfigureAwait(false);
+        }
 
         foreach (var permissionGrant in permissionGrants)
         {
@@ -135,7 +156,10 @@ internal sealed class SqlServerPermissionGrantRepository(
         var result = new List<PermissionGrantRecord>();
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -160,20 +184,28 @@ internal sealed class SqlServerPermissionGrantRepository(
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _PublishAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
-        var publisher = services.GetService<ILocalMessagePublisher>();
+        await using var scope = services.CreateAsyncScope();
+        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
 
         if (publisher is not null)
         {
             await publisher.PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken);
         }
     }
+
+    private SqlParameter _TenantParam() => _Param("TenantId", services.GetService<ICurrentTenant>()?.Id);
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private static SqlParameter[] _Parameters(PermissionGrantRecord permissionGrant) =>
     [

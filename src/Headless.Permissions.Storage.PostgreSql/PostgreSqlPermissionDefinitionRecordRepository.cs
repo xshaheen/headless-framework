@@ -26,7 +26,10 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         var result = new List<PermissionDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -62,7 +65,10 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         var result = new List<PermissionGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var command = new NpgsqlCommand(sql, connection)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -127,7 +133,7 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task _ExecuteGroupAsync(
+    private async Task _ExecuteGroupAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -135,7 +141,10 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddWithValue("Id", record.Id);
         command.Parameters.AddWithValue("Name", record.Name);
         command.Parameters.AddWithValue("DisplayName", record.DisplayName);
@@ -143,7 +152,7 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task _ExecutePermissionAsync(
+    private async Task _ExecutePermissionAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -151,7 +160,10 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddWithValue("Id", record.Id);
         command.Parameters.AddWithValue("GroupName", record.GroupName);
         command.Parameters.AddWithValue("Name", record.Name);
@@ -163,7 +175,7 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task _DeleteAsync(
+    private async Task _DeleteAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -171,10 +183,15 @@ internal sealed class PostgreSqlPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        await using var command = new NpgsqlCommand(sql, connection, transaction)
+        {
+            CommandTimeout = _CommandTimeout(),
+        };
         command.Parameters.AddWithValue("Id", id);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private string _InsertGroupSql() =>
         $"""INSERT INTO {PostgreSqlPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";

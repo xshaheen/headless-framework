@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Entities;
@@ -56,9 +57,76 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         storedPermissions.Should().ContainSingle(x => x.Name == "Users.Create");
     }
 
-    private IHost _CreateHost()
+    [Fact]
+    public async Task should_enforce_unique_host_permission_grants()
+    {
+        // given
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var first = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: true);
+        var duplicate = new PermissionGrantRecord(Guid.NewGuid(), "Users.Delete", "Role", "admin", isGranted: false);
+
+        // when
+        await grantRepository.InsertAsync(first, TestContext.Current.CancellationToken);
+        var act = () => grantRepository.InsertAsync(duplicate, TestContext.Current.CancellationToken);
+
+        // then
+        await act.Should().ThrowAsync<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.UniqueViolation);
+    }
+
+    [Fact]
+    public async Task should_scope_permission_grant_reads_to_current_tenant()
+    {
+        // given
+        await _DropSchemaAsync();
+        var currentTenant = new TestCurrentTenant("tenant-a");
+        using var host = _CreateHost(currentTenant);
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var tenantA = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Approve",
+            "Role",
+            "admin",
+            isGranted: true,
+            tenantId: "tenant-a"
+        );
+        var tenantB = new PermissionGrantRecord(
+            Guid.NewGuid(),
+            "Users.Approve",
+            "Role",
+            "admin",
+            isGranted: false,
+            tenantId: "tenant-b"
+        );
+
+        // when
+        await grantRepository.InsertManyAsync([tenantA, tenantB], TestContext.Current.CancellationToken);
+        var found = await grantRepository.FindAsync(
+            "Users.Approve",
+            "Role",
+            "admin",
+            TestContext.Current.CancellationToken
+        );
+        var list = await grantRepository.GetListAsync("Role", "admin", TestContext.Current.CancellationToken);
+
+        // then
+        found.Should().NotBeNull();
+        found!.TenantId.Should().Be("tenant-a");
+        found.IsGranted.Should().BeTrue();
+        list.Should().ContainSingle(x => x.TenantId == "tenant-a");
+    }
+
+    private IHost _CreateHost(ICurrentTenant? currentTenant = null)
     {
         var builder = Host.CreateApplicationBuilder();
+        if (currentTenant is not null)
+        {
+            builder.Services.AddSingleton(currentTenant);
+        }
+
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);
@@ -94,5 +162,27 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private sealed class TestCurrentTenant(string? tenantId) : ICurrentTenant
+    {
+        public bool IsAvailable => Id is not null;
+
+        public string? Id { get; private set; } = tenantId;
+
+        public string? Name => null;
+
+        public IDisposable Change(string? id, string? name = null)
+        {
+            var previousId = Id;
+            Id = id;
+
+            return new RestoreAction(() => Id = previousId);
+        }
+    }
+
+    private sealed class RestoreAction(Action action) : IDisposable
+    {
+        public void Dispose() => action();
     }
 }

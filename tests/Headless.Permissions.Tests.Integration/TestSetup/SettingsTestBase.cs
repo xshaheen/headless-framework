@@ -8,6 +8,7 @@ using Headless.Permissions;
 using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -83,10 +84,39 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         IOptions<PermissionsStorageOptions> storageOptions
     ) : DbContext(options)
     {
+        internal PermissionsStorageOptions StorageOptions => storageOptions.Value;
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+        }
+    }
+
+    private sealed class PermissionsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+        {
+            if (context is not PermissionsTestDbContext permissionsContext)
+            {
+                return (context.GetType(), designTime);
+            }
+
+            var options = permissionsContext.StorageOptions;
+
+            return (
+                context.GetType(),
+                options.Schema,
+                options.PermissionGrantsTableName,
+                options.PermissionDefinitionsTableName,
+                options.PermissionGroupDefinitionsTableName,
+                designTime
+            );
         }
     }
 }

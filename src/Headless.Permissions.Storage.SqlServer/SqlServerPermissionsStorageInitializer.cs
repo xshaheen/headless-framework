@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Permissions.Entities;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -85,13 +86,19 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 BEGIN
                     CREATE TABLE {groupsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [DisplayName] nvarchar(256) NOT NULL,
+                        [Name] nvarchar({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [DisplayName] nvarchar({PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.PermissionGroupDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
                 END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGroupDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{groupsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -102,18 +109,31 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 BEGIN
                     CREATE TABLE {definitionsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [GroupName] nvarchar(128) NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [DisplayName] nvarchar(256) NOT NULL,
+                        [GroupName] nvarchar({PermissionGroupDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [Name] nvarchar({PermissionDefinitionRecordConstants.NameMaxLength}) NOT NULL,
+                        [DisplayName] nvarchar({PermissionDefinitionRecordConstants.DisplayNameMaxLength}) NOT NULL,
                         [IsEnabled] bit NOT NULL,
-                        [ParentName] nvarchar(128) NULL,
-                        [Providers] nvarchar(128) NULL,
+                        [ParentName] nvarchar({PermissionDefinitionRecordConstants.NameMaxLength}) NULL,
+                        [Providers] nvarchar({PermissionDefinitionRecordConstants.ProvidersMaxLength}) NULL,
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.PermissionDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
                 END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionDefinitionsTableName}_GroupName' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionDefinitionsTableName}_Name' AND object_id = OBJECT_ID(N'{definitionsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
@@ -124,15 +144,21 @@ internal sealed class SqlServerPermissionsStorageInitializer(
                 BEGIN
                     CREATE TABLE {grantsTable} (
                         [Id] uniqueidentifier NOT NULL,
-                        [Name] nvarchar(128) NOT NULL,
-                        [ProviderName] nvarchar(64) NOT NULL,
-                        [ProviderKey] nvarchar(64) NOT NULL,
-                        [TenantId] nvarchar(41) NULL,
+                        [Name] nvarchar({PermissionGrantRecordConstants.NameMaxLength}) NOT NULL,
+                        [ProviderName] nvarchar({PermissionGrantRecordConstants.ProviderNameMaxLength}) NOT NULL,
+                        [ProviderKey] nvarchar({PermissionGrantRecordConstants.ProviderKeyMaxLength}) NOT NULL,
+                        [TenantId] nvarchar({PermissionGrantRecordConstants.TenantIdMaxLength}) NULL,
                         [IsGranted] bit NOT NULL DEFAULT CAST(1 AS bit),
                         CONSTRAINT [PK_{options.PermissionGrantsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
                 END;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;

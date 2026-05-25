@@ -21,5 +21,6 @@ internal sealed class PostgreSqlPermissionsOptionsValidator : AbstractValidator<
     public PostgreSqlPermissionsOptionsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
+        RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromSeconds(int.MaxValue));
     }
 }

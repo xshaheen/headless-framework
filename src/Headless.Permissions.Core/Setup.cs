@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.Domain;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
@@ -37,6 +38,16 @@ public static class PermissionsSetup
             services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
 
             return _AddCore(services);
+        }
+
+        public HeadlessPermissionsBuilder AddHeadlessPermissions(Action<HeadlessPermissionsSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessPermissionsSetupBuilder(services);
+            configure(setup);
+
+            return _AddPermissionsStorageCore(services, setup);
         }
 
         public IServiceCollection AddPermissionDefinitionProvider<T>()
@@ -90,6 +101,47 @@ public static class PermissionsSetup
         }
     }
 
+    private static HeadlessPermissionsBuilder _AddPermissionsStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessPermissionsSetupBuilder setup
+    )
+    {
+        if (setup.Extensions.Count != 1)
+        {
+            throw new InvalidOperationException(
+                setup.Extensions.Count == 0
+                    ? "Headless.Permissions requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
+                    : "Headless.Permissions requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        if (serviceCollection.Any(static service => service.ServiceType == typeof(PermissionsStorageProviderRegistration)))
+        {
+            throw new InvalidOperationException(
+                "Headless.Permissions requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        serviceCollection.AddSingleton(
+            new PermissionsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        );
+
+        serviceCollection.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(options =>
+        {
+            options.Schema = setup.StorageOptions.Schema;
+            options.PermissionGrantsTableName = setup.StorageOptions.PermissionGrantsTableName;
+            options.PermissionDefinitionsTableName = setup.StorageOptions.PermissionDefinitionsTableName;
+            options.PermissionGroupDefinitionsTableName = setup.StorageOptions.PermissionGroupDefinitionsTableName;
+        });
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessPermissionsBuilder(serviceCollection);
+    }
+
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services._AddCoreValueProvider();
@@ -131,4 +183,6 @@ public static class PermissionsSetup
 
         return services;
     }
+
+    private sealed record PermissionsStorageProviderRegistration(string Provider);
 }
