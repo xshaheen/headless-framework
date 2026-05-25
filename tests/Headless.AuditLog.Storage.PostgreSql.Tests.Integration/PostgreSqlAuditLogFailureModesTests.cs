@@ -66,10 +66,13 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready and exactly one audit_log table exists
+            // then — all initializers report ready, exactly one audit_log table exists, and the
+            // full 5-index complement is present (regression guard: a swallowed CREATE INDEX
+            // failure would otherwise pass the table-count assertion silently).
             hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(1);
+            (await _CountIndexesAsync("audit_log_pg_concurrent", "audit_log")).Should().Be(5);
         }
         finally
         {
@@ -110,6 +113,26 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema = @schema AND table_name = @table
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("schema", schema);
+        command.Parameters.AddWithValue("table", table);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    private async Task<int> _CountIndexesAsync(string schema, string table)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        // Matches the 5 `CREATE INDEX IF NOT EXISTS ix_audit_log_*` statements in the PG
+        // initializer; the LIKE filter excludes the PK index (named `PK_<table>`).
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT COUNT(*)
+            FROM pg_indexes
+            WHERE schemaname = @schema AND tablename = @table AND indexname LIKE 'ix_audit_log_%'
             """,
             connection
         );

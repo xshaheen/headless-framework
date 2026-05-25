@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.AuditLog;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,7 +14,10 @@ internal sealed partial class PostgreSqlAuditLogStore(
     ILogger<PostgreSqlAuditLogStore>? logger = null
 ) : IAuditLogStore
 {
-    private static int _MismatchWarned;
+    // Process-wide dedup keyed on the unexpected connection's type name. Logs each distinct
+    // mismatch shape once — multi-tenant or multi-store deployments with different misconfigs
+    // each surface their own warning rather than the first mismatch silencing all others.
+    private static readonly ConcurrentDictionary<string, byte> _WarnedConnectionTypes = new(StringComparer.Ordinal);
 
     private readonly ILogger<PostgreSqlAuditLogStore> _logger =
         logger ?? NullLogger<PostgreSqlAuditLogStore>.Instance;
@@ -56,11 +60,13 @@ internal sealed partial class PostgreSqlAuditLogStore(
         }
 
         // Provider mismatch: the consumer's DbContext is using a different driver (e.g. SqlClient).
-        // Fall back to opening our own connection. Log once per process — the store is registered
-        // scoped, so a per-instance flag would still fire once per request.
-        if (Interlocked.Exchange(ref _MismatchWarned, 1) == 0)
+        // Fall back to opening our own connection. Log once per distinct mismatch shape — the store
+        // is registered scoped (per-request), so per-instance dedup would flood logs; a flat static
+        // flag would silently swallow unrelated misconfigs in multi-tenant or multi-store hosts.
+        var connectionTypeName = connection.GetType().FullName ?? "(unknown)";
+        if (_WarnedConnectionTypes.TryAdd(connectionTypeName, 0))
         {
-            LogProviderMismatch(_logger, connection.GetType().FullName ?? "(unknown)");
+            LogProviderMismatch(_logger, connectionTypeName);
         }
 
         return (null, null);
@@ -82,7 +88,7 @@ internal sealed partial class PostgreSqlAuditLogStore(
         EventId = 1,
         EventName = "PostgreSqlAuditLogProviderMismatch",
         Level = LogLevel.Warning,
-        Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Warning suppressed for the remainder of this process."
+        Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Subsequent occurrences of this exact mismatch are suppressed for the remainder of this process."
     )]
     private static partial void LogProviderMismatch(ILogger logger, string connectionType);
 }

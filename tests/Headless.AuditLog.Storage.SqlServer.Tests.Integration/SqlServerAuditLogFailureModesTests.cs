@@ -66,10 +66,13 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             var startTasks = hosts.Select(h => h.StartAsync(TestContext.Current.CancellationToken)).ToArray();
             await Task.WhenAll(startTasks);
 
-            // then — all initializers report ready and exactly one audit_log table exists
+            // then — all initializers report ready, exactly one audit_log table exists, and the
+            // full 5-index complement is present (regression guard: a CATCH that swallows a real
+            // CREATE INDEX failure would otherwise pass the table-count assertion silently).
             hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
                 .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(1);
+            (await _CountIndexesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(5);
         }
         finally
         {
@@ -121,6 +124,20 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         );
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+    }
+
+    private async Task<int> _CountIndexesAsync(string schema, string table)
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        // Nonclustered indexes only (type = 2) — excludes the clustered PK so the count matches
+        // the 5 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogStorageInitializer.
+        await using var command = new SqlCommand(
+            $"SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(N'[{schema}].[{table}]') AND type = 2;",
+            connection
+        );
 
         return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
     }

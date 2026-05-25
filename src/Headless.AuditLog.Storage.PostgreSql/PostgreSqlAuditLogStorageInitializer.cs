@@ -19,11 +19,17 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        // Cancel any in-flight waiters on the previous TCS before swapping. Without this, a caller
-        // that awaited WaitForInitializationAsync before a host restart would hang on an abandoned
-        // promise that nobody will ever resolve.
-        _completion.TrySetCanceled(cancellationToken);
-        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // On a host restart, swap the completion source atomically and cancel the previous promise
+        // so waiters from the prior run observe OperationCanceledException rather than hanging.
+        // On first start, _completion is the field initializer (no prior waiters to rescue), so
+        // skip the cancel — a fresh TCS is never IsCompleted.
+        if (_completion.Task.IsCompleted)
+        {
+            var previous = Interlocked.Exchange(
+                ref _completion,
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+            previous.TrySetCanceled(cancellationToken);
+        }
 
         try
         {

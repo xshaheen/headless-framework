@@ -3,6 +3,7 @@
 using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
@@ -99,6 +100,9 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // synchronous (ValueTask.CompletedTask), so the sync path can call DisposeAsync().AsTask()
         // safely without blocking. We keep the dispose contract symmetrical with DisposeAsync.
         // try/finally guarantees OwnedScope.Dispose runs even if runtime or base disposal throws.
+        // The inner try/catch inside finally guards against secondary scope-dispose exceptions
+        // masking the primary runtime/base exception — the original failure is what operators need.
+        var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
         try
         {
             var disposeTask = _runtime.DisposeAsync();
@@ -110,7 +114,15 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         }
         finally
         {
-            OwnedScope?.Dispose();
+            try
+            {
+                OwnedScope?.Dispose();
+            }
+            catch (Exception scopeEx)
+            {
+                logger?.LogOwnedScopeDisposeFailed(scopeEx);
+            }
+
             GC.SuppressFinalize(this);
         }
     }
@@ -121,6 +133,9 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // tear down its services. Avoids EF's "still tracking" assertions and prevents handler leaks
         // when the same DbContext type is resolved repeatedly under the same service provider.
         // try/finally guarantees OwnedScope disposal even if runtime or base disposal throws.
+        // The inner try/catch inside finally guards against secondary scope-dispose exceptions
+        // masking the primary runtime/base exception.
+        var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
         try
         {
             await _runtime.DisposeAsync().ConfigureAwait(false);
@@ -128,15 +143,22 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         }
         finally
         {
-            // Prefer async scope disposal — MS DI scopes implement IAsyncDisposable
-            // (AsyncServiceScope) and may hold async-only-disposable scoped services.
-            if (OwnedScope is IAsyncDisposable asyncDisposableScope)
+            try
             {
-                await asyncDisposableScope.DisposeAsync().ConfigureAwait(false);
+                // Prefer async scope disposal — MS DI scopes implement IAsyncDisposable
+                // (AsyncServiceScope) and may hold async-only-disposable scoped services.
+                if (OwnedScope is IAsyncDisposable asyncDisposableScope)
+                {
+                    await asyncDisposableScope.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    OwnedScope?.Dispose();
+                }
             }
-            else
+            catch (Exception scopeEx)
             {
-                OwnedScope?.Dispose();
+                logger?.LogOwnedScopeDisposeFailed(scopeEx);
             }
 
             GC.SuppressFinalize(this);
@@ -159,4 +181,15 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         base.OnModelCreating(modelBuilder);
         _runtime.ProcessModelCreating(modelBuilder);
     }
+}
+
+internal static partial class HeadlessDbContextLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeadlessDbContextOwnedScopeDisposeFailed",
+        Level = LogLevel.Warning,
+        Message = "HeadlessDbContext: OwnedScope disposal failed; the primary disposal exception (if any) takes precedence and is rethrown to the caller."
+    )]
+    public static partial void LogOwnedScopeDisposeFailed(this ILogger logger, Exception exception);
 }
