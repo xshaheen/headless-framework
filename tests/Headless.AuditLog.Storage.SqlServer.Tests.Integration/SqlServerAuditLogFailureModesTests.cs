@@ -14,15 +14,17 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
     {
-        // given — port 1 is reserved and won't accept connections; short timeout to fail fast
-        const string unreachable = "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=Headless!Pass1;Connect Timeout=2;TrustServerCertificate=true";
+        // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
+        // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
+        const string unreachable = "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
-        // when / then
+        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
         await FluentActions
             .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
             .Should()
-            .ThrowAsync<Exception>();
+            .ThrowAsync<Exception>()
+            .Where(e => e is SqlException || e.InnerException is SqlException);
 
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         initializer.IsInitialized.Should().BeFalse();
@@ -30,7 +32,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
             .Should()
-            .ThrowAsync<Exception>();
+            .ThrowAsync<SqlException>();
     }
 
     [Fact]
@@ -124,7 +126,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema, string table)
@@ -138,6 +140,6 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             connection
         );
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 }

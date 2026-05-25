@@ -14,15 +14,17 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     [Fact]
     public async Task should_throw_and_keep_initializer_unmarked_when_database_unreachable()
     {
-        // given — port 1 is reserved and won't accept connections; short timeout to fail fast
-        const string unreachable = "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=postgres;Timeout=2";
+        // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
+        // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
+        const string unreachable = "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
         using var host = _CreateHost(unreachable);
 
-        // when / then
+        // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
         await FluentActions
             .Awaiting(() => host.StartAsync(TestContext.Current.CancellationToken))
             .Should()
-            .ThrowAsync<Exception>();
+            .ThrowAsync<Exception>()
+            .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
 
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         initializer.IsInitialized.Should().BeFalse();
@@ -30,7 +32,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken))
             .Should()
-            .ThrowAsync<Exception>();
+            .ThrowAsync<NpgsqlException>();
     }
 
     [Fact]
@@ -118,7 +120,7 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     private async Task<int> _CountIndexesAsync(string schema, string table)
@@ -138,6 +140,6 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken));
+        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
     }
 }

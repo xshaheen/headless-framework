@@ -105,6 +105,33 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         rowCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_fall_back_to_own_connection_when_accessor_returns_non_npgsql_connection()
+    {
+        // given — accessor returns a non-Npgsql connection (simulating the consumer's DbContext
+        // using a different driver). The store must detect the provider mismatch, fall back to
+        // opening its own NpgsqlConnection, and write the row successfully on the standalone path.
+        await _DropSchemaAsync();
+        var fakeConnection = new NonNpgsqlConnectionStub();
+        var accessor = new TestAmbientAccessor { Connection = fakeConnection, Transaction = null };
+        using var host = _CreateHost(accessor);
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        using var scope = host.Services.CreateScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when — store sees a mismatched connection type, warns, and falls back to its own connection
+        await store.SaveAsync(
+            [_NewEntry(action: "atomicity.mismatch_fallback")],
+            savingContext: new object(),
+            TestContext.Current.CancellationToken
+        );
+
+        // then — the row is persisted via the fallback path (committed on the store's own connection)
+        var rowCount = await _CountRowsByActionAsync("atomicity.mismatch_fallback");
+        rowCount.Should().Be(1);
+    }
+
     private IHost _CreateHost(IAmbientDbTransactionAccessor accessor)
     {
         var builder = Host.CreateApplicationBuilder();
@@ -162,5 +189,23 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
 
         public (DbConnection? Connection, DbTransaction? Transaction) TryResolve(object savingContext) =>
             (Connection, Transaction);
+    }
+
+    // Minimal DbConnection stub used only to exercise the provider-mismatch fallback path.
+    // The store inspects the runtime type, sees this is not NpgsqlConnection, logs a warning,
+    // and falls back to opening its own connection — none of these abstract members ever execute.
+    private sealed class NonNpgsqlConnectionStub : DbConnection
+    {
+        [System.Diagnostics.CodeAnalysis.AllowNull]
+        public override string ConnectionString { get; set; } = string.Empty;
+        public override string Database => string.Empty;
+        public override string DataSource => string.Empty;
+        public override string ServerVersion => string.Empty;
+        public override System.Data.ConnectionState State => System.Data.ConnectionState.Closed;
+        public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+        public override void Close() { }
+        public override void Open() => throw new NotSupportedException();
+        protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il) => throw new NotSupportedException();
+        protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
     }
 }

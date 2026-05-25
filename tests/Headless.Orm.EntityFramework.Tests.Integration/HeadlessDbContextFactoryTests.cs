@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture fixture)
 {
     [Fact]
-    public async Task AddHeadlessDbContext_should_register_IDbContextFactory_resolvable_from_root_provider()
+    public async Task should_resolve_dbcontext_factory_from_root_provider_when_registered_via_add_headless_dbcontext()
     {
         // given — clean container registered via AddHeadlessDbContext (the combined call)
         await using var sp = _BuildProvider();
@@ -27,7 +27,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     }
 
     [Fact]
-    public async Task Factory_created_context_should_dispose_its_owned_scope_when_disposed()
+    public async Task should_dispose_owned_scope_when_factory_created_context_is_disposed()
     {
         // given — register a scoped tracker so we can observe scope disposal
         await using var sp = _BuildProvider(services => services.AddScoped<ScopeProbe>());
@@ -48,7 +48,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     }
 
     [Fact]
-    public async Task Multiple_factory_calls_should_yield_independent_contexts_with_independent_scopes()
+    public async Task should_yield_independent_contexts_with_independent_scopes_when_factory_called_multiple_times()
     {
         // given
         await using var sp = _BuildProvider();
@@ -63,7 +63,46 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         a.OwnedScope.Should().NotBeSameAs(b.OwnedScope);
     }
 
-    private ServiceProvider _BuildProvider(Action<IServiceCollection>? configure = null)
+    [Fact]
+    public async Task should_dispose_owned_scope_when_dbcontext_constructor_throws()
+    {
+        // given — a scoped probe whose disposal we observe, and a context whose ctor throws.
+        // The factory must dispose the per-call scope on the failure path so the probe (and any
+        // other scoped state) is released; otherwise we leak a scope per failed CreateDbContext.
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
+        services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
+        services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
+        services.AddSingleton<Headless.Abstractions.IGuidGenerator, Headless.Abstractions.SequentialAsStringGuidGenerator>();
+        services.AddScoped<ScopeProbe>();
+        services.AddHeadlessDbContext<ThrowingDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
+
+        await using var sp = services.BuildServiceProvider();
+        var factory = sp.GetRequiredService<IDbContextFactory<ThrowingDbContext>>();
+
+        ScopeProbe? probeFromFailedScope = null;
+        ThrowingDbContext.OnConstructed = probe => probeFromFailedScope = probe;
+
+        try
+        {
+            // when — factory creates a scope, resolves ThrowingDbContext (whose ctor injects the
+            // probe and then throws), and must dispose the per-call scope on the catch path
+            var act = () => factory.CreateDbContextAsync(TestContext.Current.CancellationToken);
+            await act.Should().ThrowAsync<InvalidOperationException>();
+
+            // then — the probe was created inside the per-call scope, and disposing that scope
+            // must have disposed the probe
+            probeFromFailedScope.Should().NotBeNull("ctor ran far enough to capture the scoped probe");
+            probeFromFailedScope!.IsDisposed.Should().BeTrue("factory must dispose the scope on the failure path");
+        }
+        finally
+        {
+            ThrowingDbContext.OnConstructed = null;
+        }
+    }
+
+private ServiceProvider _BuildProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -77,7 +116,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         return services.BuildServiceProvider();
     }
 
-    private sealed class ScopeProbe : IDisposable
+    public sealed class ScopeProbe : IDisposable
     {
         public bool IsDisposed { get; private set; }
 
@@ -94,5 +133,29 @@ public sealed class FactoryTestDbContext(
     DbContextOptions<FactoryTestDbContext> options
 ) : HeadlessDbContext(services, options)
 {
+    public override string DefaultSchema => "";
+}
+
+/// <summary>
+/// Context whose constructor captures an injected per-scope probe and then throws. Used to verify
+/// the factory disposes the per-call scope on the failure path (the scoped probe should observe
+/// disposal even though the context was never returned).
+/// </summary>
+public sealed class ThrowingDbContext : HeadlessDbContext
+{
+    public static Action<HeadlessDbContextFactoryTests.ScopeProbe>? OnConstructed { get; set; }
+
+    public ThrowingDbContext(
+        HeadlessDbContextServices services,
+        DbContextOptions<ThrowingDbContext> options,
+        HeadlessDbContextFactoryTests.ScopeProbe probe
+    )
+        : base(services, options)
+    {
+        OnConstructed?.Invoke(probe);
+
+        throw new InvalidOperationException("intentional ctor failure to exercise scope-disposal path");
+    }
+
     public override string DefaultSchema => "";
 }
