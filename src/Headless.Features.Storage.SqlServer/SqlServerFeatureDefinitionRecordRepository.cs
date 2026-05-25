@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
@@ -14,12 +16,15 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     IOptions<FeaturesStorageOptions> storageOptions
 ) : IFeatureDefinitionRecordRepository
 {
+    private const int _MaxRowsPerInsert = 100;
+
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private string? _insertGroupSql;
+    private readonly ConcurrentDictionary<int, string> _insertGroupBatchSql = new();
+    private readonly ConcurrentDictionary<int, string> _insertFeatureBatchSql = new();
+
     private string? _updateGroupSql;
     private string? _deleteGroupSql;
-    private string? _insertFeatureSql;
     private string? _updateFeatureSql;
     private string? _deleteFeatureSql;
     private string? _selectFeaturesSql;
@@ -104,39 +109,92 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var record in newGroups)
-        {
-            await _ExecuteGroupAsync(connection, (SqlTransaction)transaction, _InsertGroupSql(), record, cancellationToken).ConfigureAwait(false);
-        }
+        await _BatchInsertGroupsAsync(connection, transaction, newGroups, cancellationToken).ConfigureAwait(false);
 
         foreach (var record in updatedGroups)
         {
-            await _ExecuteGroupAsync(connection, (SqlTransaction)transaction, _UpdateGroupSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteGroupAsync(connection, transaction, _UpdateGroupSql(), record, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var record in deletedGroups)
         {
-            await _DeleteAsync(connection, (SqlTransaction)transaction, _DeleteGroupSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, transaction, _DeleteGroupSql(), record.Id, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var record in newFeatures)
-        {
-            await _ExecuteFeatureAsync(connection, (SqlTransaction)transaction, _InsertFeatureSql(), record, cancellationToken).ConfigureAwait(false);
-        }
+        await _BatchInsertFeaturesAsync(connection, transaction, newFeatures, cancellationToken).ConfigureAwait(false);
 
         foreach (var record in updatedFeatures)
         {
-            await _ExecuteFeatureAsync(connection, (SqlTransaction)transaction, _UpdateFeatureSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteFeatureAsync(connection, transaction, _UpdateFeatureSql(), record, cancellationToken).ConfigureAwait(false);
         }
 
         foreach (var record in deletedFeatures)
         {
-            await _DeleteAsync(connection, (SqlTransaction)transaction, _DeleteFeatureSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, transaction, _DeleteFeatureSql(), record.Id, cancellationToken).ConfigureAwait(false);
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _BatchInsertGroupsAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        List<FeatureGroupDefinitionRecord> records,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
+        {
+            var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
+            var sql = _insertGroupBatchSql.GetOrAdd(rowCount, _BuildInsertGroupSql);
+
+            await using var command = new SqlCommand(sql, connection, transaction);
+            for (var i = 0; i < rowCount; i++)
+            {
+                var record = records[offset + i];
+                command.Parameters.AddWithValue($"@Id_{i}", record.Id);
+                command.Parameters.AddWithValue($"@Name_{i}", record.Name);
+                command.Parameters.AddWithValue($"@DisplayName_{i}", record.DisplayName);
+                command.Parameters.AddWithValue($"@ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _BatchInsertFeaturesAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        List<FeatureDefinitionRecord> records,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
+        {
+            var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
+            var sql = _insertFeatureBatchSql.GetOrAdd(rowCount, _BuildInsertFeatureSql);
+
+            await using var command = new SqlCommand(sql, connection, transaction);
+            for (var i = 0; i < rowCount; i++)
+            {
+                var record = records[offset + i];
+                command.Parameters.AddWithValue($"@Id_{i}", record.Id);
+                command.Parameters.AddWithValue($"@GroupName_{i}", record.GroupName);
+                command.Parameters.AddWithValue($"@Name_{i}", record.Name);
+                command.Parameters.AddWithValue($"@DisplayName_{i}", record.DisplayName);
+                command.Parameters.AddWithValue($"@ParentName_{i}", (object?)record.ParentName ?? DBNull.Value);
+                command.Parameters.AddWithValue($"@Description_{i}", (object?)record.Description ?? DBNull.Value);
+                command.Parameters.AddWithValue($"@DefaultValue_{i}", (object?)record.DefaultValue ?? DBNull.Value);
+                command.Parameters.AddWithValue($"@IsVisibleToClients_{i}", record.IsVisibleToClients);
+                command.Parameters.AddWithValue($"@IsAvailableToHost_{i}", record.IsAvailableToHost);
+                command.Parameters.AddWithValue($"@Providers_{i}", (object?)record.Providers ?? DBNull.Value);
+                command.Parameters.AddWithValue($"@ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task _ExecuteGroupAsync(
@@ -191,9 +249,57 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private string _InsertGroupSql() =>
-        _insertGroupSql ??=
-            $"""INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+    private string _BuildInsertGroupSql(int rowCount)
+    {
+        var table = SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName);
+        var builder = new StringBuilder(128 + rowCount * 80);
+        builder.Append("INSERT INTO ").Append(table).Append(" ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES ");
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append("(@Id_").Append(i).Append(",@Name_").Append(i).Append(",@DisplayName_").Append(i).Append(",@ExtraProperties_").Append(i).Append(')');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
+    }
+
+    private string _BuildInsertFeatureSql(int rowCount)
+    {
+        var table = SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName);
+        var builder = new StringBuilder(192 + rowCount * 200);
+        builder.Append("INSERT INTO ").Append(table);
+        builder.Append(" ([Id],[GroupName],[Name],[DisplayName],[ParentName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties]) VALUES ");
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append("(@Id_").Append(i)
+                .Append(",@GroupName_").Append(i)
+                .Append(",@Name_").Append(i)
+                .Append(",@DisplayName_").Append(i)
+                .Append(",@ParentName_").Append(i)
+                .Append(",@Description_").Append(i)
+                .Append(",@DefaultValue_").Append(i)
+                .Append(",@IsVisibleToClients_").Append(i)
+                .Append(",@IsAvailableToHost_").Append(i)
+                .Append(",@Providers_").Append(i)
+                .Append(",@ExtraProperties_").Append(i)
+                .Append(')');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
+    }
 
     private string _UpdateGroupSql() =>
         _updateGroupSql ??=
@@ -202,10 +308,6 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
     private string _DeleteGroupSql() =>
         _deleteGroupSql ??=
             $"""DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE [Id]=@Id;""";
-
-    private string _InsertFeatureSql() =>
-        _insertFeatureSql ??=
-            $"""INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} ([Id],[GroupName],[Name],[DisplayName],[ParentName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties]) VALUES (@Id,@GroupName,@Name,@DisplayName,@ParentName,@Description,@DefaultValue,@IsVisibleToClients,@IsAvailableToHost,@Providers,@ExtraProperties);""";
 
     private string _UpdateFeatureSql() =>
         _updateFeatureSql ??=

@@ -56,6 +56,36 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         storedFeatures.Should().ContainSingle(x => x.Name == "Checkout.Enabled");
     }
 
+    [Fact]
+    public async Task should_persist_all_definitions_across_multiple_chunks_when_batch_exceeds_chunk_size()
+    {
+        // given — chunk size is 500 rows; 550 forces two chunks
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(TestContext.Current.CancellationToken);
+        var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
+
+        const int totalGroups = 550;
+        const int totalFeatures = 550;
+        var groups = Enumerable.Range(0, totalGroups)
+            .Select(i => new FeatureGroupDefinitionRecord(Guid.NewGuid(), $"Group_{i:D4}", $"Group {i}"))
+            .ToList();
+        var features = Enumerable.Range(0, totalFeatures)
+            .Select(i => new FeatureDefinitionRecord(Guid.NewGuid(), groups[i % totalGroups].Name, $"Feature_{i:D4}", null, $"Feature {i}"))
+            .ToList();
+
+        // when
+        await definitionRepository.SaveAsync(groups, [], [], features, [], [], TestContext.Current.CancellationToken);
+        var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
+        var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
+
+        // then
+        storedGroups.Should().HaveCount(totalGroups);
+        storedFeatures.Should().HaveCount(totalFeatures);
+        storedGroups.Select(g => g.Name).Should().BeEquivalentTo(groups.Select(g => g.Name));
+        storedFeatures.Select(f => f.Name).Should().BeEquivalentTo(features.Select(f => f.Name));
+    }
+
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();

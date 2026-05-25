@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
@@ -14,12 +16,15 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     IOptions<FeaturesStorageOptions> storageOptions
 ) : IFeatureDefinitionRecordRepository
 {
+    private const int _MaxRowsPerInsert = 500;
+
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private string? _insertGroupSql;
+    private readonly ConcurrentDictionary<int, string> _insertGroupBatchSql = new();
+    private readonly ConcurrentDictionary<int, string> _insertFeatureBatchSql = new();
+
     private string? _updateGroupSql;
     private string? _deleteGroupSql;
-    private string? _insertFeatureSql;
     private string? _updateFeatureSql;
     private string? _deleteFeatureSql;
     private string? _selectFeaturesSql;
@@ -106,10 +111,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        foreach (var record in newGroups)
-        {
-            await _ExecuteGroupAsync(connection, transaction, _InsertGroupSql(), record, cancellationToken).ConfigureAwait(false);
-        }
+        await _BatchInsertGroupsAsync(connection, transaction, newGroups, cancellationToken).ConfigureAwait(false);
 
         foreach (var record in updatedGroups)
         {
@@ -121,10 +123,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
             await _DeleteAsync(connection, transaction, _DeleteGroupSql(), record.Id, cancellationToken).ConfigureAwait(false);
         }
 
-        foreach (var record in newFeatures)
-        {
-            await _ExecuteFeatureAsync(connection, transaction, _InsertFeatureSql(), record, cancellationToken).ConfigureAwait(false);
-        }
+        await _BatchInsertFeaturesAsync(connection, transaction, newFeatures, cancellationToken).ConfigureAwait(false);
 
         foreach (var record in updatedFeatures)
         {
@@ -137,6 +136,65 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _BatchInsertGroupsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        List<FeatureGroupDefinitionRecord> records,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
+        {
+            var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
+            var sql = _insertGroupBatchSql.GetOrAdd(rowCount, _BuildInsertGroupSql);
+
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            for (var i = 0; i < rowCount; i++)
+            {
+                var record = records[offset + i];
+                command.Parameters.AddWithValue($"Id_{i}", record.Id);
+                command.Parameters.AddWithValue($"Name_{i}", record.Name);
+                command.Parameters.AddWithValue($"DisplayName_{i}", record.DisplayName);
+                command.Parameters.AddWithValue($"ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task _BatchInsertFeaturesAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        List<FeatureDefinitionRecord> records,
+        CancellationToken cancellationToken
+    )
+    {
+        for (var offset = 0; offset < records.Count; offset += _MaxRowsPerInsert)
+        {
+            var rowCount = Math.Min(_MaxRowsPerInsert, records.Count - offset);
+            var sql = _insertFeatureBatchSql.GetOrAdd(rowCount, _BuildInsertFeatureSql);
+
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            for (var i = 0; i < rowCount; i++)
+            {
+                var record = records[offset + i];
+                command.Parameters.AddWithValue($"Id_{i}", record.Id);
+                command.Parameters.AddWithValue($"GroupName_{i}", record.GroupName);
+                command.Parameters.AddWithValue($"Name_{i}", record.Name);
+                command.Parameters.AddWithValue($"DisplayName_{i}", record.DisplayName);
+                command.Parameters.AddWithValue($"ParentName_{i}", (object?)record.ParentName ?? DBNull.Value);
+                command.Parameters.AddWithValue($"Description_{i}", (object?)record.Description ?? DBNull.Value);
+                command.Parameters.AddWithValue($"DefaultValue_{i}", (object?)record.DefaultValue ?? DBNull.Value);
+                command.Parameters.AddWithValue($"IsVisibleToClients_{i}", record.IsVisibleToClients);
+                command.Parameters.AddWithValue($"IsAvailableToHost_{i}", record.IsAvailableToHost);
+                command.Parameters.AddWithValue($"Providers_{i}", (object?)record.Providers ?? DBNull.Value);
+                command.Parameters.AddWithValue($"ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static async Task _ExecuteGroupAsync(
@@ -191,9 +249,57 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private string _InsertGroupSql() =>
-        _insertGroupSql ??=
-            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} ("Id","Name","DisplayName","ExtraProperties") VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+    private string _BuildInsertGroupSql(int rowCount)
+    {
+        var table = PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName);
+        var builder = new StringBuilder(128 + rowCount * 80);
+        builder.Append("INSERT INTO ").Append(table).Append(" (\"Id\",\"Name\",\"DisplayName\",\"ExtraProperties\") VALUES ");
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append("(@Id_").Append(i).Append(",@Name_").Append(i).Append(",@DisplayName_").Append(i).Append(",@ExtraProperties_").Append(i).Append(')');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
+    }
+
+    private string _BuildInsertFeatureSql(int rowCount)
+    {
+        var table = PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName);
+        var builder = new StringBuilder(192 + rowCount * 200);
+        builder.Append("INSERT INTO ").Append(table);
+        builder.Append(" (\"Id\",\"GroupName\",\"Name\",\"DisplayName\",\"ParentName\",\"Description\",\"DefaultValue\",\"IsVisibleToClients\",\"IsAvailableToHost\",\"Providers\",\"ExtraProperties\") VALUES ");
+
+        for (var i = 0; i < rowCount; i++)
+        {
+            if (i > 0)
+            {
+                builder.Append(',');
+            }
+
+            builder.Append("(@Id_").Append(i)
+                .Append(",@GroupName_").Append(i)
+                .Append(",@Name_").Append(i)
+                .Append(",@DisplayName_").Append(i)
+                .Append(",@ParentName_").Append(i)
+                .Append(",@Description_").Append(i)
+                .Append(",@DefaultValue_").Append(i)
+                .Append(",@IsVisibleToClients_").Append(i)
+                .Append(",@IsAvailableToHost_").Append(i)
+                .Append(",@Providers_").Append(i)
+                .Append(",@ExtraProperties_").Append(i)
+                .Append(')');
+        }
+
+        builder.Append(';');
+        return builder.ToString();
+    }
 
     private string _UpdateGroupSql() =>
         _updateGroupSql ??=
@@ -202,10 +308,6 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     private string _DeleteGroupSql() =>
         _deleteGroupSql ??=
             $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)} WHERE "Id"=@Id;""";
-
-    private string _InsertFeatureSql() =>
-        _insertFeatureSql ??=
-            $"""INSERT INTO {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)} ("Id","GroupName","Name","DisplayName","ParentName","Description","DefaultValue","IsVisibleToClients","IsAvailableToHost","Providers","ExtraProperties") VALUES (@Id,@GroupName,@Name,@DisplayName,@ParentName,@Description,@DefaultValue,@IsVisibleToClients,@IsAvailableToHost,@Providers,@ExtraProperties);""";
 
     private string _UpdateFeatureSql() =>
         _updateFeatureSql ??=
