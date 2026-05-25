@@ -19,6 +19,10 @@ internal sealed class SqlServerAuditLogStorageInitializer(
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
+        // Cancel any in-flight waiters on the previous TCS before swapping. Without this, a caller
+        // that awaited WaitForInitializationAsync before a host restart would hang on an abandoned
+        // promise that nobody will ever resolve.
+        _completion.TrySetCanceled(cancellationToken);
         _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         try
@@ -69,6 +73,17 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         var table = Qualified(options);
         var objectName = ObjectName(options);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
+
+        // Serialize concurrent-startup DDL across replicas with a session-scoped advisory lock.
+        // Without this, multiple hosts racing CREATE INDEX on the same table deadlock on schema-mod
+        // locks (error 1205) — and once any host crashes mid-script, partial state would persist.
+        // sp_getapplock with Session scope releases automatically when the connection closes.
+        var acquireLock = $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = N'headless_audit_init:{options.Schema}.{options.TableName}', @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 30000;
+            IF @lockResult < 0 THROW 50000, N'Headless.AuditLog: failed to acquire init lock on the audit_log schema. Another initializer may be holding it.', 1;
+            """;
+
         var createSchema = $"""
                 BEGIN TRY
                     IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{options.Schema}')
@@ -79,9 +94,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                 END CATCH;
               """;
 
-        return $"""
-            {createSchema}
-
+        var createTable = $"""
             BEGIN TRY
                 IF OBJECT_ID(N'{objectName}', N'U') IS NULL
                 BEGIN
@@ -105,16 +118,52 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                         [ErrorCode] nvarchar(256) NULL,
                         CONSTRAINT [PK_{options.TableName}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
                     );
-                    CREATE NONCLUSTERED INDEX [ix_audit_log_tenant_time] ON {table} ([TenantId] ASC, [CreatedAt] ASC);
-                    CREATE NONCLUSTERED INDEX [ix_audit_log_tenant_action_time] ON {table} ([TenantId] ASC, [Action] ASC, [CreatedAt] ASC);
-                    CREATE NONCLUSTERED INDEX [ix_audit_log_tenant_entity_time] ON {table} ([TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC);
-                    CREATE NONCLUSTERED INDEX [ix_audit_log_tenant_actor_time] ON {table} ([TenantId] ASC, [UserId] ASC, [CreatedAt] ASC);
-                    CREATE NONCLUSTERED INDEX [ix_audit_log_correlation] ON {table} ([CorrelationId] ASC);
                 END;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             """;
+
+        // Index creation runs unconditionally on every startup — each CREATE INDEX is gated by its
+        // own existence check so a previous partial-failure run that committed the table but missed
+        // an index self-heals on the next start. This matches the PG initializer's per-statement
+        // `CREATE INDEX IF NOT EXISTS` behavior.
+        var createIndexes = string.Join("\n", new[]
+        {
+            _IndexStatement("ix_audit_log_tenant_time", table, objectName, "[TenantId] ASC, [CreatedAt] ASC"),
+            _IndexStatement("ix_audit_log_tenant_action_time", table, objectName, "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC"),
+            _IndexStatement("ix_audit_log_tenant_entity_time", table, objectName, "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC"),
+            _IndexStatement("ix_audit_log_tenant_actor_time", table, objectName, "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC"),
+            _IndexStatement("ix_audit_log_correlation", table, objectName, "[CorrelationId] ASC"),
+        });
+
+        // Release the advisory lock explicitly — Session-scoped locks live for the duration of the
+        // SQL session, which under SqlClient connection pooling can outlive `connection.Dispose`
+        // and starve subsequent initializers waiting on the same resource.
+        var releaseLock = $"EXEC sp_releaseapplock @Resource = N'headless_audit_init:{options.Schema}.{options.TableName}', @LockOwner = N'Session';";
+
+        return $"""
+            {acquireLock}
+
+            {createSchema}
+
+            {createTable}
+
+            {createIndexes}
+
+            {releaseLock}
+            """;
     }
+
+    private static string _IndexStatement(string indexName, string table, string objectName, string columns) =>
+        $"""
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'{indexName}' AND object_id = OBJECT_ID(N'{objectName}'))
+                    CREATE NONCLUSTERED INDEX [{indexName}] ON {table} ({columns});
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            """;
 }

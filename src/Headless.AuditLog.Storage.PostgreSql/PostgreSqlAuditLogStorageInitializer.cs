@@ -19,7 +19,10 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        // Recreate the completion source so retries (host re-starts) get a fresh promise.
+        // Cancel any in-flight waiters on the previous TCS before swapping. Without this, a caller
+        // that awaited WaitForInitializationAsync before a host restart would hang on an abandoned
+        // promise that nobody will ever resolve.
+        _completion.TrySetCanceled(cancellationToken);
         _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         try

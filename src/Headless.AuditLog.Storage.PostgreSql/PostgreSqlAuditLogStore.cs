@@ -13,9 +13,10 @@ internal sealed partial class PostgreSqlAuditLogStore(
     ILogger<PostgreSqlAuditLogStore>? logger = null
 ) : IAuditLogStore
 {
+    private static int _MismatchWarned;
+
     private readonly ILogger<PostgreSqlAuditLogStore> _logger =
         logger ?? NullLogger<PostgreSqlAuditLogStore>.Instance;
-    private int _mismatchWarned;
 
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
@@ -55,9 +56,9 @@ internal sealed partial class PostgreSqlAuditLogStore(
         }
 
         // Provider mismatch: the consumer's DbContext is using a different driver (e.g. SqlClient).
-        // Fall back to opening our own connection. Log once per store instance — repeating per save
-        // would flood logs on every request.
-        if (Interlocked.Exchange(ref _mismatchWarned, 1) == 0)
+        // Fall back to opening our own connection. Log once per process — the store is registered
+        // scoped, so a per-instance flag would still fire once per request.
+        if (Interlocked.Exchange(ref _MismatchWarned, 1) == 0)
         {
             LogProviderMismatch(_logger, connection.GetType().FullName ?? "(unknown)");
         }
@@ -81,7 +82,7 @@ internal sealed partial class PostgreSqlAuditLogStore(
         EventId = 1,
         EventName = "PostgreSqlAuditLogProviderMismatch",
         Level = LogLevel.Warning,
-        Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Warning suppressed for the remainder of this store instance."
+        Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Warning suppressed for the remainder of this process."
     )]
     private static partial void LogProviderMismatch(ILogger logger, string connectionType);
 }

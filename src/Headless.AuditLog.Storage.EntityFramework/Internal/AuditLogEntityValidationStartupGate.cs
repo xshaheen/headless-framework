@@ -11,7 +11,7 @@ internal sealed class AuditLogEntityValidationStartupGate<TContext>(IDbContextFa
 {
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken);
+        await using var context = await dbFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false);
 
         if (context.Model.FindEntityType(typeof(AuditLogEntry)) is null)
         {

@@ -98,14 +98,21 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // Synchronously dispose the runtime alongside the base context. DisposeAsync's body is
         // synchronous (ValueTask.CompletedTask), so the sync path can call DisposeAsync().AsTask()
         // safely without blocking. We keep the dispose contract symmetrical with DisposeAsync.
-        var disposeTask = _runtime.DisposeAsync();
-        if (!disposeTask.IsCompletedSuccessfully)
+        // try/finally guarantees OwnedScope.Dispose runs even if runtime or base disposal throws.
+        try
         {
-            disposeTask.AsTask().GetAwaiter().GetResult();
+            var disposeTask = _runtime.DisposeAsync();
+            if (!disposeTask.IsCompletedSuccessfully)
+            {
+                disposeTask.AsTask().GetAwaiter().GetResult();
+            }
+            base.Dispose();
         }
-        base.Dispose();
-        OwnedScope?.Dispose();
-        GC.SuppressFinalize(this);
+        finally
+        {
+            OwnedScope?.Dispose();
+            GC.SuppressFinalize(this);
+        }
     }
 
     public override async ValueTask DisposeAsync()
@@ -113,10 +120,27 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // Detach the per-DbContext runtime's ChangeTracker handlers BEFORE we let the base context
         // tear down its services. Avoids EF's "still tracking" assertions and prevents handler leaks
         // when the same DbContext type is resolved repeatedly under the same service provider.
-        await _runtime.DisposeAsync().ConfigureAwait(false);
-        await base.DisposeAsync().ConfigureAwait(false);
-        OwnedScope?.Dispose();
-        GC.SuppressFinalize(this);
+        // try/finally guarantees OwnedScope disposal even if runtime or base disposal throws.
+        try
+        {
+            await _runtime.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            // Prefer async scope disposal — MS DI scopes implement IAsyncDisposable
+            // (AsyncServiceScope) and may hold async-only-disposable scoped services.
+            if (OwnedScope is IAsyncDisposable asyncDisposableScope)
+            {
+                await asyncDisposableScope.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                OwnedScope?.Dispose();
+            }
+
+            GC.SuppressFinalize(this);
+        }
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
