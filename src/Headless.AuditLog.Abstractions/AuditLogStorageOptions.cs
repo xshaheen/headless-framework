@@ -43,5 +43,9 @@ internal sealed class AuditLogStorageOptionsValidator : AbstractValidator<AuditL
         RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
         RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
         RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
+        RuleFor(x => x.CreatedAtColumnType!)
+            .MaximumLength(64)
+            .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
+            .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
     }
 }

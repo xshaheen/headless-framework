@@ -42,7 +42,6 @@ public static class SetupAuditLogSqlServer
         {
             services.Configure<SqlServerAuditLogOptions, SqlServerAuditLogOptionsValidator>(configure);
             services.AddInitializerHostedService<SqlServerAuditLogStorageInitializer>();
-            services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddSingleton<SqlServerAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, SqlServerAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(SqlServerAuditLog<>));

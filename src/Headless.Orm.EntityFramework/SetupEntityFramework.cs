@@ -109,6 +109,9 @@ public static class SetupEntityFramework
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
             services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
+            // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based
+            // consumer gets it wired regardless of which IAuditLogStore (EF/PG/SqlServer) they pick.
+            services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 

@@ -42,7 +42,6 @@ public static class SetupAuditLogPostgreSql
         {
             services.Configure<PostgreSqlAuditLogOptions, PostgreSqlAuditLogOptionsValidator>(configure);
             services.AddInitializerHostedService<PostgreSqlAuditLogStorageInitializer>();
-            services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddSingleton<PostgreSqlAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
