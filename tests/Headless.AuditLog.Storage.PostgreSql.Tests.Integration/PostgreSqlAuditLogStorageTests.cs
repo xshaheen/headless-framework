@@ -105,7 +105,6 @@ public sealed class PostgreSqlAuditLogStorageTests(PostgreSqlAuditLogFixture fix
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddHeadlessAuditLog();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

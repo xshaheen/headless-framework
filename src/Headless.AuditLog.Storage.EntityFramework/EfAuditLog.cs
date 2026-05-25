@@ -40,26 +40,20 @@ internal sealed class EfAuditLog<TContext>(
                 new AuditLogEntry
                 {
                     CreatedAt = clock.UtcNow.UtcDateTime,
-                    UserId = _Truncate(currentUser.UserId?.ToString(), 128),
-                    AccountId = _Truncate(currentUser.AccountId?.ToString(), 128),
-                    TenantId = _Truncate(currentTenant.Id, 128),
-                    CorrelationId = _Truncate(correlationIdProvider.CorrelationId, 128),
-                    Action = _Truncate(action, 256),
+                    UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
+                    AccountId = AuditLogFieldLimits.Truncate(currentUser.AccountId?.ToString(), AuditLogFieldLimits.AccountId),
+                    TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),
+                    CorrelationId = AuditLogFieldLimits.Truncate(correlationIdProvider.CorrelationId, AuditLogFieldLimits.CorrelationId),
+                    Action = AuditLogFieldLimits.Truncate(action, AuditLogFieldLimits.Action),
                     ChangeType = null,
-                    EntityType = _Truncate(entityType, 512),
-                    EntityId = _Truncate(entityId, 256),
+                    EntityType = AuditLogFieldLimits.Truncate(entityType, AuditLogFieldLimits.EntityType),
+                    EntityId = AuditLogFieldLimits.Truncate(entityId, AuditLogFieldLimits.EntityId),
                     NewValues = data,
                     Success = success,
-                    ErrorCode = _Truncate(errorCode, 256),
+                    ErrorCode = AuditLogFieldLimits.Truncate(errorCode, AuditLogFieldLimits.ErrorCode),
                 }
             );
 
         return Task.CompletedTask;
-    }
-
-    [return: NotNullIfNotNull(nameof(value))]
-    private static string? _Truncate(string? value, int maxLength)
-    {
-        return value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
     }
 }

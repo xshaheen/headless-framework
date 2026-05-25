@@ -108,7 +108,6 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
     private IHost _CreateHost(IAmbientDbTransactionAccessor accessor)
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddHeadlessAuditLog();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

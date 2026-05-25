@@ -105,7 +105,6 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddHeadlessAuditLog();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

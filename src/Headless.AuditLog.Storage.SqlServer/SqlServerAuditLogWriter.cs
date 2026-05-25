@@ -171,29 +171,25 @@ internal sealed class SqlServerAuditLogWriter(
         {
             var entry = entries[offset + i];
             parameters.Add(_Param($"CreatedAt_{i}", entry.CreatedAt.UtcDateTime));
-            parameters.Add(_Param($"UserId_{i}", _Truncate(entry.UserId, 128)));
-            parameters.Add(_Param($"AccountId_{i}", _Truncate(entry.AccountId, 128)));
-            parameters.Add(_Param($"TenantId_{i}", _Truncate(entry.TenantId, 128)));
-            parameters.Add(_Param($"IpAddress_{i}", _Truncate(entry.IpAddress, 45)));
-            parameters.Add(_Param($"UserAgent_{i}", _Truncate(entry.UserAgent, 512)));
-            parameters.Add(_Param($"CorrelationId_{i}", _Truncate(entry.CorrelationId, 128)));
-            parameters.Add(_Param($"Action_{i}", _Truncate(entry.Action, 256)));
+            parameters.Add(_Param($"UserId_{i}", AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId)));
+            parameters.Add(_Param($"AccountId_{i}", AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId)));
+            parameters.Add(_Param($"TenantId_{i}", AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId)));
+            parameters.Add(_Param($"IpAddress_{i}", AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress)));
+            parameters.Add(_Param($"UserAgent_{i}", AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent)));
+            parameters.Add(_Param($"CorrelationId_{i}", AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId)));
+            parameters.Add(_Param($"Action_{i}", AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action)));
             parameters.Add(_Param($"ChangeType_{i}", entry.ChangeType is null ? null : (int)entry.ChangeType.Value));
-            parameters.Add(_Param($"EntityType_{i}", _Truncate(entry.EntityType, 512)));
-            parameters.Add(_Param($"EntityId_{i}", _Truncate(entry.EntityId, 256)));
+            parameters.Add(_Param($"EntityType_{i}", AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType)));
+            parameters.Add(_Param($"EntityId_{i}", AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId)));
             parameters.Add(_Param($"OldValues_{i}", _Serialize(entry.OldValues)));
             parameters.Add(_Param($"NewValues_{i}", _Serialize(entry.NewValues)));
             parameters.Add(_Param($"ChangedFields_{i}", _Serialize(entry.ChangedFields)));
             parameters.Add(_Param($"Success_{i}", entry.Success));
-            parameters.Add(_Param($"ErrorCode_{i}", _Truncate(entry.ErrorCode, 256)));
+            parameters.Add(_Param($"ErrorCode_{i}", AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode)));
         }
     }
 
     private static string? _Serialize<T>(T? value) => value is null ? null : JsonSerializer.Serialize(value, _JsonOptions);
-
-    [return: NotNullIfNotNull(nameof(value))]
-    private static string? _Truncate(string? value, int maxLength) =>
-        value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

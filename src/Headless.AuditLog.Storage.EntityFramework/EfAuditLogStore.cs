@@ -16,9 +16,11 @@ internal sealed class EfAuditLogStore : IAuditLogStore
         ReferenceEqualityComparer.Instance
     );
 
-    // Guards mutations of _entriesByContext and the inner HashSet values. The store is scoped
-    // but a DbContext can legitimately be used across awaited continuations (e.g. concurrent
-    // SaveChangesAsync followed by retry), so all reads/writes funnel through this lock.
+    // Guards mutations of _entriesByContext and the inner HashSet values. EF Core itself rejects
+    // truly concurrent DbContext access — this lock is defensive depth against the misuse path
+    // where PrepareForRetry / _ReleaseEntry / the _AddEntries catch block race each other for the
+    // same context's tracked-entries entry. Cheap on the single-threaded happy path; cheap insurance
+    // on the wrong-but-survivable path.
     private readonly Lock _gate = new();
 
     /// <inheritdoc />
@@ -104,21 +106,21 @@ internal sealed class EfAuditLogStore : IAuditLogStore
                 var auditEntity = new AuditLogEntry
                 {
                     CreatedAt = entry.CreatedAt.UtcDateTime,
-                    UserId = _Truncate(entry.UserId, 128),
-                    AccountId = _Truncate(entry.AccountId, 128),
-                    TenantId = _Truncate(entry.TenantId, 128),
-                    IpAddress = _Truncate(entry.IpAddress, 45),
-                    UserAgent = _Truncate(entry.UserAgent, 512),
-                    CorrelationId = _Truncate(entry.CorrelationId, 128),
-                    Action = _Truncate(entry.Action, 256),
+                    UserId = AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId),
+                    AccountId = AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId),
+                    TenantId = AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId),
+                    IpAddress = AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress),
+                    UserAgent = AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent),
+                    CorrelationId = AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId),
+                    Action = AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action),
                     ChangeType = entry.ChangeType,
-                    EntityType = _Truncate(entry.EntityType, 512),
-                    EntityId = _Truncate(entry.EntityId, 256),
+                    EntityType = AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType),
+                    EntityId = AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId),
                     OldValues = entry.OldValues,
                     NewValues = entry.NewValues,
                     ChangedFields = entry.ChangedFields,
                     Success = entry.Success,
-                    ErrorCode = _Truncate(entry.ErrorCode, 256),
+                    ErrorCode = AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode),
                 };
 
                 set.Add(auditEntity);
@@ -192,12 +194,6 @@ internal sealed class EfAuditLogStore : IAuditLogStore
                 _entriesByContext.Remove(context);
             }
         }
-    }
-
-    [return: NotNullIfNotNull(nameof(value))]
-    private static string? _Truncate(string? value, int maxLength)
-    {
-        return value is { Length: var len } && len > maxLength ? value[..maxLength] : value;
     }
 
     private sealed class EfAuditLogStoreEntry(EfAuditLogStore owner, DbContext context, AuditLogEntry entity)

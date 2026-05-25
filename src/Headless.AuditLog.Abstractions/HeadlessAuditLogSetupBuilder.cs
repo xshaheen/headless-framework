@@ -18,7 +18,20 @@ public sealed class HeadlessAuditLogSetupBuilder
 
     internal AuditLogStorageOptions StorageOptions { get; } = new();
 
+    internal Action<AuditLogOptions>? OptionsConfigurator { get; private set; }
+
     internal IList<IStorageOptionsExtension> Extensions { get; } = new List<IStorageOptionsExtension>();
+
+    /// <summary>
+    /// Configure the cross-cutting <see cref="AuditLogOptions"/> (capture strategy, etc.).
+    /// </summary>
+    public HeadlessAuditLogSetupBuilder ConfigureOptions(Action<AuditLogOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+        OptionsConfigurator = configure;
+
+        return this;
+    }
 
     public HeadlessAuditLogSetupBuilder ConfigureStorage(Action<AuditLogStorageOptions> configure)
     {

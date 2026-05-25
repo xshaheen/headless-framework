@@ -86,7 +86,6 @@ public sealed class PostgreSqlAuditLogFailureModesTests(PostgreSqlAuditLogFixtur
     private static IHost _CreateHost(string connectionString, string schema = "audit_log_pg_failure")
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddHeadlessAuditLog();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);

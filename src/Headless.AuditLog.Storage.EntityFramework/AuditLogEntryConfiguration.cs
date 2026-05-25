@@ -22,16 +22,16 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options)
         builder.Property(e => e.Id).ValueGeneratedOnAdd();
         builder.Property(e => e.CreatedAt).HasConversion(v => v, v => DateTime.SpecifyKind(v, DateTimeKind.Utc));
 
-        builder.Property(e => e.Action).IsRequired().HasMaxLength(256);
-        builder.Property(e => e.EntityType).HasMaxLength(512);
-        builder.Property(e => e.EntityId).HasMaxLength(256);
-        builder.Property(e => e.UserId).HasMaxLength(128);
-        builder.Property(e => e.AccountId).HasMaxLength(128);
-        builder.Property(e => e.TenantId).HasMaxLength(128);
-        builder.Property(e => e.IpAddress).HasMaxLength(45); // IPv6 max length
-        builder.Property(e => e.UserAgent).HasMaxLength(512);
-        builder.Property(e => e.CorrelationId).HasMaxLength(128);
-        builder.Property(e => e.ErrorCode).HasMaxLength(256);
+        builder.Property(e => e.Action).IsRequired().HasMaxLength(AuditLogFieldLimits.Action);
+        builder.Property(e => e.EntityType).HasMaxLength(AuditLogFieldLimits.EntityType);
+        builder.Property(e => e.EntityId).HasMaxLength(AuditLogFieldLimits.EntityId);
+        builder.Property(e => e.UserId).HasMaxLength(AuditLogFieldLimits.UserId);
+        builder.Property(e => e.AccountId).HasMaxLength(AuditLogFieldLimits.AccountId);
+        builder.Property(e => e.TenantId).HasMaxLength(AuditLogFieldLimits.TenantId);
+        builder.Property(e => e.IpAddress).HasMaxLength(AuditLogFieldLimits.IpAddress); // IPv6 max length
+        builder.Property(e => e.UserAgent).HasMaxLength(AuditLogFieldLimits.UserAgent);
+        builder.Property(e => e.CorrelationId).HasMaxLength(AuditLogFieldLimits.CorrelationId);
+        builder.Property(e => e.ErrorCode).HasMaxLength(AuditLogFieldLimits.ErrorCode);
 
         // JSON stored as string columns — universally portable across all DB providers
         // Note: Dictionary<string, object?> round-trips values as JsonElement on read.

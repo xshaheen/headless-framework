@@ -46,4 +46,15 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
             throw;
         }
     }
+
+    /// <summary>
+    /// Explicit override so callers awaiting <see cref="IDbContextFactory{TContext}.CreateDbContextAsync"/>
+    /// observe the cancellation token. The default interface implementation just wraps
+    /// <see cref="CreateDbContext"/> in <c>Task.FromResult</c> and silently drops the token.
+    /// </summary>
+    public Task<TDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(CreateDbContext());
+    }
 }

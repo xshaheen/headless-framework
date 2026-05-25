@@ -79,6 +79,9 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         var table = Qualified(options);
         var objectName = ObjectName(options);
         var jsonColumnType = (options.JsonColumnType ?? AuditLogJsonColumnType.NvarcharMax).ToSqlFragment();
+        var createdAtColumnType = string.IsNullOrWhiteSpace(options.CreatedAtColumnType)
+            ? "datetime2"
+            : options.CreatedAtColumnType;
 
         // Serialize concurrent-startup DDL across replicas with a session-scoped advisory lock.
         // Without this, multiple hosts racing CREATE INDEX on the same table deadlock on schema-mod
@@ -106,22 +109,22 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                 BEGIN
                     CREATE TABLE {table} (
                         [Id] bigint IDENTITY(1,1) NOT NULL,
-                        [CreatedAt] datetime2 NOT NULL,
-                        [UserId] nvarchar(128) NULL,
-                        [AccountId] nvarchar(128) NULL,
-                        [TenantId] nvarchar(128) NULL,
-                        [IpAddress] nvarchar(45) NULL,
-                        [UserAgent] nvarchar(512) NULL,
-                        [CorrelationId] nvarchar(128) NULL,
-                        [Action] nvarchar(256) NOT NULL,
+                        [CreatedAt] {createdAtColumnType} NOT NULL,
+                        [UserId] nvarchar({AuditLogFieldLimits.UserId}) NULL,
+                        [AccountId] nvarchar({AuditLogFieldLimits.AccountId}) NULL,
+                        [TenantId] nvarchar({AuditLogFieldLimits.TenantId}) NULL,
+                        [IpAddress] nvarchar({AuditLogFieldLimits.IpAddress}) NULL,
+                        [UserAgent] nvarchar({AuditLogFieldLimits.UserAgent}) NULL,
+                        [CorrelationId] nvarchar({AuditLogFieldLimits.CorrelationId}) NULL,
+                        [Action] nvarchar({AuditLogFieldLimits.Action}) NOT NULL,
                         [ChangeType] int NULL,
-                        [EntityType] nvarchar(512) NULL,
-                        [EntityId] nvarchar(256) NULL,
+                        [EntityType] nvarchar({AuditLogFieldLimits.EntityType}) NULL,
+                        [EntityId] nvarchar({AuditLogFieldLimits.EntityId}) NULL,
                         [OldValues] {jsonColumnType} NULL,
                         [NewValues] {jsonColumnType} NULL,
                         [ChangedFields] {jsonColumnType} NULL,
                         [Success] bit NOT NULL,
-                        [ErrorCode] nvarchar(256) NULL,
+                        [ErrorCode] nvarchar({AuditLogFieldLimits.ErrorCode}) NULL,
                         CONSTRAINT [PK_{options.TableName}] PRIMARY KEY CLUSTERED ([CreatedAt] ASC, [Id] ASC)
                     );
                 END;
