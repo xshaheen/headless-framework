@@ -34,20 +34,18 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessIdentity(setup =>
-            setup.UseEntityFramework<
-                TestIdentityDbContext,
-                TestUser,
-                TestRole,
-                string,
-                IdentityUserClaim<string>,
-                IdentityUserRole<string>,
-                IdentityUserLogin<string>,
-                IdentityRoleClaim<string>,
-                IdentityUserToken<string>,
-                IdentityUserPasskey<string>
-            >(_ => { })
-        );
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(_ => { });
 
         using var provider = services.BuildServiceProvider();
 
@@ -61,20 +59,18 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddHeadlessIdentity(setup =>
-            setup.UseEntityFramework<
-                TestIdentityDbContext,
-                TestUser,
-                TestRole,
-                string,
-                IdentityUserClaim<string>,
-                IdentityUserRole<string>,
-                IdentityUserLogin<string>,
-                IdentityRoleClaim<string>,
-                IdentityUserToken<string>,
-                IdentityUserPasskey<string>
-            >(_ => { })
-        );
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(_ => { });
 
         // when
         services.Configure<IdentityOptions>(options =>
@@ -87,6 +83,35 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
         // then
         var options = provider.GetRequiredService<IOptions<IdentityOptions>>().Value;
         options.Stores.SchemaVersion.Should().Be(IdentitySchemaVersions.Version2);
+    }
+
+    [Fact]
+    public void add_headless_identity_db_context_should_register_headless_db_context_services()
+    {
+        // given — HeadlessIdentityDbContext's constructor depends on HeadlessDbContextServices
+        // (scoped). The Identity setup must wire this through SetupEntityFramework so consumers
+        // who only call AddHeadlessDbContext (Identity overload) get a constructible context.
+        // Regression guard: before this fix, Identity setup called bare AddDbContext only and
+        // tests passed only because the test fixture wired HeadlessDbContextServices separately.
+        var services = new ServiceCollection();
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(_ => { });
+
+        // then — HeadlessDbContextServices must be in the descriptor list
+        var hasHeadlessServices = services.Any(d =>
+            d.ServiceType == typeof(HeadlessDbContextServices)
+        );
+        hasHeadlessServices.Should().BeTrue("Identity setup must wire HeadlessDbContextServices via AddHeadlessDbContextServices");
     }
 
     [Fact]

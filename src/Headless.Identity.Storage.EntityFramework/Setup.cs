@@ -4,42 +4,15 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Headless.Checks;
 
 namespace Headless.EntityFramework;
 
 [PublicAPI]
-public static class SetupIdentity
+public static class SetupIdentityEntityFramework
 {
     extension(IServiceCollection services)
     {
-        public HeadlessIdentityBuilder AddHeadlessIdentity(Action<HeadlessIdentitySetupBuilder> configure)
-        {
-            Argument.IsNotNull(configure);
-
-            var setup = new HeadlessIdentitySetupBuilder(services);
-            configure(setup);
-
-            if (setup.Extensions.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    setup.Extensions.Count == 0
-                        ? "Headless.Identity requires exactly one storage provider. Call `UseEntityFramework`."
-                        : "Headless.Identity requires exactly one storage provider. Multiple storage providers were configured."
-                );
-            }
-
-            return new HeadlessIdentityBuilder(services);
-        }
-    }
-}
-
-[PublicAPI]
-public static class SetupIdentityEntityFramework
-{
-    extension(HeadlessIdentitySetupBuilder setup)
-    {
-        public HeadlessIdentitySetupBuilder UseEntityFramework<
+        public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -51,6 +24,7 @@ public static class SetupIdentityEntityFramework
             TUserToken
         >(
             Action<DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -73,7 +47,7 @@ public static class SetupIdentityEntityFramework
             where TRoleClaim : IdentityRoleClaim<TKey>
             where TUserToken : IdentityUserToken<TKey>
         {
-            return setup.UseEntityFramework<
+            return services.AddHeadlessDbContext<
                 TDbContext,
                 TUser,
                 TRole,
@@ -84,10 +58,10 @@ public static class SetupIdentityEntityFramework
                 TRoleClaim,
                 TUserToken,
                 IdentityUserPasskey<TKey>
-            >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
+            >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
-        public HeadlessIdentitySetupBuilder UseEntityFramework<
+        public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -99,6 +73,7 @@ public static class SetupIdentityEntityFramework
             TUserToken
         >(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -121,7 +96,7 @@ public static class SetupIdentityEntityFramework
             where TRoleClaim : IdentityRoleClaim<TKey>
             where TUserToken : IdentityUserToken<TKey>
         {
-            return setup.UseEntityFramework<
+            return services.AddHeadlessDbContext<
                 TDbContext,
                 TUser,
                 TRole,
@@ -132,10 +107,10 @@ public static class SetupIdentityEntityFramework
                 TRoleClaim,
                 TUserToken,
                 IdentityUserPasskey<TKey>
-            >(optionsAction, contextLifetime, optionsLifetime);
+            >(optionsAction, configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
-        public HeadlessIdentitySetupBuilder UseEntityFramework<
+        public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -148,6 +123,7 @@ public static class SetupIdentityEntityFramework
             TUserPasskey
         >(
             Action<DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -172,7 +148,7 @@ public static class SetupIdentityEntityFramework
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
-            return setup.UseEntityFramework<
+            return services.AddHeadlessDbContext<
                 TDbContext,
                 TUser,
                 TRole,
@@ -183,10 +159,10 @@ public static class SetupIdentityEntityFramework
                 TRoleClaim,
                 TUserToken,
                 TUserPasskey
-            >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
+            >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
-        public HeadlessIdentitySetupBuilder UseEntityFramework<
+        public IServiceCollection AddHeadlessDbContext<
             TDbContext,
             TUser,
             TRole,
@@ -199,6 +175,7 @@ public static class SetupIdentityEntityFramework
             TUserPasskey
         >(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -223,9 +200,17 @@ public static class SetupIdentityEntityFramework
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
-            var services = setup.Services;
-
+            // Identity defaults first so the IdentityOptions configurator is in place before any
+            // hosted service or option-validation pass observes it.
             services._ConfigureHeadlessIdentityDefaults();
+
+            // Wire the full headless service surface that HeadlessIdentityDbContext requires —
+            // HeadlessDbContextServices (scoped, injected into the ctor), save-changes pipeline,
+            // audit persistence, ambient transaction accessor, change capture, message dispatcher,
+            // tenancy guard options, clock, current tenant/user, correlation ID. The canonical
+            // SetupEntityFramework helper centralizes this so Identity stays parity with plain
+            // HeadlessDbContext registration.
+            services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
@@ -237,18 +222,16 @@ public static class SetupIdentityEntityFramework
                 optionsLifetime
             );
 
-            setup.RegisterExtension(typeof(TDbContext));
-
-            return setup;
+            return services;
         }
     }
 
     private static void _ConfigureHeadlessIdentityDefaults(this IServiceCollection services)
     {
-        // Sentinel-based idempotency: AddHeadlessDbContext can be invoked once per DbContext
-        // type, so multiple calls would otherwise accumulate duplicate IConfigureOptions
-        // delegates on IdentityOptions. The TryAddSingleton sentinel collapses subsequent
-        // calls to a no-op for the shared IdentityOptions wiring.
+        // Sentinel-based idempotency: repeated AddHeadlessDbContext calls (e.g., multiple Identity
+        // contexts in one host) configure IdentityOptions exactly once. The delegate is itself
+        // idempotent (writes a fixed value), so multiple registrations are wasteful rather than
+        // wrong — the sentinel keeps startup cost flat.
         if (services.Any(static d => d.ServiceType == typeof(HeadlessIdentityDefaultsSentinel)))
         {
             return;
@@ -260,6 +243,6 @@ public static class SetupIdentityEntityFramework
             options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
         });
     }
-
-    private sealed class HeadlessIdentityDefaultsSentinel;
 }
+
+internal sealed class HeadlessIdentityDefaultsSentinel;
