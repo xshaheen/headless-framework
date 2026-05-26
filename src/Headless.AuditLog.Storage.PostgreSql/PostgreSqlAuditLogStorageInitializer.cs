@@ -13,7 +13,7 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
     IOptions<AuditLogStorageOptions> storageOptions
 ) : IHostedLifecycleService, IInitializer
 {
-    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 

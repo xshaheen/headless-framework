@@ -13,7 +13,7 @@ internal sealed class SqlServerAuditLogStorageInitializer(
     IOptions<AuditLogStorageOptions> storageOptions
 ) : IHostedLifecycleService, IInitializer
 {
-    private TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
 
@@ -167,8 +167,18 @@ internal sealed class SqlServerAuditLogStorageInitializer(
                 {releaseLock}
             END TRY
             BEGIN CATCH
-                IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
-                    {releaseLock}
+                -- Wrap the conditional release in its own TRY/CATCH so a release-side error
+                -- (e.g., transient lock-state inconsistency) does NOT terminate the outer CATCH
+                -- before THROW runs. Without this guard, sp_releaseapplock raising would replace
+                -- the original DDL exception with the release error and hide root cause. The
+                -- session-scoped applock is auto-released on connection-pool reset as backstop.
+                BEGIN TRY
+                    IF APPLOCK_MODE('public', N'{lockResource}', 'Session') <> 'NoLock'
+                        {releaseLock}
+                END TRY
+                BEGIN CATCH
+                    -- intentional: swallow release-side error so original DDL exception survives
+                END CATCH;
                 THROW;
             END CATCH;
             """;
