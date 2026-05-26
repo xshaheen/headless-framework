@@ -2,7 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
-using Headless.Hosting.Storage;
+using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;

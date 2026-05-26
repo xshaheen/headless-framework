@@ -3,7 +3,7 @@
 using Headless.Features;
 using Headless.Features.Internal;
 using Headless.Features.Repositories;
-using Headless.Hosting.Storage;
+using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;

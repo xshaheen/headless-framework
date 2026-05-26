@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting.Storage;
+using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;

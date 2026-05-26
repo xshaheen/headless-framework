@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Storage;
+using Headless.Storage;
 using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;

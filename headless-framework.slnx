@@ -161,6 +161,7 @@
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
         <Project Path="src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+        <Project Path="src\Headless.Storage.Abstractions\Headless.Storage.Abstractions.csproj" />
         <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
         <Project Path="src\Headless.Security\Headless.Security.csproj" />
         <Project Path="src\Headless.NetTopologySuite\Headless.NetTopologySuite.csproj" />

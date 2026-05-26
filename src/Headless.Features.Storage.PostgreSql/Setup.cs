@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting.Storage;
+using Headless.Storage;
 using Headless.Features;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
