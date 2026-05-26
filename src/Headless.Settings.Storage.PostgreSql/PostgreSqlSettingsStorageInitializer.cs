@@ -19,7 +19,17 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        _completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        // On a host restart, swap the completion source atomically and cancel the previous promise
+        // so waiters from the prior run observe OperationCanceledException rather than hanging.
+        // On first start, _completion is the field initializer (no prior waiters to rescue), so
+        // skip the cancel — a fresh TCS is never IsCompleted.
+        if (_completion.Task.IsCompleted)
+        {
+            var previous = Interlocked.Exchange(
+                ref _completion,
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+            previous.TrySetCanceled(cancellationToken);
+        }
 
         try
         {
@@ -66,7 +76,13 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710")
+        // 42P06: schema_already_exists, 42P07: relation_already_exists, 42710: duplicate_object,
+        // 23505: unique_violation on pg_namespace_nspname_index when two transactions race
+        // CREATE SCHEMA IF NOT EXISTS (the IF NOT EXISTS check is not transactional with the
+        // catalog insert). The pg_advisory_xact_lock in _CreateScript serializes ours, but a
+        // foreign initializer running concurrent DDL can still trigger this path — absorb it
+        // and treat the schema as initialized.
+        catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
         }
@@ -77,7 +93,15 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
         var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
         var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
 
+        // Serialize concurrent-startup DDL across replicas with a transaction-scoped advisory
+        // lock keyed on the schema (two tables share the schema, so a per-table key would still
+        // race on CREATE SCHEMA). Auto-released on COMMIT/ROLLBACK; no explicit release needed.
+        var lockResource = $"headless_settings_init:{options.Schema}";
+        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+
         return $"""
+            {acquireLock}
+
             CREATE SCHEMA IF NOT EXISTS "{options.Schema}";
 
             CREATE TABLE IF NOT EXISTS {definitionsTable} (
