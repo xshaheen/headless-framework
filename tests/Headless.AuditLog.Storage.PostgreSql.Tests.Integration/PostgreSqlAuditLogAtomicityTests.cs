@@ -108,12 +108,14 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
     [Fact]
     public async Task should_fall_back_to_own_connection_when_accessor_returns_non_npgsql_connection()
     {
-        // given — accessor returns a non-Npgsql connection (simulating the consumer's DbContext
-        // using a different driver). The store must detect the provider mismatch, fall back to
-        // opening its own NpgsqlConnection, and write the row successfully on the standalone path.
+        // given — accessor returns a non-Npgsql connection AND non-Npgsql transaction (simulating
+        // the consumer's DbContext using a different driver). Both must be non-null to reach the
+        // store's runtime type check; a null transaction short-circuits before the mismatch branch
+        // and exercises the standalone path instead of what this test is meant to cover.
         await _DropSchemaAsync();
         var fakeConnection = new NonNpgsqlConnectionStub();
-        var accessor = new TestAmbientAccessor { Connection = fakeConnection, Transaction = null };
+        var fakeTransaction = new NonNpgsqlTransactionStub(fakeConnection);
+        var accessor = new TestAmbientAccessor { Connection = fakeConnection, Transaction = fakeTransaction };
         using var host = _CreateHost(accessor);
         await host.StartAsync(TestContext.Current.CancellationToken);
 
@@ -207,5 +209,16 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         public override void Open() => throw new NotSupportedException();
         protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il) => throw new NotSupportedException();
         protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
+    }
+
+    // Companion stub paired with NonNpgsqlConnectionStub so accessor returns a (non-null, non-null)
+    // pair — both wrong type — and the store's runtime type check actually executes. The store
+    // never invokes Commit/Rollback on this since it falls back to its own connection on mismatch.
+    private sealed class NonNpgsqlTransactionStub(DbConnection connection) : DbTransaction
+    {
+        public override System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.Unspecified;
+        protected override DbConnection? DbConnection { get; } = connection;
+        public override void Commit() => throw new NotSupportedException();
+        public override void Rollback() => throw new NotSupportedException();
     }
 }

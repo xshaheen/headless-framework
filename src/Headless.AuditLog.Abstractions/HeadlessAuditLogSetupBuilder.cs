@@ -18,17 +18,30 @@ public sealed class HeadlessAuditLogSetupBuilder
 
     internal AuditLogStorageOptions StorageOptions { get; } = new();
 
+    // Compose configurators in registration order. Last-write-wins would silently drop earlier
+    // calls, surprising consumers who split setup across extension methods or call ConfigureOptions
+    // twice intentionally to layer overrides.
     internal Action<AuditLogOptions>? OptionsConfigurator { get; private set; }
 
     internal IList<IStorageOptionsExtension> Extensions { get; } = new List<IStorageOptionsExtension>();
 
     /// <summary>
     /// Configure the cross-cutting <see cref="AuditLogOptions"/> (capture strategy, etc.).
+    /// Repeated calls compose: each registered delegate runs in registration order against the
+    /// same <see cref="AuditLogOptions"/> instance, so later calls can override earlier values.
     /// </summary>
     public HeadlessAuditLogSetupBuilder ConfigureOptions(Action<AuditLogOptions> configure)
     {
         Argument.IsNotNull(configure);
-        OptionsConfigurator = configure;
+
+        var previous = OptionsConfigurator;
+        OptionsConfigurator = previous is null
+            ? configure
+            : options =>
+            {
+                previous(options);
+                configure(options);
+            };
 
         return this;
     }
