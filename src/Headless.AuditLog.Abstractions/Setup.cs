@@ -54,13 +54,24 @@ public static class SetupAuditLog
                 );
             }
 
-            services.Configure<AuditLogStorageOptions, AuditLogStorageOptionsValidator>(options =>
+            // Cross-call guard — calling AddHeadlessAuditLog(setup => …) twice on the same
+            // IServiceCollection would otherwise wire two storage providers (and duplicate
+            // initializers/options/services) without diagnostic. Mirrors the sentinel pattern
+            // already in Settings/Permissions/Features Setup classes.
+            if (services.Any(static d => d.ServiceType == typeof(AuditLogStorageProviderRegistration)))
             {
-                options.Schema = setup.StorageOptions.Schema;
-                options.TableName = setup.StorageOptions.TableName;
-                options.JsonColumnType = setup.StorageOptions.JsonColumnType;
-                options.CreatedAtColumnType = setup.StorageOptions.CreatedAtColumnType;
-            });
+                throw new InvalidOperationException(
+                    "Headless.AuditLog requires exactly one storage provider. Multiple storage providers were configured."
+                );
+            }
+
+            services.AddSingleton(
+                new AuditLogStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+            );
+
+            services.Configure<AuditLogStorageOptions, AuditLogStorageOptionsValidator>(options =>
+                setup.StorageOptions.CopyTo(options)
+            );
 
             foreach (var extension in setup.Extensions)
             {
@@ -70,4 +81,6 @@ public static class SetupAuditLog
             return new HeadlessAuditLogBuilder(services);
         }
     }
+
+    private sealed record AuditLogStorageProviderRegistration(string Provider);
 }

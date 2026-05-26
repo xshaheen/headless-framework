@@ -15,6 +15,19 @@ public sealed class AuditLogStorageOptions
     public AuditLogJsonColumnType? JsonColumnType { get; set; }
 
     public string? CreatedAtColumnType { get; set; }
+
+    /// <summary>
+    /// Copies every property to <paramref name="target"/>. Centralizes the property list so
+    /// adding a new property to this type only requires extending this single method — the
+    /// setup pipeline picks it up automatically instead of silently dropping it.
+    /// </summary>
+    internal void CopyTo(AuditLogStorageOptions target)
+    {
+        target.Schema = Schema;
+        target.TableName = TableName;
+        target.JsonColumnType = JsonColumnType;
+        target.CreatedAtColumnType = CreatedAtColumnType;
+    }
 }
 
 [PublicAPI]
@@ -40,8 +53,11 @@ internal sealed class AuditLogStorageOptionsValidator : AbstractValidator<AuditL
 {
     public AuditLogStorageOptionsValidator()
     {
-        RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
-        RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+        // Cap at SqlServer's regular-identifier max (128). Shorter PG limits (63 for schema/table)
+        // are enforced by the PG initializer's DDL at startup rather than by this shared validator,
+        // so SqlServer-only consumers can use schema/table names PG wouldn't accept.
+        RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+        RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
         RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
         RuleFor(x => x.CreatedAtColumnType!)
             .MaximumLength(64)

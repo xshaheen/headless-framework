@@ -116,13 +116,24 @@ public static class CoreSetup
             );
         }
 
-        serviceCollection.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(options =>
+        // Cross-call guard — calling AddHeadlessFeatures(setup => …) twice on the same
+        // IServiceCollection would otherwise wire two storage providers (and duplicate
+        // initializers/options/services) without diagnostic. Mirrors the sentinel pattern
+        // already in Settings/Permissions Setup classes.
+        if (serviceCollection.Any(static d => d.ServiceType == typeof(FeaturesStorageProviderRegistration)))
         {
-            options.Schema = setup.StorageOptions.Schema;
-            options.FeatureValuesTableName = setup.StorageOptions.FeatureValuesTableName;
-            options.FeatureDefinitionsTableName = setup.StorageOptions.FeatureDefinitionsTableName;
-            options.FeatureGroupDefinitionsTableName = setup.StorageOptions.FeatureGroupDefinitionsTableName;
-        });
+            throw new InvalidOperationException(
+                "Headless.Features requires exactly one storage provider. Multiple storage providers were configured."
+            );
+        }
+
+        serviceCollection.AddSingleton(
+            new FeaturesStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        );
+
+        serviceCollection.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(options =>
+            setup.StorageOptions.CopyTo(options)
+        );
 
         foreach (var extension in setup.Extensions)
         {
@@ -131,6 +142,8 @@ public static class CoreSetup
 
         return new HeadlessFeaturesBuilder(serviceCollection);
     }
+
+    private sealed record FeaturesStorageProviderRegistration(string Provider);
 
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
