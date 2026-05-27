@@ -5,7 +5,7 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
-using Headless.Storage;
+using Headless.Constants;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -60,8 +60,8 @@ public static class SetupAuditLogPostgreSql
     {
         public PostgreSqlAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
-            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
+            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
             // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
             RuleFor(x => x.JsonColumnType!.Value)
                 .Must(t => t is AuditLogJsonColumnType.Jsonb or AuditLogJsonColumnType.Json)

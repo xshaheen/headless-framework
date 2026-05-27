@@ -2,10 +2,10 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
-using Headless.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -104,10 +104,10 @@ public static class SetupPermissionsSqlServer
     {
         public SqlServerPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
         }
     }
 }

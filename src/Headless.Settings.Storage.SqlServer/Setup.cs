@@ -2,10 +2,10 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Constants;
 using Headless.Settings;
 using Headless.Settings.Repositories;
 using Headless.Settings.SqlServer;
-using Headless.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -104,9 +104,9 @@ public static class SetupSettingsSqlServer
     {
         public SqlServerSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
         }
     }
 }

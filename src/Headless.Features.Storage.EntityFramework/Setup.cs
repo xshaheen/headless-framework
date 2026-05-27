@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Constants;
 using Headless.Features;
 using Headless.Features.Internal;
 using Headless.Features.Repositories;
-using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -55,10 +55,10 @@ public static class SetupFeaturesEntityFramework
     {
         public EntityFrameworkFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
         }
     }
 }

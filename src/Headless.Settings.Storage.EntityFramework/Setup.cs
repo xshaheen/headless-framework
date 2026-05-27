@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Constants;
 using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
-using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -55,9 +55,9 @@ public static class SetupSettings
     {
         public EntityFrameworkSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
-            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
         }
     }
 }
