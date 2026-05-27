@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Permissions;
 using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
+using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +30,7 @@ public static class SetupPermissions
     {
         public void AddServices(IServiceCollection services)
         {
+            services.AddOptions<PermissionsStorageOptions, EntityFrameworkPermissionsStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(IPermissionGrantRepository),
                 typeof(EfPermissionGrantRepository<>).MakeGenericType(dbContextType)
@@ -42,6 +45,20 @@ public static class SetupPermissions
                     typeof(PermissionsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
                 )
             );
+        }
+    }
+
+    // EF dispatches to whatever DB the consumer wired up, so the validator caps at the most
+    // permissive limit (SqlServerMaxLength). PG-via-EF consumers with longer identifiers will
+    // surface a clearer error from the EF migration than the validator could.
+    private sealed class EntityFrameworkPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
+    {
+        public EntityFrameworkPermissionsStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
         }
     }
 }

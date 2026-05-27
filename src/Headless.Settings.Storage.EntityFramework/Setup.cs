@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
+using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -28,6 +30,7 @@ public static class SetupSettings
     {
         public void AddServices(IServiceCollection services)
         {
+            services.AddOptions<SettingsStorageOptions, EntityFrameworkSettingsStorageOptionsValidator>();
             services.TryAddSingleton(
                 typeof(ISettingValueRecordRepository),
                 typeof(EfSettingValueRecordRepository<>).MakeGenericType(dbContextType)
@@ -42,6 +45,19 @@ public static class SetupSettings
                     typeof(SettingsEntityValidationStartupGate<>).MakeGenericType(dbContextType)
                 )
             );
+        }
+    }
+
+    // EF dispatches to whatever DB the consumer wired up, so the validator caps at the most
+    // permissive limit (SqlServerMaxLength). PG-via-EF consumers with longer identifiers will
+    // surface a clearer error from the EF migration than the validator could.
+    private sealed class EntityFrameworkSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
+    {
+        public EntityFrameworkSettingsStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
         }
     }
 }

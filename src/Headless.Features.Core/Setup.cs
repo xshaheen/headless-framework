@@ -130,9 +130,7 @@ public static class CoreSetup
             new FeaturesStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
         );
 
-        serviceCollection.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(options =>
-            setup.StorageOptions.CopyTo(options)
-        );
+        serviceCollection.Configure<FeaturesStorageOptions>(options => setup.StorageOptions.CopyTo(options));
 
         foreach (var extension in setup.Extensions)
         {

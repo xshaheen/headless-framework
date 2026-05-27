@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
+using Headless.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -91,9 +93,21 @@ public static class SetupPermissionsSqlServer
                 services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(_configureWithServices);
             }
 
+            services.AddOptions<PermissionsStorageOptions, SqlServerPermissionsStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, SqlServerPermissionDefinitionRecordRepository>();
+        }
+    }
+
+    private sealed class SqlServerPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
+    {
+        public SqlServerPermissionsStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
         }
     }
 }

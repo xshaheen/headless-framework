@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
 using Headless.Settings;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
+using Headless.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -93,9 +95,20 @@ public static class SetupSettingsPostgreSql
                 );
             }
 
+            services.AddOptions<SettingsStorageOptions, PostgreSqlSettingsStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
             services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();
+        }
+    }
+
+    private sealed class PostgreSqlSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
+    {
+        public PostgreSqlSettingsStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
         }
     }
 }

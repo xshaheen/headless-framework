@@ -126,7 +126,7 @@ public static class PermissionsSetup
             new PermissionsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
         );
 
-        serviceCollection.Configure<PermissionsStorageOptions, PermissionsStorageOptionsValidator>(options =>
+        serviceCollection.Configure<PermissionsStorageOptions>(options =>
         {
             options.Schema = setup.StorageOptions.Schema;
             options.PermissionGrantsTableName = setup.StorageOptions.PermissionGrantsTableName;

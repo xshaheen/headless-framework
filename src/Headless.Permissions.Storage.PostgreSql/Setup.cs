@@ -1,9 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.Checks;
 using Headless.Permissions;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
+using Headless.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -93,9 +95,21 @@ public static class SetupPermissionsPostgreSql
                 );
             }
 
+            services.AddOptions<PermissionsStorageOptions, PostgreSqlPermissionsStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
             services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, PostgreSqlPermissionDefinitionRecordRepository>();
+        }
+    }
+
+    private sealed class PostgreSqlPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
+    {
+        public PostgreSqlPermissionsStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.PgMaxLength);
         }
     }
 }

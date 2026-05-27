@@ -131,7 +131,7 @@ public static class CoreSettingsSetup
             new SettingsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
         );
 
-        serviceCollection.Configure<SettingsStorageOptions, SettingsStorageOptionsValidator>(options =>
+        serviceCollection.Configure<SettingsStorageOptions>(options =>
         {
             options.Schema = setup.StorageOptions.Schema;
             options.SettingValuesTableName = setup.StorageOptions.SettingValuesTableName;

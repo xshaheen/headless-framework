@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
+using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -27,6 +29,7 @@ public static class SetupAuditLogEntityFramework
     {
         public void AddServices(IServiceCollection services)
         {
+            services.AddOptions<AuditLogStorageOptions, EntityFrameworkAuditLogStorageOptionsValidator>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();
             services.TryAddScoped(typeof(IAuditLog<>).MakeGenericType(dbContextType), typeof(EfAuditLog<>).MakeGenericType(dbContextType));
             services.TryAddSingleton(
@@ -39,6 +42,23 @@ public static class SetupAuditLogEntityFramework
                     typeof(AuditLogEntityValidationStartupGate<>).MakeGenericType(dbContextType)
                 )
             );
+        }
+    }
+
+    // EF dispatches to whatever DB the consumer wired up, so the validator caps at the most
+    // permissive limit (SqlServerMaxLength) and accepts any JsonColumnType. The underlying DB
+    // surfaces type/length issues at migration time.
+    private sealed class EntityFrameworkAuditLogStorageOptionsValidator : AbstractValidator<AuditLogStorageOptions>
+    {
+        public EntityFrameworkAuditLogStorageOptionsValidator()
+        {
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PgPattern).MaximumLength(StorageIdentifier.SqlServerMaxLength);
+            RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
+            RuleFor(x => x.CreatedAtColumnType!)
+                .MaximumLength(64)
+                .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
+                .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
         }
     }
 }

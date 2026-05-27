@@ -69,9 +69,7 @@ public static class SetupAuditLog
                 new AuditLogStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
             );
 
-            services.Configure<AuditLogStorageOptions, AuditLogStorageOptionsValidator>(options =>
-                setup.StorageOptions.CopyTo(options)
-            );
+            services.Configure<AuditLogStorageOptions>(options => setup.StorageOptions.CopyTo(options));
 
             foreach (var extension in setup.Extensions)
             {
