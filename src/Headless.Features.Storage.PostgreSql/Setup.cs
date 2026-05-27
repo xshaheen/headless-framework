@@ -53,10 +53,10 @@ public static class SetupFeaturesPostgreSql
     {
         public PostgreSqlFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
         }
     }
 }

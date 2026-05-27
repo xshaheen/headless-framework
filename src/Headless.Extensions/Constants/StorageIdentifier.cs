@@ -27,7 +27,7 @@ public static partial class StorageIdentifier
         public const int IdentifierMaxLength = 128;
     }
 
-    public static partial class PostgresSql
+    public static partial class PostgreSql
     {
         /// <summary>
         /// PostgreSQL unquoted-identifier pattern: leading letter or underscore, then letters,

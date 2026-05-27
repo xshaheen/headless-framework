@@ -106,9 +106,9 @@ public static class SetupSettingsPostgreSql
     {
         public PostgreSqlSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
         }
     }
 }

@@ -60,8 +60,8 @@ public static class SetupAuditLogPostgreSql
     {
         public PostgreSqlAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
-            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PostgresSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgresSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
             // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
             RuleFor(x => x.JsonColumnType!.Value)
                 .Must(t => t is AuditLogJsonColumnType.Jsonb or AuditLogJsonColumnType.Json)
