@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Storage;
+namespace Headless.Storage;
 
 /// <summary>
 /// Identifier-pattern constants used by storage-provider options validators to reject SQL identifier

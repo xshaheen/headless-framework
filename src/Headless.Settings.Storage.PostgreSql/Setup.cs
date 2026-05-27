@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Settings;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
@@ -56,7 +55,7 @@ public static class SetupSettingsPostgreSql
         }
     }
 
-    private sealed class PostgreSqlSettingsOptionsExtension : IStorageOptionsExtension
+    private sealed class PostgreSqlSettingsOptionsExtension : ISettingsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
         private readonly Action<PostgreSqlSettingsOptions>? _configure;

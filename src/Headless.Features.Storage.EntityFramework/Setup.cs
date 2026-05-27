@@ -3,7 +3,6 @@
 using Headless.Features;
 using Headless.Features.Internal;
 using Headless.Features.Repositories;
-using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -25,7 +24,7 @@ public static class SetupFeaturesEntityFramework
         }
     }
 
-    private sealed class EntityFrameworkFeaturesOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    private sealed class EntityFrameworkFeaturesOptionsExtension(Type dbContextType) : IFeaturesStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

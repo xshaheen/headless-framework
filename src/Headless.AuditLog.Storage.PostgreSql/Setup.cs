@@ -4,7 +4,6 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
-using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -36,7 +35,7 @@ public static class SetupAuditLogPostgreSql
     }
 
     private sealed class PostgreSqlAuditLogOptionsExtension(Action<PostgreSqlAuditLogOptions> configure)
-        : IStorageOptionsExtension
+        : IAuditLogStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

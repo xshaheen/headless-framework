@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Settings;
@@ -18,7 +17,7 @@ public sealed class HeadlessSettingsSetupBuilder
 
     internal SettingsStorageOptions StorageOptions { get; } = new();
 
-    internal IList<IStorageOptionsExtension> Extensions { get; } = new List<IStorageOptionsExtension>();
+    internal IList<ISettingsStorageOptionsExtension> Extensions { get; } = new List<ISettingsStorageOptionsExtension>();
 
     public HeadlessSettingsSetupBuilder ConfigureStorage(Action<SettingsStorageOptions> configure)
     {
@@ -29,7 +28,7 @@ public sealed class HeadlessSettingsSetupBuilder
         return this;
     }
 
-    public void RegisterExtension(IStorageOptionsExtension extension)
+    public void RegisterExtension(ISettingsStorageOptionsExtension extension)
     {
         Argument.IsNotNull(extension);
 

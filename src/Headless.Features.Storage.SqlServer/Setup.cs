@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Features;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
@@ -36,7 +35,7 @@ public static class SetupFeaturesSqlServer
     }
 
     private sealed class SqlServerFeaturesOptionsExtension(Action<SqlServerFeaturesOptions> configure)
-        : IStorageOptionsExtension
+        : IFeaturesStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

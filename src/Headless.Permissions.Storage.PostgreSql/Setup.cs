@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Permissions;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
@@ -56,7 +55,7 @@ public static class SetupPermissionsPostgreSql
         }
     }
 
-    private sealed class PostgreSqlPermissionsOptionsExtension : IStorageOptionsExtension
+    private sealed class PostgreSqlPermissionsOptionsExtension : IPermissionsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
         private readonly Action<PostgreSqlPermissionsOptions>? _configure;

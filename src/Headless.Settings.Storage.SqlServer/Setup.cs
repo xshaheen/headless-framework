@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Settings;
 using Headless.Settings.Repositories;
 using Headless.Settings.SqlServer;
@@ -56,7 +55,7 @@ public static class SetupSettingsSqlServer
         }
     }
 
-    private sealed class SqlServerSettingsOptionsExtension : IStorageOptionsExtension
+    private sealed class SqlServerSettingsOptionsExtension : ISettingsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
         private readonly Action<SqlServerSettingsOptions>? _configure;

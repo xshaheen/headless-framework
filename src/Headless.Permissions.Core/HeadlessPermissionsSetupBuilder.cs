@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;
@@ -18,7 +17,7 @@ public sealed class HeadlessPermissionsSetupBuilder
 
     internal PermissionsStorageOptions StorageOptions { get; } = new();
 
-    internal IList<IStorageOptionsExtension> Extensions { get; } = new List<IStorageOptionsExtension>();
+    internal IList<IPermissionsStorageOptionsExtension> Extensions { get; } = new List<IPermissionsStorageOptionsExtension>();
 
     public HeadlessPermissionsSetupBuilder ConfigureStorage(Action<PermissionsStorageOptions> configure)
     {
@@ -29,7 +28,7 @@ public sealed class HeadlessPermissionsSetupBuilder
         return this;
     }
 
-    public void RegisterExtension(IStorageOptionsExtension extension)
+    public void RegisterExtension(IPermissionsStorageOptionsExtension extension)
     {
         Argument.IsNotNull(extension);
 

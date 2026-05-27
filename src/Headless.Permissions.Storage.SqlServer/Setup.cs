@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
@@ -56,7 +55,7 @@ public static class SetupPermissionsSqlServer
         }
     }
 
-    private sealed class SqlServerPermissionsOptionsExtension : IStorageOptionsExtension
+    private sealed class SqlServerPermissionsOptionsExtension : IPermissionsStorageOptionsExtension
     {
         private readonly IConfiguration? _configuration;
         private readonly Action<SqlServerPermissionsOptions>? _configure;

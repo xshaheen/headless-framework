@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Storage;
 using Headless.Features;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
@@ -36,7 +35,7 @@ public static class SetupFeaturesPostgreSql
     }
 
     private sealed class PostgreSqlFeaturesOptionsExtension(Action<PostgreSqlFeaturesOptions> configure)
-        : IStorageOptionsExtension
+        : IFeaturesStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

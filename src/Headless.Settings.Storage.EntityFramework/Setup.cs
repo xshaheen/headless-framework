@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Storage;
 using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
@@ -25,7 +24,7 @@ public static class SetupSettings
         }
     }
 
-    private sealed class EntityFrameworkSettingsOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    private sealed class EntityFrameworkSettingsOptionsExtension(Type dbContextType) : ISettingsStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

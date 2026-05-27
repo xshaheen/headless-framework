@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Storage;
 using Headless.Permissions;
 using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
@@ -25,7 +24,7 @@ public static class SetupPermissions
         }
     }
 
-    private sealed class EntityFrameworkPermissionsOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    private sealed class EntityFrameworkPermissionsOptionsExtension(Type dbContextType) : IPermissionsStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

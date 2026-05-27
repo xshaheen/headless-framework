@@ -2,7 +2,6 @@
 
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
-using Headless.Storage;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -24,7 +23,7 @@ public static class SetupAuditLogEntityFramework
         }
     }
 
-    private sealed class EntityFrameworkAuditLogOptionsExtension(Type dbContextType) : IStorageOptionsExtension
+    private sealed class EntityFrameworkAuditLogOptionsExtension(Type dbContextType) : IAuditLogStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

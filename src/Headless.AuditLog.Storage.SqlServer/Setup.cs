@@ -4,7 +4,6 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
-using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -36,7 +35,7 @@ public static class SetupAuditLogSqlServer
     }
 
     private sealed class SqlServerAuditLogOptionsExtension(Action<SqlServerAuditLogOptions> configure)
-        : IStorageOptionsExtension
+        : IAuditLogStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {

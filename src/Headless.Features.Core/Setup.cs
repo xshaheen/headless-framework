@@ -10,7 +10,6 @@ using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
-using Headless.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
