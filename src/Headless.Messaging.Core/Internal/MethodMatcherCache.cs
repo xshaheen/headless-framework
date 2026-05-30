@@ -104,7 +104,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         return _intentGroupConcurrent.TryGetValue(group, out var value) ? value : (byte)1;
     }
 
-    public List<string> GetAllTopics()
+    public List<string> GetAllMessageNames()
     {
         if (_entries.IsEmpty)
         {
@@ -126,7 +126,7 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     /// </summary>
     /// <param name="messageName">The message name of the value to get.</param>
     /// <param name="groupName">The group name of the value to get.</param>
-    /// <param name="matchMessageName">messageName executor of the value.</param>
+    /// <param name="matchMessageName">message name executor of the value.</param>
     /// <returns>true if the key was found, otherwise false. </returns>
     public bool TryGetMessageNameExecutor(
         string messageName,

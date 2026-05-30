@@ -246,6 +246,7 @@ public sealed class IBusIntegrationTests : TestBase
         DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
 
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
+        ctx.MessageName.Should().Be("header-test-messageName");
         ctx.Headers["custom-header"].Should().Be("custom-value");
         ctx.Headers[Headers.CorrelationId].Should().Be("correlation-123");
     }

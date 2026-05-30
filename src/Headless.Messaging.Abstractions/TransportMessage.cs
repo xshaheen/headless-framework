@@ -53,7 +53,7 @@ public readonly struct TransportMessage(IDictionary<string, string?> headers, Re
     }
 
     /// <summary>
-    /// Retrieves the message name or messageName from the message headers.
+    /// Retrieves the message name from the message headers.
     /// </summary>
     /// <returns>The message name stored in the <see cref="Messaging.Headers.MessageName"/> header.</returns>
     /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>

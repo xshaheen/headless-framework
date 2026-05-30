@@ -33,12 +33,12 @@ public interface IConsumerRegistry
     /// Finds a consumer by message name and optional group.
     /// </summary>
     /// <param name="messageName">The message name to search for.</param>
-    /// <param name="group">Optional consumer group name. If null, returns first match by messageName only.</param>
+    /// <param name="group">Optional consumer group name. If null, returns first match by message name only.</param>
     /// <returns>
-    /// The matching consumer metadata, or null if no consumer is registered for the messageName/group combination.
+    /// The matching consumer metadata, or null if no consumer is registered for the message-name/group combination.
     /// </returns>
     /// <remarks>
-    /// When multiple consumers are registered for the same messageName with different groups,
+    /// When multiple consumers are registered for the same message name with different groups,
     /// the group parameter must be specified to disambiguate.
     /// </remarks>
     ConsumerMetadata? FindByMessageName(string messageName, string? group = null);
@@ -49,7 +49,7 @@ public interface IConsumerRegistry
     /// <typeparam name="TMessage">The message type to search for.</typeparam>
     /// <returns>An enumerable of consumer metadata for all consumers handling the specified message type.</returns>
     /// <remarks>
-    /// Multiple consumers can handle the same message type if they subscribe to different messageNames
+    /// Multiple consumers can handle the same message type if they subscribe to different message names
     /// or belong to different consumer groups.
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> FindByMessageType<TMessage>();
@@ -60,7 +60,7 @@ public interface IConsumerRegistry
     /// <param name="messageType">The message type to search for.</param>
     /// <returns>A read-only list of consumer metadata for all consumers handling the specified message type.</returns>
     /// <remarks>
-    /// Multiple consumers can handle the same message type if they subscribe to different messageNames
+    /// Multiple consumers can handle the same message type if they subscribe to different message names
     /// or belong to different consumer groups.
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> FindByMessageType(Type messageType);

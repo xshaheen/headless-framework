@@ -42,10 +42,10 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     }
 
     /// <summary>
-    /// Subscribes a group to specified messageNames.
+    /// Subscribes a group to specified message names.
     /// </summary>
     /// <param name="groupId">The consumer group ID</param>
-    /// <param name="messageNames">The messageNames to subscribe to</param>
+    /// <param name="messageNames">The message names to subscribe to</param>
     public void Subscribe(IntentType intentType, string groupId, IEnumerable<string> messageNames)
     {
         lock (_lock)
@@ -130,7 +130,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     /// <summary>
     /// Sends a transport message to all subscribed bus consumer groups.
-    /// When no subscriber is registered for the messageName the message is silently dropped (no-op),
+    /// When no subscriber is registered for the message name the message is silently dropped (no-op),
     /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>
@@ -154,7 +154,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     /// <summary>
     /// Sends a transport message to one subscribed queue consumer group.
-    /// When no subscriber is registered for the messageName the message is silently dropped (no-op),
+    /// When no subscriber is registered for the message name the message is silently dropped (no-op),
     /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>

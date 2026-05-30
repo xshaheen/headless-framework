@@ -59,7 +59,7 @@ public static class SetupMessaging
     ///         .Group("order-service")
     ///         .Concurrency(5);
     ///
-    ///     // Map message types to messageNames
+    ///     // Map message types to message names
     ///     setup.WithMessageNameMapping&lt;OrderPlaced&gt;("orders.placed");
     /// });
     /// </code>

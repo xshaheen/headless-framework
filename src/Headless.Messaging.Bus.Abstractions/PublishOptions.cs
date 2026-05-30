@@ -3,7 +3,7 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a broadcast (bus) publish operation with explicit messageName, correlation, custom header,
+/// Configures a broadcast (bus) publish operation with explicit message name, correlation, custom header,
 /// and (for outbox-backed publishes) delivery-delay overrides.
 /// </summary>
 /// <remarks>

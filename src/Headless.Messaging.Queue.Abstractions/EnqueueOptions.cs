@@ -3,7 +3,7 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures a point-to-point (queue) enqueue operation with explicit messageName, correlation, custom
+/// Configures a point-to-point (queue) enqueue operation with explicit message name, correlation, custom
 /// header, and (for outbox-backed enqueues) delivery-delay overrides.
 /// </summary>
 /// <remarks>

@@ -31,7 +31,7 @@ internal interface ISubscribeExecutor
     /// when the retry budget exhausts, so the user's exhausted callback resolves scoped services from the
     /// SAME scope the consume attempt ran under.
     /// </param>
-    /// <param name="descriptor">Optional consumer descriptor; resolved from the messageName when omitted.</param>
+    /// <param name="descriptor">Optional consumer descriptor; resolved from the message name when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     Task<OperateResult> ExecuteAsync(
         MediumMessage message,

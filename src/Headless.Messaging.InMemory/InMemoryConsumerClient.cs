@@ -60,9 +60,9 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     public BrokerAddress BrokerAddress => new("InMemory", "localhost");
 
     /// <summary>
-    /// Subscribes to the specified messageNames.
+    /// Subscribes to the specified message names.
     /// </summary>
-    /// <param name="messageNames">The list of messageNames to subscribe to</param>
+    /// <param name="messageNames">The list of message names to subscribe to</param>
     /// <returns>A completed task</returns>
     /// <exception cref="ArgumentNullException">Thrown when messageNames is null</exception>
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames)

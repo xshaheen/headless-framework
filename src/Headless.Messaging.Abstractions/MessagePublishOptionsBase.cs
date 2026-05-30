@@ -4,7 +4,7 @@ namespace Headless.Messaging;
 
 /// <summary>
 /// Shared base for publish-side option records. Carries the intent-agnostic metadata fields
-/// (messageName, identifiers, tenancy, headers, callback) that every publisher accepts.
+/// (message name, identifiers, tenancy, headers, callback) that every publisher accepts.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,7 +33,7 @@ public abstract record MessagePublishOptionsBase
     public const int TenantIdMaxLength = 200;
 
     /// <summary>
-    /// Gets the explicit messageName override. When <see langword="null"/>, the messageName is resolved from mappings or conventions.
+    /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
     public string? MessageName { get; init; }
 
@@ -62,7 +62,7 @@ public abstract record MessagePublishOptionsBase
     public int? CorrelationSequence { get; init; }
 
     /// <summary>
-    /// Gets the callback messageName override used for response messages.
+    /// Gets the callback message name override used for response messages.
     /// </summary>
     public string? CallbackName { get; init; }
 

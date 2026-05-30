@@ -10,9 +10,7 @@ namespace Headless.Messaging.InMemory;
 /// <summary>
 /// Transport implementation for in-memory message bus fan-out.
 /// </summary>
-internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBusTransport> logger)
-    : IBusTransport,
-        ITransport
+internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBusTransport> logger) : IBusTransport
 {
     private readonly ILogger _logger = logger;
 

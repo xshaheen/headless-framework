@@ -27,7 +27,7 @@ public interface IConsumerServiceSelector
     /// Selects the best <see cref="ConsumerExecutorDescriptor" /> candidate from <paramref name="candidates" /> for the
     /// current message associated.
     /// </summary>
-    /// <param name="key">messageName or exchange router key.</param>
+    /// <param name="key">message name or exchange router key.</param>
     /// <param name="candidates">the set of <see cref="ConsumerExecutorDescriptor" /> candidates.</param>
     ConsumerExecutorDescriptor? SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> candidates);
 

@@ -45,7 +45,7 @@ public sealed record RecordedMessage
     /// <summary>Message headers.</summary>
     public required IReadOnlyDictionary<string, string?> Headers { get; init; }
 
-    /// <summary>The messageName the message was published to or consumed from.</summary>
+    /// <summary>The message name the message was published to or consumed from.</summary>
     public required string MessageName { get; init; }
 
     /// <summary>The bus/queue intent that produced the observation.</summary>

@@ -32,7 +32,7 @@ public readonly struct MessagingEnrichmentContext
     /// <summary>The message ID, or <see langword="null"/> when not available for this span kind.</summary>
     public string? MessageId { get; init; }
 
-    /// <summary>The messageName / operation name.</summary>
+    /// <summary>The message name / operation name.</summary>
     public string? MessageName { get; init; }
 
     /// <summary>

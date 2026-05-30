@@ -319,7 +319,7 @@ public sealed class MessagingOptions
     }
 
     /// <summary>
-    /// Registers a messageName mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
+    /// Registers a message-name mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
     /// </summary>
     internal void WithMessageNameMapping(Type messageType, string messageName)
     {

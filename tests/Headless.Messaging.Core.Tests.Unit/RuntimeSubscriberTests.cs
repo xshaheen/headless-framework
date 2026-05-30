@@ -172,11 +172,11 @@ public sealed class RuntimeSubscriberTests : TestBase
         );
 
         var handles = await Task.WhenAll(subscribeTasks);
-        cache.GetAllTopics().Should().HaveCount(handlers.Length);
+        cache.GetAllMessageNames().Should().HaveCount(handlers.Length);
 
         await Task.WhenAll(handles.Select(handle => handle.DisposeAsync().AsTask()));
 
-        cache.GetAllTopics().Should().BeEmpty();
+        cache.GetAllMessageNames().Should().BeEmpty();
     }
 
     private ServiceProvider _CreateProvider()

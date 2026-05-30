@@ -46,8 +46,8 @@ public enum RuntimeSubscriptionDuplicateBehavior
 public sealed class RuntimeSubscriptionOptions
 {
     /// <summary>
-    /// Gets or sets the explicit messageName to subscribe to.
-    /// When omitted, the messageName is resolved from configured mappings or deterministic conventions for the message type.
+    /// Gets or sets the explicit message name to subscribe to.
+    /// When omitted, the message name is resolved from configured mappings or deterministic conventions for the message type.
     /// </summary>
     public string? MessageName { get; init; }
 
@@ -122,7 +122,7 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
     public string? SubscriptionId { get; private init; }
 
     /// <summary>
-    /// Gets the resolved messageName for the runtime handler.
+    /// Gets the resolved message name for the runtime handler.
     /// </summary>
     public string MessageName { get; private init; } = string.Empty;
 
@@ -172,7 +172,7 @@ public interface IRuntimeSubscriber
     /// </summary>
     /// <typeparam name="TMessage">The message type handled by the runtime delegate.</typeparam>
     /// <param name="handler">The runtime delegate to execute for matching messages.</param>
-    /// <param name="options">Optional overrides for messageName, group, concurrency, handler identity, and duplicate behavior.</param>
+    /// <param name="options">Optional overrides for message name, group, concurrency, handler identity, and duplicate behavior.</param>
     /// <param name="cancellationToken">The cancellation token for the registration operation.</param>
     /// <returns>A handle that can be disposed to detach the runtime subscription.</returns>
     /// <remarks>

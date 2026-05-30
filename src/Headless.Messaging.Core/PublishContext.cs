@@ -54,7 +54,7 @@ public abstract class PublishContext
     /// <summary>Gets the current publish headers snapshot.</summary>
     public MessageHeader Headers { get; private set; }
 
-    /// <summary>Gets the currently selected messageName override, if any.</summary>
+    /// <summary>Gets the currently selected message name override, if any.</summary>
     public string? MessageName { get; private set; }
 
     /// <summary>

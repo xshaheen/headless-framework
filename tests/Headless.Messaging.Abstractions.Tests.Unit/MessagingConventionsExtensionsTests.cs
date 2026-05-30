@@ -21,6 +21,20 @@ public sealed class MessagingConventionsExtensionsTests
     }
 
     [Fact]
+    public void use_type_name_topics_should_mutate_conventions_and_return_same_instance()
+    {
+        // given
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
+
+        // when
+        var result = conventions.UseTypeNameMessageNames();
+
+        // then
+        result.Should().BeSameAs(conventions);
+        conventions.MessageNaming.Should().Be(MessageNamingConvention.TypeName);
+    }
+
+    [Fact]
     public void topic_prefix_suffix_and_default_group_should_mutate_only_the_targeted_properties()
     {
         // given

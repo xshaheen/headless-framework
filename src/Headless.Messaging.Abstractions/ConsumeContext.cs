@@ -219,19 +219,19 @@ public record ConsumeContext
     public required DateTimeOffset Timestamp { get; init; }
 
     /// <summary>
-    /// Gets the messageName or queue name from which this message was consumed.
+    /// Gets the message name or queue name from which this message was consumed.
     /// </summary>
     /// <value>
-    /// The name of the message messageName, queue, or routing key.
+    /// The message name, queue, or routing key.
     /// Used for filtering and routing decisions.
     /// </value>
     /// <remarks>
     /// The message name is useful for:
     /// <list type="bullet">
-    /// <item><description>MessageName-based filtering in multi-type consumers</description></item>
-    /// <item><description>Logging and telemetry (which messageName is this message from)</description></item>
-    /// <item><description>Routing decisions based on messageName patterns</description></item>
-    /// <item><description>Dead letter queue messageName construction (e.g., <c>{MessageName}.failed</c>)</description></item>
+    /// <item><description>Message-name-based filtering in multi-type consumers</description></item>
+    /// <item><description>Logging and telemetry (which message name this message is from)</description></item>
+    /// <item><description>Routing decisions based on message-name patterns</description></item>
+    /// <item><description>Dead-letter queue name construction (e.g., <c>{MessageName}.failed</c>)</description></item>
     /// </list>
     /// </remarks>
     public required string MessageName { get; init; }

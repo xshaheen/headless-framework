@@ -13,7 +13,7 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The consumer builder allows fine-grained control over a specific consumer's runtime behavior,
-/// including messageName routing, handler identity, and concurrency limits.
+/// including message name routing, handler identity, and concurrency limits.
 /// </para>
 /// <para>
 /// All configuration methods return <c>this</c> for method chaining, enabling fluent configuration:
@@ -46,7 +46,7 @@ public interface IConsumerBuilder<TConsumer>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// // Subscribe to versioned messageName instead of default
+    /// // Subscribe to versioned message name instead of default
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
     ///     .MessageName("orders.placed.v2");
     /// </code>

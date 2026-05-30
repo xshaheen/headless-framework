@@ -33,6 +33,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         var consumed = await probe.WaitForMessageAsync(AbortToken);
 
         consumed.Message.Id.Should().Be("first");
+        consumed.MessageName.Should().Be("runtime.integration");
         probe.ScopedDependencyIds.Should().ContainSingle();
         middlewareProbe.ExecutingCount.Should().Be(1);
         middlewareProbe.ExecutedCount.Should().Be(1);

@@ -5,7 +5,7 @@ using Headless.Checks;
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures convention-based messageName naming and default consumer settings for messaging.
+/// Configures convention-based message name naming and default consumer settings for messaging.
 /// </summary>
 [PublicAPI]
 public sealed class MessagingConventions
@@ -43,7 +43,7 @@ public sealed class MessagingConventions
     public string? DefaultGroup { get; set; }
 
     /// <summary>
-    /// Configures kebab-case messageName generation.
+    /// Configures kebab-case message name generation.
     /// </summary>
     public MessagingConventions UseKebabCaseMessageNames()
     {
@@ -52,7 +52,7 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Configures type-name messageName generation.
+    /// Configures type-name message name generation.
     /// </summary>
     public MessagingConventions UseTypeNameMessageNames()
     {
@@ -89,7 +89,7 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets a messageName prefix.
+    /// Sets a message name prefix.
     /// </summary>
     public MessagingConventions WithMessageNamePrefix(string? prefix)
     {
@@ -98,7 +98,7 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets a messageName suffix.
+    /// Sets a message name suffix.
     /// </summary>
     public MessagingConventions WithMessageNameSuffix(string? suffix)
     {

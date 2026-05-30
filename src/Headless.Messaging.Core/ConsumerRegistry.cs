@@ -130,9 +130,9 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// Finds a consumer by message name and optional group.
     /// </summary>
     /// <param name="messageName">The message name to search for.</param>
-    /// <param name="group">Optional consumer group name. If null, returns first match by messageName only.</param>
+    /// <param name="group">Optional consumer group name. If null, returns first match by message name only.</param>
     /// <returns>
-    /// The matching consumer metadata, or null if no consumer is registered for the messageName/group combination.
+    /// The matching consumer metadata, or null if no consumer is registered for the message-name/group combination.
     /// </returns>
     public ConsumerMetadata? FindByMessageName(string messageName, string? group = null)
     {

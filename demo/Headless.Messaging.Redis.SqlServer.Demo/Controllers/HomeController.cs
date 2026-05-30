@@ -33,7 +33,7 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Pe
         if (logger.IsEnabled(LogLevel.Information))
         {
             logger.LogInformation(
-                "{ContextTopic} subscribed with value --> Name:{Name}, Age:{Age}",
+                "{MessageName} subscribed with value --> Name:{Name}, Age:{Age}",
                 context.MessageName,
                 context.Message.Name,
                 context.Message.Age

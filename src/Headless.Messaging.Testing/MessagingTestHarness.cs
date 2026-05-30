@@ -30,7 +30,7 @@ namespace Headless.Messaging.Testing;
 /// {
 ///     services.AddHeadlessMessaging(setup =>
 ///     {
-///         setup.Subscribe&lt;MyHandler&gt;("my-messageName");
+///         setup.Subscribe&lt;MyHandler&gt;("my-message-name");
 ///     });
 /// });
 ///

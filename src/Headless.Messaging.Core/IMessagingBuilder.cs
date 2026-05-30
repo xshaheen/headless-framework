@@ -52,7 +52,7 @@ public interface IMessagingBuilder
     /// <item><description>Finds all non-abstract, non-generic types</description></item>
     /// <item><description>Discovers ALL <see cref="IConsume{TMessage}"/> interfaces per type (supports multi-type consumers)</description></item>
     /// <item><description>Automatically registers types with dependency injection as scoped services</description></item>
-    /// <item><description>Uses convention-based messageName naming (message type name) unless overridden</description></item>
+    /// <item><description>Uses convention-based message name naming (message type name) unless overridden</description></item>
     /// </list>
     /// </para>
     /// <para>
@@ -103,7 +103,7 @@ public interface IMessagingBuilder
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///     .MessageName("orders.placed.v2") // Override convention-based messageName
+    ///     .MessageName("orders.placed.v2") // Override convention-based message name
     ///     .Concurrency(5); // Limit concurrent processing
     /// </code>
     /// </para>
@@ -112,7 +112,7 @@ public interface IMessagingBuilder
         where TConsumer : class;
 
     /// <summary>
-    /// Registers a specific consumer type with a messageName, automatically creating a messageName mapping for type-safe publishing.
+    /// Registers a specific consumer type with a message name, automatically creating a message-name mapping for type-safe publishing.
     /// </summary>
     /// <typeparam name="TConsumer">
     /// The consumer type to register. Must implement at least one <see cref="IConsume{TMessage}"/> interface.
@@ -132,7 +132,7 @@ public interface IMessagingBuilder
     /// <remarks>
     /// <para>
     /// This is the preferred method for registering consumers as it eliminates message-name duplication
-    /// by automatically creating a messageName mapping for the message type. This enables type-safe publishing
+    /// by automatically creating a message-name mapping for the message type. This enables type-safe publishing
     /// without requiring a separate <see cref="WithMessageNameMapping{TMessage}"/> call.
     /// </para>
     /// <para>
@@ -161,13 +161,13 @@ public interface IMessagingBuilder
         where TConsumer : class;
 
     /// <summary>
-    /// Registers a messageName mapping for a message type to enable type-safe publishing.
+    /// Registers a message-name mapping for a message type to enable type-safe publishing.
     /// </summary>
     /// <typeparam name="TMessage">The message type.</typeparam>
-    /// <param name="messageName">The messageName to publish to.</param>
+    /// <param name="messageName">The message name to publish to.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="messageName"/> is null or whitespace.</exception>
-    /// <exception cref="InvalidOperationException">Thrown if a different messageName is already registered for <typeparamref name="TMessage"/>.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if a different message name is already registered for <typeparamref name="TMessage"/>.</exception>
     /// <remarks>
     /// <para>
     /// Message-name mappings enable type-safe publishing by associating message types with their destination message names.
@@ -189,7 +189,7 @@ public interface IMessagingBuilder
         where TMessage : class;
 
     /// <summary>
-    /// Configures convention-based messageName naming and default consumer settings.
+    /// Configures convention-based message name naming and default consumer settings.
     /// </summary>
     /// <param name="configure">A delegate to configure the messaging conventions.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
