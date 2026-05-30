@@ -18,5 +18,6 @@ internal sealed class SqlServerFeaturesOptionsValidator : AbstractValidator<SqlS
     public SqlServerFeaturesOptionsValidator()
     {
         RuleFor(x => x.ConnectionString).NotEmpty();
+        RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromSeconds(int.MaxValue));
     }
 }

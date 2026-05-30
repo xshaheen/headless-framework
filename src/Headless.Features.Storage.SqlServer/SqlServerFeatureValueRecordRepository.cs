@@ -181,7 +181,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
         if (publisher is not null)
         {
-            await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken);
+            await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken).ConfigureAwait(false);
         }
     }
 

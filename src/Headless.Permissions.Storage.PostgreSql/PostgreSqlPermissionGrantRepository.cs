@@ -179,7 +179,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
 
         if (publisher is not null)
         {
-            await publisher.PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken);
+            await publisher.PublishAsync(new EntityChangedEventData<PermissionGrantRecord>(permissionGrant), cancellationToken).ConfigureAwait(false);
         }
     }
 

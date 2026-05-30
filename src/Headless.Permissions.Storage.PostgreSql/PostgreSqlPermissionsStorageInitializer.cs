@@ -3,16 +3,22 @@
 using Headless.Hosting.Initialization;
 using Headless.Permissions.Entities;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Headless.Permissions.PostgreSql;
 
-internal sealed class PostgreSqlPermissionsStorageInitializer(
+internal sealed partial class PostgreSqlPermissionsStorageInitializer(
     IOptions<PostgreSqlPermissionsOptions> providerOptions,
-    IOptions<PermissionsStorageOptions> storageOptions
+    IOptions<PermissionsStorageOptions> storageOptions,
+    ILogger<PostgreSqlPermissionsStorageInitializer>? logger = null
 ) : IHostedLifecycleService, IInitializer
 {
+    private readonly ILogger<PostgreSqlPermissionsStorageInitializer> _logger =
+        logger ?? NullLogger<PostgreSqlPermissionsStorageInitializer>.Instance;
+
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
@@ -28,7 +34,9 @@ internal sealed class PostgreSqlPermissionsStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try
@@ -85,6 +93,7 @@ internal sealed class PostgreSqlPermissionsStorageInitializer(
         catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
         }
     }
 
@@ -146,4 +155,12 @@ internal sealed class PostgreSqlPermissionsStorageInitializer(
     internal static string Qualified(PermissionsStorageOptions options, string tableName) => _Qualified(options.Schema, tableName);
 
     private static string _Qualified(string schema, string tableName) => $@"""{schema}"".""{tableName}""";
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "PostgreSqlPermissionsSchemaRaceObserved",
+        Level = LogLevel.Information,
+        Message = "PostgreSql permissions initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+    )]
+    private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

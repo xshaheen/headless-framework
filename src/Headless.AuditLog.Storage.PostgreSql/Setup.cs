@@ -63,10 +63,12 @@ public static class SetupAuditLogPostgreSql
             RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
             RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
             // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
-            RuleFor(x => x.JsonColumnType!.Value)
-                .Must(t => t is AuditLogJsonColumnType.Jsonb or AuditLogJsonColumnType.Json)
-                .WithMessage($"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider.")
-                .When(x => x.JsonColumnType.HasValue);
+            When(x => x.JsonColumnType.HasValue, () =>
+            {
+                RuleFor(x => x.JsonColumnType!.Value)
+                    .Must(t => t is AuditLogJsonColumnType.Jsonb or AuditLogJsonColumnType.Json)
+                    .WithMessage($"{nameof(AuditLogStorageOptions.JsonColumnType)} must be Jsonb or Json for the PostgreSql audit-log provider.");
+            });
             RuleFor(x => x.CreatedAtColumnType!)
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")

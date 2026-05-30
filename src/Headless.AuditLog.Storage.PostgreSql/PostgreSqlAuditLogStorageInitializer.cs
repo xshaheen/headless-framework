@@ -3,16 +3,22 @@
 using Headless.AuditLog;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Headless.AuditLog.PostgreSql;
 
-internal sealed class PostgreSqlAuditLogStorageInitializer(
+internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     IOptions<PostgreSqlAuditLogOptions> providerOptions,
-    IOptions<AuditLogStorageOptions> storageOptions
+    IOptions<AuditLogStorageOptions> storageOptions,
+    ILogger<PostgreSqlAuditLogStorageInitializer>? logger = null
 ) : IHostedLifecycleService, IInitializer
 {
+    private readonly ILogger<PostgreSqlAuditLogStorageInitializer> _logger =
+        logger ?? NullLogger<PostgreSqlAuditLogStorageInitializer>.Instance;
+
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
@@ -28,7 +34,9 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try
@@ -85,6 +93,7 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
         catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
         }
     }
 
@@ -140,4 +149,12 @@ internal sealed class PostgreSqlAuditLogStorageInitializer(
             CREATE INDEX IF NOT EXISTS "ix_audit_log_correlation" ON {table} ("CorrelationId");
             """;
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "PostgreSqlAuditLogSchemaRaceObserved",
+        Level = LogLevel.Information,
+        Message = "PostgreSql audit-log initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+    )]
+    private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

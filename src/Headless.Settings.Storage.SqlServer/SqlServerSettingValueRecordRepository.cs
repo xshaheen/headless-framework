@@ -203,7 +203,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
         if (publisher is not null)
         {
-            await publisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken);
+            await publisher.PublishAsync(new EntityChangedEventData<SettingValueRecord>(setting), cancellationToken).ConfigureAwait(false);
         }
     }
 

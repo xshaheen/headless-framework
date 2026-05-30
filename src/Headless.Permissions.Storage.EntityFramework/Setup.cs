@@ -48,17 +48,18 @@ public static class SetupPermissions
         }
     }
 
-    // EF dispatches to whatever DB the consumer wired up, so the validator caps at the most
-    // permissive limit (SqlServerMaxLength). PG-via-EF consumers with longer identifiers will
-    // surface a clearer error from the EF migration than the validator could.
+    // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
+    // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
+    // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
+    // migration time.
     private sealed class EntityFrameworkPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
     {
         public EntityFrameworkPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
         }
     }
 }

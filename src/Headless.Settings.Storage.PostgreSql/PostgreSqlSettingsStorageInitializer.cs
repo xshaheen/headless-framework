@@ -3,16 +3,22 @@
 using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Headless.Settings.PostgreSql;
 
-internal sealed class PostgreSqlSettingsStorageInitializer(
+internal sealed partial class PostgreSqlSettingsStorageInitializer(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
-    IOptions<SettingsStorageOptions> storageOptions
+    IOptions<SettingsStorageOptions> storageOptions,
+    ILogger<PostgreSqlSettingsStorageInitializer>? logger = null
 ) : IHostedLifecycleService, IInitializer
 {
+    private readonly ILogger<PostgreSqlSettingsStorageInitializer> _logger =
+        logger ?? NullLogger<PostgreSqlSettingsStorageInitializer>.Instance;
+
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
@@ -28,7 +34,9 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try
@@ -85,6 +93,7 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
         catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
         }
     }
 
@@ -138,4 +147,12 @@ internal sealed class PostgreSqlSettingsStorageInitializer(
     internal static string Qualified(SettingsStorageOptions options, string tableName) => _Qualified(options.Schema, tableName);
 
     private static string _Qualified(string schema, string tableName) => $@"""{schema}"".""{tableName}""";
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "PostgreSqlSettingsSchemaRaceObserved",
+        Level = LogLevel.Information,
+        Message = "PostgreSql settings initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
+    )]
+    private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

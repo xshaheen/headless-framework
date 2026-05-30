@@ -28,7 +28,9 @@ internal sealed class SqlServerFeaturesStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try
@@ -114,7 +116,6 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.FeatureGroupDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureGroupDefinitionsTableName}_Name] ON {groupsTable} ([Name] ASC);
                 END;
             END TRY
             BEGIN CATCH
@@ -138,8 +139,6 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.FeatureDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_GroupName] ON {definitionsTable} ([GroupName] ASC);
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
                 END;
             END TRY
             BEGIN CATCH
@@ -157,8 +156,6 @@ internal sealed class SqlServerFeaturesStorageInitializer(
                         [ProviderKey] nvarchar({FeatureValueRecordConstants.ProviderKeyMaxLength}) NULL,
                         CONSTRAINT [PK_{options.FeatureValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_ProviderName_ProviderKey] ON {valuesTable} ([ProviderName] ASC, [ProviderKey] ASC);
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.FeatureValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
                 END;
             END TRY
             BEGIN CATCH

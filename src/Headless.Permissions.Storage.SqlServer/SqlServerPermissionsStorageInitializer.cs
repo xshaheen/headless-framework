@@ -28,7 +28,9 @@ internal sealed class SqlServerPermissionsStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try

@@ -45,15 +45,16 @@ public static class SetupAuditLogEntityFramework
         }
     }
 
-    // EF dispatches to whatever DB the consumer wired up, so the validator caps at the most
-    // permissive limit (SqlServerMaxLength) and accepts any JsonColumnType. The underlying DB
+    // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
+    // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
+    // the larger length cap (SqlServer), and accepts any JsonColumnType. The underlying DB
     // surfaces type/length issues at migration time.
     private sealed class EntityFrameworkAuditLogStorageOptionsValidator : AbstractValidator<AuditLogStorageOptions>
     {
         public EntityFrameworkAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
             RuleFor(x => x.CreatedAtColumnType!)
                 .MaximumLength(64)

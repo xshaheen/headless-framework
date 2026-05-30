@@ -28,7 +28,9 @@ internal sealed class SqlServerSettingsStorageInitializer(
             var previous = Interlocked.Exchange(
                 ref _completion,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            previous.TrySetCanceled(cancellationToken);
+            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
+            // misleadingly attributed to the current run's startup token.
+            previous.TrySetCanceled(CancellationToken.None);
         }
 
         try
@@ -121,7 +123,6 @@ internal sealed class SqlServerSettingsStorageInitializer(
                         [ExtraProperties] nvarchar(max) NOT NULL,
                         CONSTRAINT [PK_{options.SettingDefinitionsTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingDefinitionsTableName}_Name] ON {definitionsTable} ([Name] ASC);
                 END;
             END TRY
             BEGIN CATCH
@@ -143,7 +144,6 @@ internal sealed class SqlServerSettingsStorageInitializer(
                         [DateUpdated] datetimeoffset NULL,
                         CONSTRAINT [PK_{options.SettingValuesTableName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                     );
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey] ON {valuesTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
                 END;
             END TRY
             BEGIN CATCH
