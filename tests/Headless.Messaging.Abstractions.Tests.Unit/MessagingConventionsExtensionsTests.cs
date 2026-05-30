@@ -13,11 +13,11 @@ public sealed class MessagingConventionsExtensionsTests
         var conventions = new MessagingConventions();
 
         // when
-        var result = conventions.UseKebabCaseTopics();
+        var result = conventions.UseKebabCaseMessageNames();
 
         // then
         result.Should().BeSameAs(conventions);
-        conventions.TopicNaming.Should().Be(TopicNamingConvention.KebabCase);
+        conventions.MessageNaming.Should().Be(MessageNamingConvention.KebabCase);
     }
 
     [Fact]
@@ -26,19 +26,19 @@ public sealed class MessagingConventionsExtensionsTests
         // given
         var conventions = new MessagingConventions
         {
-            TopicNaming = TopicNamingConvention.TypeName,
-            TopicPrefix = "before.",
-            TopicSuffix = ".old",
+            MessageNaming = MessageNamingConvention.TypeName,
+            MessageNamePrefix = "before.",
+            MessageNameSuffix = ".old",
             DefaultGroup = "before-group",
         };
 
         // when
-        conventions.WithTopicPrefix("after.").WithTopicSuffix(".new").WithDefaultGroup("after-group");
+        conventions.WithMessageNamePrefix("after.").WithMessageNameSuffix(".new").WithDefaultGroup("after-group");
 
         // then
-        conventions.TopicNaming.Should().Be(TopicNamingConvention.TypeName);
-        conventions.TopicPrefix.Should().Be("after.");
-        conventions.TopicSuffix.Should().Be(".new");
+        conventions.MessageNaming.Should().Be(MessageNamingConvention.TypeName);
+        conventions.MessageNamePrefix.Should().Be("after.");
+        conventions.MessageNameSuffix.Should().Be(".new");
         conventions.DefaultGroup.Should().Be("after-group");
     }
 
@@ -50,16 +50,16 @@ public sealed class MessagingConventionsExtensionsTests
 
         // when
         var result = conventions
-            .UseKebabCaseTopics()
-            .WithTopicPrefix("orders.")
-            .WithTopicSuffix(".v1")
+            .UseKebabCaseMessageNames()
+            .WithMessageNamePrefix("orders.")
+            .WithMessageNameSuffix(".v1")
             .WithDefaultGroup("billing");
 
         // then
         result.Should().BeSameAs(conventions);
-        conventions.TopicNaming.Should().Be(TopicNamingConvention.KebabCase);
-        conventions.TopicPrefix.Should().Be("orders.");
-        conventions.TopicSuffix.Should().Be(".v1");
+        conventions.MessageNaming.Should().Be(MessageNamingConvention.KebabCase);
+        conventions.MessageNamePrefix.Should().Be("orders.");
+        conventions.MessageNameSuffix.Should().Be(".v1");
         conventions.DefaultGroup.Should().Be("billing");
     }
 }

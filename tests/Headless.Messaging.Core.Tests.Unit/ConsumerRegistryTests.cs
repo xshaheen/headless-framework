@@ -15,7 +15,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var metadata = new ConsumerMetadata(
             typeof(TestMessage),
             typeof(TestConsumer),
-            "test.topic",
+            "test.messageName",
             "test.group",
             2,
             IntentType: IntentType.Bus
@@ -89,7 +89,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // then
         all.Should().ContainSingle();
         all[0].Should().Be(updated);
-        all[0].Topic.Should().Be("updated");
+        all[0].MessageName.Should().Be("updated");
         all[0].Group.Should().Be("group1");
         all[0].Concurrency.Should().Be(5);
     }
@@ -182,7 +182,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 new ConsumerMetadata(
                     typeof(TestMessage),
                     typeof(TestConsumer),
-                    $"topic.{i}",
+                    $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
                     IntentType.Bus
@@ -194,7 +194,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         // then
         all.Should().HaveCount(consumerCount, "all registrations should succeed");
-        all.Select(m => m.Topic)
+        all.Select(m => m.MessageName)
             .Distinct(StringComparer.Ordinal)
             .Should()
             .HaveCount(consumerCount, "all topics should be unique");
@@ -234,7 +234,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
     }
 
     [Fact]
@@ -283,7 +283,7 @@ public sealed class ConsumerRegistryTests : TestBase
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
     }
 
     [Fact]
@@ -356,7 +356,7 @@ public sealed class ConsumerRegistryTests : TestBase
                 new ConsumerMetadata(
                     typeof(TestMessage),
                     typeof(TestConsumer),
-                    $"topic.{i}",
+                    $"messageName.{i}",
                     $"group.{i}",
                     (byte)((i % 10) + 1),
                     IntentType.Bus
@@ -368,7 +368,7 @@ public sealed class ConsumerRegistryTests : TestBase
 
         // then
         all.Should().ContainSingle("only one consumer registered");
-        all[0].Topic.Should().Be("topic.50", "last update should win");
+        all[0].MessageName.Should().Be("messageName.50", "last update should win");
         all[0].Concurrency.Should().Be(1, "50 % 10 + 1 = 1");
     }
 
@@ -403,7 +403,7 @@ public sealed class ConsumerRegistryTests : TestBase
                                     new ConsumerMetadata(
                                         typeof(TestMessage),
                                         typeof(TestConsumer),
-                                        $"topic.{index}",
+                                        $"messageName.{index}",
                                         $"group.{index}",
                                         1,
                                         IntentType: IntentType.Bus
@@ -556,7 +556,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var metadata = new ConsumerMetadata(
             typeof(TestMessage),
             typeof(TestConsumer),
-            "test.topic",
+            "test.messageName",
             null,
             2,
             IntentType: IntentType.Bus
@@ -564,7 +564,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata);
 
         // when
-        var found = registry.FindByTopic("test.topic");
+        var found = registry.FindByMessageName("test.messageName");
 
         // then
         found.Should().NotBeNull();
@@ -579,7 +579,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var metadata1 = new ConsumerMetadata(
             typeof(TestMessage),
             typeof(TestConsumer),
-            "test.topic",
+            "test.messageName",
             "group1",
             2,
             IntentType: IntentType.Bus
@@ -587,7 +587,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var metadata2 = new ConsumerMetadata(
             typeof(TestMessage),
             typeof(OtherConsumer),
-            "test.topic",
+            "test.messageName",
             "group2",
             3,
             IntentType: IntentType.Bus
@@ -596,7 +596,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Register(metadata2);
 
         // when
-        var found = registry.FindByTopic("test.topic", "group2");
+        var found = registry.FindByMessageName("test.messageName", "group2");
 
         // then
         found.Should().NotBeNull();
@@ -613,7 +613,7 @@ public sealed class ConsumerRegistryTests : TestBase
             new ConsumerMetadata(
                 typeof(TestMessage),
                 typeof(TestConsumer),
-                "test.topic",
+                "test.messageName",
                 null,
                 1,
                 IntentType: IntentType.Bus
@@ -621,7 +621,7 @@ public sealed class ConsumerRegistryTests : TestBase
         );
 
         // when
-        var found = registry.FindByTopic("nonexistent.topic");
+        var found = registry.FindByMessageName("nonexistent.messageName");
 
         // then
         found.Should().BeNull();
@@ -636,7 +636,7 @@ public sealed class ConsumerRegistryTests : TestBase
             new ConsumerMetadata(
                 typeof(TestMessage),
                 typeof(TestConsumer),
-                "test.topic",
+                "test.messageName",
                 "group1",
                 1,
                 IntentType: IntentType.Bus
@@ -644,7 +644,7 @@ public sealed class ConsumerRegistryTests : TestBase
         );
 
         // when
-        var found = registry.FindByTopic("test.topic", "group2");
+        var found = registry.FindByMessageName("test.messageName", "group2");
 
         // then
         found.Should().BeNull();

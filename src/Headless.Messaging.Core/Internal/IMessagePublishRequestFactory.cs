@@ -39,7 +39,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
     };
 
-    private readonly ConditionalWeakTable<Type, string> _topicNameCache = new();
+    private readonly ConditionalWeakTable<Type, string> _messageNameCache = new();
     private readonly MessagingOptions _options = optionsAccessor.Value;
     private readonly ILongIdGenerator _idGenerator = idGenerator;
     private readonly TimeProvider _timeProvider = timeProvider;
@@ -57,8 +57,8 @@ internal sealed class MessagePublishRequestFactory(
             Argument.IsPositive(requestedDelay);
         }
 
-        var topicName = _ResolveTopicName(typeof(T), options?.Topic);
-        var headers = _CreateHeaders(typeof(T), topicName, options, delayTime);
+        var messageName = _ResolveMessageName(typeof(T), options?.MessageName);
+        var headers = _CreateHeaders(typeof(T), messageName, options, delayTime);
         var publishAt = _ResolvePublishAt(delayTime);
 
         headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
@@ -71,7 +71,7 @@ internal sealed class MessagePublishRequestFactory(
 
         return new PreparedPublishMessage
         {
-            Topic = topicName,
+            MessageName = messageName,
             PublishAt = publishAt.UtcDateTime,
             Message = new Message(headers, contentObj),
             IntentType = intentType,
@@ -80,7 +80,7 @@ internal sealed class MessagePublishRequestFactory(
 
     private Dictionary<string, string?> _CreateHeaders(
         Type messageType,
-        string topicName,
+        string messageName,
         MessagePublishOptionsBase? options,
         TimeSpan? delayTime
     )
@@ -104,7 +104,7 @@ internal sealed class MessagePublishRequestFactory(
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
-        headers[Headers.MessageName] = topicName;
+        headers[Headers.MessageName] = messageName;
         headers[Headers.Type] = messageType.Name;
 
         if (!string.IsNullOrWhiteSpace(options?.CallbackName))
@@ -255,43 +255,43 @@ internal sealed class MessagePublishRequestFactory(
         return publishAt;
     }
 
-    private string _ResolveTopicName(Type messageType, string? explicitTopic)
+    private string _ResolveMessageName(Type messageType, string? explicitMessageName)
     {
-        if (!string.IsNullOrWhiteSpace(explicitTopic))
+        if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
-            return _options.ApplyTopicNamePrefix(explicitTopic!);
+            return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 
-        if (_topicNameCache.TryGetValue(messageType, out var cachedName))
+        if (_messageNameCache.TryGetValue(messageType, out var cachedName))
         {
             return cachedName;
         }
 
-        if (_options.TopicMappings.TryGetValue(messageType, out var topicName))
+        if (_options.MessageNameMappings.TryGetValue(messageType, out var messageName))
         {
-            topicName = _options.ApplyTopicNamePrefix(topicName);
-            _topicNameCache.AddOrUpdate(messageType, topicName);
-            return topicName;
+            messageName = _options.ApplyMessageNamePrefix(messageName);
+            _messageNameCache.AddOrUpdate(messageType, messageName);
+            return messageName;
         }
 
-        if (_options.Conventions?.GetTopicName(messageType) is { } conventionTopic)
+        if (_options.Conventions?.GetMessageName(messageType) is { } conventionMessageName)
         {
-            conventionTopic = _options.ApplyTopicNamePrefix(conventionTopic);
-            _topicNameCache.AddOrUpdate(messageType, conventionTopic);
-            return conventionTopic;
+            conventionMessageName = _options.ApplyMessageNamePrefix(conventionMessageName);
+            _messageNameCache.AddOrUpdate(messageType, conventionMessageName);
+            return conventionMessageName;
         }
 
         throw new InvalidOperationException(
-            $"No topic mapping found for message type '{messageType.Name}'. "
-                + $"Register a topic mapping using WithTopicMapping<{messageType.Name}>(\"topic-name\") "
-                + "or set the Topic property on your publish options explicitly."
+            $"No message name mapping found for message type '{messageType.Name}'. "
+                + $"Register a message name mapping using WithMessageNameMapping<{messageType.Name}>(\"message-name\") "
+                + "or set the MessageName property on your publish options explicitly."
         );
     }
 }
 
 internal sealed class PreparedPublishMessage
 {
-    public required string Topic { get; init; }
+    public required string MessageName { get; init; }
 
     public required DateTime PublishAt { get; init; }
 

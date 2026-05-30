@@ -32,7 +32,7 @@ internal sealed class NatsConsumerClient(
     private NatsConnection? _connection;
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
-    private IEnumerable<string>? _subscribedTopics;
+    private IEnumerable<string>? _subscribedMessageNames;
     private int _disposed;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
@@ -55,16 +55,16 @@ internal sealed class NatsConsumerClient(
         _jsContext = new NatsJSContext(_connection);
     }
 
-    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
     {
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {
-            return topicNames.ToList();
+            return messageNames.ToList();
         }
 
         // Preserve wildcard coverage for hierarchical subjects, but add exact
-        // subjects for bare/non-prefix topics that the wildcard cannot match.
-        var streamGroups = topicNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        // subjects for bare/non-prefix messageNames that the wildcard cannot match.
+        var streamGroups = messageNames.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
 
         foreach (var streamGroup in streamGroups)
         {
@@ -84,19 +84,19 @@ internal sealed class NatsConsumerClient(
             await _jsContext!.CreateOrUpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
         }
 
-        return topicNames.ToList();
+        return messageNames.ToList();
     }
 
-    internal static IReadOnlyList<string> BuildStreamSubjects(string streamName, IEnumerable<string> topicNames)
+    internal static IReadOnlyList<string> BuildStreamSubjects(string streamName, IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topicNames);
+        Argument.IsNotNull(messageNames);
 
         var subjects = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var hierarchicalPrefix = streamName + ".";
         var hasHierarchicalSubjects = false;
 
-        foreach (var topicName in topicNames)
+        foreach (var topicName in messageNames)
         {
             if (!seen.Add(topicName))
             {
@@ -127,18 +127,21 @@ internal sealed class NatsConsumerClient(
             : Helper.Normalized(groupName + "-" + subject);
     }
 
-    public ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topics);
+        Argument.IsNotNull(messageNames);
 
-        _subscribedTopics = topics.ToList();
+        _subscribedMessageNames = messageNames.ToList();
 
         return ValueTask.CompletedTask;
     }
 
     public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        var streamGroups = _subscribedTopics!.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
+        var streamGroups = _subscribedMessageNames!.GroupBy(
+            x => _natsOptions.NormalizeStreamName(x),
+            StringComparer.Ordinal
+        );
         var tasks = new List<Task>();
         var startupTasks = new List<Task>();
 

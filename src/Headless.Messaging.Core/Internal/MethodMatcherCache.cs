@@ -114,54 +114,54 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         var result = new List<string>();
         foreach (var item in _entries.Values)
         {
-            result.AddRange(item.Select(x => x.TopicName));
+            result.AddRange(item.Select(x => x.MessageName));
         }
 
         return result;
     }
 
     /// <summary>
-    /// Attempts to get the topic executor associated with the specified topic name and group name from the
+    /// Attempts to get the messageName executor associated with the specified messageName name and group name from the
     /// cached descriptor snapshot.
     /// </summary>
-    /// <param name="topicName">The topic name of the value to get.</param>
+    /// <param name="messageName">The messageName name of the value to get.</param>
     /// <param name="groupName">The group name of the value to get.</param>
-    /// <param name="matchTopic">topic executor of the value.</param>
+    /// <param name="matchMessageName">messageName executor of the value.</param>
     /// <returns>true if the key was found, otherwise false. </returns>
-    public bool TryGetTopicExecutor(
-        string topicName,
+    public bool TryGetMessageNameExecutor(
+        string messageName,
         string groupName,
-        [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchTopic
+        [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
-        matchTopic = null;
+        matchMessageName = null;
 
         _EnsureEntries();
 
-        if (_entries.TryGetValue(groupName, out var groupMatchTopics))
+        if (_entries.TryGetValue(groupName, out var groupMatchMessageNames))
         {
-            matchTopic = selector.SelectBestCandidate(topicName, groupMatchTopics);
+            matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
 
-            return matchTopic != null;
+            return matchMessageName != null;
         }
 
         return false;
     }
 
-    internal bool TryGetTopicExecutor(
-        string topicName,
+    internal bool TryGetMessageNameExecutor(
+        string messageName,
         string groupName,
         IntentType intentType,
-        [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchTopic
+        [NotNullWhen(true)] out ConsumerExecutorDescriptor? matchMessageName
     )
     {
-        matchTopic = null;
+        matchMessageName = null;
         _EnsureEntries();
 
-        if (_intentEntries.TryGetValue(new ConsumerGroupKey(groupName, intentType), out var groupMatchTopics))
+        if (_intentEntries.TryGetValue(new ConsumerGroupKey(groupName, intentType), out var groupMatchMessageNames))
         {
-            matchTopic = selector.SelectBestCandidate(topicName, groupMatchTopics);
-            return matchTopic is not null;
+            matchMessageName = selector.SelectBestCandidate(messageName, groupMatchMessageNames);
+            return matchMessageName is not null;
         }
 
         return false;

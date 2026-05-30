@@ -97,4 +97,30 @@ public sealed class PublishOptionsTests : TestBase
         left.Should().Be(right);
         left.GetHashCode().Should().Be(right.GetHashCode());
     }
+
+    [Fact]
+    public void should_compare_publish_options_by_messageName()
+    {
+        // given
+        var left = new PublishOptions { MessageName = "orders.placed" };
+        var matching = new PublishOptions { MessageName = "orders.placed" };
+        var different = new PublishOptions { MessageName = "orders.cancelled" };
+
+        // then
+        left.Should().Be(matching);
+        left.Should().NotBe(different);
+    }
+
+    [Fact]
+    public void should_compare_enqueue_options_by_messageName()
+    {
+        // given
+        var left = new EnqueueOptions { MessageName = "orders.placed" };
+        var matching = new EnqueueOptions { MessageName = "orders.placed" };
+        var different = new EnqueueOptions { MessageName = "orders.cancelled" };
+
+        // then
+        left.Should().Be(matching);
+        left.Should().NotBe(different);
+    }
 }

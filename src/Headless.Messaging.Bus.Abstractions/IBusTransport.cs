@@ -12,7 +12,7 @@ namespace Headless.Messaging;
 /// <para>
 /// Each <see cref="IBusTransport"/> implementation maps the framework-side broadcast intent to a
 /// broker-native broadcast primitive — RabbitMQ fanout exchange, NATS Core subject pub/sub,
-/// Azure Service Bus topic, AWS SNS, Pulsar topic with independent subscriptions, etc. Providers
+/// Azure Service Bus messageName, AWS SNS, Pulsar messageName with independent subscriptions, etc. Providers
 /// that cannot natively broadcast (for example, Kafka, Redis Streams) do not implement this
 /// interface, and their NuGet packages do not reference <c>Headless.Messaging.Bus.Abstractions</c>.
 /// </para>

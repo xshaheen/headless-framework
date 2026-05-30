@@ -9,34 +9,34 @@ namespace Headless.Messaging;
 public static class MessagingConventionsExtensions
 {
     /// <summary>
-    /// Configures the messaging conventions to use kebab-case for topic names.
+    /// Configures the messaging conventions to use kebab-case for messageName names.
     /// Example: "OrderCreated" becomes "order-created".
     /// </summary>
-    public static MessagingConventions UseKebabCaseTopics(this MessagingConventions conventions)
+    public static MessagingConventions UseKebabCaseMessageNames(this MessagingConventions conventions)
     {
-        conventions.TopicNaming = TopicNamingConvention.KebabCase;
+        conventions.MessageNaming = MessageNamingConvention.KebabCase;
         return conventions;
     }
 
     /// <summary>
-    /// Sets a prefix to prepend to all generated topic names.
+    /// Sets a prefix to prepend to all generated messageName names.
     /// </summary>
     /// <param name="conventions">The conventions to configure.</param>
     /// <param name="prefix">The prefix to prepend (e.g., "prod.").</param>
-    public static MessagingConventions WithTopicPrefix(this MessagingConventions conventions, string prefix)
+    public static MessagingConventions WithMessageNamePrefix(this MessagingConventions conventions, string prefix)
     {
-        conventions.TopicPrefix = prefix;
+        conventions.MessageNamePrefix = prefix;
         return conventions;
     }
 
     /// <summary>
-    /// Sets a suffix to append to all generated topic names.
+    /// Sets a suffix to append to all generated messageName names.
     /// </summary>
     /// <param name="conventions">The conventions to configure.</param>
     /// <param name="suffix">The suffix to append (e.g., ".v1").</param>
-    public static MessagingConventions WithTopicSuffix(this MessagingConventions conventions, string suffix)
+    public static MessagingConventions WithMessageNameSuffix(this MessagingConventions conventions, string suffix)
     {
-        conventions.TopicSuffix = suffix;
+        conventions.MessageNameSuffix = suffix;
         return conventions;
     }
 

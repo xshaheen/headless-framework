@@ -20,7 +20,7 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
+            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed").Group("order-service");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -32,7 +32,7 @@ public sealed class IConsumeIntegrationTests
         // then
         candidates.Should().HaveCount(1);
         var descriptor = candidates[0];
-        descriptor.TopicName.Should().Be("orders.placed");
+        descriptor.MessageName.Should().Be("orders.placed");
         descriptor.GroupName.Should().Be("order-service");
 
         // And - selection
@@ -52,7 +52,7 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
+            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -67,7 +67,7 @@ public sealed class IConsumeIntegrationTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "orders.placed",
+            MessageName = "orders.placed",
         };
 
         // when
@@ -92,8 +92,8 @@ public sealed class IConsumeIntegrationTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed").Group("order-service");
-            messaging.Subscribe<OrderAnalyticsConsumer>().Topic("orders.placed").Group("analytics-service");
+            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed").Group("order-service");
+            messaging.Subscribe<OrderAnalyticsConsumer>().MessageName("orders.placed").Group("analytics-service");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -124,7 +124,7 @@ public sealed class IConsumeIntegrationTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<OrderPlaced>("orders.placed");
+            messaging.WithMessageNameMapping<OrderPlaced>("orders.placed");
             messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 
@@ -140,7 +140,7 @@ public sealed class IConsumeIntegrationTests
             || c.ImplTypeInfo == typeof(OrderAnalyticsConsumer).GetTypeInfo()
         );
 
-        orderCandidates.Should().AllSatisfy(c => c.TopicName.Should().Be("orders.placed"));
+        orderCandidates.Should().AllSatisfy(c => c.MessageName.Should().Be("orders.placed"));
     }
 
     [Fact]
@@ -171,8 +171,8 @@ public sealed class IConsumeIntegrationTests
         multiInRegistry.Should().Contain(c => c.MessageType == typeof(OrderCancelled));
 
         // And - selector should convert them to descriptors
-        candidates.Should().Contain(c => c.TopicName == nameof(OrderPlaced));
-        candidates.Should().Contain(c => c.TopicName == nameof(OrderCancelled));
+        candidates.Should().Contain(c => c.MessageName == nameof(OrderPlaced));
+        candidates.Should().Contain(c => c.MessageName == nameof(OrderCancelled));
     }
 
     [Fact]
@@ -184,7 +184,7 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
+            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -207,9 +207,9 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<OrderPlacedConsumer>().Topic("orders.placed");
+            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
 
-            messaging.Subscribe<OrderCancelledConsumer>().Topic("orders.cancelled");
+            messaging.Subscribe<OrderCancelledConsumer>().MessageName("orders.cancelled");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -226,7 +226,7 @@ public sealed class IConsumeIntegrationTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "orders.placed",
+            MessageName = "orders.placed",
         };
 
         var cancelledContext = new ConsumeContext<OrderCancelled>
@@ -237,7 +237,7 @@ public sealed class IConsumeIntegrationTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "orders.cancelled",
+            MessageName = "orders.cancelled",
         };
 
         // when

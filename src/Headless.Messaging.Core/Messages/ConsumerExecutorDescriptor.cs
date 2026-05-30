@@ -17,12 +17,12 @@ public sealed class ConsumerExecutorDescriptor
 
     public IReadOnlyList<ParameterDescriptor> Parameters { get; init; } = [];
 
-    public string? TopicNamePrefix { get; init; }
+    public string? MessageNamePrefix { get; init; }
 
     /// <summary>
-    /// Topic name for the consumer. Can be set directly or computed from attributes.
+    /// MessageName name for the consumer. Can be set directly or computed from attributes.
     /// </summary>
-    public required string TopicName { get; init; }
+    public required string MessageName { get; init; }
 
     /// <summary>
     /// Group name for the consumer.

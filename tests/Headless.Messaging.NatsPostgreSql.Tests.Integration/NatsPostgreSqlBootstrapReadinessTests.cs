@@ -37,7 +37,7 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
 
     protected override void ConfigureMessaging(MessagingSetupBuilder setup)
     {
-        setup.Options.TopicNamePrefix = _topicPrefix;
+        setup.Options.MessageNamePrefix = _topicPrefix;
         setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
     }
 
@@ -54,7 +54,7 @@ public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture 
             Payload = "bootstrap",
         };
 
-        await Bus.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Bus.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
 
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 

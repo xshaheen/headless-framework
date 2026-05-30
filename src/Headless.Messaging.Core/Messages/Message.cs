@@ -76,8 +76,8 @@ public static class MessageExtensions
         }
 
         /// <summary>
-        /// Retrieves the message name or topic from the message headers.
-        /// The message name identifies the topic, exchange, or subject the message relates to.
+        /// Retrieves the message name or messageName from the message headers.
+        /// The message name identifies the messageName, exchange, or subject the message relates to.
         /// </summary>
         /// <returns>The message name stored in the <see cref="Headers.MessageName"/> header.</returns>
         /// <exception cref="KeyNotFoundException">Thrown if the MessageName header is not present.</exception>

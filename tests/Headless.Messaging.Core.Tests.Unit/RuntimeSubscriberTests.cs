@@ -27,7 +27,7 @@ public sealed class RuntimeSubscriberTests : TestBase
         );
 
         handle.IsAttached.Should().BeTrue();
-        handle.Topic.Should().Be(conventions.GetTopicName(typeof(RuntimeMessage)));
+        handle.MessageName.Should().Be(conventions.GetMessageName(typeof(RuntimeMessage)));
         handle
             .HandlerId.Should()
             .Be(
@@ -72,7 +72,7 @@ public sealed class RuntimeSubscriberTests : TestBase
 
         var first = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             firstHandler.HandleAsync,
-            new RuntimeSubscriptionOptions { Topic = "runtime.duplicate", Group = "runtime.group" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.duplicate", Group = "runtime.group" },
             AbortToken
         );
 
@@ -80,7 +80,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             secondHandler.HandleAsync,
             new RuntimeSubscriptionOptions
             {
-                Topic = "runtime.duplicate",
+                MessageName = "runtime.duplicate",
                 Group = "runtime.group",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Ignore,
             },
@@ -93,7 +93,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             secondHandler.HandleAsync,
             new RuntimeSubscriptionOptions
             {
-                Topic = "runtime.duplicate",
+                MessageName = "runtime.duplicate",
                 Group = "runtime.group",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Replace,
             },
@@ -101,7 +101,7 @@ public sealed class RuntimeSubscriberTests : TestBase
         );
 
         cache.GetCandidatesMethodsOfGroupNameGrouped();
-        cache.TryGetTopicExecutor("runtime.duplicate", "runtime.group", out var descriptor).Should().BeTrue();
+        cache.TryGetMessageNameExecutor("runtime.duplicate", "runtime.group", out var descriptor).Should().BeTrue();
         descriptor.Should().NotBeNull();
         descriptor!.HandlerId.Should().Be(replaced.HandlerId);
 
@@ -120,7 +120,7 @@ public sealed class RuntimeSubscriberTests : TestBase
 
         var first = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             firstHandler.HandleAsync,
-            new RuntimeSubscriptionOptions { Topic = "runtime.*", Group = "runtime.wildcard" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.*", Group = "runtime.wildcard" },
             AbortToken
         );
 
@@ -132,7 +132,7 @@ public sealed class RuntimeSubscriberTests : TestBase
             secondHandler.HandleAsync,
             new RuntimeSubscriptionOptions
             {
-                Topic = "runtime.*",
+                MessageName = "runtime.*",
                 Group = "runtime.wildcard",
                 DuplicateBehavior = RuntimeSubscriptionDuplicateBehavior.Replace,
             },
@@ -163,7 +163,7 @@ public sealed class RuntimeSubscriberTests : TestBase
                         handler.HandleAsync,
                         new RuntimeSubscriptionOptions
                         {
-                            Topic = $"runtime.concurrent.{index}",
+                            MessageName = $"runtime.concurrent.{index}",
                             Group = "runtime.concurrent",
                         },
                         AbortToken

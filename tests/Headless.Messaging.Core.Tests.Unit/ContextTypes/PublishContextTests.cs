@@ -87,7 +87,7 @@ public sealed class PublishContextTests : TestBase
         using var cts = new CancellationTokenSource();
         var options = new PublishOptions
         {
-            Topic = "orders",
+            MessageName = "orders",
             TenantId = "tenant-1",
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-feature"] = "enabled" },
         };
@@ -110,7 +110,7 @@ public sealed class PublishContextTests : TestBase
         baseContext.MessageType.Should().Be<OrderPlaced>();
         baseContext.CancellationToken.Should().Be(cts.Token);
         baseContext.Headers["x-feature"].Should().Be("enabled");
-        baseContext.Topic.Should().Be("orders");
+        baseContext.MessageName.Should().Be("orders");
     }
 
     private sealed record OrderPlaced(string OrderId);

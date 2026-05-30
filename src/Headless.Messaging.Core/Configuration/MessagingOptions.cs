@@ -29,7 +29,7 @@ public sealed class MessagingOptions
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 #pragma warning restore IDE0032
 
-    internal Dictionary<Type, string> TopicMappings { get; } = new();
+    internal Dictionary<Type, string> MessageNameMappings { get; } = new();
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
@@ -55,9 +55,9 @@ public sealed class MessagingOptions
     public string? GroupNamePrefix { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional prefix to be prepended to all topic names.
+    /// Gets or sets an optional prefix to be prepended to all messageName names.
     /// </summary>
-    public string? TopicNamePrefix { get; set; }
+    public string? MessageNamePrefix { get; set; }
 
     /// <summary>
     /// Gets or sets the version identifier for messages, used to isolate data between different instances or deployments.
@@ -246,7 +246,7 @@ public sealed class MessagingOptions
         target.DefaultGroupName = DefaultGroupName;
         target.IsDefaultGroupNameConfigured = IsDefaultGroupNameConfigured;
         target.GroupNamePrefix = GroupNamePrefix;
-        target.TopicNamePrefix = TopicNamePrefix;
+        target.MessageNamePrefix = MessageNamePrefix;
         target.Version = Version;
         target.Conventions = Conventions;
         target.SucceedMessageExpiredAfter = SucceedMessageExpiredAfter;
@@ -268,9 +268,9 @@ public sealed class MessagingOptions
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
 
-        foreach (var mapping in TopicMappings)
+        foreach (var mapping in MessageNameMappings)
         {
-            target.TopicMappings[mapping.Key] = mapping.Value;
+            target.MessageNameMappings[mapping.Key] = mapping.Value;
         }
     }
 
@@ -319,28 +319,33 @@ public sealed class MessagingOptions
     }
 
     /// <summary>
-    /// Registers a topic mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
+    /// Registers a messageName mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
     /// </summary>
-    internal void WithTopicMapping(Type messageType, string topic)
+    internal void WithMessageNameMapping(Type messageType, string messageName)
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
-        _ValidateTopicName(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
+        _ValidateMessageName(messageName);
 
-        if (TopicMappings.TryGetValue(messageType, out var existingTopic) && existingTopic != topic)
+        if (
+            MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
+            && existingMessageName != messageName
+        )
         {
             throw new InvalidOperationException(
-                $"Message type {messageType.Name} is already mapped to topic '{existingTopic}'. Cannot map to '{topic}'."
+                $"Message type {messageType.Name} is already mapped to messageName '{existingMessageName}'. Cannot map to '{messageName}'."
             );
         }
 
-        TopicMappings[messageType] = topic;
+        MessageNameMappings[messageType] = messageName;
     }
 
-    internal string ApplyTopicNamePrefix(string topic)
+    internal string ApplyMessageNamePrefix(string messageName)
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
-        return string.IsNullOrWhiteSpace(TopicNamePrefix) ? topic : string.Concat(TopicNamePrefix, ".", topic);
+        return string.IsNullOrWhiteSpace(MessageNamePrefix)
+            ? messageName
+            : string.Concat(MessageNamePrefix, ".", messageName);
     }
 
     internal string ApplyGroupNamePrefix(string group)
@@ -351,37 +356,43 @@ public sealed class MessagingOptions
     }
 
     /// <summary>
-    /// Validates topic name format and constraints.
+    /// Validates messageName name format and constraints.
     /// </summary>
-    private static void _ValidateTopicName(string topic)
+    private static void _ValidateMessageName(string messageName)
     {
         const int maxTopicLength = 255;
 
-        if (topic.Length > maxTopicLength)
+        if (messageName.Length > maxTopicLength)
         {
             throw new ArgumentException(
-                $"Topic name '{topic}' exceeds maximum length of {maxTopicLength} characters.",
-                nameof(topic)
+                $"MessageName name '{messageName}' exceeds maximum length of {maxTopicLength} characters.",
+                nameof(messageName)
             );
         }
 
-        if (topic.StartsWith('.') || topic.EndsWith('.'))
+        if (messageName.StartsWith('.') || messageName.EndsWith('.'))
         {
-            throw new ArgumentException($@"Topic name '{topic}' cannot start or end with a dot.", nameof(topic));
+            throw new ArgumentException(
+                $@"MessageName name '{messageName}' cannot start or end with a dot.",
+                nameof(messageName)
+            );
         }
 
-        if (topic.Contains("..", StringComparison.Ordinal))
+        if (messageName.Contains("..", StringComparison.Ordinal))
         {
-            throw new ArgumentException($@"Topic name '{topic}' cannot contain consecutive dots.", nameof(topic));
+            throw new ArgumentException(
+                $@"MessageName name '{messageName}' cannot contain consecutive dots.",
+                nameof(messageName)
+            );
         }
 
-        foreach (var c in topic)
+        foreach (var c in messageName)
         {
             if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
             {
                 throw new ArgumentException(
-                    $@"Topic name '{topic}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
-                    nameof(topic)
+                    $@"MessageName name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    nameof(messageName)
                 );
             }
         }
@@ -390,7 +401,7 @@ public sealed class MessagingOptions
     internal ConsumerMetadata CreateConsumerMetadata(
         Type consumerType,
         Type messageType,
-        string? topic,
+        string? messageName,
         string? group,
         byte concurrency,
         string? handlerId = null,
@@ -402,11 +413,11 @@ public sealed class MessagingOptions
 
         var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
         var resolvedTopic =
-            topic
-            ?? (TopicMappings.TryGetValue(messageType, out var mappedTopic) ? mappedTopic : null)
-            ?? conventions.GetTopicName(messageType)
+            messageName
+            ?? (MessageNameMappings.TryGetValue(messageType, out var mappedMessageName) ? mappedMessageName : null)
+            ?? conventions.GetMessageName(messageType)
             ?? messageType.Name;
-        var finalTopic = ApplyTopicNamePrefix(resolvedTopic);
+        var finalTopic = ApplyMessageNamePrefix(resolvedTopic);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 
         return new ConsumerMetadata(

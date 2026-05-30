@@ -93,7 +93,7 @@ public sealed class ConsumerContextTests : TestBase
             IntentType = IntentType.Bus,
             MethodInfo = methodInfo,
             ImplTypeInfo = typeof(ConsumerContextTestConsumer).GetTypeInfo(),
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test-group",
         };
     }
@@ -104,7 +104,7 @@ public sealed class ConsumerContextTests : TestBase
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = Faker.Random.Guid().ToString(),
-                [Headers.MessageName] = "test.topic",
+                [Headers.MessageName] = "test.messageName",
             },
             new ContextTestMessage("test-value")
         );

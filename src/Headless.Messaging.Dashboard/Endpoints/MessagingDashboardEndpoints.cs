@@ -563,7 +563,7 @@ public static class MessagingDashboardEndpoints
                     inner.Values.Add(
                         new WarpResult.SubInfo
                         {
-                            Topic = descriptor.TopicName,
+                            MessageName = descriptor.MessageName,
                             ImplName = descriptor.ImplTypeInfo.Name,
                             MethodEscaped = HtmlHelper.MethodEscaped(descriptor.MethodInfo),
                         }
@@ -782,7 +782,7 @@ internal sealed class WarpResult
 
     public class SubInfo
     {
-        public required string Topic { get; set; }
+        public required string MessageName { get; set; }
 
         public required string ImplName { get; set; }
 

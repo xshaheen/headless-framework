@@ -36,7 +36,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var pipeline = _BuildPublishPipeline(services);
 
         var transport = new RecordingTransport();
-        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
         var publishRequestFactory = new MessagePublishRequestFactory(
@@ -136,7 +136,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         bool ambientTransaction
     )
     {
-        var options = new MessagingOptions { TopicMappings = { [typeof(TestMessage)] = "test.topic" } };
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
         var optionsAccessor = Options.Create(options);
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SnowflakeIdLongIdGenerator(),

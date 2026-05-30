@@ -40,18 +40,18 @@ internal sealed class AzureServiceBusConsumerClient(
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(_asbOptions.ConnectionString, _asbOptions.Namespace);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topics);
+        Argument.IsNotNull(messageNames);
 
         await ConnectAsync();
 
         if (intentType == IntentType.Queue)
         {
-            foreach (var topic in topics)
+            foreach (var messageName in messageNames)
             {
-                CheckValidQueueName(topic);
-                await _EnsureQueueProcessorAsync(topic).ConfigureAwait(false);
+                CheckValidQueueName(messageName);
+                await _EnsureQueueProcessorAsync(messageName).ConfigureAwait(false);
             }
 
             return;
@@ -72,9 +72,9 @@ internal sealed class AzureServiceBusConsumerClient(
             allRuleNames.Add(rule.Name);
         }
 
-        var topicsList = topics.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
+        var messageNamesList = messageNames.Concat(_asbOptions.SqlFilters?.Select(o => o.Key) ?? []).ToList();
 
-        foreach (var newRule in topicsList.Except(allRuleNames, StringComparer.Ordinal))
+        foreach (var newRule in messageNamesList.Except(allRuleNames, StringComparer.Ordinal))
         {
             var isSqlRule =
                 _asbOptions
@@ -112,7 +112,7 @@ internal sealed class AzureServiceBusConsumerClient(
             logger.RuleAdded(newRule);
         }
 
-        foreach (var oldRule in allRuleNames.Except(topicsList, StringComparer.Ordinal))
+        foreach (var oldRule in allRuleNames.Except(messageNamesList, StringComparer.Ordinal))
         {
             await _administrationClient.DeleteRuleAsync(_asbOptions.TopicPath, subscriptionName, oldRule);
 
@@ -619,14 +619,14 @@ internal static partial class AzureServiceBusConsumerClientLog
     [LoggerMessage(
         EventId = 3010,
         Level = LogLevel.Information,
-        Message = "Azure Service Bus created topic: {TopicPath}"
+        Message = "Azure Service Bus created messageName: {TopicPath}"
     )]
     public static partial void TopicCreated(this ILogger logger, string topicPath);
 
     [LoggerMessage(
         EventId = 3011,
         Level = LogLevel.Information,
-        Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
+        Message = "Azure Service Bus messageName {TopicPath} created subscription: {SubscriptionName}"
     )]
     public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
 

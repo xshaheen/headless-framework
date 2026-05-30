@@ -44,14 +44,14 @@
               <v-table density="comfortable" class="subscribers-table">
                 <thead>
                   <tr>
-                    <th>Topic</th>
+                    <th>Message name</th>
                     <th>Implementation</th>
                     <th>Method</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(sub, index) in group.values" :key="index">
-                    <td>{{ sub.topic }}</td>
+                    <td>{{ sub.messageName }}</td>
                     <td class="text-caption">{{ sub.implName }}</td>
                     <td>
                       <code class="method-name" v-html="sub.methodEscaped"></code>
@@ -74,7 +74,7 @@ import { useAlertStore } from '@/stores/alertStore'
 import TableSkeleton from '@/components/common/TableSkeleton.vue'
 
 interface SubscriberValue {
-  topic: string
+  messageName: string
   implName: string
   methodEscaped: string
 }

@@ -18,19 +18,19 @@ public sealed class WarpResultTests : TestBase
             [
                 new WarpResult.SubInfo
                 {
-                    Topic = "topic1",
+                    MessageName = "topic1",
                     ImplName = "Impl1",
                     MethodEscaped = "Method1",
                 },
                 new WarpResult.SubInfo
                 {
-                    Topic = "topic2",
+                    MessageName = "topic2",
                     ImplName = "Impl2",
                     MethodEscaped = "Method2",
                 },
                 new WarpResult.SubInfo
                 {
-                    Topic = "topic3",
+                    MessageName = "topic3",
                     ImplName = "Impl3",
                     MethodEscaped = "Method3",
                 },
@@ -67,13 +67,13 @@ public sealed class WarpResultTests : TestBase
         // given
         var subInfo = new WarpResult.SubInfo
         {
-            Topic = "user.created",
+            MessageName = "user.created",
             ImplName = "UserCreatedHandler",
             MethodEscaped = "public async Task HandleAsync(UserCreatedEvent e);",
         };
 
         // when & then
-        subInfo.Topic.Should().Be("user.created");
+        subInfo.MessageName.Should().Be("user.created");
         subInfo.ImplName.Should().Be("UserCreatedHandler");
         subInfo.MethodEscaped.Should().Contain("HandleAsync");
     }

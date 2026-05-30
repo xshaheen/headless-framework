@@ -27,7 +27,7 @@ namespace Headless.Messaging;
 ///
 ///     // Or register specific consumers with custom configuration
 ///     options.Subscribe&lt;OrderPlacedHandler&gt;()
-///         .Topic("orders.placed")
+///         .MessageName("orders.placed")
 ///         .Concurrency(10);
 /// });
 /// </code>
@@ -52,7 +52,7 @@ public interface IMessagingBuilder
     /// <item><description>Finds all non-abstract, non-generic types</description></item>
     /// <item><description>Discovers ALL <see cref="IConsume{TMessage}"/> interfaces per type (supports multi-type consumers)</description></item>
     /// <item><description>Automatically registers types with dependency injection as scoped services</description></item>
-    /// <item><description>Uses convention-based topic naming (message type name) unless overridden</description></item>
+    /// <item><description>Uses convention-based messageName naming (message type name) unless overridden</description></item>
     /// </list>
     /// </para>
     /// <para>
@@ -97,13 +97,13 @@ public interface IMessagingBuilder
     /// <remarks>
     /// <para>
     /// Use this method when you need fine-grained control over a specific consumer's configuration,
-    /// such as custom topic names, concurrency limits, or filtering.
+    /// such as custom messageName names, concurrency limits, or filtering.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed.v2") // Override convention-based topic
+    ///     .MessageName("orders.placed.v2") // Override convention-based messageName
     ///     .Concurrency(5); // Limit concurrent processing
     /// </code>
     /// </para>
@@ -112,18 +112,18 @@ public interface IMessagingBuilder
         where TConsumer : class;
 
     /// <summary>
-    /// Registers a specific consumer type with a topic, automatically creating a topic mapping for type-safe publishing.
+    /// Registers a specific consumer type with a messageName, automatically creating a messageName mapping for type-safe publishing.
     /// </summary>
     /// <typeparam name="TConsumer">
     /// The consumer type to register. Must implement at least one <see cref="IConsume{TMessage}"/> interface.
     /// </typeparam>
-    /// <param name="topic">
-    /// The topic name to subscribe to. This automatically creates a topic mapping for the message type.
+    /// <param name="messageName">
+    /// The messageName name to subscribe to. This automatically creates a messageName mapping for the message type.
     /// </param>
     /// <returns>
     /// An <see cref="IConsumerBuilder{TConsumer}"/> instance for configuring the consumer's behavior.
     /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="topic"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="messageName"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown if <typeparamref name="TConsumer"/> does not implement any <see cref="IConsume{TMessage}"/> interfaces.
     /// Explicit registration also rejects consumers implementing multiple <see cref="IConsume{TMessage}"/> interfaces.
@@ -131,9 +131,9 @@ public interface IMessagingBuilder
     /// </exception>
     /// <remarks>
     /// <para>
-    /// This is the preferred method for registering consumers as it eliminates topic name duplication
-    /// by automatically creating a topic mapping for the message type. This enables type-safe publishing
-    /// without requiring a separate <see cref="WithTopicMapping{TMessage}"/> call.
+    /// This is the preferred method for registering consumers as it eliminates messageName name duplication
+    /// by automatically creating a messageName mapping for the message type. This enables type-safe publishing
+    /// without requiring a separate <see cref="WithMessageNameMapping{TMessage}"/> call.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -148,7 +148,7 @@ public interface IMessagingBuilder
     /// </code>
     /// </para>
     /// </remarks>
-    IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
+    IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string messageName)
         where TConsumer : class;
 
     /// <summary>
@@ -161,23 +161,23 @@ public interface IMessagingBuilder
         where TConsumer : class;
 
     /// <summary>
-    /// Registers a topic mapping for a message type to enable type-safe publishing.
+    /// Registers a messageName mapping for a message type to enable type-safe publishing.
     /// </summary>
     /// <typeparam name="TMessage">The message type.</typeparam>
-    /// <param name="topic">The topic to publish to.</param>
+    /// <param name="messageName">The messageName to publish to.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="topic"/> is null or whitespace.</exception>
-    /// <exception cref="InvalidOperationException">Thrown if a different topic is already registered for <typeparamref name="TMessage"/>.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="messageName"/> is null or whitespace.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if a different messageName is already registered for <typeparamref name="TMessage"/>.</exception>
     /// <remarks>
     /// <para>
-    /// Topic mappings enable type-safe publishing by associating message types with their destination topics.
+    /// MessageName mappings enable type-safe publishing by associating message types with their destination topics.
     /// This eliminates magic strings and enables compile-time verification of message routing.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// options.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
-    /// options.WithTopicMapping&lt;OrderCancelled&gt;("orders.cancelled");
+    /// options.WithMessageNameMapping&lt;OrderPlaced&gt;("orders.placed");
+    /// options.WithMessageNameMapping&lt;OrderCancelled&gt;("orders.cancelled");
     ///
     /// // Later in code:
     /// await publisher.PublishAsync(new OrderPlaced { OrderId = 123 });
@@ -185,18 +185,18 @@ public interface IMessagingBuilder
     /// </code>
     /// </para>
     /// </remarks>
-    IMessagingBuilder WithTopicMapping<TMessage>(string topic)
+    IMessagingBuilder WithMessageNameMapping<TMessage>(string messageName)
         where TMessage : class;
 
     /// <summary>
-    /// Configures convention-based topic naming and default consumer settings.
+    /// Configures convention-based messageName naming and default consumer settings.
     /// </summary>
     /// <param name="configure">A delegate to configure the messaging conventions.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// Conventions allow automatic topic name generation from message types, reducing boilerplate
+    /// Conventions allow automatic messageName name generation from message types, reducing boilerplate
     /// and ensuring consistent naming across your messaging infrastructure.
     /// </para>
     /// <para>
@@ -204,9 +204,9 @@ public interface IMessagingBuilder
     /// <code>
     /// options.UseConventions(c =>
     /// {
-    ///     c.UseKebabCaseTopics(); // OrderCreated → order-created
-    ///     c.WithTopicPrefix("prod."); // → prod.order-created
-    ///     c.WithTopicSuffix(".v1"); // → prod.order-created.v1
+    ///     c.UseKebabCaseMessageNames(); // OrderCreated → order-created
+    ///     c.WithMessageNamePrefix("prod."); // → prod.order-created
+    ///     c.WithMessageNameSuffix(".v1"); // → prod.order-created.v1
     ///     c.UseApplicationId("my-service");
     ///     c.UseVersion("v1");
     /// });

@@ -40,7 +40,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerMetadata>();
 
         metadata.IntentType.Should().Be(IntentType.Bus);
-        metadata.Topic.Should().Be("events.orders");
+        metadata.MessageName.Should().Be("events.orders");
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerMetadata>();
 
         metadata.IntentType.Should().Be(IntentType.Queue);
-        metadata.Topic.Should().Be("jobs.orders");
+        metadata.MessageName.Should().Be("jobs.orders");
     }
 
     [Fact]
@@ -394,16 +394,16 @@ public sealed class MessagingIntentSplitTests : TestBase
             new NullCurrentTenant()
         );
 
-    private static PreparedPublishMessage _CreatePreparedPublishMessage(string topic, IntentType intentType) =>
+    private static PreparedPublishMessage _CreatePreparedPublishMessage(string messageName, IntentType intentType) =>
         new()
         {
-            Topic = topic,
+            MessageName = messageName,
             PublishAt = DateTime.UtcNow,
             Message = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
-                    [Headers.MessageName] = topic,
+                    [Headers.MessageName] = messageName,
                 },
                 new TestMessage()
             ),
@@ -425,7 +425,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
-            TopicName = "orders.created",
+            MessageName = "orders.created",
             GroupName = "workers",
             IntentType = IntentType.Bus,
         };
@@ -433,7 +433,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
-            TopicName = "orders.created",
+            MessageName = "orders.created",
             GroupName = "workers",
             IntentType = IntentType.Queue,
         };
@@ -457,7 +457,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
-            TopicName = "orders.created",
+            MessageName = "orders.created",
             GroupName = "workers",
             IntentType = IntentType.Bus,
         };
@@ -465,7 +465,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         {
             MethodInfo = methodInfo,
             ImplTypeInfo = implTypeInfo,
-            TopicName = "orders.created",
+            MessageName = "orders.created",
             GroupName = "workers",
             IntentType = IntentType.Bus,
         };

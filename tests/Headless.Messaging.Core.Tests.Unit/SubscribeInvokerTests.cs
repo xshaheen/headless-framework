@@ -20,14 +20,14 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-123");
-        var mediumMessage = _CreateMediumMessage(message, "test.topic");
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName");
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -47,14 +47,14 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test-456");
-        var mediumMessage = _CreateMediumMessage(message, "test.topic");
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName");
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -75,7 +75,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -84,7 +84,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var message = new InvokerTestMessage("test-789");
         var messageId = Guid.NewGuid().ToString();
         var correlationId = Guid.NewGuid();
-        var mediumMessage = _CreateMediumMessage(message, "test.topic", messageId, correlationId);
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName", messageId, correlationId);
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -96,7 +96,7 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.Should().NotBeNull();
         consumed.MessageId.Should().Be(messageId);
         consumed.CorrelationId.Should().Be(correlationId.ToString());
-        consumed.Topic.Should().Be("test.topic");
+        consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
     }
 
@@ -108,7 +108,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -121,7 +121,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
                     [Headers.MessageId] = Guid.NewGuid().ToString(),
-                    [Headers.MessageName] = "test.topic",
+                    [Headers.MessageName] = "test.messageName",
                 },
                 null
             ), // null value
@@ -148,14 +148,14 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
-        var mediumMessage = _CreateMediumMessage(message, "test.topic");
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName");
 
         // Manually create descriptor with wrong method
         var badDescriptor = new ConsumerExecutorDescriptor
@@ -170,7 +170,7 @@ public sealed class SubscribeInvokerTests : TestBase
                 Type.EmptyTypes,
                 null
             )!,
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test",
             Parameters = [],
         };
@@ -194,14 +194,14 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<CancellableConsumer>().Topic("test.topic");
+            messaging.Subscribe<CancellableConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
-        var mediumMessage = _CreateMediumMessage(message, "test.topic");
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName");
         var descriptor = _CreateDescriptor<InvokerTestMessage, CancellableConsumer>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -223,14 +223,14 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
 
         var message = new InvokerTestMessage("test");
-        var mediumMessage = _CreateMediumMessage(message, "test.topic", correlationId: null);
+        var mediumMessage = _CreateMediumMessage(message, "test.messageName", correlationId: null);
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -251,7 +251,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<ResponseHeaderConsumer>().Topic("test.topic");
+            messaging.Subscribe<ResponseHeaderConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -259,8 +259,8 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("callback"),
-            "test.topic",
-            callbackName: "callbacks.topic"
+            "test.messageName",
+            callbackName: "callbacks.messageName"
         );
         var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseHeaderConsumer>();
         var context = new ConsumerContext(descriptor, mediumMessage);
@@ -269,7 +269,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var result = await invoker.InvokeAsync(context, AbortToken);
 
         // then
-        result.CallbackName.Should().Be("callbacks.topic");
+        result.CallbackName.Should().Be("callbacks.messageName");
         result.CallbackHeader.Should().NotBeNull();
         result.CallbackHeader!["response-key"].Should().Be("response-value");
     }
@@ -282,14 +282,18 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
         var sentTime = new DateTimeOffset(2026, 3, 24, 10, 11, 12, TimeSpan.Zero);
 
-        var mediumMessage = _CreateMediumMessage(new InvokerTestMessage("timestamp"), "test.topic", sentTime: sentTime);
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("timestamp"),
+            "test.messageName",
+            sentTime: sentTime
+        );
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
         var context = new ConsumerContext(descriptor, mediumMessage);
 
@@ -309,7 +313,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -317,7 +321,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-happy"),
-            "test.topic",
+            "test.messageName",
             tenantId: "tenant-123"
         );
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
@@ -339,7 +343,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -348,7 +352,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var maxLengthTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-boundary"),
-            "test.topic",
+            "test.messageName",
             tenantId: maxLengthTenantId
         );
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
@@ -370,7 +374,7 @@ public sealed class SubscribeInvokerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -379,7 +383,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var oversizedTenantId = new string('x', MessagePublishOptionsBase.TenantIdMaxLength + 1);
         var mediumMessage = _CreateMediumMessage(
             new InvokerTestMessage("tenant-oversized"),
-            "test.topic",
+            "test.messageName",
             tenantId: oversizedTenantId
         );
         var descriptor = _CreateDescriptor<InvokerTestMessage>();
@@ -395,7 +399,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
     private static MediumMessage _CreateMediumMessage<T>(
         T message,
-        string topicName,
+        string messageName,
         string? messageId = null,
         Guid? correlationId = null,
         string? callbackName = null,
@@ -406,7 +410,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = messageId ?? Guid.NewGuid().ToString(),
-            [Headers.MessageName] = topicName,
+            [Headers.MessageName] = messageName,
         };
 
         if (correlationId.HasValue)
@@ -459,7 +463,7 @@ public sealed class SubscribeInvokerTests : TestBase
             ServiceTypeInfo = typeof(TConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(TConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test",
             Parameters = consumeMethod
                 .GetParameters()
@@ -491,7 +495,7 @@ public sealed class SubscribeInvokerTests : TestBase
             ServiceTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(InvokerTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test",
             Parameters = consumeMethod
                 .GetParameters()

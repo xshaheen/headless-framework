@@ -18,7 +18,7 @@ public static class Headers
     public const string MessageId = "headless-msg-id";
 
     /// <summary>
-    /// The topic or message name that identifies what kind of message this is.
+    /// The messageName or message name that identifies what kind of message this is.
     /// Used for routing to the correct subscribers.
     /// Value: "headless-msg-name"
     /// </summary>

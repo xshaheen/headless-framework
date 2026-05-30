@@ -46,24 +46,24 @@ public abstract class ConsumerClientTestsBase : TestBase
     }
 
     /// <summary>
-    /// Allows transports to transform logical topic names into broker-specific subscription identifiers.
+    /// Allows transports to transform logical messageName names into broker-specific subscription identifiers.
     /// </summary>
     protected virtual ValueTask<IReadOnlyList<string>> ResolveSubscriptionTopicsAsync(
         IConsumerClient consumer,
-        IReadOnlyList<string> topics
+        IReadOnlyList<string> messageNames
     )
     {
-        return ValueTask.FromResult(topics);
+        return ValueTask.FromResult(messageNames);
     }
 
     public virtual async Task should_subscribe_to_topic()
     {
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic-1", "test-topic-2"]);
+        var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["test-messageName-1", "test-messageName-2"]);
 
         // when
-        var act = async () => await consumer.SubscribeAsync(topics);
+        var act = async () => await consumer.SubscribeAsync(messageNames);
 
         // then
         await act.Should().NotThrowAsync();
@@ -80,8 +80,8 @@ public abstract class ConsumerClientTestsBase : TestBase
         consumer.OnMessageCallback = (msg, sender) => Task.CompletedTask;
         consumer.OnMessageCallback.Should().NotBeNull();
 
-        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
-        await consumer.SubscribeAsync(topics);
+        var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["test-messageName"]);
+        await consumer.SubscribeAsync(messageNames);
 
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
@@ -130,15 +130,15 @@ public abstract class ConsumerClientTestsBase : TestBase
 
     public virtual async Task should_fetch_topics()
     {
-        // Skip if consumer doesn't support fetching topics
+        // Skip if consumer doesn't support fetching messageNames
         if (!Capabilities.SupportsFetchTopics)
         {
-            Assert.Skip("Consumer does not support fetching topics");
+            Assert.Skip("Consumer does not support fetching messageNames");
         }
 
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var requestedTopics = new[] { "topic-1", "topic-2", "topic-3" };
+        var requestedTopics = new[] { "messageName-1", "messageName-2", "messageName-3" };
 
         // when
         var result = await consumer.FetchTopicsAsync(requestedTopics);
@@ -158,8 +158,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         // given
         await using var consumer = await GetConsumerClientAsync();
-        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["test-topic"]);
-        await consumer.SubscribeAsync(topics);
+        var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["test-messageName"]);
+        await consumer.SubscribeAsync(messageNames);
 
         // Start listening in background
         using var cts = new CancellationTokenSource();
@@ -203,8 +203,8 @@ public abstract class ConsumerClientTestsBase : TestBase
 
         consumer.OnMessageCallback = (_, _) => Task.CompletedTask;
 
-        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-topic"]);
-        await consumer.SubscribeAsync(topics);
+        var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["concurrent-messageName"]);
+        await consumer.SubscribeAsync(messageNames);
 
         // when
         var tasks = Enumerable
@@ -261,8 +261,8 @@ public abstract class ConsumerClientTestsBase : TestBase
         consumer.OnLogCallback = _ => { };
         consumer.OnLogCallback.Should().NotBeNull();
 
-        var topics = await ResolveSubscriptionTopicsAsync(consumer, ["log-test-topic"]);
-        await consumer.SubscribeAsync(topics);
+        var messageNames = await ResolveSubscriptionTopicsAsync(consumer, ["log-test-messageName"]);
+        await consumer.SubscribeAsync(messageNames);
 
         // when
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));

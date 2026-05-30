@@ -13,7 +13,7 @@ builder.Services.AddQueueConsumer<PersonConsumer, Person>("test-message");
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.WithTopicMapping<Person>("test-message");
+    setup.WithMessageNameMapping<Person>("test-message");
 
     setup.UseRedis(redis =>
     {

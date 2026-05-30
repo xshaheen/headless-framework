@@ -11,7 +11,7 @@ public class ValuesController(IOutboxBus producer) : Controller
     {
         await producer.PublishAsync(
             DateTime.UtcNow,
-            new PublishOptions { Topic = "persistent://public/default/headlesstesttopic" }
+            new PublishOptions { MessageName = "persistent://public/default/headlesstesttopic" }
         );
 
         return Ok();

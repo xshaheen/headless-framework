@@ -45,10 +45,10 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_subscribe_group_to_topics()
     {
         // given
-        var topics = new[] { "topic-1", "topic-2" };
+        var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await _consumerClient.SubscribeAsync(topics);
+        await _consumerClient.SubscribeAsync(messageNames);
 
         // then - subscribe should complete without exception
         // The subscription is verified by being able to send messages
@@ -59,8 +59,8 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_deliver_message_to_subscribed_consumer()
     {
         // given
-        var topics = new[] { "test-topic" };
-        await _consumerClient.SubscribeAsync(topics);
+        var messageNames = new[] { "test-messageName" };
+        await _consumerClient.SubscribeAsync(messageNames);
 
         TransportMessage? receivedMessage = null;
         var tcs = new TaskCompletionSource();
@@ -71,7 +71,7 @@ public sealed class MemoryQueueTests : TestBase
             tcs.TrySetResult();
         };
 
-        var message = _CreateTestMessage("msg-1", "test-topic");
+        var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // Start listening in background
         using var cts = new CancellationTokenSource();
@@ -101,14 +101,14 @@ public sealed class MemoryQueueTests : TestBase
         // then
         receivedMessage.Should().NotBeNull();
         receivedMessage!.Value.GetId().Should().Be("msg-1");
-        receivedMessage.Value.GetName().Should().Be("test-topic");
+        receivedMessage.Value.GetName().Should().Be("test-messageName");
     }
 
     [Fact]
     public async Task should_silently_drop_message_when_no_group_subscribed_to_topic()
     {
         // given — no subscriber registered; SendBus matches real-broker no-op semantics (no throw)
-        var message = _CreateTestMessage("msg-1", "unsubscribed-topic");
+        var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
         // when / then — must not throw
         var action = () => _queue.SendBus(message);
@@ -119,8 +119,8 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_support_multiple_topics()
     {
         // given
-        var topics = new[] { "topic-a", "topic-b" };
-        await _consumerClient.SubscribeAsync(topics);
+        var messageNames = new[] { "messageName-a", "messageName-b" };
+        await _consumerClient.SubscribeAsync(messageNames);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -160,9 +160,9 @@ public sealed class MemoryQueueTests : TestBase
 
         await Task.Delay(50, AbortToken);
 
-        // when - send to both topics
-        _queue.SendBus(_CreateTestMessage("msg-a", "topic-a"));
-        _queue.SendBus(_CreateTestMessage("msg-b", "topic-b"));
+        // when - send to both messageNames
+        _queue.SendBus(_CreateTestMessage("msg-a", "messageName-a"));
+        _queue.SendBus(_CreateTestMessage("msg-b", "messageName-b"));
 
         _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
         await cts.CancelAsync();
@@ -176,8 +176,8 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_be_thread_safe_for_concurrent_sends()
     {
         // given
-        var topics = new[] { "concurrent-topic" };
-        await _consumerClient.SubscribeAsync(topics);
+        var messageNames = new[] { "concurrent-messageName" };
+        await _consumerClient.SubscribeAsync(messageNames);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -222,7 +222,7 @@ public sealed class MemoryQueueTests : TestBase
         var sendTasks = Enumerable
             .Range(0, messageCount)
             .Select(i =>
-                Task.Run(() => _queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-topic")), AbortToken)
+                Task.Run(() => _queue.SendBus(_CreateTestMessage($"msg-{i}", "concurrent-messageName")), AbortToken)
             );
 
         await Task.WhenAll(sendTasks);
@@ -243,8 +243,8 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "group-2", 1);
 
-        await client1.SubscribeAsync(["shared-topic"]);
-        await client2.SubscribeAsync(["shared-topic"]);
+        await client1.SubscribeAsync(["shared-messageName"]);
+        await client2.SubscribeAsync(["shared-messageName"]);
 
         var messages1 = new List<TransportMessage>();
         var messages2 = new List<TransportMessage>();
@@ -291,7 +291,7 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // when
-        queue.SendBus(_CreateTestMessage("msg-1", "shared-topic"));
+        queue.SendBus(_CreateTestMessage("msg-1", "shared-messageName"));
 
         await Task.WhenAll(
             Task.WhenAny(tcs1.Task, Task.Delay(5000, AbortToken)),
@@ -311,7 +311,7 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_remove_consumer_on_unsubscribe()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-topic"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"]);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = async (msg, sender) =>
@@ -338,8 +338,8 @@ public sealed class MemoryQueueTests : TestBase
         // when - unsubscribe the consumer
         _queue.Unsubscribe(IntentType.Bus, "test-group", _consumerClient);
 
-        // then - the topic binding is removed with the final client; send is a silent no-op
-        var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-topic"));
+        // then - the messageName binding is removed with the final client; send is a silent no-op
+        var act = () => _queue.SendBus(_CreateTestMessage("msg-1", "test-messageName"));
         act.Should().NotThrow();
         await Task.Delay(100, AbortToken);
         await cts.CancelAsync();
@@ -352,10 +352,10 @@ public sealed class MemoryQueueTests : TestBase
     public async Task should_not_add_duplicate_group_to_topic()
     {
         // given
-        await _consumerClient.SubscribeAsync(["topic-1"]);
+        await _consumerClient.SubscribeAsync(["messageName-1"]);
 
-        // when - subscribe same group to same topic again
-        await _consumerClient.SubscribeAsync(["topic-1"]);
+        // when - subscribe same group to same messageName again
+        await _consumerClient.SubscribeAsync(["messageName-1"]);
 
         var receivedMessages = new List<TransportMessage>();
         var tcs = new TaskCompletionSource();
@@ -383,7 +383,7 @@ public sealed class MemoryQueueTests : TestBase
         await Task.Delay(50, AbortToken);
 
         // Send one message
-        _queue.SendBus(_CreateTestMessage("msg-1", "topic-1"));
+        _queue.SendBus(_CreateTestMessage("msg-1", "messageName-1"));
 
         _ = await Task.WhenAny(tcs.Task, Task.Delay(5000, AbortToken));
         await cts.CancelAsync();
@@ -406,12 +406,12 @@ public sealed class MemoryQueueTests : TestBase
         var client1 = new InMemoryConsumerClient(queue, "drain-group-1", 1);
         var client2 = new InMemoryConsumerClient(queue, "drain-group-2", 1);
 
-        await client1.SubscribeAsync(["drain-topic"]);
-        await client2.SubscribeAsync(["drain-topic"]);
+        await client1.SubscribeAsync(["drain-messageName"]);
+        await client2.SubscribeAsync(["drain-messageName"]);
 
         // Enqueue messages (goes to both groups via Send)
-        queue.SendBus(_CreateTestMessage("d1", "drain-topic"));
-        queue.SendBus(_CreateTestMessage("d2", "drain-topic"));
+        queue.SendBus(_CreateTestMessage("d1", "drain-messageName"));
+        queue.SendBus(_CreateTestMessage("d2", "drain-messageName"));
 
         // when
         queue.DrainAllPendingMessages();
@@ -477,12 +477,12 @@ public sealed class MemoryQueueTests : TestBase
         act.Should().NotThrow();
     }
 
-    private static TransportMessage _CreateTestMessage(string id, string topic)
+    private static TransportMessage _CreateTestMessage(string id, string messageName)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = id,
-            [Headers.MessageName] = topic,
+            [Headers.MessageName] = messageName,
         };
 
         return new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);

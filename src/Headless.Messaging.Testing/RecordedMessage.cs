@@ -45,8 +45,8 @@ public sealed record RecordedMessage
     /// <summary>Message headers.</summary>
     public required IReadOnlyDictionary<string, string?> Headers { get; init; }
 
-    /// <summary>The topic the message was published to or consumed from.</summary>
-    public required string Topic { get; init; }
+    /// <summary>The messageName the message was published to or consumed from.</summary>
+    public required string MessageName { get; init; }
 
     /// <summary>The bus/queue intent that produced the observation.</summary>
     public required IntentType IntentType { get; init; }
@@ -75,7 +75,9 @@ public sealed record RecordedMessage
             headers.TryGetValue(MsgHeaders.CorrelationId, out var corrId) && !string.IsNullOrWhiteSpace(corrId)
                 ? corrId
                 : null;
-        var topic = headers.TryGetValue(MsgHeaders.MessageName, out var name) ? name ?? string.Empty : string.Empty;
+        var messageName = headers.TryGetValue(MsgHeaders.MessageName, out var name)
+            ? name ?? string.Empty
+            : string.Empty;
 
         return new RecordedMessage
         {
@@ -84,7 +86,7 @@ public sealed record RecordedMessage
             MessageId = messageId,
             CorrelationId = correlationId,
             Headers = new Dictionary<string, string?>(headers, StringComparer.Ordinal),
-            Topic = topic,
+            MessageName = messageName,
             IntentType = intentType,
             Timestamp = timestamp,
             Exception = exception,

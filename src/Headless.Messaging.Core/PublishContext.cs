@@ -32,7 +32,7 @@ public abstract class PublishContext
                 ? new Dictionary<string, string?>(StringComparer.Ordinal)
                 : new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
         );
-        Topic = options?.Topic;
+        MessageName = options?.MessageName;
         CancellationToken = cancellationToken;
     }
 
@@ -54,8 +54,8 @@ public abstract class PublishContext
     /// <summary>Gets the current publish headers snapshot.</summary>
     public MessageHeader Headers { get; private set; }
 
-    /// <summary>Gets the currently selected topic override, if any.</summary>
-    public string? Topic { get; private set; }
+    /// <summary>Gets the currently selected messageName override, if any.</summary>
+    public string? MessageName { get; private set; }
 
     /// <summary>
     /// Gets the current publish options for this operation.
@@ -99,7 +99,7 @@ public abstract class PublishContext
                 ? new Dictionary<string, string?>(StringComparer.Ordinal)
                 : new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
         );
-        Topic = options?.Topic;
+        MessageName = options?.MessageName;
     }
 
     private protected bool IsCompleted { get; private set; }

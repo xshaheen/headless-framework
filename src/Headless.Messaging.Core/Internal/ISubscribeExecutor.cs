@@ -31,7 +31,7 @@ internal interface ISubscribeExecutor
     /// when the retry budget exhausts, so the user's exhausted callback resolves scoped services from the
     /// SAME scope the consume attempt ran under.
     /// </param>
-    /// <param name="descriptor">Optional consumer descriptor; resolved from the topic when omitted.</param>
+    /// <param name="descriptor">Optional consumer descriptor; resolved from the messageName when omitted.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -73,7 +73,7 @@ internal sealed class SubscribeExecutor(
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
             if (
-                !selector.TryGetTopicExecutor(
+                !selector.TryGetMessageNameExecutor(
                     message.Origin.GetName(),
                     message.Origin.GetGroup()!,
                     message.IntentType,
@@ -472,7 +472,7 @@ internal sealed class SubscribeExecutor(
                     .GetRequiredService<IOutboxBus>()
                     .PublishAsync(
                         ret.Result,
-                        new PublishOptions { Topic = ret.CallbackName, Headers = ret.CallbackHeader },
+                        new PublishOptions { MessageName = ret.CallbackName, Headers = ret.CallbackHeader },
                         cancellationToken
                     )
                     .ConfigureAwait(false);

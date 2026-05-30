@@ -21,7 +21,7 @@ public sealed class MessageObservationStoreTests : TestBase
             MessageId = id,
             CorrelationId = null,
             Headers = new Dictionary<string, string?>(StringComparer.Ordinal),
-            Topic = "test-topic",
+            MessageName = "test-messageName",
             Timestamp = DateTimeOffset.UtcNow,
             IntentType = intentType,
         };

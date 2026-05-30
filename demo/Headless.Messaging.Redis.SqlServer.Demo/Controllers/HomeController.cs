@@ -10,7 +10,10 @@ public class HomeController(IOutboxQueue publisher) : ControllerBase
     [HttpGet]
     public async Task Publish([FromQuery] string message = "test-message")
     {
-        await publisher.EnqueueAsync(new Person { Age = 11, Name = "James" }, new EnqueueOptions { Topic = message });
+        await publisher.EnqueueAsync(
+            new Person { Age = 11, Name = "James" },
+            new EnqueueOptions { MessageName = message }
+        );
     }
 }
 
@@ -31,7 +34,7 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Pe
         {
             logger.LogInformation(
                 "{ContextTopic} subscribed with value --> Name:{Name}, Age:{Age}",
-                context.Topic,
+                context.MessageName,
                 context.Message.Name,
                 context.Message.Age
             );

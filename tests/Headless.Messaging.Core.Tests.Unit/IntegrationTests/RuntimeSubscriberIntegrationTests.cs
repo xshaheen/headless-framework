@@ -20,13 +20,13 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { Topic = "runtime.integration", Group = "runtime.integration" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.integration", Group = "runtime.integration" },
             AbortToken
         );
 
         await publisher.PublishAsync(
             new RuntimeMessage("first"),
-            new PublishOptions { Topic = "runtime.integration" },
+            new PublishOptions { MessageName = "runtime.integration" },
             AbortToken
         );
 
@@ -49,13 +49,13 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         var handle = await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { Topic = "runtime.blocking", Group = "runtime.blocking" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.blocking", Group = "runtime.blocking" },
             AbortToken
         );
 
         await publisher.PublishAsync(
             new RuntimeMessage("first"),
-            new PublishOptions { Topic = "runtime.blocking" },
+            new PublishOptions { MessageName = "runtime.blocking" },
             AbortToken
         );
 
@@ -64,7 +64,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("second"),
-            new PublishOptions { Topic = "runtime.blocking" },
+            new PublishOptions { MessageName = "runtime.blocking" },
             AbortToken
         );
 
@@ -91,7 +91,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await runtimeSubscriber.SubscribeAsync<RuntimeMessage>(
             probe.HandleAsync,
-            new RuntimeSubscriptionOptions { Topic = "runtime.mid-bootstrap", Group = "runtime.mid-bootstrap" },
+            new RuntimeSubscriptionOptions { MessageName = "runtime.mid-bootstrap", Group = "runtime.mid-bootstrap" },
             AbortToken
         );
 
@@ -100,7 +100,7 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new RuntimeMessage("mid-bootstrap"),
-            new PublishOptions { Topic = "runtime.mid-bootstrap" },
+            new PublishOptions { MessageName = "runtime.mid-bootstrap" },
             AbortToken
         );
 

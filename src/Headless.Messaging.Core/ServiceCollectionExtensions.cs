@@ -14,14 +14,14 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers a broadcast (publish/subscribe) message consumer with the specified topic.
+    /// Registers a broadcast (publish/subscribe) message consumer with the specified messageName.
     /// </summary>
     /// <typeparam name="TConsumer">The consumer type implementing <see cref="IConsume{TMessage}"/>.</typeparam>
     /// <typeparam name="TMessage">The message type to consume. Must be a reference type.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="topic">The topic name to subscribe to.</param>
+    /// <param name="messageName">The messageName name to subscribe to.</param>
     /// <returns>A <see cref="IConsumerBuilder{TConsumer}"/> for fluent configuration.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="services"/> or <paramref name="topic"/> is null.</exception>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="services"/> or <paramref name="messageName"/> is null.</exception>
     /// <remarks>
     /// <para>
     /// Use this for publish/subscribe (broadcast) delivery: every subscriber receives its own copy
@@ -40,16 +40,16 @@ public static class MessagingServiceCollectionExtensions
     [PublicAPI]
     public static IConsumerBuilder<TConsumer> AddBusConsumer<TConsumer, TMessage>(
         this IServiceCollection services,
-        string topic
+        string messageName
     )
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Bus);
+        return _AddConsumer<TConsumer, TMessage>(services, messageName, IntentType.Bus);
     }
 
     /// <summary>
-    /// Registers a point-to-point (work-queue) message consumer with the specified topic.
+    /// Registers a point-to-point (work-queue) message consumer with the specified messageName.
     /// </summary>
     /// <remarks>
     /// Use this for competing-consumer delivery: exactly one worker in the group receives each
@@ -59,24 +59,24 @@ public static class MessagingServiceCollectionExtensions
     [PublicAPI]
     public static IConsumerBuilder<TConsumer> AddQueueConsumer<TConsumer, TMessage>(
         this IServiceCollection services,
-        string topic
+        string messageName
     )
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        return _AddConsumer<TConsumer, TMessage>(services, topic, IntentType.Queue);
+        return _AddConsumer<TConsumer, TMessage>(services, messageName, IntentType.Queue);
     }
 
     private static IConsumerBuilder<TConsumer> _AddConsumer<TConsumer, TMessage>(
         IServiceCollection services,
-        string topic,
+        string messageName,
         IntentType intentType
     )
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
         // Register consumer in DI as scoped service
         services.TryAddScoped<TConsumer>();
@@ -86,7 +86,7 @@ public static class MessagingServiceCollectionExtensions
         var metadata = new ConsumerMetadata(
             MessageType: typeof(TMessage),
             ConsumerType: typeof(TConsumer),
-            Topic: topic,
+            MessageName: messageName,
             Group: null,
             Concurrency: 1,
             IntentType: intentType,

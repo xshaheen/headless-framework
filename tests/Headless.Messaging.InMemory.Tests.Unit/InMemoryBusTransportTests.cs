@@ -98,7 +98,7 @@ public sealed class InMemoryBusTransportTests : TestBase
         await using var transport = new InMemoryBusTransport(new MemoryQueue(queueLogger), transportLogger);
 
         // when
-        var result = await transport.SendAsync(_CreateTestMessage("msg-1", "unsubscribed-topic"), AbortToken);
+        var result = await transport.SendAsync(_CreateTestMessage("msg-1", "unsubscribed-messageName"), AbortToken);
 
         // then — message is silently dropped; transport reports success (the send itself did not fail)
         result.Succeeded.Should().BeTrue();
@@ -113,12 +113,12 @@ public sealed class InMemoryBusTransportTests : TestBase
         catch (OperationCanceledException) { }
     }
 
-    private static TransportMessage _CreateTestMessage(string id, string topic)
+    private static TransportMessage _CreateTestMessage(string id, string messageName)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = id,
-            [Headers.MessageName] = topic,
+            [Headers.MessageName] = messageName,
         };
 
         return new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
