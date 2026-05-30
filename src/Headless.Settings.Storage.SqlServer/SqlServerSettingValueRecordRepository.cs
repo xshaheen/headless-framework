@@ -101,6 +101,10 @@ internal sealed class SqlServerSettingValueRecordRepository(
         var sql =
             $"""INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey],[DateCreated]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey,@DateCreated);""";
 
+        // Preserve caller-supplied DateCreated when present (mirrors the EF path); only stamp from
+        // the TimeProvider when the caller left it at default.
+        var dateCreated = setting.DateCreated == default ? _TimeProvider().GetUtcNow() : setting.DateCreated;
+
         return _ExecuteAsync(
             sql,
             cancellationToken,
@@ -109,7 +113,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
             _Param("Value", setting.Value),
             _Param("ProviderName", setting.ProviderName),
             _Param("ProviderKey", setting.ProviderKey),
-            _Param("DateCreated", _TimeProvider().GetUtcNow())
+            _Param("DateCreated", dateCreated)
         );
     }
 
@@ -118,7 +122,13 @@ internal sealed class SqlServerSettingValueRecordRepository(
         var sql =
             $"""UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingValuesTableName)} SET [Value]=@Value,[DateUpdated]=@DateUpdated WHERE [Id]=@Id;""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", setting.Id), _Param("Value", setting.Value), _Param("DateUpdated", _TimeProvider().GetUtcNow())).ConfigureAwait(false);
+        // Preserve caller-supplied DateUpdated when present (mirrors the EF path); only stamp from
+        // the TimeProvider when the caller left it null/default.
+        var dateUpdated = setting.DateUpdated is null || setting.DateUpdated == default(DateTimeOffset)
+            ? _TimeProvider().GetUtcNow()
+            : setting.DateUpdated.Value;
+
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", setting.Id), _Param("Value", setting.Value), _Param("DateUpdated", dateUpdated)).ConfigureAwait(false);
         await _PublishAsync(setting, cancellationToken).ConfigureAwait(false);
     }
 

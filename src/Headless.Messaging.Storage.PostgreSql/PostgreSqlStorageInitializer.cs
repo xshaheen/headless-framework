@@ -101,6 +101,12 @@ public sealed class PostgreSqlStorageInitializer(
         CancellationToken cancellationToken
     )
     {
+        // SIGTERM mid-build leaves the index in `indisvalid=false` state. `CREATE INDEX CONCURRENTLY
+        // IF NOT EXISTS` matches only by name and silently skips an invalid index, so the retry-pickup
+        // path falls back to a seq scan and the broker queue backs up. Probe pg_index first and drop
+        // an invalid index before re-creating.
+        await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
+
         var createIndex = $"""
             CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} ("Version","NextRetryAt") INCLUDE ("Retries","LockedUntil") WHERE "NextRetryAt" IS NOT NULL;
             """;
@@ -123,6 +129,9 @@ public sealed class PostgreSqlStorageInitializer(
     {
         // pg_trgm GIN index accelerates ILIKE / similarity searches on the Content column used by
         // the dashboard message-list filter. CONCURRENTLY avoids an AccessExclusiveLock on hot tables.
+        // SIGTERM mid-build leaves the index in `indisvalid=false`; repair it on the next boot.
+        await _DropInvalidIndexConcurrentlyAsync(connection, indexName, cancellationToken).ConfigureAwait(false);
+
         var createIndex = $"""
             CREATE INDEX CONCURRENTLY IF NOT EXISTS "{indexName}" ON {qualifiedTable} USING gin ("Content" gin_trgm_ops);
             """;
@@ -134,6 +143,53 @@ public sealed class PostgreSqlStorageInitializer(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Probes <c>pg_index</c> for an existing index with the given name. If found AND
+    /// <c>indisvalid=false</c> (typical of a SIGTERM'd <c>CREATE INDEX CONCURRENTLY</c> build),
+    /// issues <c>DROP INDEX CONCURRENTLY IF EXISTS</c> so the subsequent re-create starts clean.
+    /// If found AND valid, does nothing. If not found, does nothing.
+    /// </summary>
+    private async Task _DropInvalidIndexConcurrentlyAsync(
+        NpgsqlConnection connection,
+        string indexName,
+        CancellationToken cancellationToken
+    )
+    {
+        const string probeSql = """
+            SELECT i.indisvalid
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE c.relname = @IndexName AND n.nspname = @Schema
+            LIMIT 1;
+            """;
+
+        await using var probeCommand = new NpgsqlCommand(probeSql, connection)
+        {
+            CommandTimeout = (int)messagingOptions.Value.CommandTimeout.TotalSeconds,
+        };
+        probeCommand.Parameters.AddWithValue("IndexName", indexName);
+        probeCommand.Parameters.AddWithValue("Schema", postgreSqlOptions.Value.Schema);
+
+        var probeResult = await probeCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+
+        if (probeResult is bool isValid && !isValid)
+        {
+            // The leftover index would otherwise be matched by `CREATE INDEX ... IF NOT EXISTS` and
+            // skipped, leaving the seq-scan fallback in place. Drop it concurrently so writes stay
+            // live during the repair.
+            var dropSql = $"""DROP INDEX CONCURRENTLY IF EXISTS "{postgreSqlOptions.Value.Schema}"."{indexName}";""";
+
+            await connection
+                .ExecuteNonQueryAsync(
+                    dropSql,
+                    commandTimeout: messagingOptions.Value.CommandTimeout,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     private string _CreateDbTablesScript(string schema)

@@ -19,6 +19,12 @@ internal sealed partial class PostgreSqlAuditLogStore(
     // each surface their own warning rather than the first mismatch silencing all others.
     private static readonly ConcurrentDictionary<string, byte> _WarnedConnectionTypes = new(StringComparer.Ordinal);
 
+    // Process-wide dedup keyed on the saving-context type name for the "no ambient transaction"
+    // path. Fires once per distinct DbContext shape where the consumer never opened an explicit
+    // transaction — audit rows then commit on a separate connection and are NOT atomic with the
+    // consumer's SaveChanges, so an entity-save failure leaves orphan audit rows.
+    private static readonly ConcurrentDictionary<string, byte> _WarnedMissingTransactionContexts = new(StringComparer.Ordinal);
+
     private readonly ILogger<PostgreSqlAuditLogStore> _logger =
         logger ?? NullLogger<PostgreSqlAuditLogStore>.Instance;
 
@@ -51,6 +57,16 @@ internal sealed partial class PostgreSqlAuditLogStore(
 
         if (connection is null || transaction is null)
         {
+            // Consumer's DbContext has no ambient transaction — typically because BeginTransaction
+            // was never called on the SaveChanges path. Audit rows will commit on a separate
+            // connection BEFORE the consumer's SaveChanges, so an entity-save failure leaves
+            // orphan audit rows. Log once per distinct saving-context shape.
+            var savingContextTypeName = savingContext.GetType().FullName ?? "(unknown)";
+            if (_WarnedMissingTransactionContexts.TryAdd(savingContextTypeName, 0))
+            {
+                LogProviderMissingAmbientTransaction(_logger, savingContextTypeName);
+            }
+
             return (null, null);
         }
 
@@ -91,4 +107,12 @@ internal sealed partial class PostgreSqlAuditLogStore(
         Message = "PostgreSql audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not NpgsqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Subsequent occurrences of this exact mismatch are suppressed for the remainder of this process."
     )]
     private static partial void LogProviderMismatch(ILogger logger, string connectionType);
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "PostgreSqlAuditLogProviderMissingAmbientTransaction",
+        Level = LogLevel.Warning,
+        Message = "PostgreSql audit log store could not enroll in an ambient transaction for saving context {SavingContextType} because the consumer did not open one (e.g. no BeginTransaction call). Audit rows will commit on a separate connection BEFORE the consumer's SaveChanges and are NOT atomic with it — an entity-save failure will leave orphan audit rows. Subsequent occurrences for this saving-context type are suppressed for the remainder of this process."
+    )]
+    private static partial void LogProviderMissingAmbientTransaction(ILogger logger, string savingContextType);
 }
