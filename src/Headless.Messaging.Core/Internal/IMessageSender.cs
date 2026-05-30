@@ -118,7 +118,7 @@ internal sealed class MessageSender : IMessageSender
             return (RetryDecision.Stop, failure);
         }
 
-        var transport = selected.Transport.GetValueOrDefault();
+        var transport = selected.Transport!;
         var tracingTimestamp = _TracingBefore(
             transportMsg,
             message.IntentType,
@@ -166,9 +166,7 @@ internal sealed class MessageSender : IMessageSender
         return (decision, OperateResult.Failed(result.Exception!));
     }
 
-    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _ResolveTransportAsync(
-        MediumMessage message
-    )
+    private async Task<(ITransport? Transport, OperateResult? Result)> _ResolveTransportAsync(MediumMessage message)
     {
         if (!Enum.IsDefined(message.IntentType))
         {
@@ -181,15 +179,15 @@ internal sealed class MessageSender : IMessageSender
 
         return message.IntentType switch
         {
-            IntentType.Bus when _busTransport is not null => (DispatchTransport.ForBus(_busTransport), null),
-            IntentType.Queue when _queueTransport is not null => (DispatchTransport.ForQueue(_queueTransport), null),
+            IntentType.Bus when _busTransport is not null => (_busTransport, null),
+            IntentType.Queue when _queueTransport is not null => (_queueTransport, null),
             IntentType.Bus => await _MissingTransportAsync(message, nameof(IBusTransport)).ConfigureAwait(false),
             IntentType.Queue => await _MissingTransportAsync(message, nameof(IQueueTransport)).ConfigureAwait(false),
             _ => throw new UnreachableException(),
         };
     }
 
-    private async Task<(DispatchTransport? Transport, OperateResult? Result)> _MissingTransportAsync(
+    private async Task<(ITransport? Transport, OperateResult? Result)> _MissingTransportAsync(
         MediumMessage message,
         string transportType
     )
@@ -478,16 +476,4 @@ internal sealed class MessageSender : IMessageSender
     }
 
     #endregion
-}
-
-internal readonly record struct DispatchTransport(
-    BrokerAddress BrokerAddress,
-    Func<TransportMessage, CancellationToken, Task<OperateResult>> SendAsync
-)
-{
-    public static DispatchTransport ForBus(IBusTransport transport) =>
-        new(transport.BrokerAddress, transport.SendAsync);
-
-    public static DispatchTransport ForQueue(IQueueTransport transport) =>
-        new(transport.BrokerAddress, transport.SendAsync);
 }
