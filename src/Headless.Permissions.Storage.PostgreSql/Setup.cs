@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Permissions;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
@@ -106,10 +105,10 @@ public static class SetupPermissionsPostgreSql
     {
         public PostgreSqlPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidPgIdentifier();
+            RuleFor(x => x.PermissionGrantsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.PermissionDefinitionsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidPgIdentifier();
         }
     }
 }

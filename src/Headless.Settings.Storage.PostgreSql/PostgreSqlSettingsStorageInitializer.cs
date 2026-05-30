@@ -2,7 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Settings.Entities;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,65 +13,32 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
     IOptions<PostgreSqlSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions,
     ILogger<PostgreSqlSettingsStorageInitializer>? logger = null
-) : IHostedLifecycleService, IInitializer
+) : StorageInitializerBase
 {
     private readonly ILogger<PostgreSqlSettingsStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlSettingsStorageInitializer>.Instance;
 
-    private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    public bool IsInitialized { get; private set; }
-
-    public async Task StartingAsync(CancellationToken cancellationToken)
-    {
-        // On a host restart, swap the completion source atomically and cancel the previous promise
-        // so waiters from the prior run observe OperationCanceledException rather than hanging.
-        // On first start, _completion is the field initializer (no prior waiters to rescue), so
-        // skip the cancel — a fresh TCS is never IsCompleted.
-        if (_completion.Task.IsCompleted)
-        {
-            var previous = Interlocked.Exchange(
-                ref _completion,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
-            // misleadingly attributed to the current run's startup token.
-            previous.TrySetCanceled(CancellationToken.None);
-        }
-
-        try
-        {
-            await InitializeAsync(cancellationToken).ConfigureAwait(false);
-            IsInitialized = true;
-            _completion.TrySetResult();
-        }
-        catch (Exception ex)
-        {
-            _completion.TrySetException(ex);
-            throw;
-        }
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-    {
-        await _completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;
-        var sql = _CreateScript(options);
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        // Split table-creation DDL from index-creation DDL into separate transactions. If a racing
+        // initializer trips 42P07/42710 on the table side, the rollback that follows must not also
+        // wipe the index DDL — those indexes would be skipped on the IsInitialized=true path and the
+        // tables would live without their unique covering indexes until a manual repair.
+        await _RunSchemaAndTablesAsync(connection, options, cancellationToken).ConfigureAwait(false);
+        await _RunIndexesAsync(connection, options, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _RunSchemaAndTablesAsync(
+        NpgsqlConnection connection,
+        SettingsStorageOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql = _CreateSchemaAndTablesScript(options);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -84,12 +50,6 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        // 42P06: schema_already_exists, 42P07: relation_already_exists, 42710: duplicate_object,
-        // 23505: unique_violation on pg_namespace_nspname_index when two transactions race
-        // CREATE SCHEMA IF NOT EXISTS (the IF NOT EXISTS check is not transactional with the
-        // catalog insert). The pg_advisory_xact_lock in _CreateScript serializes ours, but a
-        // foreign initializer running concurrent DDL can still trigger this path — absorb it
-        // and treat the schema as initialized.
         catch (PostgresException ex) when (ex.SqlState is "42P06" or "42P07" or "42710" or "23505")
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
@@ -97,7 +57,32 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         }
     }
 
-    private static string _CreateScript(SettingsStorageOptions options)
+    private async Task _RunIndexesAsync(
+        NpgsqlConnection connection,
+        SettingsStorageOptions options,
+        CancellationToken cancellationToken
+    )
+    {
+        var sql = _CreateIndexesScript(options);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            await using var command = new NpgsqlCommand(sql, connection, transaction)
+            {
+                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
+            };
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (PostgresException ex) when (ex.SqlState is "42P07" or "42710")
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            LogSchemaRaceObserved(_logger, ex.SqlState, ex.MessageText);
+        }
+    }
+
+    private static string _CreateSchemaAndTablesScript(SettingsStorageOptions options)
     {
         var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
         var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
@@ -137,6 +122,19 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
                 "DateUpdated" timestamp with time zone,
                 CONSTRAINT "PK_{options.SettingValuesTableName}" PRIMARY KEY ("Id")
             );
+            """;
+    }
+
+    private static string _CreateIndexesScript(SettingsStorageOptions options)
+    {
+        var valuesTable = _Qualified(options.Schema, options.SettingValuesTableName);
+        var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
+
+        var lockResource = $"headless_settings_init:{options.Schema}";
+        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+
+        return $"""
+            {acquireLock}
 
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingDefinitionsTableName}_Name" ON {definitionsTable} ("Name");
             CREATE UNIQUE INDEX IF NOT EXISTS "IX_{options.SettingValuesTableName}_Name_ProviderName_ProviderKey" ON {valuesTable} ("Name", "ProviderName", "ProviderKey") WHERE "ProviderKey" IS NOT NULL;

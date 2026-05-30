@@ -3,7 +3,6 @@
 using Headless.AuditLog;
 using Headless.Hosting.Initialization;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog.SqlServer;
@@ -11,57 +10,9 @@ namespace Headless.AuditLog.SqlServer;
 internal sealed class SqlServerAuditLogStorageInitializer(
     IOptions<SqlServerAuditLogOptions> providerOptions,
     IOptions<AuditLogStorageOptions> storageOptions
-) : IHostedLifecycleService, IInitializer
+) : StorageInitializerBase
 {
-    private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    public bool IsInitialized { get; private set; }
-
-    public async Task StartingAsync(CancellationToken cancellationToken)
-    {
-        // On a host restart, swap the completion source atomically and cancel the previous promise
-        // so waiters from the prior run observe OperationCanceledException rather than hanging.
-        // On first start, _completion is the field initializer (no prior waiters to rescue), so
-        // skip the cancel — a fresh TCS is never IsCompleted.
-        if (_completion.Task.IsCompleted)
-        {
-            var previous = Interlocked.Exchange(
-                ref _completion,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
-            // misleadingly attributed to the current run's startup token.
-            previous.TrySetCanceled(CancellationToken.None);
-        }
-
-        try
-        {
-            await InitializeAsync(cancellationToken).ConfigureAwait(false);
-            IsInitialized = true;
-            _completion.TrySetResult();
-        }
-        catch (Exception ex)
-        {
-            _completion.TrySetException(ex);
-            throw;
-        }
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-    {
-        await _completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -156,19 +107,33 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
         var releaseLock = $"EXEC sp_releaseapplock @Resource = N'{lockResource}', @LockOwner = N'Session';";
 
+        // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure (constraint-violation,
+        // deadlock victim, network drop) cannot leave the schema half-initialized. CREATE TABLE /
+        // CREATE INDEX inside an explicit transaction are supported by SQL Server. Inner BEGIN TRY
+        // swallow-lists keep soft errors (2714, 1913, 2759) from dooming the outer transaction.
         return $"""
             {acquireLock}
 
             BEGIN TRY
+                BEGIN TRAN;
+
                 {createSchema}
 
                 {createTable}
 
                 {createIndexes}
 
+                COMMIT TRAN;
+
                 {releaseLock}
             END TRY
             BEGIN CATCH
+                -- Roll back the outer transaction on any failure path. XACT_STATE() returns 1 for
+                -- an active transaction, -1 for a doomed-but-still-open transaction (both require
+                -- ROLLBACK), 0 for no active transaction. Skip the ROLLBACK when 0 to avoid raising
+                -- a secondary error that masks the original DDL exception.
+                IF XACT_STATE() <> 0 ROLLBACK TRAN;
+
                 -- Wrap the conditional release in its own TRY/CATCH so a release-side error
                 -- (e.g., transient lock-state inconsistency) does NOT terminate the outer CATCH
                 -- before THROW runs. Without this guard, sp_releaseapplock raising would replace

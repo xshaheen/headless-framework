@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
 using Headless.Permissions;
 using Headless.Permissions.Internal;
 using Headless.Permissions.Repositories;
@@ -56,10 +55,10 @@ public static class SetupPermissions
     {
         public EntityFrameworkPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.PermissionGrantsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.PermissionDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidCrossProviderIdentifier();
         }
     }
 }

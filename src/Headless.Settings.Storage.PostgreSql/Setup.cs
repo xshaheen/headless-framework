@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Settings;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
@@ -106,9 +105,9 @@ public static class SetupSettingsPostgreSql
     {
         public PostgreSqlSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidPgIdentifier();
+            RuleFor(x => x.SettingValuesTableName).IsValidPgIdentifier();
+            RuleFor(x => x.SettingDefinitionsTableName).IsValidPgIdentifier();
         }
     }
 }

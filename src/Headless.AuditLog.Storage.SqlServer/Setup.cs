@@ -5,7 +5,6 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
-using Headless.Constants;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -60,8 +59,8 @@ public static class SetupAuditLogSqlServer
     {
         public SqlServerAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
+            RuleFor(x => x.TableName).IsValidSqlServerIdentifier();
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
             When(x => x.JsonColumnType.HasValue, () =>
             {

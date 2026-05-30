@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
@@ -104,10 +103,10 @@ public static class SetupPermissionsSqlServer
     {
         public SqlServerPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGrantsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
+            RuleFor(x => x.PermissionGrantsTableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.PermissionDefinitionsTableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidSqlServerIdentifier();
         }
     }
 }

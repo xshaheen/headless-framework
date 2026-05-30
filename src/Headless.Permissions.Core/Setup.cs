@@ -4,6 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
@@ -106,33 +107,14 @@ public static class PermissionsSetup
         HeadlessPermissionsSetupBuilder setup
     )
     {
-        if (setup.Extensions.Count != 1)
-        {
-            throw new InvalidOperationException(
-                setup.Extensions.Count == 0
-                    ? "Headless.Permissions requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
-                    : "Headless.Permissions requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        if (serviceCollection.Any(static service => service.ServiceType == typeof(PermissionsStorageProviderRegistration)))
-        {
-            throw new InvalidOperationException(
-                "Headless.Permissions requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        serviceCollection.AddSingleton(
-            new PermissionsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Permissions",
+            static name => new PermissionsStorageProviderRegistration(name)
         );
 
-        serviceCollection.Configure<PermissionsStorageOptions>(options =>
-        {
-            options.Schema = setup.StorageOptions.Schema;
-            options.PermissionGrantsTableName = setup.StorageOptions.PermissionGrantsTableName;
-            options.PermissionDefinitionsTableName = setup.StorageOptions.PermissionDefinitionsTableName;
-            options.PermissionGroupDefinitionsTableName = setup.StorageOptions.PermissionGroupDefinitionsTableName;
-        });
+        serviceCollection.Configure<PermissionsStorageOptions>(options => setup.StorageOptions.CopyTo(options));
 
         foreach (var extension in setup.Extensions)
         {

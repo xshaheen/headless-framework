@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Features;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
@@ -53,10 +52,10 @@ public static class SetupFeaturesSqlServer
     {
         public SqlServerFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
+            RuleFor(x => x.FeatureValuesTableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidSqlServerIdentifier();
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidSqlServerIdentifier();
         }
     }
 }

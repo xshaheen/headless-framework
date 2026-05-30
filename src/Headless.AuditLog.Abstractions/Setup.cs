@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Checks;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -45,28 +46,11 @@ public static class SetupAuditLog
             // is applied here as the AuditLogOptions configurator.
             services.AddHeadlessAuditLog(setup.OptionsConfigurator);
 
-            if (setup.Extensions.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    setup.Extensions.Count == 0
-                        ? "Headless.AuditLog requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
-                        : "Headless.AuditLog requires exactly one storage provider. Multiple storage providers were configured."
-                );
-            }
-
-            // Cross-call guard — calling AddHeadlessAuditLog(setup => …) twice on the same
-            // IServiceCollection would otherwise wire two storage providers (and duplicate
-            // initializers/options/services) without diagnostic. Mirrors the sentinel pattern
-            // already in Settings/Permissions/Features Setup classes.
-            if (services.Any(static d => d.ServiceType == typeof(AuditLogStorageProviderRegistration)))
-            {
-                throw new InvalidOperationException(
-                    "Headless.AuditLog requires exactly one storage provider. Multiple storage providers were configured."
-                );
-            }
-
-            services.AddSingleton(
-                new AuditLogStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+            services.GuardSingleStorageProvider(
+                setup.Extensions.Count,
+                setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+                "Headless.AuditLog",
+                static name => new AuditLogStorageProviderRegistration(name)
             );
 
             services.Configure<AuditLogStorageOptions>(options => setup.StorageOptions.CopyTo(options));

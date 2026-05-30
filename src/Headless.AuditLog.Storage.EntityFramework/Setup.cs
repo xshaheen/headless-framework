@@ -3,7 +3,6 @@
 using FluentValidation;
 using Headless.AuditLog;
 using Headless.AuditLog.Internal;
-using Headless.Constants;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -53,8 +52,8 @@ public static class SetupAuditLogEntityFramework
     {
         public EntityFrameworkAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.TableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.TableName).IsValidCrossProviderIdentifier();
             RuleFor(x => x.JsonColumnType).IsInEnum().When(x => x.JsonColumnType.HasValue);
             RuleFor(x => x.CreatedAtColumnType!)
                 .MaximumLength(64)

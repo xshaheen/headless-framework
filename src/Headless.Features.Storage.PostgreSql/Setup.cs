@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Features;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
@@ -53,10 +52,10 @@ public static class SetupFeaturesPostgreSql
     {
         public PostgreSqlFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureValuesTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.PostgreSql.IdentifierPattern).MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidPgIdentifier();
+            RuleFor(x => x.FeatureValuesTableName).IsValidPgIdentifier();
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidPgIdentifier();
         }
     }
 }

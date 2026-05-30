@@ -3,7 +3,6 @@
 using Headless.Hosting.Initialization;
 using Headless.Permissions.Entities;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Permissions.SqlServer;
@@ -11,57 +10,9 @@ namespace Headless.Permissions.SqlServer;
 internal sealed class SqlServerPermissionsStorageInitializer(
     IOptions<SqlServerPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions
-) : IHostedLifecycleService, IInitializer
+) : StorageInitializerBase
 {
-    private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-    public bool IsInitialized { get; private set; }
-
-    public async Task StartingAsync(CancellationToken cancellationToken)
-    {
-        // On a host restart, swap the completion source atomically and cancel the previous promise
-        // so waiters from the prior run observe OperationCanceledException rather than hanging.
-        // On first start, _completion is the field initializer (no prior waiters to rescue), so
-        // skip the cancel — a fresh TCS is never IsCompleted.
-        if (_completion.Task.IsCompleted)
-        {
-            var previous = Interlocked.Exchange(
-                ref _completion,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
-            // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
-            // misleadingly attributed to the current run's startup token.
-            previous.TrySetCanceled(CancellationToken.None);
-        }
-
-        try
-        {
-            await InitializeAsync(cancellationToken).ConfigureAwait(false);
-            IsInitialized = true;
-            _completion.TrySetResult();
-        }
-        catch (Exception ex)
-        {
-            _completion.TrySetException(ex);
-            throw;
-        }
-    }
-
-    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StoppedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-
-    public async Task WaitForInitializationAsync(CancellationToken cancellationToken = default)
-    {
-        await _completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -85,10 +36,6 @@ internal sealed class SqlServerPermissionsStorageInitializer(
         var groupsObject = $"{options.Schema}.{options.PermissionGroupDefinitionsTableName}";
 
         // Serialize concurrent-startup DDL across replicas with a session-scoped advisory lock.
-        // Without this, multiple hosts racing CREATE INDEX on the same table deadlock on schema-mod
-        // locks (error 1205). The outer TRY/CATCH below guarantees the lock is released on the
-        // failure path; connection-close auto-release is a backstop, not the primary mechanism.
-        // Lock keyed on the schema (multiple tables share it).
         var lockResource = $"headless_permissions_init:{options.Schema}";
         var acquireLock = $"""
             DECLARE @lockResult int;
@@ -183,26 +130,41 @@ internal sealed class SqlServerPermissionsStorageInitializer(
             END CATCH;
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
-                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC);
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+            END CATCH;
+            BEGIN TRY
+                -- Mirror the PG sibling: a filtered unique index for host-scoped grants (TenantId
+                -- IS NULL) so SqlServer's standard NULL-distinct semantics don't allow duplicate
+                -- host grants for the same (Name, ProviderName, ProviderKey).
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId' AND object_id = OBJECT_ID(N'{grantsObject}'))
+                    CREATE UNIQUE NONCLUSTERED INDEX [IX_{options.PermissionGrantsTableName}_Name_ProviderName_ProviderKey_NullTenantId] ON {grantsTable} ([Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
             END CATCH;
             """;
 
-        // Release the advisory lock on every path — success AND failure. Wrapping the DDL body in
-        // an outer TRY/CATCH guarantees the release runs before the connection returns to the pool;
-        // a Session-scoped applock that leaks past the throw would otherwise persist and starve the
-        // next replica's sp_getapplock until the connection is physically reset.
+        // Wrap the DDL body in BEGIN TRAN / COMMIT TRAN so a mid-script failure cannot leave the
+        // schema half-initialized. Inner BEGIN TRY swallow-lists keep soft errors (2714, 1913,
+        // 2759) from dooming the outer transaction.
         return $"""
             {acquireLock}
 
             BEGIN TRY
+                BEGIN TRAN;
+
                 {ddlBody}
+
+                COMMIT TRAN;
 
                 {releaseLock}
             END TRY
             BEGIN CATCH
+                IF XACT_STATE() <> 0 ROLLBACK TRAN;
+
                 -- Wrap the conditional release in its own TRY/CATCH so a release-side error
                 -- (e.g., transient lock-state inconsistency) does NOT terminate the outer CATCH
                 -- before THROW runs. Without this guard, sp_releaseapplock raising would replace

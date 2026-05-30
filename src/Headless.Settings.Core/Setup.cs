@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
 using Headless.Settings.Helpers;
@@ -111,32 +112,14 @@ public static class CoreSettingsSetup
         HeadlessSettingsSetupBuilder setup
     )
     {
-        if (setup.Extensions.Count != 1)
-        {
-            throw new InvalidOperationException(
-                setup.Extensions.Count == 0
-                    ? "Headless.Settings requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
-                    : "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        if (serviceCollection.Any(static service => service.ServiceType == typeof(SettingsStorageProviderRegistration)))
-        {
-            throw new InvalidOperationException(
-                "Headless.Settings requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        serviceCollection.AddSingleton(
-            new SettingsStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Settings",
+            static name => new SettingsStorageProviderRegistration(name)
         );
 
-        serviceCollection.Configure<SettingsStorageOptions>(options =>
-        {
-            options.Schema = setup.StorageOptions.Schema;
-            options.SettingValuesTableName = setup.StorageOptions.SettingValuesTableName;
-            options.SettingDefinitionsTableName = setup.StorageOptions.SettingDefinitionsTableName;
-        });
+        serviceCollection.Configure<SettingsStorageOptions>(options => setup.StorageOptions.CopyTo(options));
 
         foreach (var extension in setup.Extensions)
         {

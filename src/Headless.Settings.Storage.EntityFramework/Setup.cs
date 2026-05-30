@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
 using Headless.Settings;
 using Headless.Settings.Internal;
 using Headless.Settings.Repositories;
@@ -56,9 +55,9 @@ public static class SetupSettings
     {
         public EntityFrameworkSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.SettingValuesTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
-            RuleFor(x => x.SettingDefinitionsTableName).NotEmpty().Matches(StorageIdentifier.SqlServer.IdentifierPattern).MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
+            RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.SettingValuesTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.SettingDefinitionsTableName).IsValidCrossProviderIdentifier();
         }
     }
 }

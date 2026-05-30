@@ -10,6 +10,7 @@ using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -106,28 +107,11 @@ public static class CoreSetup
         HeadlessFeaturesSetupBuilder setup
     )
     {
-        if (setup.Extensions.Count != 1)
-        {
-            throw new InvalidOperationException(
-                setup.Extensions.Count == 0
-                    ? "Headless.Features requires exactly one storage provider. Call one of `UseEntityFramework`, `UsePostgreSql`, or `UseSqlServer`."
-                    : "Headless.Features requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        // Cross-call guard — calling AddHeadlessFeatures(setup => …) twice on the same
-        // IServiceCollection would otherwise wire two storage providers (and duplicate
-        // initializers/options/services) without diagnostic. Mirrors the sentinel pattern
-        // already in Settings/Permissions Setup classes.
-        if (serviceCollection.Any(static d => d.ServiceType == typeof(FeaturesStorageProviderRegistration)))
-        {
-            throw new InvalidOperationException(
-                "Headless.Features requires exactly one storage provider. Multiple storage providers were configured."
-            );
-        }
-
-        serviceCollection.AddSingleton(
-            new FeaturesStorageProviderRegistration(setup.Extensions.Single().GetType().FullName ?? "unknown")
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Features",
+            static name => new FeaturesStorageProviderRegistration(name)
         );
 
         serviceCollection.Configure<FeaturesStorageOptions>(options => setup.StorageOptions.CopyTo(options));
