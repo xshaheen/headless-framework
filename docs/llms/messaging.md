@@ -303,13 +303,13 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
-- **Topic mapping**: Map message types to topics via `options.WithTopicMapping<TMessage>("topic.name")` or conventions.
+- **Message-name mapping**: Map message types to logical message names via `options.WithMessageNameMapping<TMessage>("message.name")` or conventions.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
-- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a topic name. The consumer's return value is automatically published to that topic through the durable bus path with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response topic. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
+- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a response message name. The consumer's return value is automatically published to that message name through the durable bus path with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
@@ -371,7 +371,7 @@ Provides standardized contracts for libraries that need to define message shapes
 ## Key Features
 
 - **Type-Safe Consumption**: `IConsume<TMessage>` with `ConsumeContext<TMessage>` for compile-time verification.
-- **Shared Envelope Contracts**: message IDs, correlation IDs, timestamps, headers, tenant IDs, and topic names.
+- **Shared Envelope Contracts**: message IDs, correlation IDs, timestamps, headers, tenant IDs, and message names.
 - **Publish Options**: `PublishOptions`, `EnqueueOptions`, callback routing, delay, and tenant fields.
 - **Intent Metadata**: `IntentType` distinguishes bus broadcast from queue point-to-point work in storage, dashboard, and telemetry.
 - **Transport Pause/Resume**: `IConsumerClient.PauseAsync`/`ResumeAsync` default interface methods (DIM) for backpressure — idempotent, backward compatible
@@ -426,7 +426,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 | Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
 |---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
 | `MessageId`         | `headless-msg-id`              | yes      | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
-| `MessageName`       | `headless-msg-name`            | yes      | framework    | Topic / message name used for subscriber routing.                                                        |
+| `MessageName`       | `headless-msg-name`            | yes      | framework    | Logical message name used for subscriber routing.                                                        |
 | `Type`              | `headless-msg-type`            | yes      | framework    | .NET type name of the payload, used for deserialization.                                                 |
 | `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
 | `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
@@ -447,12 +447,12 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 
 | Property              | Type                                | Behavior                                                                                                              |
 |-----------------------|-------------------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| `Topic`               | `string?`                           | Explicit topic override. When `null`, the topic resolves from `WithTopicMapping<T>` or convention.                    |
+| `MessageName`         | `string?`                           | Explicit message-name override. When `null`, the message name resolves from `WithMessageNameMapping<T>` or convention.      |
 | `Headers`             | `IDictionary<string, string?>?`     | Custom application headers. Reserved keys (see table above) are rejected at publish time.                             |
 | `MessageId`           | `string?`                           | Logical message identifier override. Bounded by `PublishOptions.MessageIdMaxLength` (200 chars) for durable outbox columns. |
 | `CorrelationId`       | `string?`                           | Saga / flow correlation identifier.                                                                                   |
 | `CorrelationSequence` | `int?`                              | Position within a correlated sequence.                                                                                |
-| `CallbackName`        | `string?`                           | Callback handler topic for response routing.                                                                          |
+| `CallbackName`        | `string?`                           | Callback handler message name for response routing.                                                                   |
 | `TenantId`            | `string?`                           | Multi-tenancy identifier. Source of truth for tenant-side wire header (see Strict Publish Tenancy). Bounded by `PublishOptions.TenantIdMaxLength` (200 chars); whitespace-only values are rejected at publish time. |
 
 ### Tenant Header Integrity
@@ -525,7 +525,7 @@ public sealed class OrderEvents(IOutboxBus bus)
     {
         return bus.PublishAsync(
             message,
-            new PublishOptions { Topic = "orders.placed" },
+            new PublishOptions { MessageName = "orders.placed" },
             cancellationToken);
     }
 }
@@ -575,7 +575,7 @@ public sealed class ImportJobs(IOutboxQueue queue)
     {
         return queue.EnqueueAsync(
             message,
-            new EnqueueOptions { Topic = "imports.requested" },
+            new EnqueueOptions { MessageName = "imports.requested" },
             cancellationToken);
     }
 }
@@ -650,7 +650,7 @@ public sealed class OrderService(IOutboxBus publisher, IOutboxTransaction transa
         using (transaction.Begin())
         {
             // Database changes and message publish are atomic
-            await publisher.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
+            await publisher.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
             await transaction.CommitAsync(ct);
         }
     }
@@ -661,7 +661,7 @@ public sealed class ImportService(IQueue queue)
 {
     public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { MessageName = "imports.requested" }, ct);
     }
 }
 ```
@@ -682,7 +682,7 @@ public sealed class OrderEvents(IOutboxBus bus)
 {
     public Task PublishAsync(OrderPlaced message, CancellationToken ct)
     {
-        return bus.PublishAsync(message, new PublishOptions { Topic = "orders.placed" }, ct);
+        return bus.PublishAsync(message, new PublishOptions { MessageName = "orders.placed" }, ct);
     }
 }
 ```
@@ -701,7 +701,7 @@ public sealed class ImportJobs(IOutboxQueue queue)
 {
     public Task EnqueueAsync(ImportRequested message, CancellationToken ct)
     {
-        return queue.EnqueueAsync(message, new EnqueueOptions { Topic = "imports.requested" }, ct);
+        return queue.EnqueueAsync(message, new EnqueueOptions { MessageName = "imports.requested" }, ct);
     }
 }
 ```
@@ -712,7 +712,7 @@ Legacy publisher contracts remain as compatibility shims. Move old direct publis
 
 ### Callback Headers (Async Response Routing)
 
-Callback headers enable asynchronous message chaining — a consumer processes a message and the framework automatically publishes its return value to a designated response topic. This is **not** request/reply; the publisher does not await a response. A separate consumer must listen on the response topic.
+Callback headers enable asynchronous message chaining — a consumer processes a message and the framework automatically publishes its return value to a designated response message name. This is **not** request/reply; the publisher does not await a response. A separate consumer must listen on the response message name.
 
 **Publishing with a callback:**
 
@@ -723,7 +723,7 @@ await publisher.PublishAsync(
     ct);
 ```
 
-When `CallbackName` is set, the consumer's return value is automatically published to that topic. The response message carries `CorrelationId` (set to the original message ID), an incremented `CorrelationSequence`, and any `TraceParent` header for tracing continuity.
+When `CallbackName` is set, the consumer's return value is automatically published to that message name. The response message carries `CorrelationId` (set to the original message ID), an incremented `CorrelationSequence`, and any `TraceParent` header for tracing continuity.
 
 **Consumer-side header manipulation:**
 
@@ -733,7 +733,7 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 | ------------------------------- | ------------------------------------------------ |
 | `AddResponseHeader(key, value)` | Attach custom headers to the response message    |
 | `RemoveCallback()`              | Suppress response — no message is published back |
-| `RewriteCallback(newTopic)`     | Redirect response to a different topic           |
+| `RewriteCallback(callbackName)` | Redirect response to a different message name    |
 
 **Constraints:**
 
@@ -1108,7 +1108,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ```csharp
 setup.Subscribe<PaymentHandler>()
-    .Topic("payments.process")
+    .MessageName("payments.process")
     .WithCircuitBreaker(cb =>
     {
         cb.FailureThreshold = 3;                    // more sensitive
@@ -1662,7 +1662,7 @@ await publisher.PublishAsync(
     order,
     new PublishOptions
     {
-        Topic = "orders.events",
+        MessageName = "orders.events",
         Headers = new Dictionary<string, string?>
         {
             [AzureServiceBusHeaders.SessionId] = order.CustomerId.ToString()
@@ -1763,7 +1763,7 @@ await publisher.PublishAsync(
     order,
     new PublishOptions
     {
-        Topic = "orders.events",
+        MessageName = "orders.events",
         Headers = new Dictionary<string, string?>
         {
             ["PartitionKey"] = order.CustomerId.ToString()
@@ -1820,7 +1820,7 @@ Enables lightweight, cloud-native messaging using NATS with JetStream for persis
 - **Lightweight**: Minimal resource footprint
 - **Cloud-Native**: Kubernetes-friendly, easy clustering
 - **JetStream**: Persistent streams with at-least-once delivery
-- **Subject Routing**: Hierarchical topic patterns (e.g., `orders.*.created`)
+- **Subject Routing**: Hierarchical subject/message-name patterns (e.g., `orders.*.created`)
 - **Request-Reply**: Built-in RPC support
 
 ## Installation
@@ -2139,7 +2139,7 @@ options.UseRedisPubSub(redis =>
 
 - Registers `IQueueTransport` for Redis Streams when `UseRedis(...)` is called.
 - Registers `IBusTransport` for Redis Pub/Sub when `UseRedisPubSub(...)` is called.
-- Creates Redis Streams and consumer groups for stream topics as needed.
+- Creates Redis Streams and consumer groups for stream message names as needed.
 - Maintains persistent Redis connections.
 - Periodically claims pending stream messages for retry.
 
@@ -2466,7 +2466,7 @@ The harness records every message in four snapshot collections:
 - `harness.Faulted` -- all messages whose consumer threw an unhandled exception
 - `harness.Exhausted` -- all messages whose retry budget was exhausted (`RetryDecision.Exhausted`). Recorded **before** the user-supplied `RetryPolicy.OnExhausted` callback runs, so a hanging or throwing callback cannot lose the observation.
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `Timestamp`, and (for faulted/exhausted) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `Timestamp`, and (for faulted/exhausted) `Exception`.
 
 ## WaitFor\* Methods
 

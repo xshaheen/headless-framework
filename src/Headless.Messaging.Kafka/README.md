@@ -71,7 +71,7 @@ await publisher.PublishAsync(
     order,
     new PublishOptions
     {
-        Topic = "orders.events",
+        MessageName = "orders.events",
         Headers = new Dictionary<string, string?>
         {
             [KafkaHeaders.KafkaKey] = order.CustomerId.ToString()

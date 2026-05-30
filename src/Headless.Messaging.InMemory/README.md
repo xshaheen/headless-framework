@@ -21,8 +21,8 @@ Provides a lightweight, no-infrastructure message queue for local development, t
 - Manual callers should await `IBootstrapper.BootstrapAsync(...)` before publishing or attaching runtime subscriptions.
 - Commit is a no-op.
 - Reject is a no-op. There is no durable redelivery or dead-letter queue.
-- `SubscribeAsync(...)` only registers in-memory topic bindings for the current process.
-- Publishing to an unbound topic still fails fast. `InMemory` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
+- `SubscribeAsync(...)` only registers in-memory message-name bindings for the current process.
+- Publishing to an unbound message name still fails fast. `InMemory` is intentionally strict so tests and local development do not silently hide invalid publish targets or missing consumer registration.
 - Single-threaded consumption preserves queue order. Higher `ConsumerThreadCount` can reorder concurrent handlers.
 - Payload size is limited by process memory.
 
