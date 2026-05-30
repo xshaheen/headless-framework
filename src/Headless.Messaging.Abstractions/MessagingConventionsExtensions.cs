@@ -9,7 +9,7 @@ namespace Headless.Messaging;
 public static class MessagingConventionsExtensions
 {
     /// <summary>
-    /// Configures the messaging conventions to use kebab-case for messageName names.
+    /// Configures the messaging conventions to use kebab-case for message names.
     /// Example: "OrderCreated" becomes "order-created".
     /// </summary>
     public static MessagingConventions UseKebabCaseMessageNames(this MessagingConventions conventions)
@@ -19,7 +19,7 @@ public static class MessagingConventionsExtensions
     }
 
     /// <summary>
-    /// Sets a prefix to prepend to all generated messageName names.
+    /// Sets a prefix to prepend to all generated message names.
     /// </summary>
     /// <param name="conventions">The conventions to configure.</param>
     /// <param name="prefix">The prefix to prepend (e.g., "prod.").</param>
@@ -30,7 +30,7 @@ public static class MessagingConventionsExtensions
     }
 
     /// <summary>
-    /// Sets a suffix to append to all generated messageName names.
+    /// Sets a suffix to append to all generated message names.
     /// </summary>
     /// <param name="conventions">The conventions to configure.</param>
     /// <param name="suffix">The suffix to append (e.g., ".v1").</param>

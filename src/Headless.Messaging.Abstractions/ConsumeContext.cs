@@ -226,7 +226,7 @@ public record ConsumeContext
     /// Used for filtering and routing decisions.
     /// </value>
     /// <remarks>
-    /// The messageName name is useful for:
+    /// The message name is useful for:
     /// <list type="bullet">
     /// <item><description>MessageName-based filtering in multi-type consumers</description></item>
     /// <item><description>Logging and telemetry (which messageName is this message from)</description></item>

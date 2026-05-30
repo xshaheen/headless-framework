@@ -123,7 +123,7 @@ internal sealed class RuntimeConsumerRegistry(
 
         var method = handler.Method;
         var handlerId = _ResolveHandlerId(method, typeof(TMessage), options?.HandlerId);
-        var messageName = _ResolveTopic(typeof(TMessage), options?.MessageName);
+        var messageName = _ResolveMessageName(typeof(TMessage), options?.MessageName);
         var group = _ResolveGroup(handlerId, options?.Group);
         var concurrency = Argument.IsPositive(options?.Concurrency ?? 1);
         var invoker = new RuntimeMessageHandlerInvoker<TMessage>(handler);
@@ -221,16 +221,16 @@ internal sealed class RuntimeConsumerRegistry(
         return invoker != null;
     }
 
-    private string _ResolveTopic(Type messageType, string? explicitTopic)
+    private string _ResolveMessageName(Type messageType, string? explicitMessageName)
     {
-        if (!string.IsNullOrWhiteSpace(explicitTopic))
+        if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
-            return _options.ApplyMessageNamePrefix(explicitTopic!);
+            return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 
-        if (_options.MessageNameMappings.TryGetValue(messageType, out var mappedTopic))
+        if (_options.MessageNameMappings.TryGetValue(messageType, out var mappedMessageName))
         {
-            return _options.ApplyMessageNamePrefix(mappedTopic);
+            return _options.ApplyMessageNamePrefix(mappedMessageName);
         }
 
         return _options.ApplyMessageNamePrefix(_options.Conventions.GetMessageName(messageType));

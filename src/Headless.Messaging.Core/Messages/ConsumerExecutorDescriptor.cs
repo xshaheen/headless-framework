@@ -20,7 +20,7 @@ public sealed class ConsumerExecutorDescriptor
     public string? MessageNamePrefix { get; init; }
 
     /// <summary>
-    /// MessageName name for the consumer. Can be set directly or computed from attributes.
+    /// Message name for the consumer. Can be set directly or computed from attributes.
     /// </summary>
     public required string MessageName { get; init; }
 

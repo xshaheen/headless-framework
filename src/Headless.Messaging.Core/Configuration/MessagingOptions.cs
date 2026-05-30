@@ -55,7 +55,7 @@ public sealed class MessagingOptions
     public string? GroupNamePrefix { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional prefix to be prepended to all messageName names.
+    /// Gets or sets an optional prefix to be prepended to all message names.
     /// </summary>
     public string? MessageNamePrefix { get; set; }
 
@@ -356,16 +356,16 @@ public sealed class MessagingOptions
     }
 
     /// <summary>
-    /// Validates messageName name format and constraints.
+    /// Validates message-name format and constraints.
     /// </summary>
     private static void _ValidateMessageName(string messageName)
     {
-        const int maxTopicLength = 255;
+        const int maxMessageNameLength = 255;
 
-        if (messageName.Length > maxTopicLength)
+        if (messageName.Length > maxMessageNameLength)
         {
             throw new ArgumentException(
-                $"MessageName name '{messageName}' exceeds maximum length of {maxTopicLength} characters.",
+                $"Message name '{messageName}' exceeds maximum length of {maxMessageNameLength} characters.",
                 nameof(messageName)
             );
         }
@@ -373,7 +373,7 @@ public sealed class MessagingOptions
         if (messageName.StartsWith('.') || messageName.EndsWith('.'))
         {
             throw new ArgumentException(
-                $@"MessageName name '{messageName}' cannot start or end with a dot.",
+                $@"Message name '{messageName}' cannot start or end with a dot.",
                 nameof(messageName)
             );
         }
@@ -381,7 +381,7 @@ public sealed class MessagingOptions
         if (messageName.Contains("..", StringComparison.Ordinal))
         {
             throw new ArgumentException(
-                $@"MessageName name '{messageName}' cannot contain consecutive dots.",
+                $@"Message name '{messageName}' cannot contain consecutive dots.",
                 nameof(messageName)
             );
         }
@@ -391,7 +391,7 @@ public sealed class MessagingOptions
             if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
             {
                 throw new ArgumentException(
-                    $@"MessageName name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    $@"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
                     nameof(messageName)
                 );
             }
@@ -412,18 +412,18 @@ public sealed class MessagingOptions
         conventions.Version = Version;
 
         var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
-        var resolvedTopic =
+        var resolvedMessageName =
             messageName
             ?? (MessageNameMappings.TryGetValue(messageType, out var mappedMessageName) ? mappedMessageName : null)
             ?? conventions.GetMessageName(messageType)
             ?? messageType.Name;
-        var finalTopic = ApplyMessageNamePrefix(resolvedTopic);
+        var finalMessageName = ApplyMessageNamePrefix(resolvedMessageName);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 
         return new ConsumerMetadata(
             messageType,
             consumerType,
-            finalTopic,
+            finalMessageName,
             finalGroup,
             concurrency,
             intentType,

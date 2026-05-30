@@ -106,6 +106,28 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
+    public void should_apply_message_name_prefix_after_mapping_for_scanned_consumers()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Options.MessageNamePrefix = "billing";
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
+        orderConsumer.MessageName.Should().Be("billing.orders.placed");
+    }
+
+    [Fact]
     public void should_override_topic_mapping_with_explicit_topic()
     {
         // given

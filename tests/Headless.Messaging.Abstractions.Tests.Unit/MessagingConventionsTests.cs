@@ -231,7 +231,7 @@ public sealed class MessagingConventionsTests : TestBase
     }
 }
 
-// Test types for messageName name generation
+// Test types for message-name generation
 public sealed record OrderPlacedEvent(Guid OrderId);
 
 public sealed record Order(Guid Id);

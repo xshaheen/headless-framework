@@ -19,7 +19,7 @@ public static class MessagingServiceCollectionExtensions
     /// <typeparam name="TConsumer">The consumer type implementing <see cref="IConsume{TMessage}"/>.</typeparam>
     /// <typeparam name="TMessage">The message type to consume. Must be a reference type.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="messageName">The messageName name to subscribe to.</param>
+    /// <param name="messageName">The message name to subscribe to.</param>
     /// <returns>A <see cref="IConsumerBuilder{TConsumer}"/> for fluent configuration.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="services"/> or <paramref name="messageName"/> is null.</exception>
     /// <remarks>

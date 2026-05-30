@@ -619,14 +619,14 @@ internal static partial class AzureServiceBusConsumerClientLog
     [LoggerMessage(
         EventId = 3010,
         Level = LogLevel.Information,
-        Message = "Azure Service Bus created messageName: {TopicPath}"
+        Message = "Azure Service Bus created topic: {TopicPath}"
     )]
     public static partial void TopicCreated(this ILogger logger, string topicPath);
 
     [LoggerMessage(
         EventId = 3011,
         Level = LogLevel.Information,
-        Message = "Azure Service Bus messageName {TopicPath} created subscription: {SubscriptionName}"
+        Message = "Azure Service Bus topic {TopicPath} created subscription: {SubscriptionName}"
     )]
     public static partial void SubscriptionCreated(this ILogger logger, string topicPath, string subscriptionName);
 

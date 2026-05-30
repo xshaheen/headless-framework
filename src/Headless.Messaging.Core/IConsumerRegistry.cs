@@ -30,9 +30,9 @@ public interface IConsumerRegistry
     IReadOnlyList<ConsumerMetadata> GetAll();
 
     /// <summary>
-    /// Finds a consumer by messageName name and optional group.
+    /// Finds a consumer by message name and optional group.
     /// </summary>
-    /// <param name="messageName">The messageName name to search for.</param>
+    /// <param name="messageName">The message name to search for.</param>
     /// <param name="group">Optional consumer group name. If null, returns first match by messageName only.</param>
     /// <returns>
     /// The matching consumer metadata, or null if no consumer is registered for the messageName/group combination.

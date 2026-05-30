@@ -121,10 +121,10 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
     }
 
     /// <summary>
-    /// Attempts to get the messageName executor associated with the specified messageName name and group name from the
+    /// Attempts to get the message executor associated with the specified message name and group name from the
     /// cached descriptor snapshot.
     /// </summary>
-    /// <param name="messageName">The messageName name of the value to get.</param>
+    /// <param name="messageName">The message name of the value to get.</param>
     /// <param name="groupName">The group name of the value to get.</param>
     /// <param name="matchMessageName">messageName executor of the value.</param>
     /// <returns>true if the key was found, otherwise false. </returns>

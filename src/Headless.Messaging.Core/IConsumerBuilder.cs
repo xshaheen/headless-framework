@@ -30,18 +30,18 @@ public interface IConsumerBuilder<TConsumer>
     where TConsumer : class
 {
     /// <summary>
-    /// Overrides the default messageName name for this consumer.
+    /// Overrides the default message name for this consumer.
     /// </summary>
     /// <param name="messageName">
-    /// The messageName name to subscribe to. Must not be null or whitespace.
+    /// The message name to subscribe to. Must not be null or whitespace.
     /// </param>
     /// <returns>
     /// The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.
     /// </returns>
     /// <remarks>
     /// <para>
-    /// By default, consumers subscribe to a messageName named after the message type (e.g., <c>OrderPlaced</c>).
-    /// Use this method to override the convention and subscribe to a custom messageName name.
+    /// By default, consumers subscribe to a message name derived from the message type (e.g., <c>OrderPlaced</c>).
+    /// Use this method to override the convention and subscribe to a custom message name.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>

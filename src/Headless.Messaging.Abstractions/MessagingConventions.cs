@@ -11,18 +11,18 @@ namespace Headless.Messaging;
 public sealed class MessagingConventions
 {
     /// <summary>
-    /// Gets or sets the messageName naming convention to use when generating messageName names from message types.
+    /// Gets or sets the message-name naming convention to use when generating message names from message types.
     /// Default is <see cref="MessageNamingConvention.TypeName"/>.
     /// </summary>
     public MessageNamingConvention MessageNaming { get; set; } = MessageNamingConvention.TypeName;
 
     /// <summary>
-    /// Gets or sets an optional prefix to prepend to all generated messageName names.
+    /// Gets or sets an optional prefix to prepend to all generated message names.
     /// </summary>
     public string? MessageNamePrefix { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional suffix to append to all generated messageName names.
+    /// Gets or sets an optional suffix to append to all generated message names.
     /// </summary>
     public string? MessageNameSuffix { get; set; }
 
@@ -116,10 +116,10 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Generates a messageName name for the specified message type based on the configured conventions.
+    /// Generates a message name for the specified message type based on the configured conventions.
     /// </summary>
-    /// <param name="messageType">The message type to generate a messageName name for.</param>
-    /// <returns>The generated messageName name.</returns>
+    /// <param name="messageType">The message type to generate a message name for.</param>
+    /// <returns>The generated message name.</returns>
     public string GetMessageName(Type messageType)
     {
         Argument.IsNotNull(messageType);
@@ -271,7 +271,7 @@ public sealed class MessagingConventions
 }
 
 /// <summary>
-/// Defines the naming convention to use when generating messageName names from message types.
+/// Defines the naming convention to use when generating message names from message types.
 /// </summary>
 public enum MessageNamingConvention
 {

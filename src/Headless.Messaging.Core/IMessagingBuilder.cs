@@ -97,7 +97,7 @@ public interface IMessagingBuilder
     /// <remarks>
     /// <para>
     /// Use this method when you need fine-grained control over a specific consumer's configuration,
-    /// such as custom messageName names, concurrency limits, or filtering.
+    /// such as custom message names, concurrency limits, or filtering.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -118,7 +118,7 @@ public interface IMessagingBuilder
     /// The consumer type to register. Must implement at least one <see cref="IConsume{TMessage}"/> interface.
     /// </typeparam>
     /// <param name="messageName">
-    /// The messageName name to subscribe to. This automatically creates a messageName mapping for the message type.
+    /// The message name to subscribe to. This automatically creates a message-name mapping for the message type.
     /// </param>
     /// <returns>
     /// An <see cref="IConsumerBuilder{TConsumer}"/> instance for configuring the consumer's behavior.
@@ -131,7 +131,7 @@ public interface IMessagingBuilder
     /// </exception>
     /// <remarks>
     /// <para>
-    /// This is the preferred method for registering consumers as it eliminates messageName name duplication
+    /// This is the preferred method for registering consumers as it eliminates message-name duplication
     /// by automatically creating a messageName mapping for the message type. This enables type-safe publishing
     /// without requiring a separate <see cref="WithMessageNameMapping{TMessage}"/> call.
     /// </para>
@@ -170,7 +170,7 @@ public interface IMessagingBuilder
     /// <exception cref="InvalidOperationException">Thrown if a different messageName is already registered for <typeparamref name="TMessage"/>.</exception>
     /// <remarks>
     /// <para>
-    /// MessageName mappings enable type-safe publishing by associating message types with their destination topics.
+    /// Message-name mappings enable type-safe publishing by associating message types with their destination message names.
     /// This eliminates magic strings and enables compile-time verification of message routing.
     /// </para>
     /// <para>
@@ -196,7 +196,7 @@ public interface IMessagingBuilder
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// Conventions allow automatic messageName name generation from message types, reducing boilerplate
+    /// Conventions allow automatic message-name generation from message types, reducing boilerplate
     /// and ensuring consistent naming across your messaging infrastructure.
     /// </para>
     /// <para>
