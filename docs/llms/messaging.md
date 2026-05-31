@@ -646,7 +646,6 @@ builder.Services.AddHeadlessMessaging(setup =>
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
-
 });
 
 // Publish broadcast messages with outbox (reliable delivery)
@@ -1226,6 +1225,8 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1235,8 +1236,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         dashboard.WithBasicAuth("admin", "password");
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 
 // Access dashboard at: http://localhost:5000/messaging
@@ -1343,6 +1342,8 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1355,8 +1356,6 @@ builder.Services.AddHeadlessMessaging(options =>
         k8s.Namespace = "production";
         k8s.ServiceName = "messaging-service";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1414,12 +1413,12 @@ builder.Services.AddOpenTelemetry()
         .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1549,6 +1548,8 @@ dotnet add package Headless.Messaging.Aws
 ### Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1558,8 +1559,6 @@ builder.Services.AddHeadlessMessaging(options =>
         sqs.Region = RegionEndpoint.USEast1;
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1615,6 +1614,8 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer("connection_string");
@@ -1624,8 +1625,6 @@ builder.Services.AddHeadlessMessaging(options =>
         asb.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
         asb.TopicPath = "myapp";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1727,6 +1726,8 @@ dotnet add package Headless.Messaging.Kafka
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1735,8 +1736,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         kafka.Servers = "localhost:9092";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1838,6 +1837,8 @@ dotnet add package Headless.Messaging.Nats
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1846,8 +1847,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         nats.Servers = "nats://localhost:4222";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1918,6 +1917,8 @@ dotnet add package Headless.Messaging.Pulsar
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1926,8 +1927,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1981,6 +1980,8 @@ dotnet add package Headless.Messaging.RabbitMQ
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -1993,8 +1994,6 @@ builder.Services.AddHeadlessMessaging(options =>
         rmq.Password = "secure_password"; // Required - cannot use 'guest'
         rmq.VirtualHost = "/";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2098,6 +2097,8 @@ dotnet add package Headless.Messaging.Redis
 ### Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -2107,8 +2108,6 @@ builder.Services.AddHeadlessMessaging(options =>
 
     // Broadcast delivery through Redis Pub/Sub.
     options.UseRedisPubSub("localhost:6379");
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2176,12 +2175,12 @@ dotnet add package Headless.Messaging.InMemory
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseInMemory();
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2223,6 +2222,8 @@ dotnet add package Headless.Messaging.PostgreSql
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql(config =>
@@ -2232,8 +2233,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2290,6 +2289,8 @@ dotnet add package Headless.Messaging.SqlServer
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseSqlServer(config =>
@@ -2299,8 +2300,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2357,12 +2356,12 @@ dotnet add package Headless.Messaging.InMemoryStorage
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

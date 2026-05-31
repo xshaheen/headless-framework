@@ -35,12 +35,12 @@ dotnet add package Headless.Messaging.InMemory
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemoryStorage();
     options.UseInMemory();
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

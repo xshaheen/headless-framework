@@ -28,12 +28,12 @@ builder.Services.AddOpenTelemetry()
         .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

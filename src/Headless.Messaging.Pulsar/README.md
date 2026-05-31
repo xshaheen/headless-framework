@@ -23,6 +23,8 @@ dotnet add package Headless.Messaging.Pulsar
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -31,8 +33,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

@@ -23,6 +23,8 @@ dotnet add package Headless.Messaging.Kafka
 ## Quick Start
 
 ```csharp
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UsePostgreSql("connection_string");
@@ -31,8 +33,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         kafka.Servers = "localhost:9092";
     });
-
-    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
