@@ -7,11 +7,11 @@ using var cts = new CancellationTokenSource();
 var container = new ServiceCollection();
 
 container.AddLogging(x => x.AddConsole());
+container.ForMessage<ShowTimeEvent>(message => message.MessageName("sample.console.showtime").OnBus<EventConsumer>());
 
 container
     .AddHeadlessMessaging(setup =>
     {
-        setup.Subscribe<EventConsumer>().MessageName("sample.console.showtime");
         // Console app does not support dashboard
         setup.UseInMemoryStorage();
         setup.UseInMemory();

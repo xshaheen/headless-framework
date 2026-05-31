@@ -33,7 +33,7 @@ builder.Services.AddHeadlessMessaging(options =>
         asb.TopicPath = "myapp";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

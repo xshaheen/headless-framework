@@ -33,7 +33,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

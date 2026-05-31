@@ -75,6 +75,9 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         services.AddSingleton<ScopedExecutionRecorder>();
         services.AddScoped<ScopedExecutionDependency>();
+        services.ForMessage<ScopedMessage>(message =>
+            message.MessageName("scope.class").OnBus<ScopedClassConsumer>(consumer => consumer.Group("scope.class"))
+        );
 
         services
             .AddHeadlessMessaging(options =>
@@ -86,7 +89,6 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
                     c.UseApplicationId("shared-scope-tests");
                     c.UseVersion("v1");
                 });
-                options.Subscribe<ScopedClassConsumer>().MessageName("scope.class").Group("scope.class");
             })
             .AddBusConsumeMiddleware<ScopedExecutionMiddleware>();
 

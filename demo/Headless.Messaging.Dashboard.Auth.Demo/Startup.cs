@@ -68,9 +68,9 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
+        services.ForMessagesFromAssembly(typeof(Startup).Assembly);
         services.AddHeadlessMessaging(setup =>
         {
-            setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -101,9 +101,9 @@ public class Startup
                 configureOptions: null
             );
 
+        services.ForMessagesFromAssembly(typeof(Startup).Assembly);
         services.AddHeadlessMessaging(setup =>
         {
-            setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -151,9 +151,9 @@ public class Startup
                 options.Scope.Add("profile");
             });
 
+        services.ForMessagesFromAssembly(typeof(Startup).Assembly);
         services.AddHeadlessMessaging(setup =>
         {
-            setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
             setup.UseInMemoryStorage();
             setup.UseInMemory();
@@ -164,9 +164,9 @@ public class Startup
 
     public IServiceCollection AddMessagingWithAnonymousAccess(IServiceCollection services)
     {
+        services.ForMessagesFromAssembly(typeof(Startup).Assembly);
         services.AddHeadlessMessaging(setup =>
         {
-            setup.SubscribeFromAssembly(typeof(Startup).Assembly);
             setup.UseDashboard(d => d.WithNoAuth());
             setup.UseInMemoryStorage();
             setup.UseInMemory();

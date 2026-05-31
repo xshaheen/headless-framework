@@ -36,7 +36,7 @@ builder.Services.AddHeadlessMessaging(options =>
         rmq.VirtualHost = "/";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

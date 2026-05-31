@@ -40,7 +40,7 @@ builder.Services.AddHeadlessMessaging(options =>
         k8s.ShowOnlyExplicitVisibleNodes = true;
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

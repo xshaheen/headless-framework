@@ -40,7 +40,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UseInMemoryStorage();
     options.UseInMemory();
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

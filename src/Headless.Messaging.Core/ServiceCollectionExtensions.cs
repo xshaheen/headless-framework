@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -14,89 +15,79 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Registers a broadcast (publish/subscribe) message consumer with the specified message name.
+    /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/>.
     /// </summary>
-    /// <typeparam name="TConsumer">The consumer type implementing <see cref="IConsume{TMessage}"/>.</typeparam>
-    /// <typeparam name="TMessage">The message type to consume. Must be a reference type.</typeparam>
+    /// <typeparam name="TMessage">The message type to register.</typeparam>
     /// <param name="services">The service collection.</param>
-    /// <param name="messageName">The message name to subscribe to.</param>
-    /// <returns>A <see cref="IConsumerBuilder{TConsumer}"/> for fluent configuration.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="services"/> or <paramref name="messageName"/> is null.</exception>
-    /// <remarks>
-    /// <para>
-    /// Use this for publish/subscribe (broadcast) delivery: every subscriber receives its own copy
-    /// of the message. For point-to-point work-queue delivery use
-    /// <see cref="AddQueueConsumer{TConsumer,TMessage}"/> instead.
-    /// </para>
-    /// <para>
-    /// <strong>Example:</strong>
-    /// <code>
-    /// services.AddBusConsumer&lt;OrderPlacedHandler, OrderPlaced&gt;("orders.placed")
-    ///     .Concurrency(10)
-    ///     .WithTimeout(TimeSpan.FromSeconds(30));
-    /// </code>
-    /// </para>
-    /// </remarks>
+    /// <param name="configure">The message registration callback.</param>
+    /// <returns>The current <see cref="IServiceCollection"/> instance.</returns>
     [PublicAPI]
-    public static IConsumerBuilder<TConsumer> AddBusConsumer<TConsumer, TMessage>(
+    public static IServiceCollection ForMessage<TMessage>(
         this IServiceCollection services,
-        string messageName
+        Action<IMessageBuilder<TMessage>> configure
     )
-        where TConsumer : class, IConsume<TMessage>
-        where TMessage : class
-    {
-        return _AddConsumer<TConsumer, TMessage>(services, messageName, IntentType.Bus);
-    }
-
-    /// <summary>
-    /// Registers a point-to-point (work-queue) message consumer with the specified message name.
-    /// </summary>
-    /// <remarks>
-    /// Use this for competing-consumer delivery: exactly one worker in the group receives each
-    /// message. For publish/subscribe (broadcast) delivery use
-    /// <see cref="AddBusConsumer{TConsumer,TMessage}"/> instead.
-    /// </remarks>
-    [PublicAPI]
-    public static IConsumerBuilder<TConsumer> AddQueueConsumer<TConsumer, TMessage>(
-        this IServiceCollection services,
-        string messageName
-    )
-        where TConsumer : class, IConsume<TMessage>
-        where TMessage : class
-    {
-        return _AddConsumer<TConsumer, TMessage>(services, messageName, IntentType.Queue);
-    }
-
-    private static IConsumerBuilder<TConsumer> _AddConsumer<TConsumer, TMessage>(
-        IServiceCollection services,
-        string messageName,
-        IntentType intentType
-    )
-        where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
         Argument.IsNotNull(services);
-        Argument.IsNotNullOrWhiteSpace(messageName);
+        Argument.IsNotNull(configure);
 
-        // Register consumer in DI as scoped service
-        services.TryAddScoped<TConsumer>();
-        services.TryAddScoped<IConsume<TMessage>>(sp => sp.GetRequiredService<TConsumer>());
+        var builder = new MessageBuilder<TMessage>(services);
+        configure(builder);
+        services.AddSingleton(builder.Build());
 
-        // Create consumer metadata
-        var metadata = new ConsumerMetadata(
-            MessageType: typeof(TMessage),
-            ConsumerType: typeof(TConsumer),
-            MessageName: messageName,
-            Group: null,
-            Concurrency: 1,
-            IntentType: intentType,
-            HandlerId: MessagingConventions.GetDefaultHandlerId(typeof(TConsumer), typeof(TMessage))
-        );
+        return services;
+    }
 
-        // Register metadata as singleton for discovery
-        services.AddSingleton(metadata);
+    /// <summary>
+    /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and registers them as bus consumers.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="assembly">The assembly to scan.</param>
+    /// <returns>The current <see cref="IServiceCollection"/> instance.</returns>
+    [PublicAPI]
+    public static IServiceCollection ForMessagesFromAssembly(this IServiceCollection services, Assembly assembly)
+    {
+        Argument.IsNotNull(services);
+        Argument.IsNotNull(assembly);
 
-        // Return fluent builder
-        return new ServiceCollectionConsumerBuilder<TConsumer>(services, metadata);
+        foreach (var (consumerType, messageType) in _FindConsumers(assembly))
+        {
+            services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+
+            var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
+            services.TryAdd(
+                new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
+            );
+
+            services.AddSingleton(MessageRegistrationFactory.CreateScanned(messageType, consumerType));
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/> implementations.
+    /// </summary>
+    /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <returns>The current <see cref="IServiceCollection"/> instance.</returns>
+    [PublicAPI]
+    public static IServiceCollection ForMessagesFromAssemblyContaining<TMarker>(this IServiceCollection services) =>
+        services.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+
+    internal static IEnumerable<(Type ConsumerType, Type MessageType)> FindConsumers(Assembly assembly) =>
+        _FindConsumers(assembly);
+
+    private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
+    {
+        return assembly
+            .GetTypes()
+            .Where(static t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+            .SelectMany(static consumerType =>
+                consumerType
+                    .GetInterfaces()
+                    .Where(static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+                    .Select(i => (ConsumerType: consumerType, MessageType: i.GetGenericArguments()[0]))
+            );
     }
 }

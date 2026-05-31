@@ -90,9 +90,10 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
+        services.ForMessage<CbTestMessage>(message => message.MessageName(_MessageName).OnBus<CbTestConsumer>());
+
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Subscribe<CbTestConsumer>().MessageName(_MessageName);
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

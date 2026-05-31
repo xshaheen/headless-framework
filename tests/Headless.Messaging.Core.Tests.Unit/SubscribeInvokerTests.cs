@@ -18,10 +18,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -45,10 +45,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -73,10 +73,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -106,10 +106,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -146,10 +146,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -192,10 +192,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<CancellableConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<CancellableConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -221,10 +221,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -249,10 +249,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<ResponseHeaderConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<ResponseHeaderConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -280,10 +280,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -311,10 +311,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -341,10 +341,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();
@@ -372,10 +372,10 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
-        });
+        services.ForMessage<InvokerTestMessage>(message =>
+            message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+        );
+        services.AddHeadlessMessaging(static _ => { });
 
         using var provider = services.BuildServiceProvider();
         var invoker = provider.GetRequiredService<ISubscribeInvoker>();

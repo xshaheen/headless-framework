@@ -43,7 +43,7 @@ builder.Services.AddHeadlessMessaging(options =>
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

@@ -294,7 +294,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
-- **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
+- **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>` with `services.ForMessage<TMessage>(...)`. Use `ForMessagesFromAssemblyContaining<TMarker>()` or `ForMessagesFromAssembly(assembly)` for assembly scanning.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
 - **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
@@ -621,12 +621,21 @@ dotnet add package Headless.Messaging.Core
 ## Quick Start
 
 ```csharp
+// Register consumers
+builder.Services.ForMessagesFromAssemblyContaining<Program>();
+
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.UseConventions(c =>
+    {
+        c.UseKebabCaseMessageNames();
+        c.UseApplicationId("ordering-api");
+        c.UseVersion("v1");
+    });
 
     // Add storage (required)
     setup.UsePostgreSql("connection_string");
@@ -638,8 +647,6 @@ builder.Services.AddHeadlessMessaging(setup =>
         rmq.Port = 5672;
     });
 
-    // Register consumers
-    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish broadcast messages with outbox (reliable delivery)
@@ -1107,17 +1114,16 @@ builder.Services.AddHeadlessMessaging(setup =>
 ### Per-Consumer Override
 
 ```csharp
-setup.Subscribe<PaymentHandler>()
-    .MessageName("payments.process")
-    .WithCircuitBreaker(cb =>
+builder.Services.ForMessage<PaymentProcessed>(message =>
+    message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
     {
         cb.FailureThreshold = 3;                    // more sensitive
         cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-    });
+    })));
 
 // Disable circuit breaker for a best-effort consumer
-setup.Subscribe<MetricsHandler>()
-    .WithCircuitBreaker(cb => cb.Enabled = false);
+builder.Services.ForMessage<MetricsUpdated>(message =>
+    message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
 ```
 
 ### Custom Exception Predicate
@@ -1230,7 +1236,7 @@ builder.Services.AddHeadlessMessaging(options =>
         dashboard.WithBasicAuth("admin", "password");
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 
 // Access dashboard at: http://localhost:5000/messaging
@@ -1350,7 +1356,7 @@ builder.Services.AddHeadlessMessaging(options =>
         k8s.ServiceName = "messaging-service";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1413,7 +1419,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1553,7 +1559,7 @@ builder.Services.AddHeadlessMessaging(options =>
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1619,7 +1625,7 @@ builder.Services.AddHeadlessMessaging(options =>
         asb.TopicPath = "myapp";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1730,7 +1736,7 @@ builder.Services.AddHeadlessMessaging(options =>
         kafka.Servers = "localhost:9092";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1841,7 +1847,7 @@ builder.Services.AddHeadlessMessaging(options =>
         nats.Servers = "nats://localhost:4222";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1921,7 +1927,7 @@ builder.Services.AddHeadlessMessaging(options =>
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1988,7 +1994,7 @@ builder.Services.AddHeadlessMessaging(options =>
         rmq.VirtualHost = "/";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2102,7 +2108,7 @@ builder.Services.AddHeadlessMessaging(options =>
     // Broadcast delivery through Redis Pub/Sub.
     options.UseRedisPubSub("localhost:6379");
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2175,7 +2181,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UseInMemoryStorage();
     options.UseInMemory();
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2227,7 +2233,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
     options.UseRabbitMQ(rmq => { /* ... */ });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2294,7 +2300,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
     options.UseRabbitMQ(rmq => { /* ... */ });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2356,7 +2362,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2403,11 +2409,11 @@ Creates its own `ServiceProvider`. Use for unit-style tests that don't need a fu
 ```csharp
 await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
+    services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
     services.AddHeadlessMessaging(options =>
     {
         options.UseInMemory();
         options.UseInMemoryStorage();
-        options.Subscribe<OrderCreatedConsumer>("orders.created");
     });
 });
 
@@ -2441,11 +2447,11 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 
 ```csharp
 // With WebApplication (no factory)
+builder.Services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
 builder.Services.AddHeadlessMessaging(options =>
 {
     options.UseInMemory();
     options.UseInMemoryStorage();
-    options.Subscribe<OrderCreatedConsumer>("orders.created");
 });
 
 // Add the test harness AFTER AddHeadlessMessaging
@@ -2493,7 +2499,7 @@ Lightweight consumer double that captures messages without custom handling logic
 
 ```csharp
 services.AddSingleton<TestConsumer<OrderCreated>>();
-options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
+services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>());
 
 // After publishing...
 var consumer = harness.GetTestConsumer<OrderCreated>();

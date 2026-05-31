@@ -8,11 +8,12 @@ using Headless.Messaging.Dashboard;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddLogging(l => l.AddConsole());
+builder.Services.ForMessage<SampleMessage>(message =>
+    message.MessageName("messaging.sample.tests").OnBus<SampleSubscriber>()
+);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Subscribe<SampleSubscriber>().MessageName("messaging.sample.tests");
-
     setup.UseInMemoryStorage();
     setup.UseAzureServiceBus(asb =>
     {

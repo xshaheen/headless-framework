@@ -29,7 +29,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

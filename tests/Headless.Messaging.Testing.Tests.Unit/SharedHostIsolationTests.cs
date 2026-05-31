@@ -40,8 +40,12 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Subscribe<AlphaConsumer>("alpha-messageName");
-                setup.Subscribe<BetaConsumer>("beta-messageName");
+                services.ForMessage<AlphaEvent>(message =>
+                    message.MessageName("alpha-messageName").OnBus<AlphaConsumer>()
+                );
+                services.ForMessage<BetaEvent>(message =>
+                    message.MessageName("beta-messageName").OnBus<BetaConsumer>()
+                );
             });
         });
     }

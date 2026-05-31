@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
         dashboard.WithBasicAuth("admin", "secret123");
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 
 // Access dashboard at: http://localhost:5000/messaging

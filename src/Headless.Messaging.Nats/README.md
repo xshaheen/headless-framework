@@ -27,7 +27,7 @@ builder.Services.AddHeadlessMessaging(options =>
         nats.Servers = "nats://localhost:4222";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

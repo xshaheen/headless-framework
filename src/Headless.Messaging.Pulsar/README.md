@@ -32,7 +32,7 @@ builder.Services.AddHeadlessMessaging(options =>
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

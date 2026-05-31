@@ -32,7 +32,7 @@ builder.Services.AddHeadlessMessaging(options =>
         kafka.Servers = "localhost:9092";
     });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

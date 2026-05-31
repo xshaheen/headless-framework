@@ -135,11 +135,11 @@ public static class AddDistributedLockExtensions
             // such messages ever flow, so the consumer registration is dead weight.
             if (services.Any(d => d.ServiceType == typeof(IOutboxBus)))
             {
-                services
-                    .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                        "headless.locks.released"
-                    )
-                    .Concurrency(1);
+                services.ForMessage<DistributedLockReleased>(message =>
+                    message
+                        .MessageName("headless.locks.released")
+                        .OnBus<DistributedLockProvider.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
+                );
             }
 
             return services;

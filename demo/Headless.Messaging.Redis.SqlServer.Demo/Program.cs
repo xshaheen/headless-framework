@@ -9,12 +9,10 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddQueueConsumer<PersonConsumer, Person>("test-message");
+builder.Services.ForMessage<Person>(message => message.MessageName("test-message").OnQueue<PersonConsumer>());
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.WithMessageNameMapping<Person>("test-message");
-
     setup.UseRedis(redis =>
     {
         redis.Configuration = ConfigurationOptions.Parse("redis-node-0:6379,password=headless");

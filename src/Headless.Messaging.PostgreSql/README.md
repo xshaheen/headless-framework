@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
 
     options.UseRabbitMQ(rmq => { /* ... */ });
 
-    options.SubscribeFromAssemblyContaining<Program>();
+    builder.Services.ForMessagesFromAssemblyContaining<Program>();
 });
 ```
 

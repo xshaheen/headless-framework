@@ -266,17 +266,16 @@ public sealed class ConsumerRegisterTests : TestBase
         var startupClient = new StartupControlledConsumerClient();
         var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
 
-        await using var provider = _CreateProvider(
-            configureMessaging: options =>
-            {
-                options.Subscribe<BootstrapReadyConsumer>("ready-messageName").Group("ready-group").Concurrency(1);
-            },
-            configureServices: services =>
-            {
-                services.AddSingleton<IConsumerClientFactory>(factory);
-                services.AddSingleton<BootstrapReadyConsumer>();
-            }
-        );
+        await using var provider = _CreateProvider(configureServices: services =>
+        {
+            services.ForMessage<BootstrapReadyMessage>(message =>
+                message
+                    .MessageName("ready-messageName")
+                    .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+            );
+            services.AddSingleton<IConsumerClientFactory>(factory);
+            services.AddSingleton<BootstrapReadyConsumer>();
+        });
 
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
         using var hostCts = new CancellationTokenSource();
@@ -336,6 +335,8 @@ public sealed class ConsumerRegisterTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
+        configureServices?.Invoke(services);
+
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -353,8 +354,6 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             services.AddSingleton(circuitBreakerStateManager);
         }
-
-        configureServices?.Invoke(services);
 
         return services.BuildServiceProvider();
     }
