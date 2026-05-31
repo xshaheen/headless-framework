@@ -108,6 +108,26 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
             .Where(exception => exception.SqlState == PostgresErrorCodes.UniqueViolation);
     }
 
+    [Fact]
+    public async Task should_create_missing_indexes_when_tables_already_exist()
+    {
+        // given
+        await _DropSchemaAsync();
+        await _CreateTablesWithoutIndexesAsync();
+        using var host = _CreateHost();
+
+        // when
+        await host.StartAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await _IndexExistsAsync("IX_FeatureGroupDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureDefinitions_GroupName")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureValues_ProviderName_ProviderKey")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureValues_Name_ProviderName_NullProviderKey")).Should().BeTrue();
+    }
+
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
@@ -146,5 +166,70 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         command.Parameters.AddWithValue("table", tableName);
 
         return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private async Task<bool> _IndexExistsAsync(string indexName)
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM pg_indexes
+                WHERE schemaname = @schema AND indexname = @index
+            )
+            """,
+            connection
+        );
+        command.Parameters.AddWithValue("schema", _Schema);
+        command.Parameters.AddWithValue("index", indexName);
+
+        return (bool)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
+    }
+
+    private async Task _CreateTablesWithoutIndexesAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+        await using var command = new NpgsqlCommand(
+            $"""
+            CREATE SCHEMA IF NOT EXISTS "{_Schema}";
+
+            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureGroupDefinitions" (
+                "Id" uuid NOT NULL,
+                "Name" character varying(128) NOT NULL,
+                "DisplayName" character varying(256) NOT NULL,
+                "ExtraProperties" text NOT NULL,
+                CONSTRAINT "PK_FeatureGroupDefinitions" PRIMARY KEY ("Id")
+            );
+
+            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureDefinitions" (
+                "Id" uuid NOT NULL,
+                "GroupName" character varying(128) NOT NULL,
+                "Name" character varying(128) NOT NULL,
+                "DisplayName" character varying(256) NOT NULL,
+                "ParentName" character varying(128),
+                "Description" character varying(256),
+                "DefaultValue" character varying(256),
+                "IsVisibleToClients" boolean NOT NULL,
+                "IsAvailableToHost" boolean NOT NULL,
+                "Providers" character varying(256),
+                "ExtraProperties" text NOT NULL,
+                CONSTRAINT "PK_FeatureDefinitions" PRIMARY KEY ("Id")
+            );
+
+            CREATE TABLE IF NOT EXISTS "{_Schema}"."FeatureValues" (
+                "Id" uuid NOT NULL,
+                "Name" character varying(128) NOT NULL,
+                "Value" character varying(128) NOT NULL,
+                "ProviderName" character varying(64) NOT NULL,
+                "ProviderKey" character varying(64),
+                CONSTRAINT "PK_FeatureValues" PRIMARY KEY ("Id")
+            );
+            """,
+            connection
+        );
+        await command.ExecuteNonQueryAsync(TestContext.Current.CancellationToken);
     }
 }
