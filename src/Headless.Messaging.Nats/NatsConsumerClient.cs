@@ -55,7 +55,7 @@ internal sealed class NatsConsumerClient(
         _jsContext = new NatsJSContext(_connection);
     }
 
-    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
         if (!_natsOptions.EnableSubscriberClientStreamAndSubjectCreation)
         {

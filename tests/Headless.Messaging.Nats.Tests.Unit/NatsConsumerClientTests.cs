@@ -82,7 +82,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);
         var messageNames = new[] { "topic1", "topic2", "topic3" };
 
-        var result = await client.FetchTopicsAsync(messageNames);
+        var result = await client.FetchMessageNamesAsync(messageNames);
         result.Should().BeEquivalentTo(messageNames);
     }
 

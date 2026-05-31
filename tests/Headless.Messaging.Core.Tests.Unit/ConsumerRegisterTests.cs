@@ -190,7 +190,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 {
                     var client = Substitute.For<IConsumerClient>();
                     client
-                        .FetchTopicsAsync(Arg.Any<IEnumerable<string>>())
+                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>())
                         .Returns(ValueTask.FromResult<ICollection<string>>(["fake-messageName"]));
                     return Task.FromResult(client);
                 }
@@ -405,7 +405,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
@@ -441,7 +441,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
@@ -493,7 +493,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
             return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }

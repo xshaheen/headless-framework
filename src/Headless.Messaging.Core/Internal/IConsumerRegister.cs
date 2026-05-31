@@ -298,7 +298,7 @@ internal sealed class ConsumerRegister(
             {
                 await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType);
                 client.OnLogCallback = _WriteLog;
-                messageNames = await client.FetchTopicsAsync(matchGroup.Value.Select(x => x.MessageName));
+                messageNames = await client.FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName));
             }
             catch (BrokerConnectionException e)
             {

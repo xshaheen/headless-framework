@@ -31,7 +31,7 @@ internal sealed class RedisPubSubConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
 
-    public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> messageNames)
+    public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
         return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(messageNames)]);
     }

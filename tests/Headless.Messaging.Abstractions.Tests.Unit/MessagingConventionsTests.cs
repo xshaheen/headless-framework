@@ -170,9 +170,7 @@ public sealed class MessagingConventionsTests : TestBase
         var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
-        // Note: Due to regex bug with ExplicitCapture, the output is not correct.
-        // See should_generate_topic_name_using_kebab_case_convention for details.
-        topicName.Should().StartWith("app-order").And.EndWith("-messageName");
+        topicName.Should().Be("app-order-placed-event-messageName");
     }
 
     [Fact]
@@ -198,9 +196,7 @@ public sealed class MessagingConventionsTests : TestBase
         var topicName = conventions.GetMessageName(typeof(XmlParser));
 
         // then
-        // Note: Due to regex bug with ExplicitCapture, the output contains literal "$1".
-        // Simply verify it starts with xml (lowercase).
-        topicName.ToLowerInvariant().Should().StartWith("xml");
+        topicName.Should().Be("xml-parser");
     }
 
     [Fact]

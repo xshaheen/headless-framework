@@ -141,7 +141,7 @@ public abstract class ConsumerClientTestsBase : TestBase
         var requestedTopics = new[] { "messageName-1", "messageName-2", "messageName-3" };
 
         // when
-        var result = await consumer.FetchTopicsAsync(requestedTopics);
+        var result = await consumer.FetchMessageNamesAsync(requestedTopics);
 
         // then
         result.Should().NotBeNull();

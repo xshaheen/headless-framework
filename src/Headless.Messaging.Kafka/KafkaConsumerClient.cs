@@ -51,14 +51,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public BrokerAddress BrokerAddress => new("kafka", BrokerAddressDisplay.FormatMany(_kafkaOptions.Servers));
 
-    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topicNames);
+        Argument.IsNotNull(messageNames);
 
         var normalizedTopics = new List<string>();
         var concreteTopicsToCreate = new List<string>();
 
-        foreach (var topicName in topicNames)
+        foreach (var topicName in messageNames)
         {
             if (topicName.Contains('*', StringComparison.Ordinal) || topicName.Contains('#', StringComparison.Ordinal))
             {
