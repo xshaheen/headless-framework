@@ -54,18 +54,26 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     [Fact]
     public async Task should_keep_default_schema_and_table_names_without_storage_configuration()
     {
-        // given
-        await Fixture.ResetAsync();
+        // given — a context that does NOT override ConfigureFeaturesStorage, so the storage
+        // options keep their defaults. Asserting the EF model mapping exercises the no-configuration
+        // path directly, without mutating the shared fixture schema.
+        await using var db = _CreateDefaultSchemaContext();
 
         // when
-        var valuesTableExists = await _TableExistsAsync("features", "FeatureValues");
-        var definitionsTableExists = await _TableExistsAsync("features", "FeatureDefinitions");
-        var groupDefinitionsTableExists = await _TableExistsAsync("features", "FeatureGroupDefinitions");
+        var valuesEntity = db.Model.FindEntityType(typeof(FeatureValueRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(FeatureDefinitionRecord));
+        var groupDefinitionsEntity = db.Model.FindEntityType(typeof(FeatureGroupDefinitionRecord));
 
         // then
-        valuesTableExists.Should().BeTrue();
-        definitionsTableExists.Should().BeTrue();
-        groupDefinitionsTableExists.Should().BeTrue();
+        valuesEntity.Should().NotBeNull();
+        valuesEntity!.GetSchema().Should().Be("features");
+        valuesEntity.GetTableName().Should().Be("FeatureValues");
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be("features");
+        definitionsEntity.GetTableName().Should().Be("FeatureDefinitions");
+        groupDefinitionsEntity.Should().NotBeNull();
+        groupDefinitionsEntity!.GetSchema().Should().Be("features");
+        groupDefinitionsEntity.GetTableName().Should().Be("FeatureGroupDefinitions");
     }
 
     [Fact]
@@ -179,12 +187,34 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
+    private DefaultSchemaFeaturesContext _CreateDefaultSchemaContext()
+    {
+        // No ConfigureStorage call → FeaturesStorageOptions stays at its defaults
+        // (schema "features" + default table names).
+        var options = new DbContextOptionsBuilder<DefaultSchemaFeaturesContext>()
+            .UseNpgsql(Fixture.SqlConnectionString)
+            .Options;
+
+        return new DefaultSchemaFeaturesContext(options, Options.Create(new FeaturesStorageOptions()));
+    }
+
+    private sealed class DefaultSchemaFeaturesContext(
+        DbContextOptions<DefaultSchemaFeaturesContext> options,
+        IOptions<FeaturesStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+        }
+    }
+
     private sealed class SharedFeaturesDbContext(
         DbContextOptions<SharedFeaturesDbContext> options,
         IOptions<FeaturesStorageOptions> storageOptions
     ) : DbContext(options)
     {
-
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);

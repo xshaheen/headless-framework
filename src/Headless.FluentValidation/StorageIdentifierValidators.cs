@@ -18,7 +18,7 @@ public static class StorageIdentifierValidators
     /// Validates a PostgreSQL unquoted identifier (schema/table name): leading letter or
     /// underscore, then letters / digits / underscores, capped at NAMEDATALEN - 1 = 63 chars.
     /// </summary>
-    public static IRuleBuilderOptions<T, string?> IsValidPgIdentifier<T>(this IRuleBuilder<T, string?> rule)
+    public static IRuleBuilderOptions<T, string?> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string?> rule)
     {
         return rule
             .NotEmpty()

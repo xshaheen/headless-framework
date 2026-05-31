@@ -51,16 +51,22 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     [Fact]
     public async Task should_keep_default_schema_and_table_names_without_storage_configuration()
     {
-        // given
-        await Fixture.ResetAsync();
+        // given — a context that does NOT override ConfigureSettingsStorage, so the storage
+        // options keep their defaults. Asserting the EF model mapping exercises the no-configuration
+        // path directly, without mutating the shared fixture schema.
+        await using var db = _CreateDefaultSchemaContext();
 
         // when
-        var valuesTableExists = await _TableExistsAsync("settings", "SettingValues");
-        var definitionsTableExists = await _TableExistsAsync("settings", "SettingDefinitions");
+        var valuesEntity = db.Model.FindEntityType(typeof(SettingValueRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(SettingDefinitionRecord));
 
         // then
-        valuesTableExists.Should().BeTrue();
-        definitionsTableExists.Should().BeTrue();
+        valuesEntity.Should().NotBeNull();
+        valuesEntity!.GetSchema().Should().Be("settings");
+        valuesEntity.GetTableName().Should().Be("SettingValues");
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be("settings");
+        definitionsEntity.GetTableName().Should().Be("SettingDefinitions");
     }
 
     [Fact]
@@ -172,6 +178,29 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         );
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private DefaultSchemaSettingsContext _CreateDefaultSchemaContext()
+    {
+        // No ConfigureStorage call → SettingsStorageOptions stays at its defaults
+        // (schema "settings" + default table names).
+        var options = new DbContextOptionsBuilder<DefaultSchemaSettingsContext>()
+            .UseNpgsql(Fixture.SqlConnectionString)
+            .Options;
+
+        return new DefaultSchemaSettingsContext(options, Options.Create(new SettingsStorageOptions()));
+    }
+
+    private sealed class DefaultSchemaSettingsContext(
+        DbContextOptions<DefaultSchemaSettingsContext> options,
+        IOptions<SettingsStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessSettings(storageOptions.Value);
+        }
     }
 
     private sealed class SharedSettingsContext(

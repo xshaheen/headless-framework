@@ -32,11 +32,11 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
     protected HostApplicationBuilder CreateHostBuilder()
     {
         var builder = Host.CreateApplicationBuilder();
-        ConfigurePermissionsServices(builder);
+        ConfigureFeaturesServices(builder);
         return builder;
     }
 
-    protected void ConfigurePermissionsServices(IHostApplicationBuilder builder)
+    protected void ConfigureFeaturesServices(IHostApplicationBuilder builder)
     {
         var services = builder.Services;
 

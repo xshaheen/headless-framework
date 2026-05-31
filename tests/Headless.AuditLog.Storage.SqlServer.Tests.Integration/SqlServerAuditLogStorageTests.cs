@@ -23,7 +23,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
         var createdAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
@@ -69,7 +69,7 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         await _DropSchemaAsync();
         using var host = _CreateHost();
         await host.StartAsync(TestContext.Current.CancellationToken);
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
         var reader = scope.ServiceProvider.GetRequiredService<IReadAuditLog<object>>();
         var createdAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);

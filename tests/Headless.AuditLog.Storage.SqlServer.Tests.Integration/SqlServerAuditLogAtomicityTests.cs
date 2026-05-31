@@ -31,7 +31,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         accessor.Connection = sharedConnection;
         accessor.Transaction = (SqlTransaction)sharedTransaction;
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
@@ -65,7 +65,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         accessor.Connection = sharedConnection;
         accessor.Transaction = (SqlTransaction)sharedTransaction;
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
@@ -90,7 +90,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         using var host = _CreateHost(accessor);
         await host.StartAsync(TestContext.Current.CancellationToken);
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
@@ -119,7 +119,7 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
         using var host = _CreateHost(accessor);
         await host.StartAsync(TestContext.Current.CancellationToken);
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when — store sees mismatched connection type, warns, and falls back to its own connection

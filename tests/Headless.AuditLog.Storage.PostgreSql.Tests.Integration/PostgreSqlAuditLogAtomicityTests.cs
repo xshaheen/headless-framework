@@ -31,7 +31,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         accessor.Connection = sharedConnection;
         accessor.Transaction = sharedTransaction;
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when — store writes through the shared connection, then we roll back without committing
@@ -65,7 +65,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         accessor.Connection = sharedConnection;
         accessor.Transaction = sharedTransaction;
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when
@@ -90,7 +90,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         using var host = _CreateHost(accessor);
         await host.StartAsync(TestContext.Current.CancellationToken);
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when — no enrollment available, store writes on its own connection and commits
@@ -119,7 +119,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         using var host = _CreateHost(accessor);
         await host.StartAsync(TestContext.Current.CancellationToken);
 
-        using var scope = host.Services.CreateScope();
+        await using var scope = host.Services.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
 
         // when — store sees a mismatched connection type, warns, and falls back to its own connection

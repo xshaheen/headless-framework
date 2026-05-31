@@ -105,9 +105,9 @@ public static class SetupSettingsPostgreSql
     {
         public PostgreSqlSettingsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPgIdentifier();
-            RuleFor(x => x.SettingValuesTableName).IsValidPgIdentifier();
-            RuleFor(x => x.SettingDefinitionsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.SettingValuesTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.SettingDefinitionsTableName).IsValidPostgreSqlIdentifier();
         }
     }
 }

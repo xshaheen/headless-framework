@@ -105,10 +105,10 @@ public static class SetupPermissionsPostgreSql
     {
         public PostgreSqlPermissionsStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPgIdentifier();
-            RuleFor(x => x.PermissionGrantsTableName).IsValidPgIdentifier();
-            RuleFor(x => x.PermissionDefinitionsTableName).IsValidPgIdentifier();
-            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.PermissionGrantsTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.PermissionDefinitionsTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.PermissionGroupDefinitionsTableName).IsValidPostgreSqlIdentifier();
         }
     }
 }

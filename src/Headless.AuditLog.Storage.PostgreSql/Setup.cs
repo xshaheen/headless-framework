@@ -59,8 +59,8 @@ public static class SetupAuditLogPostgreSql
     {
         public PostgreSqlAuditLogStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPgIdentifier();
-            RuleFor(x => x.TableName).IsValidPgIdentifier();
+            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.TableName).IsValidPostgreSqlIdentifier();
             // PG accepts Jsonb (default) or Json; NvarcharMax is a SqlServer column type.
             When(x => x.JsonColumnType.HasValue, () =>
             {

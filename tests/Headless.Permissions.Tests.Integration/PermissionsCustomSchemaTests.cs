@@ -54,18 +54,26 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
     [Fact]
     public async Task should_keep_default_schema_and_table_names_without_storage_configuration()
     {
-        // given
-        await Fixture.ResetAsync();
+        // given — a context that does NOT override ConfigurePermissionsStorage, so the storage
+        // options keep their defaults. Asserting the EF model mapping exercises the no-configuration
+        // path directly, without mutating the shared fixture schema.
+        await using var db = _CreateDefaultSchemaContext();
 
         // when
-        var grantsTableExists = await _TableExistsAsync("permissions", "PermissionGrants");
-        var definitionsTableExists = await _TableExistsAsync("permissions", "PermissionDefinitions");
-        var groupDefinitionsTableExists = await _TableExistsAsync("permissions", "PermissionGroupDefinitions");
+        var grantsEntity = db.Model.FindEntityType(typeof(PermissionGrantRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(PermissionDefinitionRecord));
+        var groupDefinitionsEntity = db.Model.FindEntityType(typeof(PermissionGroupDefinitionRecord));
 
         // then
-        grantsTableExists.Should().BeTrue();
-        definitionsTableExists.Should().BeTrue();
-        groupDefinitionsTableExists.Should().BeTrue();
+        grantsEntity.Should().NotBeNull();
+        grantsEntity!.GetSchema().Should().Be("permissions");
+        grantsEntity.GetTableName().Should().Be("PermissionGrants");
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be("permissions");
+        definitionsEntity.GetTableName().Should().Be("PermissionDefinitions");
+        groupDefinitionsEntity.Should().NotBeNull();
+        groupDefinitionsEntity!.GetSchema().Should().Be("permissions");
+        groupDefinitionsEntity.GetTableName().Should().Be("PermissionGroupDefinitions");
     }
 
     [Fact]
@@ -176,6 +184,29 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         );
 
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private DefaultSchemaPermissionsContext _CreateDefaultSchemaContext()
+    {
+        // No ConfigureStorage call → PermissionsStorageOptions stays at its defaults
+        // (schema "permissions" + default table names).
+        var options = new DbContextOptionsBuilder<DefaultSchemaPermissionsContext>()
+            .UseNpgsql(Fixture.SqlConnectionString)
+            .Options;
+
+        return new DefaultSchemaPermissionsContext(options, Options.Create(new PermissionsStorageOptions()));
+    }
+
+    private sealed class DefaultSchemaPermissionsContext(
+        DbContextOptions<DefaultSchemaPermissionsContext> options,
+        IOptions<PermissionsStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+        }
     }
 
     private sealed class SharedPermissionsContext(

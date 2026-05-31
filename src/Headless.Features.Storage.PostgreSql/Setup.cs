@@ -52,10 +52,10 @@ public static class SetupFeaturesPostgreSql
     {
         public PostgreSqlFeaturesStorageOptionsValidator()
         {
-            RuleFor(x => x.Schema).IsValidPgIdentifier();
-            RuleFor(x => x.FeatureValuesTableName).IsValidPgIdentifier();
-            RuleFor(x => x.FeatureDefinitionsTableName).IsValidPgIdentifier();
-            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidPgIdentifier();
+            RuleFor(x => x.Schema).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.FeatureValuesTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidPostgreSqlIdentifier();
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidPostgreSqlIdentifier();
         }
     }
 }
