@@ -112,6 +112,17 @@ public static class CoreSettingsSetup
         HeadlessSettingsSetupBuilder setup
     )
     {
+        // Ensure management core is registered so consumers no longer need a separate
+        // AddSettingsManagementCore() call. Guarded on ISettingManager so calling both
+        // AddSettingsManagementCore and AddHeadlessSettings stays safe (no duplicate value
+        // providers from the non-idempotent TypeList registrations in _AddCore). The
+        // IStringEncryptionService guard inside _AddCore still fires when it is absent.
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
+        {
+            serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
         serviceCollection.GuardSingleStorageProvider(
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
@@ -134,7 +145,8 @@ public static class CoreSettingsSetup
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
         {
             throw new InvalidOperationException(
-                $"{nameof(IStringEncryptionService)} must be registered before calling {nameof(AddSettingsManagementCore)}. "
+                $"{nameof(IStringEncryptionService)} must be registered before calling "
+                    + $"{nameof(AddHeadlessSettings)} or {nameof(AddSettingsManagementCore)}. "
                     + "Register it via AddStringEncryptionService(...) on IServiceCollection."
             );
         }

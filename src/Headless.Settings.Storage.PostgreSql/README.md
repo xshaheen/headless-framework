@@ -21,8 +21,17 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 
 ## Quick Start
 
+`AddHeadlessSettings(...)` registers the settings management core automatically. Register
+the required services first — `TimeProvider`, caching, distributed lock, and
+`IStringEncryptionService` (the management core throws on startup if encryption is missing).
+
 ```csharp
-builder.Services.AddSettingsManagementCore(_ => { });
+builder.Services.AddCaching();
+builder.Services.AddDistributedLock();
+builder.Services.AddStringEncryptionService(
+    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
+);
+
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "settings");
@@ -37,6 +46,7 @@ Configure schema and table names through `SettingsStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Settings.Core`
+- `Headless.Serializer.Json`
 - `Npgsql`
 
 ## Side Effects

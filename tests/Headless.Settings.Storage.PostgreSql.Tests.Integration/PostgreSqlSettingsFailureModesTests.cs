@@ -5,6 +5,9 @@ using Headless.Settings;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using Headless;
+using Microsoft.Extensions.Configuration;
+using Headless.Settings.Seeders;
 
 namespace Tests;
 
@@ -26,7 +29,8 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             .ThrowAsync<Exception>()
             .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
 
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
+        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+            .Single(x => x is not SettingsInitializationBackgroundService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -53,7 +57,8 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             // then — all initializers report ready, exactly one of each table exists, and the
             // full 3-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
+            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>()
+                    .Single(x => x is not SettingsInitializationBackgroundService).IsInitialized)
                 .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("settings_pg_concurrent", "SettingValues")).Should().Be(1);
             (await _CountTablesAsync("settings_pg_concurrent", "SettingDefinitions")).Should().Be(1);
@@ -71,6 +76,17 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
     private static IHost _CreateHost(string connectionString, string schema = "settings_pg_failure")
     {
         var builder = Host.CreateApplicationBuilder();
+        // unify: management-core deps
+        builder.Services.AddSingleton(TimeProvider.System);
+        // AddHeadlessSettings now registers the management core, which requires IStringEncryptionService.
+        builder.Configuration.AddInMemoryCollection(
+            [
+                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+                new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+            ]
+        );
+        builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
         builder.Services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);

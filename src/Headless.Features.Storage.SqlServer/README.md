@@ -21,8 +21,11 @@ dotnet add package Headless.Features.Storage.SqlServer
 
 ## Quick Start
 
+`AddHeadlessFeatures(...)` registers the features management core automatically. Register
+the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
+`IGuidGenerator`.
+
 ```csharp
-builder.Services.AddFeaturesManagementCore(_ => { });
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "features");
@@ -37,6 +40,7 @@ Configure schema and table names through `FeaturesStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Features.Core`
+- `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects

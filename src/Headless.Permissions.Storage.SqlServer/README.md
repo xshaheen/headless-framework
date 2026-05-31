@@ -21,8 +21,11 @@ dotnet add package Headless.Permissions.Storage.SqlServer
 
 ## Quick Start
 
+`AddHeadlessPermissions(...)` registers the permissions management core automatically.
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
+`IGuidGenerator`.
+
 ```csharp
-builder.Services.AddPermissionsManagementCore(_ => { });
 builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "permissions");
@@ -37,6 +40,7 @@ Configure schema and table names through `PermissionsStorageOptions` on the shar
 ## Dependencies
 
 - `Headless.Permissions.Core`
+- `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects

@@ -107,6 +107,16 @@ public static class CoreSetup
         HeadlessFeaturesSetupBuilder setup
     )
     {
+        // Ensure management core is registered so consumers no longer need a separate
+        // AddFeaturesManagementCore() call. Guarded on IFeatureManager so calling both
+        // AddFeaturesManagementCore and AddHeadlessFeatures stays safe (no duplicate value
+        // providers from the non-idempotent registrations in _AddCore).
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(IFeatureManager)))
+        {
+            serviceCollection.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
         serviceCollection.GuardSingleStorageProvider(
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",

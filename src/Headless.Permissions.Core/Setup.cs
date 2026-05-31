@@ -107,6 +107,16 @@ public static class PermissionsSetup
         HeadlessPermissionsSetupBuilder setup
     )
     {
+        // Ensure management core is registered so consumers no longer need a separate
+        // AddPermissionsManagementCore() call. Guarded on IPermissionGrantStore so calling both
+        // AddPermissionsManagementCore and AddHeadlessPermissions stays safe (no duplicate value
+        // providers / authorization handlers from the non-idempotent registrations in _AddCore).
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(IPermissionGrantStore)))
+        {
+            serviceCollection.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
         serviceCollection.GuardSingleStorageProvider(
             setup.Extensions.Count,
             setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",

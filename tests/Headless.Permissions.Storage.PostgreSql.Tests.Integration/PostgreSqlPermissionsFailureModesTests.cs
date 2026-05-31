@@ -5,6 +5,7 @@ using Headless.Permissions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using Headless.Permissions.Seeders;
 
 namespace Tests;
 
@@ -26,7 +27,8 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             .ThrowAsync<Exception>()
             .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
 
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
+        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+            .Single(x => x is not PermissionsInitializationBackgroundService);
         initializer.IsInitialized.Should().BeFalse();
 
         await FluentActions
@@ -53,7 +55,8 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             // then — all initializers report ready, exactly one of each table exists, and the
             // full 5-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
+            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>()
+                    .Single(x => x is not PermissionsInitializationBackgroundService).IsInitialized)
                 .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("permissions_pg_concurrent", "PermissionGrants")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "PermissionDefinitions")).Should().Be(1);
@@ -72,6 +75,8 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
     private static IHost _CreateHost(string connectionString, string schema = "permissions_pg_failure")
     {
         var builder = Host.CreateApplicationBuilder();
+        // unify: management-core deps
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);

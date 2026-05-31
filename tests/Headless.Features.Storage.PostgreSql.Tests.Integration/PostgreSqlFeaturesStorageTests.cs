@@ -7,6 +7,7 @@ using Headless.Features.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using Headless.Features.Seeders;
 
 namespace Tests;
 
@@ -24,7 +25,8 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
+        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+            .Single(x => x is not FeaturesInitializationBackgroundService);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
         var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");
@@ -131,6 +133,8 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
     private IHost _CreateHost()
     {
         var builder = Host.CreateApplicationBuilder();
+        // unify: management-core deps
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

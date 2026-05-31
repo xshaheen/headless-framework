@@ -8,6 +8,7 @@ using Headless.Permissions.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
+using Headless.Permissions.Seeders;
 
 namespace Tests;
 
@@ -25,7 +26,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
+        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+            .Single(x => x is not PermissionsInitializationBackgroundService);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
         var record = new PermissionGrantRecord(Guid.NewGuid(), "Users.Create", "Role", "admin", isGranted: true);
@@ -146,6 +148,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             builder.Services.AddSingleton(currentTenant);
         }
 
+        // unify: management-core deps
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);
