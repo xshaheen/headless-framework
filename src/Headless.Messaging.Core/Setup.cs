@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.DistributedLocks;
@@ -23,17 +24,59 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class SetupMessaging
 {
+    extension(MessagingSetupBuilder setup)
+    {
+        /// <summary>
+        /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and registers them as bus consumers.
+        /// </summary>
+        /// <param name="assembly">The assembly to scan.</param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssembly(Assembly assembly)
+        {
+            Argument.IsNotNull(assembly);
+
+            foreach (var (consumerType, messageType) in _FindConsumers(assembly))
+            {
+                setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+
+                var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
+                setup.Services.TryAdd(
+                    new ServiceDescriptor(
+                        serviceType,
+                        sp => sp.GetRequiredService(consumerType),
+                        ServiceLifetime.Scoped
+                    )
+                );
+
+                setup.Services.AddSingleton(MessageRegistrationFactory.CreateScanned(messageType, consumerType));
+            }
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/> implementations.
+        /// </summary>
+        /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>() =>
+            setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+    }
+
     /// <summary>
     /// Registers and configures all messaging services, consumers, and transport infrastructure.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">A delegate to configure messaging options, storage, transport, and message consumers.</param>
+    /// <param name="configure">A delegate to configure messaging options, storage, transport, and assembly-scanned message consumers.</param>
     /// <returns>A <see cref="MessagingBuilder"/> for additional messaging configuration.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// This method configures messaging infrastructure. Register consumers with
-    /// <c>services.ForMessage&lt;TMessage&gt;(...)</c> before or inside this callback.
+    /// This method configures messaging infrastructure. Register explicit message consumers with
+    /// <c>services.ForMessage&lt;TMessage&gt;(...)</c> before this callback, or scan assemblies with
+    /// <c>setup.ForMessagesFromAssembly(...)</c> inside this callback.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -50,9 +93,7 @@ public static class SetupMessaging
     ///         rabbit.Port = 5672;
     ///     });
     ///
-    ///     services.ForMessage&lt;OrderPlaced&gt;(message => message
-    ///         .MessageName("orders.placed")
-    ///         .OnBus&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
+    ///     setup.ForMessagesFromAssemblyContaining&lt;Program&gt;();
     /// });
     /// </code>
     /// </para>
@@ -75,6 +116,19 @@ public static class SetupMessaging
         _DiscoverMessageRegistrations(services, setup, registry);
 
         return _RegisterCoreMessagingServices(services, setup);
+    }
+
+    private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
+    {
+        return assembly
+            .GetTypes()
+            .Where(static t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+            .SelectMany(static consumerType =>
+                consumerType
+                    .GetInterfaces()
+                    .Where(static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+                    .Select(i => (ConsumerType: consumerType, MessageType: i.GetGenericArguments()[0]))
+            );
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(

@@ -126,11 +126,11 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
 
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
         });
 
@@ -155,10 +155,10 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
 
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
         });
 

@@ -101,8 +101,8 @@ Three facts from current-state research shape this plan and correct the issue's 
   references produce a compile error, not a deprecation warning.
 - R13. The entire `IMessagingBuilder.Subscribe<T>*` surface (`Subscribe<T>()`, `Subscribe<T>(string)`,
   `Subscribe<T>(Action<...>)`) is deleted.
-- R14. Assembly scanning is preserved as `services.ForMessagesFromAssembly(Assembly)` and
-  `services.ForMessagesFromAssemblyContaining<TMarker>()`, discovering `IConsume<TMessage>`
+- R14. Assembly scanning is preserved as `setup.ForMessagesFromAssembly(Assembly)` and
+  `setup.ForMessagesFromAssemblyContaining<TMarker>()`, discovering `IConsume<TMessage>`
   implementations and registering each as a Bus-intent consumer with an inferred message name —
   matching today's `SubscribeFromAssembly` behavior.
 - R15. The public testing harness (`src/Headless.Messaging.Testing/MessagingTestHarness*.cs`), all
@@ -159,7 +159,7 @@ Three facts from current-state research shape this plan and correct the issue's 
 
 - KTD4 — Full consolidation. Delete `AddBusConsumer` / `AddQueueConsumer`, `ServiceCollectionConsumerBuilder`,
   and the entire `IMessagingBuilder.Subscribe<T>*` surface. Assembly scanning is re-expressed on top of
-  a non-generic, `Type`-based internal registration path that `services.ForMessagesFromAssembly(...)`
+  a non-generic, `Type`-based internal registration path that `setup.ForMessagesFromAssembly(...)`
   drives via reflection (the same closed-`IConsume<T>` discovery `SubscribeFromAssembly` does today).
   *(User decision; broader than the issue's literal scope, which named only the two `AddX` methods.)*
   On origin §2 Non-Goals: "Auto-discovery of handlers (Wolverine-style assembly scanning)" is listed as
@@ -170,7 +170,7 @@ Three facts from current-state research shape this plan and correct the issue's 
 
 - KTD4a — **Scan-vs-explicit precedence.** Assembly scanning defaults to Bus intent (KTD6). Without a
   precedence rule, a consumer already registered explicitly as `OnQueue<C>` that is *also* picked up by
-  `ForMessagesFromAssembly` would register a second time as Bus — different intent, so the
+  `setup.ForMessagesFromAssembly` would register a second time as Bus — different intent, so the
   `(name, group, intent)` guard does not catch it, producing silent dual-lane double delivery. Rule:
   scanning skips a `(consumerType, messageType)` pair already registered explicitly via `ForMessage<T>`
   in **any** lane. Explicit registration wins; scan fills only the gaps.
@@ -208,7 +208,7 @@ Three facts from current-state research shape this plan and correct the issue's 
 flowchart TB
   subgraph pre["Pre-bootstrap (IServiceCollection)"]
     FM["services.ForMessage&lt;T&gt;(x =&gt; ...)"] --> STASH["MessageRegistration stash<br/>(DI singleton)"]
-    FMA["services.ForMessagesFromAssembly(asm)"] -->|reflect closed IConsume&lt;T&gt;| STASH
+    FMA["setup.ForMessagesFromAssembly(asm)"] -->|reflect closed IConsume&lt;T&gt;| STASH
   end
   subgraph boot["AddHeadlessMessaging"]
     STASH --> DISC["Discovery: expand registrations"]
@@ -443,8 +443,8 @@ separated here for review clarity.
 
 ### U5. Assembly scanning on the ForMessage path
 
-- Goal: Add `services.ForMessagesFromAssembly(Assembly)` and
-  `services.ForMessagesFromAssemblyContaining<TMarker>()`, plus the internal non-generic `Type`-based
+- Goal: Add `setup.ForMessagesFromAssembly(Assembly)` and
+  `setup.ForMessagesFromAssemblyContaining<TMarker>()`, plus the internal non-generic `Type`-based
   registration path they drive.
 - Requirements: R13, R6.
 - Dependencies: U1, U3.
@@ -467,7 +467,7 @@ separated here for review clarity.
 - Test scenarios:
   - Assembly with two `IConsume<>` implementations registers two Bus consumers with inferred names.
   - A consumer implementing `IConsume<A>` and `IConsume<B>` registers two specs.
-  - `ForMessagesFromAssemblyContaining<TMarker>()` scans the marker's assembly.
+  - `setup.ForMessagesFromAssemblyContaining<TMarker>()` scans the marker's assembly.
   - Scanned + explicit `ForMessage<T>` for the same type merge (R9 interaction).
   - Scan precedence (KTD4a): explicit `OnQueue<C>` + a scan of `C`'s assembly yields exactly **one**
     Queue registration, not Queue + Bus (guards against silent double delivery).
@@ -530,7 +530,7 @@ separated here for review clarity.
 ### U8. Migrate all messaging tests
 
 - Goal: Convert the ~146 legacy call sites (~110 `Subscribe*` + 36 `AddX`) across the test projects to
-  `ForMessage<T>` / `ForMessagesFromAssembly`.
+  `ForMessage<T>` / `setup.ForMessagesFromAssembly`.
 - Requirements: R14.
 - Dependencies: U1–U7.
 - Files (highest-density first; `dev-code` should re-grep `\.Subscribe<|AddBusConsumer|AddQueueConsumer`
@@ -650,7 +650,7 @@ explicit assembly scanning, per-tenant topology, source-generated registration, 
   logic must be retained (folded into the U2 base) or the types delete cleanly once `Subscribe<T>*` is
   gone. Lean: delete after folding the `Concurrency` guard and CB-override capture into the base.
 - OQ2 — Assembly-scan intent: #357 fixes Bus default (KTD6). If a real driver wants Queue-intent
-  scanning later, it is an additive `ForMessagesFromAssembly(asm, x => x.DefaultIntent(...))` overload —
+  scanning later, it is an additive `setup.ForMessagesFromAssembly(asm, x => x.DefaultIntent(...))` overload —
   not in this PR.
 
 ---

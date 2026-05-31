@@ -24,10 +24,9 @@ dotnet add package Headless.Messaging.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer(config =>
     {
         config.ConnectionString = "Server=localhost;Database=myapp;...";

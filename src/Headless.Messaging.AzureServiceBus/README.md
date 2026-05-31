@@ -23,10 +23,9 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>

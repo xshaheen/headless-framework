@@ -28,10 +28,9 @@ builder.Services.AddOpenTelemetry()
         .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 });

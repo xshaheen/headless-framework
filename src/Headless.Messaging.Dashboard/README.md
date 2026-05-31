@@ -24,10 +24,9 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 

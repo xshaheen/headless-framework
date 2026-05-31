@@ -57,10 +57,10 @@ builder.Services.AddAuthorization(options =>
 });
 
 builder.Services.AddHttpClient();
-builder.Services.ForMessagesFromAssembly(typeof(Program).Assembly);
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
     setup.Options.RetryPolicy.MaxInlineRetries = 0;
     setup.UseInMemoryStorage();

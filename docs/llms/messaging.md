@@ -294,7 +294,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
-- **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>` with `services.ForMessage<TMessage>(...)`. Use `ForMessagesFromAssemblyContaining<TMarker>()` or `ForMessagesFromAssembly(assembly)` for assembly scanning.
+- **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `services.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
 - **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
@@ -621,12 +621,11 @@ dotnet add package Headless.Messaging.Core
 ## Quick Start
 
 ```csharp
-// Register consumers
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssemblyContaining<Program>();
+
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     setup.Options.RetryPolicy.MaxPersistedRetries = 50;
@@ -1225,10 +1224,9 @@ dotnet add package Headless.Messaging.Dashboard
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -1342,10 +1340,9 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -1413,10 +1410,9 @@ builder.Services.AddOpenTelemetry()
         .AddMessagingInstrumentation()
         .AddJaegerExporter());
 
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 });
@@ -1548,10 +1544,9 @@ dotnet add package Headless.Messaging.Aws
 ### Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseAws(sqs =>
@@ -1614,10 +1609,9 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>
@@ -1726,10 +1720,9 @@ dotnet add package Headless.Messaging.Kafka
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseKafka(kafka =>
@@ -1837,10 +1830,9 @@ dotnet add package Headless.Messaging.Nats
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseNats(nats =>
@@ -1917,10 +1909,9 @@ dotnet add package Headless.Messaging.Pulsar
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UsePulsar(pulsar =>
@@ -1980,10 +1971,9 @@ dotnet add package Headless.Messaging.RabbitMQ
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMQ(rmq =>
@@ -2097,10 +2087,9 @@ dotnet add package Headless.Messaging.Redis
 ### Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     // Queue delivery through Redis Streams.
@@ -2175,10 +2164,9 @@ dotnet add package Headless.Messaging.InMemory
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseInMemory();
 });
@@ -2222,10 +2210,9 @@ dotnet add package Headless.Messaging.PostgreSql
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql(config =>
     {
         config.ConnectionString = "Host=localhost;Database=myapp;...";
@@ -2289,10 +2276,9 @@ dotnet add package Headless.Messaging.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer(config =>
     {
         config.ConnectionString = "Server=localhost;Database=myapp;...";
@@ -2356,10 +2342,9 @@ dotnet add package Headless.Messaging.InMemoryStorage
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
 });

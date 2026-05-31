@@ -4,10 +4,9 @@ var builder = WebApplication.CreateBuilder(args);
 
 var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar://localhost:6650");
 
-builder.Services.ForMessagesFromAssembly(typeof(Program).Assembly);
-
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.UseInMemoryStorage();
     setup.UsePulsar(pulsarUri);
     setup.UseDashboard(d => d.WithNoAuth());

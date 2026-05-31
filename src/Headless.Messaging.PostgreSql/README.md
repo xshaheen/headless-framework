@@ -24,10 +24,9 @@ dotnet add package Headless.Messaging.PostgreSql
 ## Quick Start
 
 ```csharp
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql(config =>
     {
         config.ConnectionString = "Host=localhost;Database=myapp;...";

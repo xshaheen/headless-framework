@@ -31,12 +31,11 @@ dotnet add package Headless.Messaging.Core
 ## Quick Start
 
 ```csharp
-// Register consumers
-builder.Services.ForMessagesFromAssemblyContaining<Program>();
-
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssemblyContaining<Program>();
+
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     setup.Options.RetryPolicy.MaxPersistedRetries = 50;
@@ -88,7 +87,7 @@ public sealed class ImportService(IQueue queue)
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `ForMessage<TMessage>(...)` is the primary registration API. `MessageName(...)` sets the publish and consume name for that message type; `OnBus<TConsumer>()` registers broadcast delivery and `OnQueue<TConsumer>()` registers point-to-point delivery.
 - `ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a publisher-only message-name mapping.
-- `ForMessagesFromAssembly(...)` and `ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register scanned consumers as bus consumers.
+- `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback.
 - message-name mappings are type-level. Re-registering the same message type merges consumers; mapping two different message types to the same resolved message name fails at startup.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.

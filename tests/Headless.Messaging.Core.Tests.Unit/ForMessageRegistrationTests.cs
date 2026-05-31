@@ -271,9 +271,9 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -294,9 +294,9 @@ public sealed class ForMessageRegistrationTests
 
         // when
         services.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedHandler>());
-        services.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
