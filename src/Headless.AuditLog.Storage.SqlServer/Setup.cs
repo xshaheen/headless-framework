@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -43,6 +44,7 @@ public static class SetupAuditLogSqlServer
             services.Configure<SqlServerAuditLogOptions, SqlServerAuditLogOptionsValidator>(configure);
             services.AddOptions<AuditLogStorageOptions, SqlServerAuditLogStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerAuditLogStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<SqlServerAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, SqlServerAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(SqlServerAuditLog<>));

@@ -2,10 +2,10 @@
 
 using System.Collections.Concurrent;
 using System.Text;
-using System.Text.Json;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Primitives;
+using Headless.Serializer;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -13,12 +13,11 @@ namespace Headless.Features.PostgreSql;
 
 internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
-    IOptions<FeaturesStorageOptions> storageOptions
+    IOptions<FeaturesStorageOptions> storageOptions,
+    IJsonSerializer serializer
 ) : IFeatureDefinitionRecordRepository
 {
     private const int _MaxRowsPerInsert = 500;
-
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ConcurrentDictionary<int, string> _insertGroupBatchSql = new();
     private readonly ConcurrentDictionary<int, string> _insertFeatureBatchSql = new();
@@ -177,7 +176,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
                 command.Parameters.AddWithValue($"Id_{i}", record.Id);
                 command.Parameters.AddWithValue($"Name_{i}", record.Name);
                 command.Parameters.AddWithValue($"DisplayName_{i}", record.DisplayName);
-                command.Parameters.AddWithValue($"ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+                command.Parameters.AddWithValue($"ExtraProperties_{i}", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
             }
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -213,14 +212,14 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
                 command.Parameters.AddWithValue($"IsVisibleToClients_{i}", record.IsVisibleToClients);
                 command.Parameters.AddWithValue($"IsAvailableToHost_{i}", record.IsAvailableToHost);
                 command.Parameters.AddWithValue($"Providers_{i}", (object?)record.Providers ?? DBNull.Value);
-                command.Parameters.AddWithValue($"ExtraProperties_{i}", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+                command.Parameters.AddWithValue($"ExtraProperties_{i}", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
             }
 
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task _ExecuteGroupAsync(
+    private async Task _ExecuteGroupAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -236,11 +235,11 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         command.Parameters.AddWithValue("Id", record.Id);
         command.Parameters.AddWithValue("Name", record.Name);
         command.Parameters.AddWithValue("DisplayName", record.DisplayName);
-        command.Parameters.AddWithValue("ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        command.Parameters.AddWithValue("ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async Task _ExecuteFeatureAsync(
+    private async Task _ExecuteFeatureAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string sql,
@@ -263,7 +262,7 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
         command.Parameters.AddWithValue("IsVisibleToClients", record.IsVisibleToClients);
         command.Parameters.AddWithValue("IsAvailableToHost", record.IsAvailableToHost);
         command.Parameters.AddWithValue("Providers", (object?)record.Providers ?? DBNull.Value);
-        command.Parameters.AddWithValue("ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        command.Parameters.AddWithValue("ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -354,6 +353,6 @@ internal sealed class PostgreSqlFeatureDefinitionRecordRepository(
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
-    private static ExtraProperties _DeserializeExtraProperties(string json) =>
-        JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json) =>
+        serializer.Deserialize<ExtraProperties>(json) ?? [];
 }

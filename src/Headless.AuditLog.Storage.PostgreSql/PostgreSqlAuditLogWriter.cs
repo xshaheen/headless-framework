@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using System.Text;
-using System.Text.Json;
 using Headless.AuditLog;
+using Headless.Serializer;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -11,12 +11,11 @@ namespace Headless.AuditLog.PostgreSql;
 
 internal sealed class PostgreSqlAuditLogWriter(
     IOptions<PostgreSqlAuditLogOptions> providerOptions,
-    IOptions<AuditLogStorageOptions> storageOptions
+    IOptions<AuditLogStorageOptions> storageOptions,
+    IJsonSerializer serializer
 )
 {
     private const int _MaxRowsPerCommand = 500;
-
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ConcurrentDictionary<int, string> _sqlByRowCount = new();
 
@@ -160,7 +159,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         return builder.ToString();
     }
 
-    private static void _AddParameters(
+    private void _AddParameters(
         NpgsqlCommand command,
         IReadOnlyList<AuditLogEntryData> entries,
         int offset,
@@ -191,7 +190,7 @@ internal sealed class PostgreSqlAuditLogWriter(
         }
     }
 
-    private static string? _Serialize<T>(T? value) => value is null ? null : JsonSerializer.Serialize(value, _JsonOptions);
+    private string? _Serialize<T>(T? value) => serializer.SerializeToString(value);
 
     private static NpgsqlParameter _Param(string name, object? value) => new(name, value ?? DBNull.Value);
 }

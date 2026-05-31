@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Features;
 using Headless.Features.PostgreSql;
 using Headless.Features.Repositories;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -43,6 +44,7 @@ public static class SetupFeaturesPostgreSql
             services.Configure<PostgreSqlFeaturesOptions, PostgreSqlFeaturesOptionsValidator>(configure);
             services.AddOptions<FeaturesStorageOptions, PostgreSqlFeaturesStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlFeaturesStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IFeatureValueRecordRepository, PostgreSqlFeatureValueRecordRepository>();
             services.TryAddSingleton<IFeatureDefinitionRecordRepository, PostgreSqlFeatureDefinitionRecordRepository>();
         }

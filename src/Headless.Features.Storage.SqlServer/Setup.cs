@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Features;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -43,6 +44,7 @@ public static class SetupFeaturesSqlServer
             services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(configure);
             services.AddOptions<FeaturesStorageOptions, SqlServerFeaturesStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerFeaturesStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IFeatureValueRecordRepository, SqlServerFeatureValueRecordRepository>();
             services.TryAddSingleton<IFeatureDefinitionRecordRepository, SqlServerFeatureDefinitionRecordRepository>();
         }

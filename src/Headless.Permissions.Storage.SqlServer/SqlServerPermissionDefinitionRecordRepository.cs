@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
 using Headless.Primitives;
+using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -11,11 +11,10 @@ namespace Headless.Permissions.SqlServer;
 
 internal sealed class SqlServerPermissionDefinitionRecordRepository(
     IOptions<SqlServerPermissionsOptions> providerOptions,
-    IOptions<PermissionsStorageOptions> storageOptions
+    IOptions<PermissionsStorageOptions> storageOptions,
+    IJsonSerializer serializer
 ) : IPermissionDefinitionRecordRepository
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<List<PermissionDefinitionRecord>> GetPermissionsListAsync(
         CancellationToken cancellationToken = default
     )
@@ -148,7 +147,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@Name", record.Name);
         command.Parameters.AddWithValue("@DisplayName", record.DisplayName);
-        command.Parameters.AddWithValue("@ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -171,7 +170,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         command.Parameters.AddWithValue("@IsEnabled", record.IsEnabled);
         command.Parameters.AddWithValue("@ParentName", (object?)record.ParentName ?? DBNull.Value);
         command.Parameters.AddWithValue("@Providers", (object?)record.Providers ?? DBNull.Value);
-        command.Parameters.AddWithValue("@ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -211,6 +210,6 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     private string _DeletePermissionSql() =>
         $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE [Id]=@Id;""";
 
-    private static ExtraProperties _DeserializeExtraProperties(string json) =>
-        JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json) =>
+        serializer.Deserialize<ExtraProperties>(json) ?? [];
 }

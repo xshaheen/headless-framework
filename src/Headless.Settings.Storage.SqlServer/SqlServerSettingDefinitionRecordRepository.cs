@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Headless.Primitives;
+using Headless.Serializer;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
 using Microsoft.Data.SqlClient;
@@ -11,11 +11,10 @@ namespace Headless.Settings.SqlServer;
 
 internal sealed class SqlServerSettingDefinitionRecordRepository(
     IOptions<SqlServerSettingsOptions> providerOptions,
-    IOptions<SettingsStorageOptions> storageOptions
+    IOptions<SettingsStorageOptions> storageOptions,
+    IJsonSerializer serializer
 ) : ISettingDefinitionRecordRepository
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         var sql =
@@ -110,7 +109,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         command.Parameters.AddWithValue("@IsVisibleToClients", record.IsVisibleToClients);
         command.Parameters.AddWithValue("@IsInherited", record.IsInherited);
         command.Parameters.AddWithValue("@IsEncrypted", record.IsEncrypted);
-        command.Parameters.AddWithValue("@ExtraProperties", JsonSerializer.Serialize(record.ExtraProperties, _JsonOptions));
+        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -123,8 +122,8 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
     private string _DeleteSql() =>
         $"""DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE [Id]=@Id;""";
 
-    private static ExtraProperties _DeserializeExtraProperties(string json) =>
-        JsonSerializer.Deserialize<ExtraProperties>(json, _JsonOptions) ?? [];
+    private ExtraProperties _DeserializeExtraProperties(string json) =>
+        serializer.Deserialize<ExtraProperties>(json) ?? [];
 
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 }

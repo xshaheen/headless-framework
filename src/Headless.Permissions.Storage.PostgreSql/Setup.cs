@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Permissions;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
+using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -96,6 +97,7 @@ public static class SetupPermissionsPostgreSql
 
             services.AddOptions<PermissionsStorageOptions, PostgreSqlPermissionsStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, PostgreSqlPermissionDefinitionRecordRepository>();
         }

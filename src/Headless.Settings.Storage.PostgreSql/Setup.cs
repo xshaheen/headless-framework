@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Serializer;
 using Headless.Settings;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
@@ -96,6 +97,7 @@ public static class SetupSettingsPostgreSql
 
             services.AddOptions<SettingsStorageOptions, PostgreSqlSettingsStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();
         }

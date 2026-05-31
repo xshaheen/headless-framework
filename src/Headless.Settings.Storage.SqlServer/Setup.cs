@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Serializer;
 using Headless.Settings;
 using Headless.Settings.Repositories;
 using Headless.Settings.SqlServer;
@@ -94,6 +95,7 @@ public static class SetupSettingsSqlServer
 
             services.AddOptions<SettingsStorageOptions, SqlServerSettingsStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerSettingsStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<ISettingValueRecordRepository, SqlServerSettingValueRecordRepository>();
             services.TryAddSingleton<ISettingDefinitionRecordRepository, SqlServerSettingDefinitionRecordRepository>();
         }

@@ -10,5 +10,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
   </ItemGroup>
 </Project>

@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Permissions;
 using Headless.Permissions.Repositories;
 using Headless.Permissions.SqlServer;
+using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -94,6 +95,7 @@ public static class SetupPermissionsSqlServer
 
             services.AddOptions<PermissionsStorageOptions, SqlServerPermissionsStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
             services.TryAddSingleton<IPermissionDefinitionRecordRepository, SqlServerPermissionDefinitionRecordRepository>();
         }

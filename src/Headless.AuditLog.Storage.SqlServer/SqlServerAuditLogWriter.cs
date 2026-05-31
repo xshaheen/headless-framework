@@ -2,8 +2,8 @@
 
 using System.Collections.Concurrent;
 using System.Text;
-using System.Text.Json;
 using Headless.AuditLog;
+using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -11,12 +11,11 @@ namespace Headless.AuditLog.SqlServer;
 
 internal sealed class SqlServerAuditLogWriter(
     IOptions<SqlServerAuditLogOptions> providerOptions,
-    IOptions<AuditLogStorageOptions> storageOptions
+    IOptions<AuditLogStorageOptions> storageOptions,
+    IJsonSerializer serializer
 )
 {
     private const int _MaxRowsPerCommand = 100;
-
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
 
     private readonly ConcurrentDictionary<int, string> _sqlByRowCount = new();
 
@@ -158,7 +157,7 @@ internal sealed class SqlServerAuditLogWriter(
         return builder.ToString();
     }
 
-    private static void _AddParameters(
+    private void _AddParameters(
         SqlCommand command,
         IReadOnlyList<AuditLogEntryData> entries,
         int offset,
@@ -189,7 +188,7 @@ internal sealed class SqlServerAuditLogWriter(
         }
     }
 
-    private static string? _Serialize<T>(T? value) => value is null ? null : JsonSerializer.Serialize(value, _JsonOptions);
+    private string? _Serialize<T>(T? value) => serializer.SerializeToString(value);
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
 }

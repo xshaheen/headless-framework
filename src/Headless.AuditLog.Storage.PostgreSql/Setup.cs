@@ -5,6 +5,7 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -43,6 +44,7 @@ public static class SetupAuditLogPostgreSql
             services.Configure<PostgreSqlAuditLogOptions, PostgreSqlAuditLogOptionsValidator>(configure);
             services.AddOptions<AuditLogStorageOptions, PostgreSqlAuditLogStorageOptionsValidator>();
             services.AddInitializerHostedService<PostgreSqlAuditLogStorageInitializer>();
+            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<PostgreSqlAuditLogWriter>();
             services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
             services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));

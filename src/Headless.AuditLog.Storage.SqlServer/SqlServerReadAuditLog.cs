@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Text.Json;
 using Headless.AuditLog;
+using Headless.Serializer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -9,11 +9,10 @@ namespace Headless.AuditLog.SqlServer;
 
 internal sealed class SqlServerReadAuditLog<TContext>(
     IOptions<SqlServerAuditLogOptions> providerOptions,
-    IOptions<AuditLogStorageOptions> storageOptions
+    IOptions<AuditLogStorageOptions> storageOptions,
+    IJsonSerializer serializer
 ) : IReadAuditLog<TContext>
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<IReadOnlyList<AuditLogEntryData>> QueryAsync(
         string? action = null,
         string? entityType = null,
@@ -111,14 +110,14 @@ internal sealed class SqlServerReadAuditLog<TContext>(
     private static async Task<string?> _GetStringAsync(SqlDataReader reader, int ordinal, CancellationToken cancellationToken) =>
         await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(ordinal);
 
-    private static async Task<T?> _DeserializeAsync<T>(SqlDataReader reader, int ordinal, CancellationToken cancellationToken)
+    private async Task<T?> _DeserializeAsync<T>(SqlDataReader reader, int ordinal, CancellationToken cancellationToken)
     {
         if (await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false))
         {
             return default;
         }
 
-        return JsonSerializer.Deserialize<T>(reader.GetString(ordinal), _JsonOptions);
+        return serializer.Deserialize<T>(reader.GetString(ordinal));
     }
 
     private static SqlParameter _Param(string name, object? value) => new($"@{name}", value ?? DBNull.Value);
