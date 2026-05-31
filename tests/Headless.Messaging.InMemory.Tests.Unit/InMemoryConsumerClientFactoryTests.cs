@@ -111,8 +111,8 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var client1 = await _factory.CreateAsync("group-1", 1);
         var client2 = await _factory.CreateAsync("group-2", 1);
 
-        await client1.SubscribeAsync(["shared-topic"]);
-        await client2.SubscribeAsync(["shared-topic"]);
+        await client1.SubscribeAsync(["shared-messageName"]);
+        await client2.SubscribeAsync(["shared-messageName"]);
 
         var messages1 = new List<object>();
         var messages2 = new List<object>();
@@ -158,7 +158,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "test-id",
-            [Headers.MessageName] = "shared-topic",
+            [Headers.MessageName] = "shared-messageName",
         };
         var message = new Headless.Messaging.Messages.TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
         _queue.SendBus(message);

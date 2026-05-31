@@ -31,7 +31,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
     {
         await producer.PublishAsync(
             new Person { Id = 123, Name = "Bar" },
-            new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
+            new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" }
         );
 
         return Ok();
@@ -42,7 +42,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
     {
         await producer.PublishAsync(
             new Person { Id = 123, Name = "Bar" },
-            new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new PublishOptions { MessageName = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
@@ -64,7 +64,11 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
 
             await producer.PublishAsync(
                 new Person { Id = 123, Name = "Bar" },
-                new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(delaySeconds) }
+                new PublishOptions
+                {
+                    MessageName = "sample.rabbitmq.sqlserver",
+                    Delay = TimeSpan.FromSeconds(delaySeconds),
+                }
             );
         }
 
@@ -80,7 +84,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
         {
             await using var transaction = await connection.BeginTransactionAsync(outboxTransaction, autoCommit: false);
 
-            await producer.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
+            await producer.PublishAsync(person, new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" });
 
             await connection.ExecuteAsync(
                 "INSERT INTO Persons(Name,Age,CreateTime) VALUES(@Name,@Age, GETDATE())",
@@ -90,7 +94,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
 
             await producer.PublishAsync(
                 person,
-                new PublishOptions { Topic = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(5) }
+                new PublishOptions { MessageName = "sample.rabbitmq.sqlserver", Delay = TimeSpan.FromSeconds(5) }
             );
 
             await ((DbTransaction)transaction.DbTransaction!).CommitAsync();
@@ -98,7 +102,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
 
         person.Name = new RealNameGenerator().Generate();
 
-        await producer.PublishAsync(person, new PublishOptions { Topic = "sample.rabbitmq.sqlserver" });
+        await producer.PublishAsync(person, new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" });
 
         return Ok();
     }
@@ -112,7 +116,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
             await dbContext.SaveChangesAsync();
             await producer.PublishAsync(
                 new Person { Id = 123, Name = "Bar" },
-                new PublishOptions { Topic = "sample.rabbitmq.sqlserver" }
+                new PublishOptions { MessageName = "sample.rabbitmq.sqlserver" }
             );
         }
         return Ok();
@@ -133,7 +137,7 @@ public class ValuesController(IOutboxBus producer, IOutboxTransaction outboxTran
 
             var message = TestMessage.Create($"This is message text created at {DateTime.UtcNow:O}.");
 
-            await producer.PublishAsync(message, new PublishOptions { Topic = typeof(TestMessage).FullName! });
+            await producer.PublishAsync(message, new PublishOptions { MessageName = typeof(TestMessage).FullName! });
             await transaction.CommitAsync();
         }
 

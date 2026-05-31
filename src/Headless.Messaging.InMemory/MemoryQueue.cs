@@ -13,7 +13,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 {
     private readonly Lock _lock = new();
 
-    private readonly Dictionary<(IntentType IntentType, string Topic), List<string>> _topicGroups = [];
+    private readonly Dictionary<(IntentType IntentType, string MessageName), List<string>> _messageNameGroups = [];
     private readonly Dictionary<
         (IntentType IntentType, string GroupId),
         List<InMemoryConsumerClient>
@@ -42,18 +42,18 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     }
 
     /// <summary>
-    /// Subscribes a group to specified topics.
+    /// Subscribes a group to specified message names.
     /// </summary>
     /// <param name="groupId">The consumer group ID</param>
-    /// <param name="topics">The topics to subscribe to</param>
-    public void Subscribe(IntentType intentType, string groupId, IEnumerable<string> topics)
+    /// <param name="messageNames">The message names to subscribe to</param>
+    public void Subscribe(IntentType intentType, string groupId, IEnumerable<string> messageNames)
     {
         lock (_lock)
         {
-            foreach (var topic in topics)
+            foreach (var messageName in messageNames)
             {
-                var key = (intentType, topic);
-                if (_topicGroups.TryGetValue(key, out var value))
+                var key = (intentType, messageName);
+                if (_messageNameGroups.TryGetValue(key, out var value))
                 {
                     if (!value.Contains(groupId, StringComparer.Ordinal))
                     {
@@ -62,7 +62,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
                 }
                 else
                 {
-                    _topicGroups.Add(key, [groupId]);
+                    _messageNameGroups.Add(key, [groupId]);
                 }
             }
         }
@@ -94,7 +94,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     private void _RemoveGroupSubscriptions(IntentType intentType, string groupId)
     {
-        foreach (var (key, groups) in _topicGroups.ToArray())
+        foreach (var (key, groups) in _messageNameGroups.ToArray())
         {
             if (key.IntentType != intentType)
             {
@@ -105,8 +105,8 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
             if (groups.Count == 0)
             {
-                _topicGroups.Remove(key);
-                _nextQueueGroupIndexes.Remove(key.Topic);
+                _messageNameGroups.Remove(key);
+                _nextQueueGroupIndexes.Remove(key.MessageName);
             }
         }
     }
@@ -130,7 +130,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     /// <summary>
     /// Sends a transport message to all subscribed bus consumer groups.
-    /// When no subscriber is registered for the topic the message is silently dropped (no-op),
+    /// When no subscriber is registered for the message name the message is silently dropped (no-op),
     /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>
@@ -139,7 +139,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var name = message.GetName();
         lock (_lock)
         {
-            if (!_topicGroups.TryGetValue((IntentType.Bus, name), out var groupList))
+            if (!_messageNameGroups.TryGetValue((IntentType.Bus, name), out var groupList))
             {
                 logger.NoSubscribersBus(name);
                 return;
@@ -154,7 +154,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
 
     /// <summary>
     /// Sends a transport message to one subscribed queue consumer group.
-    /// When no subscriber is registered for the topic the message is silently dropped (no-op),
+    /// When no subscriber is registered for the message name the message is silently dropped (no-op),
     /// matching real-broker semantics (Kafka, RabbitMQ, Redis all treat publish-without-subscriber as a no-op).
     /// </summary>
     /// <param name="message">The transport message to send</param>
@@ -163,7 +163,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var name = message.GetName();
         lock (_lock)
         {
-            if (!_topicGroups.TryGetValue((IntentType.Queue, name), out var groupList) || groupList.Count == 0)
+            if (!_messageNameGroups.TryGetValue((IntentType.Queue, name), out var groupList) || groupList.Count == 0)
             {
                 logger.NoSubscribersQueue(name);
                 return;
@@ -224,21 +224,21 @@ internal static partial class MemoryQueueLog
     [LoggerMessage(
         EventId = 3008,
         Level = LogLevel.Warning,
-        Message = "No bus subscriber registered for topic '{TopicName}'. Message dropped (no-op)."
+        Message = "No bus subscriber registered for message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoSubscribersBus(this ILogger logger, string topicName);
+    public static partial void NoSubscribersBus(this ILogger logger, string messageName);
 
     [LoggerMessage(
         EventId = 3009,
         Level = LogLevel.Warning,
-        Message = "No queue subscriber registered for topic '{TopicName}'. Message dropped (no-op)."
+        Message = "No queue subscriber registered for message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoSubscribersQueue(this ILogger logger, string topicName);
+    public static partial void NoSubscribersQueue(this ILogger logger, string messageName);
 
     [LoggerMessage(
         EventId = 3010,
         Level = LogLevel.Warning,
-        Message = "No active consumer client for queue topic '{TopicName}'. Message dropped (no-op)."
+        Message = "No active consumer client for queue message name '{MessageName}'. Message dropped (no-op)."
     )]
-    public static partial void NoActiveConsumerQueue(this ILogger logger, string topicName);
+    public static partial void NoActiveConsumerQueue(this ILogger logger, string messageName);
 }

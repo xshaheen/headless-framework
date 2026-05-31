@@ -30,7 +30,7 @@ internal sealed class RuntimeSubscriber(
             if (result.Status == RuntimeConsumerRegistrationStatus.Ignored)
             {
                 return RuntimeSubscriptionHandle.Detached(
-                    result.Topic,
+                    result.MessageName,
                     result.Group,
                     result.HandlerId,
                     result.SubscriptionId
@@ -39,11 +39,16 @@ internal sealed class RuntimeSubscriber(
 
             methodMatcherCache.Invalidate();
             await consumerRegister.OnTopologyChangedAsync(cancellationToken).ConfigureAwait(false);
-            logger.RuntimeSubscriptionAttached(result.SubscriptionId, result.Topic, result.Group, result.HandlerId);
+            logger.RuntimeSubscriptionAttached(
+                result.SubscriptionId,
+                result.MessageName,
+                result.Group,
+                result.HandlerId
+            );
 
             return RuntimeSubscriptionHandle.Attached(
                 result.SubscriptionId!,
-                result.Topic,
+                result.MessageName,
                 result.Group,
                 result.HandlerId,
                 async () =>
@@ -94,12 +99,12 @@ internal static partial class RuntimeSubscriberLog
     [LoggerMessage(
         EventId = 3100,
         Level = LogLevel.Information,
-        Message = "Attached runtime subscription {SubscriptionId} for topic {Topic}, group {Group}, handler {HandlerId}."
+        Message = "Attached runtime subscription {SubscriptionId} for messageName {MessageName}, group {Group}, handler {HandlerId}."
     )]
     public static partial void RuntimeSubscriptionAttached(
         this ILogger logger,
         string? subscriptionId,
-        string topic,
+        string messageName,
         string group,
         string handlerId
     );

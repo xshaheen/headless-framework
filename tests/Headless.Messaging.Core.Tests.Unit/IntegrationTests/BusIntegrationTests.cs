@@ -38,8 +38,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
-            messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
+            messaging.WithMessageNameMapping<DirectTestMessage>("direct-test-messageName");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("direct-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -56,7 +56,7 @@ public sealed class IBusIntegrationTests : TestBase
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "direct-test-topic",
+            MessageName = "direct-test-messageName",
         };
 
         // when
@@ -79,8 +79,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("direct-test-topic");
-            messaging.Subscribe<DirectTestConsumer>().Topic("direct-test-topic");
+            messaging.WithMessageNameMapping<DirectTestMessage>("direct-test-messageName");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("direct-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -113,8 +113,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("custom-topic-name");
-            messaging.Subscribe<DirectTestConsumer>().Topic("custom-topic-name");
+            messaging.WithMessageNameMapping<DirectTestMessage>("custom-messageName-name");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("custom-messageName-name");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -125,13 +125,13 @@ public sealed class IBusIntegrationTests : TestBase
         await using var scope = provider.CreateAsyncScope();
         var bus = scope.ServiceProvider.GetRequiredService<IBus>();
 
-        // when - PublishAsync uses the mapped topic, not the type name
+        // when - PublishAsync uses the mapped messageName, not the type name
         await bus.PublishAsync(new DirectTestMessage("mapping-test"), cancellationToken: AbortToken);
 
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
-        received.Should().BeTrue("Message should be delivered via topic mapping");
+        received.Should().BeTrue("Message should be delivered via messageName mapping");
         DirectTestConsumer.ReceivedMessages.Should().HaveCount(1);
         DirectTestConsumer.ReceivedMessages.First().Value.Should().Be("mapping-test");
     }
@@ -146,9 +146,9 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("multi-group-test");
-            messaging.Subscribe<DirectTestConsumer>().Topic("multi-group-test").Group("direct.primary");
-            messaging.Subscribe<DirectAnalyticsConsumer>().Topic("multi-group-test").Group("direct.analytics");
+            messaging.WithMessageNameMapping<DirectTestMessage>("multi-group-test");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("multi-group-test").Group("direct.primary");
+            messaging.Subscribe<DirectAnalyticsConsumer>().MessageName("multi-group-test").Group("direct.analytics");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -182,9 +182,9 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.Options.TopicNamePrefix = "myapp";
-            messaging.WithTopicMapping<DirectTestMessage>("prefixed-test");
-            messaging.Subscribe<DirectTestConsumer>().Topic("prefixed-test");
+            messaging.Options.MessageNamePrefix = "myapp";
+            messaging.WithMessageNameMapping<DirectTestMessage>("prefixed-test");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("prefixed-test");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -201,7 +201,7 @@ public sealed class IBusIntegrationTests : TestBase
         var received = await DirectTestConsumer.WaitForMessageAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
-        received.Should().BeTrue("prefixed topic should round-trip between publish and subscribe");
+        received.Should().BeTrue("prefixed messageName should round-trip between publish and subscribe");
         DirectTestConsumer.ReceivedMessages.Should().ContainSingle(m => m.Value == "prefixed-value");
     }
 
@@ -215,8 +215,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("header-test-topic");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("header-test-topic");
+            messaging.WithMessageNameMapping<DirectTestMessage>("header-test-messageName");
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("header-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -246,6 +246,7 @@ public sealed class IBusIntegrationTests : TestBase
         DirectTestConsumerWithHeaders.ReceivedContexts.Should().HaveCount(1);
 
         var ctx = DirectTestConsumerWithHeaders.ReceivedContexts.First();
+        ctx.MessageName.Should().Be("header-test-messageName");
         ctx.Headers["custom-header"].Should().Be("custom-value");
         ctx.Headers[Headers.CorrelationId].Should().Be("correlation-123");
     }
@@ -260,8 +261,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("tenant-test-topic");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-test-topic");
+            messaging.WithMessageNameMapping<DirectTestMessage>("tenant-test-messageName");
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("tenant-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -300,8 +301,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("tenant-unset-topic");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().Topic("tenant-unset-topic");
+            messaging.WithMessageNameMapping<DirectTestMessage>("tenant-unset-messageName");
+            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("tenant-unset-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -338,8 +339,8 @@ public sealed class IBusIntegrationTests : TestBase
         {
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithTopicMapping<DirectTestMessage>("sequential-test");
-            messaging.Subscribe<DirectTestConsumer>().Topic("sequential-test");
+            messaging.WithMessageNameMapping<DirectTestMessage>("sequential-test");
+            messaging.Subscribe<DirectTestConsumer>().MessageName("sequential-test");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });

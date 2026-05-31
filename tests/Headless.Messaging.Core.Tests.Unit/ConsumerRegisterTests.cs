@@ -91,7 +91,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 Type.EmptyTypes
             )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
-            TopicName = "fake-topic",
+            MessageName = "fake-messageName",
             GroupName = "fake-group",
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
@@ -168,7 +168,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 Type.EmptyTypes
             )!,
             ImplTypeInfo = typeof(object).GetTypeInfo(),
-            TopicName = "fake-topic",
+            MessageName = "fake-messageName",
             GroupName = groupName,
         };
         selectorSub.SelectCandidates().Returns([fakeDescriptor]);
@@ -190,8 +190,8 @@ public sealed class ConsumerRegisterTests : TestBase
                 {
                     var client = Substitute.For<IConsumerClient>();
                     client
-                        .FetchTopicsAsync(Arg.Any<IEnumerable<string>>())
-                        .Returns(ValueTask.FromResult<ICollection<string>>(["fake-topic"]));
+                        .FetchMessageNamesAsync(Arg.Any<IEnumerable<string>>())
+                        .Returns(ValueTask.FromResult<ICollection<string>>(["fake-messageName"]));
                     return Task.FromResult(client);
                 }
 
@@ -269,7 +269,7 @@ public sealed class ConsumerRegisterTests : TestBase
         await using var provider = _CreateProvider(
             configureMessaging: options =>
             {
-                options.Subscribe<BootstrapReadyConsumer>("ready-topic").Group("ready-group").Concurrency(1);
+                options.Subscribe<BootstrapReadyConsumer>("ready-messageName").Group("ready-group").Concurrency(1);
             },
             configureServices: services =>
             {
@@ -301,7 +301,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 options.RegisterConsumer(
                     typeof(QueueOnlyConsumer),
                     typeof(QueueOnlyMessage),
-                    "queue-topic",
+                    "queue-messageName",
                     "queue-group",
                     1,
                     IntentType.Queue
@@ -405,12 +405,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
-            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+            return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
 
         public ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -441,12 +441,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
-            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+            return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
@@ -493,12 +493,12 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
 
-        public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+        public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
         {
-            return ValueTask.FromResult<ICollection<string>>(topicNames.ToArray());
+            return ValueTask.FromResult<ICollection<string>>(messageNames.ToArray());
         }
 
-        public ValueTask SubscribeAsync(IEnumerable<string> topics) => ValueTask.CompletedTask;
+        public ValueTask SubscribeAsync(IEnumerable<string> messageNames) => ValueTask.CompletedTask;
 
         public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
 

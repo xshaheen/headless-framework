@@ -36,16 +36,16 @@ internal static partial class RabbitMqValidation
         );
     }
 
-    internal static void ValidateTopicName(string name)
+    internal static void ValidateMessageName(string name)
     {
         Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Topic name must not exceed 255 characters");
-        // Topics can contain wildcards (* and #) in addition to regular name chars
+        Argument.IsLessThanOrEqualTo(name.Length, _MaxNameLength, "Message name must not exceed 255 characters");
+        // Message names can contain wildcards (* and #) in addition to regular name chars
         // But for safety, we validate the same as queue/exchange names for now
         Argument.Matches(
             name,
             _NamePattern(),
-            "Topic name must contain only alphanumeric characters, dashes, underscores, and periods"
+            "Message name must contain only alphanumeric characters, dashes, underscores, and periods"
         );
     }
 }

@@ -20,7 +20,7 @@ namespace Tests.CircuitBreaker;
 /// </summary>
 public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 {
-    private const string _TopicName = "cb.test.topic";
+    private const string _MessageName = "cb.test.messageName";
     private const string _GroupName = "cb.test.group";
     private const string _CircuitBreakerGroupName = "0:cb.test.group";
 
@@ -35,7 +35,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = _TopicName,
+            [Headers.MessageName] = _MessageName,
             [Headers.Group] = _GroupName,
         };
 
@@ -65,7 +65,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
             ServiceTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CbTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = _TopicName,
+            MessageName = _MessageName,
             GroupName = _GroupName,
             Parameters = consumeMethod
                 .GetParameters()
@@ -92,7 +92,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Subscribe<CbTestConsumer>().Topic(_TopicName);
+            setup.Subscribe<CbTestConsumer>().MessageName(_MessageName);
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

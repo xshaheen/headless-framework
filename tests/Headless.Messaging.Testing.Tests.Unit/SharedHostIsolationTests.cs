@@ -40,8 +40,8 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Subscribe<AlphaConsumer>("alpha-topic");
-                setup.Subscribe<BetaConsumer>("beta-topic");
+                setup.Subscribe<AlphaConsumer>("alpha-messageName");
+                setup.Subscribe<BetaConsumer>("beta-messageName");
             });
         });
     }

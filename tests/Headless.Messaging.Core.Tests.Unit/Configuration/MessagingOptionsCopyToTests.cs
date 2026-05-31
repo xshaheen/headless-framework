@@ -149,7 +149,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     {
         options.DefaultGroupName = "test.group";
         options.GroupNamePrefix = "prefix";
-        options.TopicNamePrefix = "topic-prefix";
+        options.MessageNamePrefix = "messageName-prefix";
         options.Version = "v99";
         options.SucceedMessageExpiredAfter = 1;
         options.FailedMessageExpiredAfter = 2;

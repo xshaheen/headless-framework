@@ -13,7 +13,7 @@ public sealed class ConsumerMetadataTests : TestBase
         // given
         var messageType = typeof(MetadataTestMessage);
         var consumerType = typeof(MetadataTestConsumer);
-        const string topic = "test.topic";
+        const string messageName = "test.messageName";
         const string group = "test-group";
         const byte concurrency = 5;
 
@@ -21,7 +21,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata = new ConsumerMetadata(
             messageType,
             consumerType,
-            topic,
+            messageName,
             group,
             concurrency,
             IntentType: IntentType.Bus
@@ -30,7 +30,7 @@ public sealed class ConsumerMetadataTests : TestBase
         // then
         metadata.MessageType.Should().Be(messageType);
         metadata.ConsumerType.Should().Be(consumerType);
-        metadata.Topic.Should().Be(topic);
+        metadata.MessageName.Should().Be(messageName);
         metadata.Group.Should().Be(group);
         metadata.Concurrency.Should().Be(concurrency);
     }
@@ -42,7 +42,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "test.topic",
+            "test.messageName",
             null,
             1,
             IntentType: IntentType.Bus
@@ -59,7 +59,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var original = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "original.topic",
+            "original.messageName",
             "group",
             1,
             IntentType: IntentType.Bus
@@ -68,11 +68,11 @@ public sealed class ConsumerMetadataTests : TestBase
         // when
         var updated = original with
         {
-            Topic = "new.topic",
+            MessageName = "new.messageName",
         };
 
         // then
-        updated.Topic.Should().Be("new.topic");
+        updated.MessageName.Should().Be("new.messageName");
         updated.MessageType.Should().Be(original.MessageType);
         updated.ConsumerType.Should().Be(original.ConsumerType);
         updated.Group.Should().Be(original.Group);
@@ -86,7 +86,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var original = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "topic",
+            "messageName",
             "original-group",
             1,
             IntentType: IntentType.Bus
@@ -100,7 +100,7 @@ public sealed class ConsumerMetadataTests : TestBase
 
         // then
         updated.Group.Should().Be("new-group");
-        updated.Topic.Should().Be(original.Topic);
+        updated.MessageName.Should().Be(original.MessageName);
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var original = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "topic",
+            "messageName",
             "group",
             1,
             IntentType: IntentType.Bus
@@ -133,7 +133,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata1 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "topic",
+            "messageName",
             "group",
             5,
             IntentType: IntentType.Bus
@@ -141,7 +141,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "topic",
+            "messageName",
             "group",
             5,
             IntentType: IntentType.Bus
@@ -159,7 +159,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata1 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "topic",
+            "messageName",
             "group",
             5,
             IntentType: IntentType.Bus
@@ -167,7 +167,7 @@ public sealed class ConsumerMetadataTests : TestBase
         var metadata2 = new ConsumerMetadata(
             typeof(MetadataTestMessage),
             typeof(MetadataTestConsumer),
-            "different-topic",
+            "different-messageName",
             "group",
             5,
             IntentType: IntentType.Bus

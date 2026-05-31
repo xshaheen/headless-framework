@@ -24,7 +24,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         // then
         var metadata = provider.GetServices<ConsumerMetadata>().ToList();
         metadata.Should().HaveCount(1);
-        metadata[0].Topic.Should().Be("orders.placed");
+        metadata[0].MessageName.Should().Be("orders.placed");
         metadata[0].ConsumerType.Should().Be<TestOrderHandler>();
         metadata[0].MessageType.Should().Be<TestOrderEvent>();
     }
@@ -98,7 +98,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         // when
         var builder = services
             .AddBusConsumer<TestOrderHandler, TestOrderEvent>("orders.placed")
-            .Topic("orders.created")
+            .MessageName("orders.created")
             .Group("my-group")
             .Concurrency(5);
         var provider = services.BuildServiceProvider();
@@ -106,7 +106,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         // then
         builder.Should().NotBeNull();
         var metadata = provider.GetServices<ConsumerMetadata>().Single();
-        metadata.Topic.Should().Be("orders.created");
+        metadata.MessageName.Should().Be("orders.created");
         metadata.Group.Should().Be("my-group");
         metadata.Concurrency.Should().Be(5);
     }
@@ -184,7 +184,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var builder = services.AddBusConsumer<TestOrderHandler, TestOrderEvent>("orders.placed");
 
         // when
-        var act = () => builder.Topic(null!);
+        var act = () => builder.MessageName(null!);
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -198,7 +198,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var builder = services.AddBusConsumer<TestOrderHandler, TestOrderEvent>("orders.placed");
 
         // when
-        var act = () => builder.Topic("");
+        var act = () => builder.MessageName("");
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -291,12 +291,12 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
         var builder = services.AddBusConsumer<TestOrderHandler, TestOrderEvent>("orders.placed");
 
         // when
-        builder.Topic("orders.updated");
+        builder.MessageName("orders.updated");
         var provider = services.BuildServiceProvider();
 
         // then
         var metadata = provider.GetServices<ConsumerMetadata>().Single();
-        metadata.Topic.Should().Be("orders.updated");
+        metadata.MessageName.Should().Be("orders.updated");
     }
 
     [Fact]
@@ -309,15 +309,18 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 
         // when
         first.Group("first-group");
-        second.Topic("orders.created.v2");
+        second.MessageName("orders.created.v2");
 
         var provider = services.BuildServiceProvider();
 
         // then
-        var metadata = provider.GetServices<ConsumerMetadata>().OrderBy(x => x.Topic, StringComparer.Ordinal).ToList();
+        var metadata = provider
+            .GetServices<ConsumerMetadata>()
+            .OrderBy(x => x.MessageName, StringComparer.Ordinal)
+            .ToList();
         metadata.Should().HaveCount(2);
-        metadata.Should().Contain(x => x.Topic == "orders.placed" && x.Group == "first-group");
-        metadata.Should().Contain(x => x.Topic == "orders.created.v2" && x.Group == null);
+        metadata.Should().Contain(x => x.MessageName == "orders.placed" && x.Group == "first-group");
+        metadata.Should().Contain(x => x.MessageName == "orders.created.v2" && x.Group == null);
     }
 
     [Fact]
@@ -328,8 +331,8 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 
         // when
         services
-            .AddBusConsumer<TestOrderHandler, TestOrderEvent>("initial.topic")
-            .Topic("changed.topic")
+            .AddBusConsumer<TestOrderHandler, TestOrderEvent>("initial.messageName")
+            .MessageName("changed.messageName")
             .Group("group-1")
             .Concurrency(3)
             .Group("group-2")
@@ -339,7 +342,7 @@ public sealed class ServiceCollectionConsumerBuilderTests : TestBase
 
         // then
         var metadata = provider.GetServices<ConsumerMetadata>().Single();
-        metadata.Topic.Should().Be("changed.topic");
+        metadata.MessageName.Should().Be("changed.messageName");
         metadata.Group.Should().Be("group-2");
         metadata.Concurrency.Should().Be(7);
     }

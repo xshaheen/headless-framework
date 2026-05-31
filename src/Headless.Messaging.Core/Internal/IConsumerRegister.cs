@@ -293,12 +293,12 @@ internal sealed class ConsumerRegister(
             var handleName = _CreateHandleName(groupKey);
             var limit = _selector.GetGroupConcurrentLimit(groupKey);
 
-            ICollection<string> topics;
+            ICollection<string> messageNames;
             try
             {
                 await using var client = await _CreateConsumerClientAsync(groupName, limit, intentType);
                 client.OnLogCallback = _WriteLog;
-                topics = await client.FetchTopicsAsync(matchGroup.Value.Select(x => x.TopicName));
+                messageNames = await client.FetchMessageNamesAsync(matchGroup.Value.Select(x => x.MessageName));
             }
             catch (BrokerConnectionException e)
             {
@@ -359,7 +359,7 @@ internal sealed class ConsumerRegister(
                                     groupCts.Token
                                 );
 
-                                await innerClient.SubscribeAsync(topics);
+                                await innerClient.SubscribeAsync(messageNames);
                                 await _AwaitConsumerReadyThenListenAsync(innerClient, startupReady, groupCts.Token)
                                     .ConfigureAwait(false);
                             }
@@ -625,7 +625,7 @@ internal sealed class ConsumerRegister(
                 Message message;
                 Exception? dispatchBypassException = null;
 
-                var canFindSubscriber = _selector.TryGetTopicExecutor(name, group, intentType, out var executor);
+                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, group, intentType, out var executor);
                 string? exceptionInfo = null;
                 try
                 {

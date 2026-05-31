@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
 using Headless.Messaging.Transport;
 
 namespace Headless.Messaging;
@@ -26,18 +25,4 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public interface IQueueTransport : IAsyncDisposable
-{
-    /// <summary>
-    /// Gets the broker address information.
-    /// </summary>
-    BrokerAddress BrokerAddress { get; }
-
-    /// <summary>
-    /// Sends a transport message asynchronously with point-to-point (work-queue) semantics.
-    /// </summary>
-    /// <param name="message">The transport message to send.</param>
-    /// <param name="cancellationToken">Token to cancel the send operation.</param>
-    /// <returns>A task that returns the operation result.</returns>
-    Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default);
-}
+public interface IQueueTransport : ITransport;

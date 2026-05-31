@@ -76,6 +76,6 @@ options.UseRedisPubSub(redis =>
 
 - Registers `IQueueTransport` for Redis Streams when `UseRedis(...)` is called.
 - Registers `IBusTransport` for Redis Pub/Sub when `UseRedisPubSub(...)` is called.
-- Creates Redis Streams and consumer groups for stream topics as needed.
+- Creates Redis Streams and consumer groups for stream message names as needed.
 - Maintains persistent Redis connections.
 - Periodically claims pending stream messages for retry.

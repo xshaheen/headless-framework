@@ -28,7 +28,7 @@ public sealed class OrderEvents(IOutboxBus bus)
     {
         return bus.PublishAsync(
             message,
-            new PublishOptions { Topic = "orders.placed" },
+            new PublishOptions { MessageName = "orders.placed" },
             cancellationToken);
     }
 }

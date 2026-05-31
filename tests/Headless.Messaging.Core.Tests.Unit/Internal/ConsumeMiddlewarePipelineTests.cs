@@ -151,7 +151,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
                 modifiers: null
             )!,
             ImplTypeInfo = typeof(ConsumeMiddlewarePipelineTests).GetTypeInfo(),
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test-group",
         };
 
@@ -159,7 +159,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = "msg-1",
-                [Headers.MessageName] = "test.topic",
+                [Headers.MessageName] = "test.messageName",
             },
             new MiddlewarePayload("payload")
         );

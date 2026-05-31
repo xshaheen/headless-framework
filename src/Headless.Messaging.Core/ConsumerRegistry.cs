@@ -53,8 +53,8 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             if (existingConflict != null)
             {
                 throw new InvalidOperationException(
-                    "Duplicate consumer registration detected for topic/group identity: "
-                        + $"intent='{metadata.IntentType}', topic='{metadata.Topic}', group='{metadata.Group ?? "<default>"}', "
+                    "Duplicate consumer registration detected for messageName/group identity: "
+                        + $"intent='{metadata.IntentType}', messageName='{metadata.MessageName}', group='{metadata.Group ?? "<default>"}', "
                         + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                         + $"newHandlerId='{metadata.ResolvedHandlerId}'."
                 );
@@ -88,8 +88,8 @@ public sealed class ConsumerRegistry : IConsumerRegistry
                 if (existingConflict != null)
                 {
                     throw new InvalidOperationException(
-                        "Duplicate consumer registration detected for topic/group identity: "
-                            + $"intent='{newMetadata.IntentType}', topic='{newMetadata.Topic}', group='{newMetadata.Group ?? "<default>"}', "
+                        "Duplicate consumer registration detected for messageName/group identity: "
+                            + $"intent='{newMetadata.IntentType}', messageName='{newMetadata.MessageName}', group='{newMetadata.Group ?? "<default>"}', "
                             + $"existingHandlerId='{existingConflict.ResolvedHandlerId}', "
                             + $"newHandlerId='{newMetadata.ResolvedHandlerId}'."
                     );
@@ -127,23 +127,23 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     }
 
     /// <summary>
-    /// Finds a consumer by topic name and optional group.
+    /// Finds a consumer by message name and optional group.
     /// </summary>
-    /// <param name="topic">The topic name to search for.</param>
-    /// <param name="group">Optional consumer group name. If null, returns first match by topic only.</param>
+    /// <param name="messageName">The message name to search for.</param>
+    /// <param name="group">Optional consumer group name. If null, returns first match by message name only.</param>
     /// <returns>
-    /// The matching consumer metadata, or null if no consumer is registered for the topic/group combination.
+    /// The matching consumer metadata, or null if no consumer is registered for the message-name/group combination.
     /// </returns>
-    public ConsumerMetadata? FindByTopic(string topic, string? group = null)
+    public ConsumerMetadata? FindByMessageName(string messageName, string? group = null)
     {
         var all = GetAll();
 
         if (group is null)
         {
-            return all.FirstOrDefault(m => m.Topic == topic);
+            return all.FirstOrDefault(m => m.MessageName == messageName);
         }
 
-        return all.FirstOrDefault(m => m.Topic == topic && m.Group == group);
+        return all.FirstOrDefault(m => m.MessageName == messageName && m.Group == group);
     }
 
     /// <summary>
@@ -220,7 +220,7 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             if (
-                string.Equals(existing.Topic, candidate.Topic, StringComparison.Ordinal)
+                string.Equals(existing.MessageName, candidate.MessageName, StringComparison.Ordinal)
                 && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
                 && existing.IntentType == candidate.IntentType
             )

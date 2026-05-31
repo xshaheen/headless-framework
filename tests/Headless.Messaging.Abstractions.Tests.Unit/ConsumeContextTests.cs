@@ -15,7 +15,7 @@ public sealed class ConsumeContextTests : TestBase
         var messageId = Faker.Random.Guid().ToString();
         var correlationId = Faker.Random.Guid().ToString();
         var timestamp = DateTimeOffset.UtcNow;
-        const string topic = "test.topic";
+        const string messageName = "test.messageName";
         var headers = new MessageHeader(
             new Dictionary<string, string?>(StringComparer.Ordinal) { ["custom-header"] = "custom-value" }
         );
@@ -28,7 +28,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = messageId,
             CorrelationId = correlationId,
             Timestamp = timestamp,
-            Topic = topic,
+            MessageName = messageName,
             Headers = headers,
         };
 
@@ -37,7 +37,7 @@ public sealed class ConsumeContextTests : TestBase
         context.MessageId.Should().Be(messageId);
         context.CorrelationId.Should().Be(correlationId);
         context.Timestamp.Should().Be(timestamp);
-        context.Topic.Should().Be(topic);
+        context.MessageName.Should().Be(messageName);
         context.Headers.Should().BeSameAs(headers);
     }
 
@@ -56,7 +56,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = null!,
                 CorrelationId = null,
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             };
 
@@ -79,7 +79,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = "",
                 CorrelationId = null,
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             };
 
@@ -102,7 +102,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = "   ",
                 CorrelationId = null,
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             };
 
@@ -124,7 +124,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
         };
 
@@ -147,7 +147,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = "",
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             };
 
@@ -170,7 +170,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = "   ",
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             };
 
@@ -192,7 +192,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
         };
 
@@ -214,7 +214,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             TenantId = tenantId,
         };
@@ -237,7 +237,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             TenantId = null,
         };
@@ -261,7 +261,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = null,
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
                 TenantId = "",
             };
@@ -285,7 +285,7 @@ public sealed class ConsumeContextTests : TestBase
                 MessageId = Faker.Random.Guid().ToString(),
                 CorrelationId = null,
                 Timestamp = DateTimeOffset.UtcNow,
-                Topic = "test.topic",
+                MessageName = "test.messageName",
                 Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
                 TenantId = "   ",
             };
@@ -330,7 +330,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = headers,
         };
 
@@ -355,7 +355,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = timestamp,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
         };
 
@@ -367,7 +367,7 @@ public sealed class ConsumeContextTests : TestBase
     public void should_expose_topic()
     {
         // given
-        const string topic = "orders.placed.v2";
+        const string messageName = "orders.placed.v2";
 
         // when
         var context = new ConsumeContext<TestMessage>
@@ -377,12 +377,12 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = topic,
+            MessageName = messageName,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
         };
 
         // then
-        context.Topic.Should().Be(topic);
+        context.MessageName.Should().Be(messageName);
     }
 
     private ConsumeContext<TestMessage> _CreateContext(TestMessage message)
@@ -394,7 +394,7 @@ public sealed class ConsumeContextTests : TestBase
             MessageId = Faker.Random.Guid().ToString(),
             CorrelationId = null,
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
         };
     }

@@ -43,9 +43,9 @@ internal sealed class AmazonSqsConsumerClient(
 
     public BrokerAddress BrokerAddress => new("aws_sqs", _queueUrl);
 
-    public async ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public async ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topicNames);
+        Argument.IsNotNull(messageNames);
 
         var cancellationToken = CancellationToken.None;
 
@@ -54,7 +54,7 @@ internal sealed class AmazonSqsConsumerClient(
             await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
 
             var queueUrls = new List<string>();
-            foreach (var topic in topicNames)
+            foreach (var topic in messageNames)
             {
                 var queueResponse = await _sqsClient!
                     .CreateQueueAsync(topic.ToSqsCreateQueueRequest(), cancellationToken)
@@ -71,7 +71,7 @@ internal sealed class AmazonSqsConsumerClient(
         await _ConnectAsync(true, false, cancellationToken).ConfigureAwait(false);
 
         var topicArns = new List<string>();
-        foreach (var topic in topicNames)
+        foreach (var topic in messageNames)
         {
             var createTopicRequest = topic.ToSnsCreateTopicRequest();
 

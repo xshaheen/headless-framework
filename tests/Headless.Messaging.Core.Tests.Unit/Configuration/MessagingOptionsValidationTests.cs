@@ -19,13 +19,13 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var longTopic = new string('a', 256);
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>(longTopic);
+        var act = () => options.WithMessageNameMapping<TestMessage>(longTopic);
 
         // then
         act.Should()
             .Throw<ArgumentException>()
             .WithMessage("*exceeds maximum length of 255*")
-            .WithParameterName("topic");
+            .WithParameterName("messageName");
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var maxLengthTopic = new string('a', 255);
 
         // when
-        var result = options.WithTopicMapping<TestMessage>(maxLengthTopic);
+        var result = options.WithMessageNameMapping<TestMessage>(maxLengthTopic);
 
         // then
         result.Should().BeSameAs(options);
@@ -49,16 +49,16 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when/then - invalid characters
-        var act1 = () => options.WithTopicMapping<TestMessage>("topic@name");
+        var act1 = () => options.WithMessageNameMapping<TestMessage>("messageName@name");
         act1.Should().Throw<ArgumentException>().WithMessage("*invalid character*@*");
 
-        var act2 = () => options.WithTopicMapping<TestMessage>("topic#name");
+        var act2 = () => options.WithMessageNameMapping<TestMessage>("messageName#name");
         act2.Should().Throw<ArgumentException>().WithMessage("*invalid character*#*");
 
-        var act3 = () => options.WithTopicMapping<TestMessage>("topic name");
+        var act3 = () => options.WithMessageNameMapping<TestMessage>("messageName name");
         act3.Should().Throw<ArgumentException>().WithMessage("*invalid character* *");
 
-        var act4 = () => options.WithTopicMapping<TestMessage>("topic/name");
+        var act4 = () => options.WithMessageNameMapping<TestMessage>("messageName/name");
         act4.Should().Throw<ArgumentException>().WithMessage("*invalid character*/*");
     }
 
@@ -69,7 +69,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when/then - valid characters: alphanumeric, dots, hyphens, underscores
-        var result1 = options.WithTopicMapping<TestMessage>("valid.topic-name_123");
+        var result1 = options.WithMessageNameMapping<TestMessage>("valid.messageName-name_123");
         result1.Should().BeSameAs(options);
     }
 
@@ -80,7 +80,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>(".leading.dot");
+        var act = () => options.WithMessageNameMapping<TestMessage>(".leading.dot");
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*cannot start or end with a dot*");
@@ -93,7 +93,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>("trailing.dot.");
+        var act = () => options.WithMessageNameMapping<TestMessage>("trailing.dot.");
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*cannot start or end with a dot*");
@@ -106,7 +106,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>("topic..name");
+        var act = () => options.WithMessageNameMapping<TestMessage>("messageName..name");
 
         // then
         act.Should().Throw<ArgumentException>().WithMessage("*cannot contain consecutive dots*");
@@ -355,15 +355,15 @@ public sealed class MessagingOptionsValidationTests : TestBase
     {
         // given
         var options = _CreateBuilder();
-        options.WithTopicMapping<TestMessage>("first.topic");
+        options.WithMessageNameMapping<TestMessage>("first.messageName");
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>("second.topic");
+        var act = () => options.WithMessageNameMapping<TestMessage>("second.messageName");
 
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*already mapped to topic*first.topic*Cannot map to*second.topic*");
+            .WithMessage("*already mapped to messageName*first.messageName*Cannot map to*second.messageName*");
     }
 
     [Fact]
@@ -371,10 +371,10 @@ public sealed class MessagingOptionsValidationTests : TestBase
     {
         // given
         var options = _CreateBuilder();
-        options.WithTopicMapping<TestMessage>("same.topic");
+        options.WithMessageNameMapping<TestMessage>("same.messageName");
 
         // when
-        var result = options.WithTopicMapping<TestMessage>("same.topic");
+        var result = options.WithMessageNameMapping<TestMessage>("same.messageName");
 
         // then - should not throw
         result.Should().BeSameAs(options);
@@ -387,7 +387,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>(null!);
+        var act = () => options.WithMessageNameMapping<TestMessage>(null!);
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -400,7 +400,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>("");
+        var act = () => options.WithMessageNameMapping<TestMessage>("");
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -413,7 +413,7 @@ public sealed class MessagingOptionsValidationTests : TestBase
         var options = _CreateBuilder();
 
         // when
-        var act = () => options.WithTopicMapping<TestMessage>("   ");
+        var act = () => options.WithMessageNameMapping<TestMessage>("   ");
 
         // then
         act.Should().Throw<ArgumentException>();

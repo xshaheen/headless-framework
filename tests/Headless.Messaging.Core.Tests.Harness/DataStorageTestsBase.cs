@@ -494,7 +494,7 @@ public abstract class DataStorageTestsBase : TestBase
             {
                 var message = CreateMessage();
                 var result = await storage.StoreMessageAsync(
-                    $"concurrent-topic-{i}",
+                    $"concurrent-messageName-{i}",
                     message,
                     cancellationToken: AbortToken
                 );

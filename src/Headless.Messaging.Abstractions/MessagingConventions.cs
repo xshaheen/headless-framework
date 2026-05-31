@@ -5,26 +5,26 @@ using Headless.Checks;
 namespace Headless.Messaging;
 
 /// <summary>
-/// Configures convention-based topic naming and default consumer settings for messaging.
+/// Configures convention-based message name naming and default consumer settings for messaging.
 /// </summary>
 [PublicAPI]
 public sealed class MessagingConventions
 {
     /// <summary>
-    /// Gets or sets the topic naming convention to use when generating topic names from message types.
-    /// Default is <see cref="TopicNamingConvention.TypeName"/>.
+    /// Gets or sets the message-name naming convention to use when generating message names from message types.
+    /// Default is <see cref="MessageNamingConvention.TypeName"/>.
     /// </summary>
-    public TopicNamingConvention TopicNaming { get; set; } = TopicNamingConvention.TypeName;
+    public MessageNamingConvention MessageNaming { get; set; } = MessageNamingConvention.TypeName;
 
     /// <summary>
-    /// Gets or sets an optional prefix to prepend to all generated topic names.
+    /// Gets or sets an optional prefix to prepend to all generated message names.
     /// </summary>
-    public string? TopicPrefix { get; set; }
+    public string? MessageNamePrefix { get; set; }
 
     /// <summary>
-    /// Gets or sets an optional suffix to append to all generated topic names.
+    /// Gets or sets an optional suffix to append to all generated message names.
     /// </summary>
-    public string? TopicSuffix { get; set; }
+    public string? MessageNameSuffix { get; set; }
 
     /// <summary>
     /// Gets or sets the application id used when deriving default consumer groups.
@@ -43,20 +43,20 @@ public sealed class MessagingConventions
     public string? DefaultGroup { get; set; }
 
     /// <summary>
-    /// Configures kebab-case topic generation.
+    /// Configures kebab-case message name generation.
     /// </summary>
-    public MessagingConventions UseKebabCaseTopics()
+    public MessagingConventions UseKebabCaseMessageNames()
     {
-        TopicNaming = TopicNamingConvention.KebabCase;
+        MessageNaming = MessageNamingConvention.KebabCase;
         return this;
     }
 
     /// <summary>
-    /// Configures type-name topic generation.
+    /// Configures type-name message name generation.
     /// </summary>
-    public MessagingConventions UseTypeNameTopics()
+    public MessagingConventions UseTypeNameMessageNames()
     {
-        TopicNaming = TopicNamingConvention.TypeName;
+        MessageNaming = MessageNamingConvention.TypeName;
         return this;
     }
 
@@ -89,20 +89,20 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Sets a topic prefix.
+    /// Sets a message name prefix.
     /// </summary>
-    public MessagingConventions WithTopicPrefix(string? prefix)
+    public MessagingConventions WithMessageNamePrefix(string? prefix)
     {
-        TopicPrefix = prefix;
+        MessageNamePrefix = prefix;
         return this;
     }
 
     /// <summary>
-    /// Sets a topic suffix.
+    /// Sets a message name suffix.
     /// </summary>
-    public MessagingConventions WithTopicSuffix(string? suffix)
+    public MessagingConventions WithMessageNameSuffix(string? suffix)
     {
-        TopicSuffix = suffix;
+        MessageNameSuffix = suffix;
         return this;
     }
 
@@ -116,21 +116,21 @@ public sealed class MessagingConventions
     }
 
     /// <summary>
-    /// Generates a topic name for the specified message type based on the configured conventions.
+    /// Generates a message name for the specified message type based on the configured conventions.
     /// </summary>
-    /// <param name="messageType">The message type to generate a topic name for.</param>
-    /// <returns>The generated topic name.</returns>
-    public string GetTopicName(Type messageType)
+    /// <param name="messageType">The message type to generate a message name for.</param>
+    /// <returns>The generated message name.</returns>
+    public string GetMessageName(Type messageType)
     {
         Argument.IsNotNull(messageType);
 
-        var baseName = TopicNaming switch
+        var baseName = MessageNaming switch
         {
-            TopicNamingConvention.KebabCase => _ToKebabCase(messageType.Name),
+            MessageNamingConvention.KebabCase => _ToKebabCase(messageType.Name),
             _ => messageType.Name,
         };
 
-        return $"{TopicPrefix}{baseName}{TopicSuffix}";
+        return $"{MessageNamePrefix}{baseName}{MessageNameSuffix}";
     }
 
     /// <summary>
@@ -271,9 +271,9 @@ public sealed class MessagingConventions
 }
 
 /// <summary>
-/// Defines the naming convention to use when generating topic names from message types.
+/// Defines the naming convention to use when generating message names from message types.
 /// </summary>
-public enum TopicNamingConvention
+public enum MessageNamingConvention
 {
     /// <summary>
     /// Use the exact type name (e.g., "OrderCreated").

@@ -15,7 +15,7 @@ public sealed class ValuesController(IOutboxBus publisher) : Controller
     {
         await publisher.PublishAsync(
             new Person { Id = Random.Shared.Next(1, 100), Name = "Bar" },
-            new PublishOptions { Topic = _MyTopic }
+            new PublishOptions { MessageName = _MyTopic }
         );
 
         return Ok();
@@ -35,8 +35,8 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Va
         if (logger.IsEnabled(LogLevel.Information))
         {
             logger.LogInformation(
-                "Subscribe Invoked {Topic} {PersonId} {PersonName}",
-                context.Topic,
+                "Subscribe Invoked {MessageName} {PersonId} {PersonName}",
+                context.MessageName,
                 context.Message.Id,
                 context.Message.Name
             );

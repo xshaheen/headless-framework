@@ -164,7 +164,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
 
         // Allow time for message processing
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -193,7 +193,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "HandlerInvocationTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -202,7 +202,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         var context = subscriber.ReceivedContexts.First(c => c.Message.Id == message.Id);
         context.MessageId.Should().NotBeNullOrEmpty();
-        context.Topic.Should().Be(ResolveTopicName("test-message"));
+        context.MessageName.Should().Be(ResolveMessageName("test-message"));
     }
 
     public virtual async Task should_store_received_message_in_storage()
@@ -214,7 +214,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "StorageTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // then
@@ -232,7 +232,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "FailingTest" };
 
         // when
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "failing-message" }, AbortToken);
         var attempted = await failingSubscriber.WaitForAttemptAsync(
             TimeSpan.FromSeconds(10),
             cancellationToken: AbortToken
@@ -257,7 +257,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // when
         var publishTasks = messages.Select(m =>
-            Publisher.PublishAsync(m, new PublishOptions { Topic = "test-message" }, AbortToken)
+            Publisher.PublishAsync(m, new PublishOptions { MessageName = "test-message" }, AbortToken)
         );
         await Task.WhenAll(publishTasks);
 
@@ -277,7 +277,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new FailingTestMessage { Id = Guid.NewGuid().ToString(), Name = "RetryTest" };
 
         // when — wait for at least 2 attempts to prove the message was actually retried
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "failing-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "failing-message" }, AbortToken);
         var retried = await failingSubscriber.WaitForAttemptAsync(
             TimeSpan.FromSeconds(30),
             minAttempts: 2,
@@ -298,7 +298,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var message = new TestMessage { Id = Guid.NewGuid().ToString(), Name = "LifecycleTest" };
 
         // when - publish -> consume -> store -> ack
-        await Publisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await Publisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
 
         // Wait for message to complete lifecycle
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -329,7 +329,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             message,
-            new PublishOptions { Topic = "test-message", Headers = headers },
+            new PublishOptions { MessageName = "test-message", Headers = headers },
             AbortToken
         );
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
@@ -354,7 +354,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             message,
-            new PublishOptions { Topic = "test-message", Delay = TimeSpan.FromSeconds(2) },
+            new PublishOptions { MessageName = "test-message", Delay = TimeSpan.FromSeconds(2) },
             AbortToken
         );
 
@@ -382,7 +382,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     }
 
     protected async Task EnsureTestSubscriberReadyAsync(
-        string topic = "test-message",
+        string messageName = "test-message",
         TimeSpan? timeout = null,
         TimeSpan? retryInterval = null
     )
@@ -405,7 +405,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
             lastMessageId = probe.Id;
 
-            await Bus.PublishAsync(probe, new PublishOptions { Topic = topic }, AbortToken);
+            await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
 
             var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
             if (received && subscriber.ReceivedMessages.Any(message => message.Id == probe.Id))
@@ -418,15 +418,15 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         }
 
         throw new TimeoutException(
-            $"Timed out waiting for test subscriber readiness on topic '{topic}'. Last probe id: '{lastMessageId}'."
+            $"Timed out waiting for test subscriber readiness on messageName '{messageName}'. Last probe id: '{lastMessageId}'."
         );
     }
 
-    protected string ResolveTopicName(string topic)
+    protected string ResolveMessageName(string messageName)
     {
-        return string.IsNullOrWhiteSpace(MessagingOptions.TopicNamePrefix)
-            ? topic
-            : string.Concat(MessagingOptions.TopicNamePrefix, ".", topic);
+        return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
+            ? messageName
+            : string.Concat(MessagingOptions.MessageNamePrefix, ".", messageName);
     }
 }
 

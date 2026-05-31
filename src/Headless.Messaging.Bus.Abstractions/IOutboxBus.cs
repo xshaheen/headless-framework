@@ -31,7 +31,7 @@ public interface IOutboxBus
     /// </summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
-    /// <param name="options">Optional publish overrides for topic, correlation, custom headers, and dispatch delay.</param>
+    /// <param name="options">Optional publish overrides for message name, correlation, custom headers, and dispatch delay.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the persistence operation.</returns>
     /// <exception cref="ArgumentException">

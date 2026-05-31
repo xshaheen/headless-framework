@@ -28,9 +28,9 @@ public sealed class OrderPlacedHandler(ILogger<OrderPlacedHandler> logger) : ICo
     public ValueTask Consume(ConsumeContext<OrderPlacedEvent> context, CancellationToken cancellationToken)
     {
         logger.LogInformation(
-            "Processing {OrderId} from {Topic} with {Intent}",
+            "Processing {OrderId} from {MessageName} with {Intent}",
             context.Message.OrderId,
-            context.Topic,
+            context.MessageName,
             context.IntentType);
 
         return ValueTask.CompletedTask;

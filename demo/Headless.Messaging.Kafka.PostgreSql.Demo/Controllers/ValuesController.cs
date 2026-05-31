@@ -29,7 +29,7 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { Topic = "sample.kafka.postgrsql", Delay = TimeSpan.FromSeconds(delaySeconds) }
+            new EnqueueOptions { MessageName = "sample.kafka.postgrsql", Delay = TimeSpan.FromSeconds(delaySeconds) }
         );
 
         return Ok();
@@ -40,7 +40,7 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
     {
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+            new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
         );
 
         return Ok();
@@ -61,7 +61,7 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
 
             await producer.EnqueueAsync(
                 new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+                new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
             );
 
             await transaction.CommitAsync();
@@ -69,7 +69,7 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
 
         await producer.EnqueueAsync(
             new KafkaMessage(DateTime.UtcNow),
-            new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+            new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
         );
 
         return Ok();
@@ -86,7 +86,7 @@ public class ValuesController(IOutboxQueue producer, IOutboxTransaction outboxTr
 
             await producer.EnqueueAsync(
                 new KafkaMessage(DateTime.UtcNow),
-                new EnqueueOptions { Topic = "sample.kafka.postgrsql" }
+                new EnqueueOptions { MessageName = "sample.kafka.postgrsql" }
             );
 
             await dbContext.Database.CommitTransactionAsync();

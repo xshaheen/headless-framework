@@ -286,7 +286,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 modifiers: null
             )!,
             ImplTypeInfo = typeof(ConsumeMiddlewarePipelineMigratedTests).GetTypeInfo(),
-            TopicName = "orders",
+            MessageName = "orders",
             GroupName = groupName,
         };
 

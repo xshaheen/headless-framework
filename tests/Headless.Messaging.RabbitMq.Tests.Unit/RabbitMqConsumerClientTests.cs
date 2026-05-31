@@ -232,9 +232,10 @@ public sealed class RabbitMqConsumerClientTests : TestBase
             .Returns<Task<QueueDeclareOk>>(_ => throw new TimeoutException("Queue declare timeout"));
 
         // when
-        await client.ConnectAsync();
+        var act = async () => await client.ConnectAsync();
 
         // then
+        await act.Should().ThrowAsync<TimeoutException>();
         logInvoked.Should().BeTrue();
     }
 

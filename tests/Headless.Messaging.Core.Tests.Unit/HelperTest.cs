@@ -144,7 +144,9 @@ public sealed class HelperTest
         var act = () => Helper.WildcardToRegex(longWildcard);
 
         // then
-        act.Should().Throw<ArgumentException>().WithMessage("Topic pattern exceeds maximum length of 200 characters*");
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("MessageName pattern exceeds maximum length of 200 characters*");
     }
 
     [Fact]
@@ -157,7 +159,7 @@ public sealed class HelperTest
         var act = () => Helper.WildcardToRegex(manyWildcards);
 
         // then
-        act.Should().Throw<ArgumentException>().WithMessage("Topic pattern contains too many wildcards*");
+        act.Should().Throw<ArgumentException>().WithMessage("MessageName pattern contains too many wildcards*");
     }
 
     [Theory]

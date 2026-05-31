@@ -39,7 +39,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.Options.RetryPolicy.MaxPersistedRetries = 50;
     setup.UseConventions(c =>
     {
-        c.UseKebabCaseTopics();
+        c.UseKebabCaseMessageNames();
         c.UseApplicationId("ordering-api");
         c.UseVersion("v1");
     });
@@ -65,7 +65,7 @@ public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
     {
         await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
         {
-            await bus.PublishAsync(order, new PublishOptions { Topic = "orders.placed" }, ct);
+            await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
             await dbContext.SaveChangesAsync(ct);
             await dbTransaction.CommitAsync(ct);
         }
@@ -77,7 +77,7 @@ public sealed class ImportService(IQueue queue)
 {
     public async Task StartAsync(ImportRequested request, CancellationToken ct)
     {
-        await queue.EnqueueAsync(request, new EnqueueOptions { Topic = "imports.requested" }, ct);
+        await queue.EnqueueAsync(request, new EnqueueOptions { MessageName = "imports.requested" }, ct);
     }
 }
 ```
@@ -86,8 +86,8 @@ public sealed class ImportService(IQueue queue)
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `SubscribeFromAssemblyContaining<T>()` and `Subscribe<T>()` are the primary registration APIs.
-- `AddBusConsumer<TConsumer, TMessage>(topic)` and `AddQueueConsumer<TConsumer, TMessage>(topic)` are the library-author registration APIs when a package wants to contribute consumers through DI with explicit delivery intent.
-- topic and group defaults are deterministic; duplicate registrations fail fast by default.
+- `AddBusConsumer<TConsumer, TMessage>(messageName)` and `AddQueueConsumer<TConsumer, TMessage>(messageName)` are the library-author registration APIs when a package wants to contribute consumers through DI with explicit delivery intent.
+- message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.
 - a persisted row whose `IntentType` has no registered transport is marked terminal `Failed` with no next retry; the drainer logs the unsupported intent and continues processing later rows.
 - direct publish, outbox publish, and runtime delegates preserve the existing diagnostic listener and metric names used by dashboards.
@@ -136,7 +136,7 @@ public sealed class MetricsPublisher(IBus bus)
 {
     public async Task PublishMetric(MetricEvent metric, CancellationToken ct)
     {
-        await bus.PublishAsync(metric, new PublishOptions { Topic = "metrics.events" }, ct);
+        await bus.PublishAsync(metric, new PublishOptions { MessageName = "metrics.events" }, ct);
     }
 }
 ```
@@ -244,7 +244,7 @@ builder.AddHeadlessTenancy(
 
 Tenant propagation requires a real `ICurrentTenant`. `AddHeadlessMessaging()` registers only the safe `NullCurrentTenant` fallback; `Headless.Api` and `Headless.Orm.EntityFramework` setup replace that fallback while preserving consumer-provided tenant implementations.
 
-The consume middleware trusts the inbound envelope. Topics exposed to external producers must layer envelope validation upstream.
+The consume middleware trusts the inbound envelope. Message names exposed to external producers must layer envelope validation upstream.
 
 ### Diagnostics / PII
 
@@ -388,7 +388,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 ```csharp
 setup.Subscribe<PaymentHandler>()
-    .Topic("payments.process")
+    .MessageName("payments.process")
     .WithCircuitBreaker(cb =>
     {
         cb.FailureThreshold = 3;                    // more sensitive

@@ -25,7 +25,8 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
-        RabbitMqValidation.ValidateTopicName(message.GetName());
+        cancellationToken.ThrowIfCancellationRequested();
+        RabbitMqValidation.ValidateMessageName(message.GetName());
 
         IChannel? channel = null;
         try

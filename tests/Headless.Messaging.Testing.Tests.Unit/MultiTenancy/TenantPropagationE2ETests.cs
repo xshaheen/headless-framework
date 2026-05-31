@@ -33,7 +33,7 @@ public sealed class TenantCapturingConsumer(ICurrentTenant currentTenant, Tenant
 public sealed record TenantOrderUpstream(string OrderId);
 
 /// <summary>
-/// Receives <see cref="TenantOrderUpstream"/> on one topic and re-publishes a derived
+/// Receives <see cref="TenantOrderUpstream"/> on one messageName and re-publishes a derived
 /// <see cref="TenantOrderEvent"/> from inside the consume scope so we can verify that the
 /// publish-filter picks up the restored ambient tenant on the consume side.
 /// </summary>

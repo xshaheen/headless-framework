@@ -13,24 +13,24 @@ public interface IConsumerClient : IAsyncDisposable
     BrokerAddress BrokerAddress { get; }
 
     /// <summary>
-    /// Creates (if necessary) and retrieves topic identifiers from the message broker
+    /// Creates (if necessary) and retrieves message-name identifiers from the message broker
     /// </summary>
-    /// <param name="topicNames">Names of the requested topics to fetch</param>
-    /// <returns>A collection of topic identifiers returned by the broker</returns>
-    ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    /// <param name="messageNames">Names of the requested messages to fetch</param>
+    /// <returns>A collection of message-name identifiers returned by the broker</returns>
+    ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
-        return ValueTask.FromResult<ICollection<string>>(topicNames.ToList());
+        return ValueTask.FromResult<ICollection<string>>(messageNames.ToList());
     }
 
     /// <summary>
-    /// Subscribes to a set of topics in the message broker
+    /// Subscribes to a set of message names in the message broker
     /// </summary>
-    /// <param name="topics">Collection of topic identifiers to subscribe to</param>
+    /// <param name="messageNames">Collection of message-name identifiers to subscribe to</param>
     /// <returns>A task that represents the asynchronous subscribe operation</returns>
-    ValueTask SubscribeAsync(IEnumerable<string> topics);
+    ValueTask SubscribeAsync(IEnumerable<string> messageNames);
 
     /// <summary>
-    /// Starts listening for messages from the subscribed topics
+    /// Starts listening for messages from the subscribed message names
     /// </summary>
     /// <param name="timeout">Maximum time to wait when polling for messages</param>
     /// <param name="cancellationToken">Token to cancel the listening operation</param>

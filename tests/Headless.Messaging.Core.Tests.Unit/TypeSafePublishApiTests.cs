@@ -27,7 +27,7 @@ public sealed class TypeSafePublishApiTests
         services.AddLogging();
         services.AddHeadlessMessaging(opt =>
         {
-            opt.WithTopicMapping<OrderCreated>("orders.created");
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
@@ -37,8 +37,8 @@ public sealed class TypeSafePublishApiTests
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
         // then
-        options.TopicMappings.Should().ContainKey(typeof(OrderCreated));
-        options.TopicMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
+        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
     }
 
     [Fact]
@@ -49,8 +49,8 @@ public sealed class TypeSafePublishApiTests
         services.AddLogging();
         services.AddHeadlessMessaging(opt =>
         {
-            opt.WithTopicMapping<OrderCreated>("orders.created");
-            opt.WithTopicMapping<UserRegistered>("users.registered");
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
+            opt.WithMessageNameMapping<UserRegistered>("users.registered");
             opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
@@ -60,9 +60,9 @@ public sealed class TypeSafePublishApiTests
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
 
         // then
-        options.TopicMappings.Should().HaveCount(2);
-        options.TopicMappings[typeof(OrderCreated)].Should().Be("orders.created");
-        options.TopicMappings[typeof(UserRegistered)].Should().Be("users.registered");
+        options.MessageNameMappings.Should().HaveCount(2);
+        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        options.MessageNameMappings[typeof(UserRegistered)].Should().Be("users.registered");
     }
 
     [Fact]
@@ -76,15 +76,15 @@ public sealed class TypeSafePublishApiTests
             .Invoking(s =>
                 s.AddHeadlessMessaging(opt =>
                 {
-                    opt.WithTopicMapping<OrderCreated>("orders.created");
-                    opt.WithTopicMapping<OrderCreated>("orders.new"); // Different topic
+                    opt.WithMessageNameMapping<OrderCreated>("orders.created");
+                    opt.WithMessageNameMapping<OrderCreated>("orders.new"); // Different messageName
                     opt.UseInMemory();
                     opt.UseInMemoryStorage();
                 })
             )
             .Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*already mapped to topic 'orders.created'*");
+            .WithMessage("*already mapped to messageName 'orders.created'*");
     }
 
     [Fact]
@@ -98,8 +98,8 @@ public sealed class TypeSafePublishApiTests
             .Invoking(s =>
                 s.AddHeadlessMessaging(opt =>
                 {
-                    opt.WithTopicMapping<OrderCreated>("orders.created");
-                    opt.WithTopicMapping<OrderCreated>("orders.created"); // Same topic
+                    opt.WithMessageNameMapping<OrderCreated>("orders.created");
+                    opt.WithMessageNameMapping<OrderCreated>("orders.created"); // Same messageName
                     opt.UseInMemory();
                     opt.UseInMemoryStorage();
                 })
@@ -111,14 +111,14 @@ public sealed class TypeSafePublishApiTests
     [Fact]
     public async Task should_support_consumer_and_publisher_using_same_topic_mapping()
     {
-        // This test documents that topic mappings work for both consumers and publishers
+        // This test documents that messageName mappings work for both consumers and publishers
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(opt =>
         {
-            // Topic mapping can be used by both publisher and consumer
-            opt.WithTopicMapping<OrderCreated>("orders.created");
+            // MessageName mapping can be used by both publisher and consumer
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.UseInMemory();
             opt.UseInMemoryStorage();
         });
@@ -129,8 +129,8 @@ public sealed class TypeSafePublishApiTests
         var publisher = provider.GetRequiredService<IOutboxBus>();
 
         // then - Mapping is available for type-safe publishing
-        options.TopicMappings.Should().ContainKey(typeof(OrderCreated));
-        options.TopicMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
+        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
         publisher.Should().NotBeNull();
     }
 
@@ -167,14 +167,14 @@ public sealed class TypeSafePublishApiTests
     [Fact]
     public void should_provide_helpful_error_message_format()
     {
-        // This test documents the expected error message format when topic mapping is missing
-        // The actual error is thrown by MessagePublishRequestFactory._GetTopicNameFromMapping<T>()
+        // This test documents the expected error message format when messageName mapping is missing
+        // The actual error is thrown by MessagePublishRequestFactory._GetMessageNameFromMapping<T>()
 
         const string expectedErrorPattern =
-            "No topic mapping found for message type 'OrderCreated'*WithTopicMapping<OrderCreated>*";
+            "No messageName mapping found for message type 'OrderCreated'*WithMessageNameMapping<OrderCreated>*";
 
         // This serves as documentation of the error message developers will see
-        expectedErrorPattern.Should().Contain("WithTopicMapping");
+        expectedErrorPattern.Should().Contain("WithMessageNameMapping");
         expectedErrorPattern.Should().Contain("OrderCreated");
     }
 
@@ -186,7 +186,7 @@ public sealed class TypeSafePublishApiTests
         services.AddLogging();
         services.AddHeadlessMessaging(opt =>
         {
-            opt.WithTopicMapping<OrderCreated>("orders.created");
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
             opt.UseInMemory();
             opt.UseInMemoryStorage();
         });

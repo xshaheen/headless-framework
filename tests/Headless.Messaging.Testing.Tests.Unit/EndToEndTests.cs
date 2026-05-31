@@ -108,7 +108,7 @@ public sealed class EndToEndTests : TestBase
 
         // then
         recorded.MessageId.Should().NotBeNullOrWhiteSpace();
-        recorded.Topic.Should().NotBeNullOrWhiteSpace();
+        recorded.MessageName.Should().NotBeNullOrWhiteSpace();
         recorded.MessageType.Should().Be(typeof(OrderCreatedEvent));
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-001");
 
@@ -280,12 +280,12 @@ public sealed class EndToEndTests : TestBase
         // when
         await bus.PublishAsync(
             new OrderCreatedEvent("same-payload", 10m),
-            new PublishOptions { Topic = "order-created" },
+            new PublishOptions { MessageName = "order-created" },
             AbortToken
         );
         await queue.EnqueueAsync(
             new OrderCreatedEvent("same-payload", 10m),
-            new EnqueueOptions { Topic = "order-created" },
+            new EnqueueOptions { MessageName = "order-created" },
             AbortToken
         );
 
@@ -343,12 +343,12 @@ public sealed class EndToEndTests : TestBase
         // when
         await outboxBus.PublishAsync(
             new OrderCreatedEvent("outbox-bus", 10m),
-            new PublishOptions { Topic = "outbox-order-created" },
+            new PublishOptions { MessageName = "outbox-order-created" },
             AbortToken
         );
         await outboxQueue.EnqueueAsync(
             new OrderCreatedEvent("outbox-queue", 20m),
-            new EnqueueOptions { Topic = "outbox-order-created" },
+            new EnqueueOptions { MessageName = "outbox-order-created" },
             AbortToken
         );
 
@@ -399,7 +399,7 @@ public sealed class EndToEndTests : TestBase
         // when
         await queue.EnqueueAsync(
             new OrderCreatedEvent("queue-only", 10m),
-            new EnqueueOptions { Topic = "queue-only-order-created" },
+            new EnqueueOptions { MessageName = "queue-only-order-created" },
             AbortToken
         );
 

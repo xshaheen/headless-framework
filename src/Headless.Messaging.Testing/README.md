@@ -57,7 +57,7 @@ harness.Published.Should().ContainSingle(m => m.MessageType == typeof(OrderCreat
 harness.Faulted.Should().BeEmpty();
 ```
 
-Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `Topic`, `IntentType`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
+Each entry is a `RecordedMessage` with `MessageType`, `Message`, `MessageId`, `CorrelationId`, `Headers`, `MessageName`, `IntentType`, `Timestamp`, and (for faulted or exhausted observations) `Exception`.
 
 ## WaitFor* Methods
 

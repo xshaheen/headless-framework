@@ -36,11 +36,11 @@ public sealed class ServiceCollectionConsumerBuilder<TConsumer> : IConsumerBuild
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Topic(string topic)
+    public IConsumerBuilder<TConsumer> MessageName(string messageName)
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
-        _metadata = _metadata with { Topic = topic };
+        _metadata = _metadata with { MessageName = messageName };
         _UpdateMetadataInServices();
         return this;
     }
