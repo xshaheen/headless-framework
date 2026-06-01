@@ -43,6 +43,16 @@ builder.Services.AddHeadlessSettings(setup =>
 
 Configure schema and table names through `SettingsStorageOptions` on the shared settings builder. Configure the connection string through `SqlServerSettingsOptions`.
 
+Set `SettingsStorageOptions.InitializeOnStartup = false` to skip the startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+
+```csharp
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UseSqlServer(...);
+});
+```
+
 ## Dependencies
 
 - `Headless.Settings.Core`

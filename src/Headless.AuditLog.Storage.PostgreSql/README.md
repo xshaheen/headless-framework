@@ -21,6 +21,16 @@ services.AddHeadlessAuditLog(setup =>
 
 Override `AuditLogStorageOptions.JsonColumnType` when a different PostgreSQL JSON/text column type is required (`Jsonb`, `Json`, `NvarcharMax`).
 
+Set `AuditLogStorageOptions.InitializeOnStartup = false` to skip the startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+
+```csharp
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UsePostgreSql(connectionString);
+});
+```
+
 ## Mixed mode (raw store + HeadlessDbContext)
 
 When the consumer also uses `AddHeadlessDbContext<TContext>`, EF change-capture is wired automatically (registered alongside the SaveChanges pipeline in `Headless.Orm.EntityFramework`). No extra setup is required. The raw store enrolls in the consumer's ambient `DbContext` transaction when the providers match (both Npgsql) so audit rows commit atomically with the entity batch; on provider mismatch the store falls back to its own connection with a one-time warning log.

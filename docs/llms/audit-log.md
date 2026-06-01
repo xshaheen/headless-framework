@@ -271,7 +271,7 @@ services.AddHeadlessAuditLog(setup =>
 
 ## Notes
 
-- Creates the configured audit table at host startup.
+- Creates the configured audit table at host startup. Set `AuditLogStorageOptions.InitializeOnStartup = false` (via `setup.ConfigureStorage(o => o.InitializeOnStartup = false)`) to skip this startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
 - Uses `jsonb` for `OldValues`, `NewValues`, and `ChangedFields` by default.
 - Registers `IAuditLogStore`, `IAuditLog<TContext>`, and `IReadAuditLog<TContext>` backed by raw PostgreSQL.
 - Writes use the provider connection directly; they do not enlist in an app EF transaction.
@@ -305,7 +305,7 @@ services.AddHeadlessAuditLog(setup =>
 
 ## Notes
 
-- Creates the configured audit table at host startup.
+- Creates the configured audit table at host startup. Set `AuditLogStorageOptions.InitializeOnStartup = false` (via `setup.ConfigureStorage(o => o.InitializeOnStartup = false)`) to skip this startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
 - Uses `nvarchar(max)` for `OldValues`, `NewValues`, and `ChangedFields` by default.
 - Registers `IAuditLogStore`, `IAuditLog<TContext>`, and `IReadAuditLog<TContext>` backed by raw SQL Server.
 - Writes use the provider connection directly; they do not enlist in an app EF transaction.

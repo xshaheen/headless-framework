@@ -18,6 +18,8 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
     private readonly ILogger<PostgreSqlPermissionsStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlPermissionsStorageInitializer>.Instance;
 
+    protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
+
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;

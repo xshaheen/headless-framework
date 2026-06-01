@@ -376,8 +376,19 @@ builder.Services.AddHeadlessSettings(setup =>
 - `Schema = "settings"`
 - `SettingValuesTableName = "SettingValues"`
 - `SettingDefinitionsTableName = "SettingDefinitions"`
+- `InitializeOnStartup = true`
 
 The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if `SettingValueRecord` or `SettingDefinitionRecord` is missing.
+
+Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA), so the raw-DDL startup initializer is skipped (no-op). The initializer still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. This only affects raw-DDL self-initializing providers (PostgreSQL / SqlServer); EF-mode storage uses migrations and ignores the flag.
+
+```csharp
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UsePostgreSql(...);
+});
+```
 
 ## Dependencies
 

@@ -12,6 +12,8 @@ internal sealed class SqlServerSettingsStorageInitializer(
     IOptions<SettingsStorageOptions> storageOptions
 ) : HostedInitializer
 {
+    protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
+
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);

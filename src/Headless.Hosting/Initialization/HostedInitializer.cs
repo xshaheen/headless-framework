@@ -16,6 +16,11 @@ namespace Headless.Hosting.Initialization;
 /// canceled with <see cref="CancellationToken.None"/> so waiters from the prior run observe
 /// <see cref="OperationCanceledException"/> rather than hanging. On first start the field
 /// initializer's TCS is never <c>IsCompleted</c>, so the cancel path is skipped.
+/// <para>
+/// Subclasses may override <see cref="RunOnStartup"/> to return <c>false</c> to skip
+/// <see cref="InitializeAsync"/> entirely while still marking the initializer complete, so
+/// dependents that await <see cref="WaitForInitializationAsync"/> do not block.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
@@ -23,6 +28,14 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IsInitialized { get; private set; }
+
+    /// <summary>
+    /// When <c>false</c>, <see cref="StartingAsync"/> skips <see cref="InitializeAsync"/> entirely
+    /// but still marks the initializer complete (<see cref="IsInitialized"/> becomes <c>true</c> and
+    /// the completion promise is resolved) so dependents awaiting
+    /// <see cref="WaitForInitializationAsync"/> are released. Defaults to <c>true</c>.
+    /// </summary>
+    protected virtual bool RunOnStartup => true;
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
@@ -35,6 +48,16 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
             // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
             // misleadingly attributed to the current run's startup token.
             previous.TrySetCanceled(CancellationToken.None);
+        }
+
+        if (!RunOnStartup)
+        {
+            // Opt-out: skip the actual work but still complete so WaitForInitializationAsync waiters
+            // are released. Used when the schema/topology is provisioned out-of-band.
+            IsInitialized = true;
+            _completion.TrySetResult();
+
+            return;
         }
 
         try

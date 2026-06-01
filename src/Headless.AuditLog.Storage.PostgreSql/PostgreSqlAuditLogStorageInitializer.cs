@@ -18,6 +18,8 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     private readonly ILogger<PostgreSqlAuditLogStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlAuditLogStorageInitializer>.Instance;
 
+    protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
+
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;

@@ -18,6 +18,8 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
     private readonly ILogger<PostgreSqlFeaturesStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlFeaturesStorageInitializer>.Instance;
 
+    protected override bool RunOnStartup => storageOptions.Value.InitializeOnStartup;
+
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         var options = storageOptions.Value;

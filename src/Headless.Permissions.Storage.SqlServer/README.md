@@ -37,6 +37,16 @@ builder.Services.AddHeadlessPermissions(setup =>
 
 Configure schema and table names through `PermissionsStorageOptions` on the shared permissions builder. Configure the connection string through `SqlServerPermissionsOptions`.
 
+Set `PermissionsStorageOptions.InitializeOnStartup = false` to skip the startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+
+```csharp
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UseSqlServer(...);
+});
+```
+
 ## Dependencies
 
 - `Headless.Permissions.Core`
