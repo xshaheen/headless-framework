@@ -113,14 +113,13 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             ConfigureMessaging(setup);
 
             // Register test consumer
-            services.ForMessage<TestMessage>(message =>
+            setup.ForMessage<TestMessage>(message =>
                 message
                     .MessageName("test-message")
                     .OnBus<TestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
             );
-
             // Register failing consumer for exception tests
-            services.ForMessage<FailingTestMessage>(message =>
+            setup.ForMessage<FailingTestMessage>(message =>
                 message
                     .MessageName("failing-message")
                     .OnBus<FailingTestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))

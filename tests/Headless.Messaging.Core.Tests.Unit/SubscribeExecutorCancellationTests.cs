@@ -85,12 +85,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.ForMessage<CancellationExecutorTestMessage>(message =>
-            message.MessageName("test.messageName").OnBus<CancellationExecutorTestConsumer>()
-        );
-
         services.AddHeadlessMessaging(setup =>
         {
+            setup.ForMessage<CancellationExecutorTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<CancellationExecutorTestConsumer>()
+            );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

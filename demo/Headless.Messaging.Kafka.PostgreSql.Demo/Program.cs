@@ -15,12 +15,12 @@ builder.Services.AddDbContext<AppDbContext>(
     }
 );
 
-builder.Services.ForMessage<KafkaMessage>(message =>
-    message.MessageName("sample.kafka.postgrsql").OnQueue<KafkaMessageConsumer>()
-);
-
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessage<KafkaMessage>(message =>
+        message.MessageName("sample.kafka.postgrsql").OnQueue<KafkaMessageConsumer>()
+    );
+
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
     setup.UsePostgreSql(AppConstants.DbConnectionString);

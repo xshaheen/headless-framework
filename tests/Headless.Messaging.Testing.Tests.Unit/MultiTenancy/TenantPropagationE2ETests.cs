@@ -136,8 +136,8 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
-                services.ForMessage<TenantOrderEvent>(message =>
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 )
         );
@@ -169,12 +169,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
-                services.ForMessage<TenantOrderEvent>(message =>
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 )
         );
-
         // when — no ambient tenant; publish without explicit options
         await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-SYS"), cancellationToken: AbortToken);
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
@@ -194,8 +193,8 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
-                services.ForMessage<TenantOrderEvent>(message =>
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 )
         );
@@ -228,8 +227,8 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
-                services.ForMessage<TenantOrderEvent>(message =>
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<FlakyTenantConsumer>()
                 )
         );
@@ -279,7 +278,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             capture,
             (services, setup) =>
             {
-                services.ForMessage<TenantOrderEvent>(message =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 );
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
@@ -340,12 +339,12 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
+            (_, setup) =>
             {
-                services.ForMessage<TenantOrderUpstream>(message =>
+                setup.ForMessage<TenantOrderUpstream>(message =>
                     message.MessageName("upstream-orders").OnBus<ChainedRepublishConsumer>()
                 );
-                services.ForMessage<TenantOrderEvent>(message =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 );
             }
@@ -379,8 +378,8 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            (services, _) =>
-                services.ForMessage<TenantOrderEvent>(message =>
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
                     message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
                 )
         );

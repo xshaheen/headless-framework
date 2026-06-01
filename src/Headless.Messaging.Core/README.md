@@ -11,7 +11,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Intent-Specific Publishers**: `IBus` / `IOutboxBus` for broadcast and `IQueue` / `IOutboxQueue` for point-to-point delivery
 - **Outbox Delivery**: Transactional message publishing with database consistency
 - **Scheduled Delivery**: `PublishOptions.Delay` and `EnqueueOptions.Delay` defer outbox dispatch
-- **Consumer Management**: `ForMessage<TMessage>(...)`, `ForMessagesFromAssembly(...)`, invocation, and per-dispatch lifecycle handling
+- **Consumer Management**: `ForMessage<TMessage>(...)`, `setup.ForMessagesFromAssembly(...)`, invocation, and per-dispatch lifecycle handling
 - **Runtime Delegate Support**: Broker-attached function handlers with scoped DI and the same consume pipeline as class handlers
 - **Message Processing**: Retry processor, delayed message scheduler, transport health checks
 - **Durable Intent Dispatch**: Outbox rows carry bus/queue intent so retry drainers use the matching transport
@@ -85,8 +85,8 @@ public sealed class ImportService(IQueue queue)
 ## Defaults And Telemetry
 
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
-- `ForMessage<TMessage>(...)` is the primary registration API. `MessageName(...)` sets the publish and consume name for that message type; `OnBus<TConsumer>()` registers broadcast delivery and `OnQueue<TConsumer>()` registers point-to-point delivery.
-- `ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a publisher-only message-name mapping.
+- `setup.ForMessage<TMessage>(...)` is the primary registration API. `MessageName(...)` sets the publish and consume name for that message type; `OnBus<TConsumer>()` registers broadcast delivery and `OnQueue<TConsumer>()` registers point-to-point delivery.
+- `setup.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a publisher-only message-name mapping.
 - `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback.
 - message-name mappings are type-level. Re-registering the same message type merges consumers; mapping two different message types to the same resolved message name fails at startup.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
@@ -389,16 +389,19 @@ builder.Services.AddHeadlessMessaging(setup =>
 ### Per-Consumer Override
 
 ```csharp
-builder.Services.ForMessage<PaymentProcessed>(message =>
-    message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
-    {
-        cb.FailureThreshold = 3;                    // more sensitive
-        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-    })));
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.ForMessage<PaymentProcessed>(message =>
+        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 3;                    // more sensitive
+            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+        })));
 
-// Disable circuit breaker for a best-effort consumer
-builder.Services.ForMessage<MetricsUpdated>(message =>
-    message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+    // Disable circuit breaker for a best-effort consumer
+    setup.ForMessage<MetricsUpdated>(message =>
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+});
 ```
 
 ### Custom Exception Predicate

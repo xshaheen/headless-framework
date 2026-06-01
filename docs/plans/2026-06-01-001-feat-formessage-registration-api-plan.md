@@ -11,7 +11,7 @@ origin: docs/brainstorms/2026-05-25-messaging-consumer-model-evolution-requireme
 ## Summary
 
 Replace every consumer-registration entry point in `Headless.Messaging.Core` with a single
-message-centric fluent API: `services.ForMessage<T>(x => { x.OnBus<C>(); x.OnQueue<C>(q => q.Group(...)); })`.
+message-centric fluent API: `setup.ForMessage<T>(x => { x.OnBus<C>(); x.OnQueue<C>(q => q.Group(...)); })`.
 The same handler can be registered under both intent lanes; a message can be registered with no
 consumers at all (publisher-only); and two distinct message types that resolve to the same message
 name fail host startup. This is the headline change of Cluster 0 (#357) and unblocks #358 (Layer 2
@@ -24,7 +24,7 @@ knobs), then #359 / #360.
 Today registration is split across two unrelated surfaces with divergent semantics:
 
 - **Imperative**, pre-bootstrap: `services.AddBusConsumer<TConsumer,TMessage>(name)` /
-  `AddQueueConsumer<...>(name)` (`src/Headless.Messaging.Core/ServiceCollectionExtensions.cs`).
+  `AddQueueConsumer<...>(name)` (`src/Headless.Messaging.Core/Setup.cs`).
   These stash a `ConsumerMetadata` as a DI singleton and rely on `_DiscoverConsumersFromDI`
   (`src/Headless.Messaging.Core/Setup.cs`) to bridge them into the live registry. Intent is encoded
   purely by which method was called.
@@ -59,7 +59,7 @@ Three facts from current-state research shape this plan and correct the issue's 
 
 ### Registration API (origin §3)
 
-- R1. `services.ForMessage<T>(Action<IMessageBuilder<T>>)` registers message-level metadata plus zero
+- R1. `setup.ForMessage<T>(Action<IMessageBuilder<T>>)` registers message-level metadata plus zero
   or more consumers for `T`, callable on `IServiceCollection` before `AddHeadlessMessaging`.
 - R2. `IMessageBuilder<T>` exposes `MessageName(string)`, `OnBus<C>()` / `OnBus<C>(Action<IBusConsumerBuilder<C>>)`,
   and `OnQueue<C>()` / `OnQueue<C>(Action<IQueueConsumerBuilder<C>>)`, where `C : IConsume<T>`.
@@ -207,7 +207,7 @@ Three facts from current-state research shape this plan and correct the issue's 
 ```mermaid
 flowchart TB
   subgraph pre["Pre-bootstrap (IServiceCollection)"]
-    FM["services.ForMessage&lt;T&gt;(x =&gt; ...)"] --> STASH["MessageRegistration stash<br/>(DI singleton)"]
+    FM["setup.ForMessage&lt;T&gt;(x =&gt; ...)"] --> STASH["MessageRegistration stash<br/>(DI singleton)"]
     FMA["setup.ForMessagesFromAssembly(asm)"] -->|reflect closed IConsume&lt;T&gt;| STASH
   end
   subgraph boot["AddHeadlessMessaging"]
@@ -287,7 +287,7 @@ separated here for review clarity.
 
 ### U1. `ForMessage<T>` entry point, `IMessageBuilder<T>`, and the stash record
 
-- Goal: Add the public `services.ForMessage<T>(Action<IMessageBuilder<T>>)` extension and the
+- Goal: Add the public `setup.ForMessage<T>(Action<IMessageBuilder<T>>)` extension and the
   `IMessageBuilder<T>` surface (`MessageName`, `OnBus`, `OnQueue`), accumulating a `MessageRegistration`
   stash record as a DI singleton. No discovery yet.
 - Requirements: R1, R2, R3, R4, R7, R11.
@@ -295,14 +295,14 @@ separated here for review clarity.
 - Files:
   - `src/Headless.Messaging.Core/Registration/MessageBuilder.cs` (new — `IMessageBuilder<T>` + impl)
   - `src/Headless.Messaging.Core/Registration/MessageRegistration.cs` (new — stash record)
-  - `src/Headless.Messaging.Core/ServiceCollectionExtensions.cs` (add `ForMessage<T>`; `AddX` removed in U6)
+  - `src/Headless.Messaging.Core/Setup.cs` (add `ForMessage<T>`; `AddX` removed in U6)
   - `tests/Headless.Messaging.Core.Tests.Unit/ForMessageRegistrationTests.cs` (new)
 - Approach: `ForMessage<T>` constructs an `IMessageBuilder<T>` impl that records an optional explicit
   message name and a list of `(IntentType, consumerType, perConsumerConfig)` specs, then registers the
   resulting `MessageRegistration` as a singleton instance (mirroring how `AddBusConsumer` stashes
   `ConsumerMetadata` today). Each `OnBus`/`OnQueue` also `TryAddScoped`s the consumer type + its
   `IConsume<T>` mapping, as the current code does. The outer lambda returns `void`.
-- Patterns to follow: the stash-as-DI-singleton seam in `ServiceCollectionExtensions._AddConsumer`;
+- Patterns to follow: the stash-as-DI-singleton seam in `SetupMessaging.ForMessage`;
   the accumulate-into-a-list builder shape from
   `docs/solutions/architecture-patterns/unified-storage-setup-pattern.md`. Use C# 14 `extension(IServiceCollection)`
   members per the project Setup-class convention.
@@ -449,7 +449,7 @@ separated here for review clarity.
 - Requirements: R13, R6.
 - Dependencies: U1, U3.
 - Files:
-  - `src/Headless.Messaging.Core/ServiceCollectionExtensions.cs` (scanning extensions)
+  - `src/Headless.Messaging.Core/Setup.cs` (scanning extensions)
   - `src/Headless.Messaging.Core/Registration/MessageBuilder.cs` (non-generic Type-based stash helper)
   - `tests/Headless.Messaging.Core.Tests.Unit/ForMessageRegistrationTests.cs`
 - Approach: Reflect over the assembly for closed `IConsume<TMessage>` implementations (the same
@@ -484,7 +484,7 @@ separated here for review clarity.
 - Requirements: R12, R13.
 - Dependencies: U1–U5 (replacements exist).
 - Files:
-  - `src/Headless.Messaging.Core/ServiceCollectionExtensions.cs` (delete `AddBusConsumer`,
+  - `src/Headless.Messaging.Core/Setup.cs` (delete `AddBusConsumer`,
     `AddQueueConsumer`, `_AddConsumer`)
   - `src/Headless.Messaging.Core/ServiceCollectionConsumerBuilder.cs` (delete)
   - `src/Headless.Messaging.Core/IMessagingBuilder.cs` (delete `Subscribe<T>*`; keep `WithMessageNameMapping`,
@@ -674,7 +674,7 @@ explicit assembly scanning, per-tenant topology, source-generated registration, 
 - Origin spec: `docs/brainstorms/2026-05-25-messaging-consumer-model-evolution-requirements.md`
   (§3 registration API, §4 intent model, §10 inference/collision, §11 layout, §12 rejected alternatives).
 - Current-state map (researched 2026-06-01):
-  - `src/Headless.Messaging.Core/ServiceCollectionExtensions.cs` — `AddBusConsumer`/`AddQueueConsumer`,
+  - `src/Headless.Messaging.Core/Setup.cs` — `AddBusConsumer`/`AddQueueConsumer`,
     `_AddConsumer` stash-as-singleton seam.
   - `src/Headless.Messaging.Core/Setup.cs` — `_DiscoverConsumersFromDI` bridge; `_RegisterCoreMessagingServices`;
     `ValidateOnStart` wiring via `services.Configure<MessagingOptions, MessagingOptionsValidator>`.

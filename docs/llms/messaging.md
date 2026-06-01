@@ -294,7 +294,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
-- **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `services.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning.
+- **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
 - **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
@@ -303,7 +303,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
-- **Message-name mapping**: Map message types to logical message names via `services.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
+- **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
@@ -1112,16 +1112,19 @@ builder.Services.AddHeadlessMessaging(setup =>
 ### Per-Consumer Override
 
 ```csharp
-builder.Services.ForMessage<PaymentProcessed>(message =>
-    message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
-    {
-        cb.FailureThreshold = 3;                    // more sensitive
-        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-    })));
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.ForMessage<PaymentProcessed>(message =>
+        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 3;                    // more sensitive
+            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+        })));
 
-// Disable circuit breaker for a best-effort consumer
-builder.Services.ForMessage<MetricsUpdated>(message =>
-    message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+    // Disable circuit breaker for a best-effort consumer
+    setup.ForMessage<MetricsUpdated>(message =>
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+});
 ```
 
 ### Custom Exception Predicate
@@ -2393,9 +2396,10 @@ Creates its own `ServiceProvider`. Use for unit-style tests that don't need a fu
 ```csharp
 await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
-    services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
     services.AddHeadlessMessaging(options =>
     {
+        options.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
         options.UseInMemory();
         options.UseInMemoryStorage();
     });
@@ -2431,9 +2435,10 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 
 ```csharp
 // With WebApplication (no factory)
-builder.Services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessage<OrderCreated>(message =>
+        message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
     options.UseInMemory();
     options.UseInMemoryStorage();
 });
@@ -2483,7 +2488,11 @@ Lightweight consumer double that captures messages without custom handling logic
 
 ```csharp
 services.AddSingleton<TestConsumer<OrderCreated>>();
-services.ForMessage<OrderCreated>(message => message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>());
+services.AddHeadlessMessaging(options =>
+{
+    options.ForMessage<OrderCreated>(message =>
+        message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>());
+});
 
 // After publishing...
 var consumer = harness.GetTestConsumer<OrderCreated>();

@@ -17,7 +17,9 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
+        services.AddHeadlessMessaging(setup =>
+            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>())
+        );
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -36,10 +38,13 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message =>
+        services.AddHeadlessMessaging(setup =>
         {
-            message.OnBus<OrderPlacedHandler>();
-            message.OnBus<OrderPlacedAnalyticsHandler>();
+            setup.ForMessage<OrderPlaced>(message =>
+            {
+                message.OnBus<OrderPlacedHandler>();
+                message.OnBus<OrderPlacedAnalyticsHandler>();
+            });
         });
 
         using var provider = services.BuildServiceProvider();
@@ -58,10 +63,13 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message =>
+        services.AddHeadlessMessaging(setup =>
         {
-            message.OnBus<OrderPlacedHandler>();
-            message.OnQueue<OrderPlacedHandler>();
+            setup.ForMessage<OrderPlaced>(message =>
+            {
+                message.OnBus<OrderPlacedHandler>();
+                message.OnQueue<OrderPlacedHandler>();
+            });
         });
 
         using var provider = services.BuildServiceProvider();
@@ -80,9 +88,9 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -106,13 +114,15 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message =>
-            message
-                .MessageName("orders.placed")
-                .OnQueue<OrderPlacedHandler>(consumer => consumer.Group("orders").Concurrency(3).HandlerId("handler-1"))
-        );
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message =>
+                message
+                    .MessageName("orders.placed")
+                    .OnQueue<OrderPlacedHandler>(consumer =>
+                        consumer.Group("orders").Concurrency(3).HandlerId("handler-1")
+                    )
+            );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -136,8 +146,10 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
-            services.ForMessage<OrderPlaced>(message =>
-                message.OnBus<OrderPlacedHandler>(consumer => consumer.Concurrency(0))
+            services.AddHeadlessMessaging(setup =>
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.OnBus<OrderPlacedHandler>(consumer => consumer.Concurrency(0))
+                )
             );
 
         // then
@@ -151,10 +163,10 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
-        services.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedAnalyticsHandler>());
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+            setup.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedAnalyticsHandler>());
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -174,10 +186,10 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
-        services.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -197,14 +209,14 @@ public sealed class ForMessageRegistrationTests
         // when
         var act = () =>
         {
-            services.ForMessage<OrderPlaced>(message =>
-                message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
-            );
-            services.ForMessage<OrderPlaced>(message =>
-                message.OnBus<OrderPlacedAnalyticsHandler>(consumer => consumer.Group("orders"))
-            );
             services.AddHeadlessMessaging(static setup =>
             {
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                );
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.OnBus<OrderPlacedAnalyticsHandler>(consumer => consumer.Group("orders"))
+                );
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
@@ -221,13 +233,13 @@ public sealed class ForMessageRegistrationTests
     {
         // given
         var services = new ServiceCollection();
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
 
         // when
         var act = () =>
             services.AddHeadlessMessaging(static setup =>
             {
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"));
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
@@ -242,12 +254,12 @@ public sealed class ForMessageRegistrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
-        services.ForMessage<OtherOrderPlaced>(message =>
-            message.MessageName("orders.same").OnBus<OtherOrderPlacedHandler>()
-        );
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
+            setup.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName("orders.same").OnBus<OtherOrderPlacedHandler>()
+            );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
@@ -293,9 +305,9 @@ public sealed class ForMessageRegistrationTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedHandler>());
         services.AddHeadlessMessaging(static setup =>
         {
+            setup.ForMessage<OrderPlaced>(message => message.OnQueue<OrderPlacedHandler>());
             setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
             setup.UseInMemory();
             setup.UseInMemoryStorage();

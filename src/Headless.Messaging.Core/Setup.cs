@@ -27,6 +27,25 @@ public static class SetupMessaging
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>
+        /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/>.
+        /// </summary>
+        /// <typeparam name="TMessage">The message type to register.</typeparam>
+        /// <param name="configure">The message registration callback.</param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessage<TMessage>(Action<IMessageBuilder<TMessage>> configure)
+            where TMessage : class
+        {
+            Argument.IsNotNull(configure);
+
+            var builder = new MessageBuilder<TMessage>(setup.Services);
+            configure(builder);
+            setup.Services.AddSingleton(builder.Build());
+
+            return setup;
+        }
+
+        /// <summary>
         /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and registers them as bus consumers.
         /// </summary>
         /// <param name="assembly">The assembly to scan.</param>
@@ -69,14 +88,12 @@ public static class SetupMessaging
     /// Registers and configures all messaging services, consumers, and transport infrastructure.
     /// </summary>
     /// <param name="services">The service collection.</param>
-    /// <param name="configure">A delegate to configure messaging options, storage, transport, and assembly-scanned message consumers.</param>
+    /// <param name="configure">A delegate to configure messaging options, storage, transport, and message consumers.</param>
     /// <returns>A <see cref="MessagingBuilder"/> for additional messaging configuration.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// This method configures messaging infrastructure. Register explicit message consumers with
-    /// <c>services.ForMessage&lt;TMessage&gt;(...)</c> before this callback, or scan assemblies with
-    /// <c>setup.ForMessagesFromAssembly(...)</c> inside this callback.
+    /// This method configures messaging infrastructure and message consumers.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -93,6 +110,9 @@ public static class SetupMessaging
     ///         rabbit.Port = 5672;
     ///     });
     ///
+    ///     setup.ForMessage&lt;OrderPlaced&gt;(message => message
+    ///         .MessageName("orders.placed")
+    ///         .OnBus&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
     ///     setup.ForMessagesFromAssemblyContaining&lt;Program&gt;();
     /// });
     /// </code>

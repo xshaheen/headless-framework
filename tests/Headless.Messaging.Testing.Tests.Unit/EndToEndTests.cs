@@ -105,9 +105,9 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness = await _CreateHarnessAsync(
-            (services, _) =>
+            (_, setup) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                setup.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
                 );
             }
@@ -135,9 +135,9 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness = await _CreateHarnessAsync(
-            (services, _) =>
+            (_, setup) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                setup.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
             }
@@ -168,7 +168,7 @@ public sealed class EndToEndTests : TestBase
             {
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                services.ForMessage<OrderCreatedEvent>(message =>
+                options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
                 );
             });
@@ -219,18 +219,18 @@ public sealed class EndToEndTests : TestBase
     {
         // given
         await using var harness1 = await _CreateHarnessAsync(
-            (services, _) =>
+            (_, setup) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                setup.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
                 );
             }
         );
 
         await using var harness2 = await _CreateHarnessAsync(
-            (services, _) =>
+            (_, setup) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                setup.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
                 );
             }
@@ -261,7 +261,7 @@ public sealed class EndToEndTests : TestBase
             {
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                services.ForMessage<OrderCreatedEvent>(message =>
+                options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<NotifyingConsumer>()
                 );
             });
@@ -282,15 +282,15 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(services =>
         {
             services.AddSingleton<IntentRecorder>();
-            services.ForMessage<OrderCreatedEvent>(message =>
-            {
-                message
-                    .MessageName("order-created")
-                    .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
-                message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
-            });
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreatedEvent>(message =>
+                {
+                    message
+                        .MessageName("order-created")
+                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
+                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                });
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -357,15 +357,15 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(services =>
         {
             services.AddSingleton<IntentRecorder>();
-            services.ForMessage<OrderCreatedEvent>(message =>
-            {
-                message
-                    .MessageName("outbox-order-created")
-                    .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
-                message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
-            });
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreatedEvent>(message =>
+                {
+                    message
+                        .MessageName("outbox-order-created")
+                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
+                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                });
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -496,7 +496,7 @@ public sealed class EndToEndTests : TestBase
         {
             options.UseInMemory();
             options.UseInMemoryStorage();
-            services.ForMessage<OrderCreatedEvent>(message =>
+            options.ForMessage<OrderCreatedEvent>(message =>
                 message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
             );
         });
@@ -534,10 +534,9 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await _CreateHarnessAsync(
             (services, options) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-
                 options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
@@ -579,10 +578,9 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await _CreateHarnessAsync(
             (services, options) =>
             {
-                services.ForMessage<OrderCreatedEvent>(message =>
+                options.ForMessage<OrderCreatedEvent>(message =>
                     message.MessageName("order-created").OnBus<FailingConsumer>()
                 );
-
                 options.Options.RetryPolicy.MaxInlineRetries = 0;
                 options.Options.RetryPolicy.MaxPersistedRetries = 0;
                 options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);

@@ -35,8 +35,10 @@ public sealed class MessagingIntentSplitTests : TestBase
     {
         var services = new ServiceCollection();
 
-        services.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>());
-        services.AddHeadlessMessaging(static setup => { });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>());
+        });
 
         var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
@@ -49,8 +51,10 @@ public sealed class MessagingIntentSplitTests : TestBase
     {
         var services = new ServiceCollection();
 
-        services.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>());
-        services.AddHeadlessMessaging(static setup => { });
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>());
+        });
 
         var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 

@@ -7,9 +7,8 @@ namespace Headless.Messaging;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The messaging builder configures infrastructure and global behavior. Explicit message consumers are registered
-/// directly on <see cref="Microsoft.Extensions.DependencyInjection.IServiceCollection"/> via
-/// <c>ForMessage&lt;TMessage&gt;(...)</c>; assembly-scanned consumers are registered from the setup callback.
+/// The messaging builder configures infrastructure and global behavior. Explicit and assembly-scanned message
+/// consumers are registered from the <c>AddHeadlessMessaging(...)</c> setup callback.
 /// </para>
 /// </remarks>
 [PublicAPI]

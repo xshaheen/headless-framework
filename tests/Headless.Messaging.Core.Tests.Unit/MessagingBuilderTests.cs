@@ -20,8 +20,9 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<TestOrderMessage>(message => message.OnBus<TestOrderConsumer>());
-        services.AddHeadlessMessaging(static setup => { });
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message => message.OnBus<TestOrderConsumer>())
+        );
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
@@ -38,10 +39,11 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<TestOrderMessage>(message =>
-            message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            )
         );
-        services.AddHeadlessMessaging(static setup => { });
 
         using var provider = services.BuildServiceProvider();
 
@@ -120,10 +122,13 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<TestOrderMessage>(message =>
-            message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
-        );
-        services.AddHeadlessMessaging(messaging => messaging.Options.DefaultGroupName = "shared-group");
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            );
+            messaging.Options.DefaultGroupName = "shared-group";
+        });
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
@@ -139,11 +144,11 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<TestOrderMessage>(message =>
-            message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
-        );
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            );
             messaging.Options.GroupNamePrefix = "tenant-a";
             messaging.UseConventions(conventions =>
             {
@@ -197,14 +202,15 @@ public sealed class MessagingBuilderTests
         var services = new ServiceCollection();
 
         // when
-        services.ForMessage<TestOrderMessage>(message =>
-            message
-                .MessageName("orders.placed")
-                .OnBus<TestOrderConsumer>(consumer =>
-                    consumer.WithCircuitBreaker(cb => cb.FailureThreshold = 3).Group("final-group")
-                )
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message =>
+                message
+                    .MessageName("orders.placed")
+                    .OnBus<TestOrderConsumer>(consumer =>
+                        consumer.WithCircuitBreaker(cb => cb.FailureThreshold = 3).Group("final-group")
+                    )
+            )
         );
-        services.AddHeadlessMessaging(static setup => { });
 
         using var provider = services.BuildServiceProvider();
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
