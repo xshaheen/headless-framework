@@ -3,6 +3,7 @@
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
 using Headless.Testing.Tests;
+using StackExchange.Redis;
 
 namespace Tests;
 
@@ -85,15 +86,33 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         // given
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
         var lockId = Guid.NewGuid().ToString("N");
-        var fenceKey = $"fence:{{{key}}}";
 
         // when
         var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5));
 
         // then
         result.Acquired.Should().BeTrue();
+        var lockKey = await _GetSingleKeyAsync("{hflock:*}:value");
+        var fenceKey = await _GetSingleKeyAsync("fence:{hflock:*}");
+        _GetHashTag(fenceKey).Should().Be(_GetHashTag(lockKey));
         var fenceTtl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(fenceKey);
         fenceTtl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_support_lock_keys_containing_redis_hash_tag_characters()
+    {
+        // given
+        var key = $"lock:{{{Faker.Random.AlphaNumeric(10)}}}";
+        var lockId = Guid.NewGuid().ToString("N");
+
+        // when
+        var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5));
+
+        // then
+        result.Acquired.Should().BeTrue();
+        (await fixture.LockStorage.GetAsync(key)).Should().Be(lockId);
+        (await fixture.LockStorage.RemoveIfEqualAsync(key, lockId)).Should().BeTrue();
     }
 
     [Fact]
@@ -408,4 +427,36 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
     }
 
     #endregion
+
+    private async Task<RedisKey> _GetSingleKeyAsync(string pattern)
+    {
+        var keys = new List<RedisKey>();
+
+        foreach (var endpoint in fixture.ConnectionMultiplexer.GetEndPoints())
+        {
+            var server = fixture.ConnectionMultiplexer.GetServer(endpoint);
+            if (server.IsReplica || !server.IsConnected)
+            {
+                continue;
+            }
+
+            await foreach (var key in server.KeysAsync(pattern: pattern).WithCancellation(AbortToken))
+            {
+                keys.Add(key);
+            }
+        }
+
+        keys.Should().ContainSingle();
+
+        return keys[0];
+    }
+
+    private static string _GetHashTag(RedisKey key)
+    {
+        var value = key.ToString();
+        var start = value.IndexOf('{', StringComparison.Ordinal);
+        var end = value.IndexOf('}', start + 1);
+
+        return value[(start + 1)..end];
+    }
 }

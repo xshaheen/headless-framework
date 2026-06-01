@@ -53,7 +53,14 @@ internal sealed class DistributedLockMessagingValidator(
 
         if (!hasConsumer)
         {
-            logger.LogLockReleasedConsumerMissing();
+            if (serviceProvider.GetService<DistributedLockReleasedConsumerConflict>() is null)
+            {
+                logger.LogLockReleasedConsumerMissing();
+            }
+            else
+            {
+                logger.LogLockReleasedConsumerConflict();
+            }
         }
 
         return ValidateOptionsResult.Success;

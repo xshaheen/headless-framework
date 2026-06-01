@@ -95,4 +95,57 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
         // then
         valid.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task should_not_shrink_holders_key_ttl_when_shorter_holder_acquires()
+    {
+        // given
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 2, TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var second = await fixture.SemaphoreStorage.TryAcquireAsync(
+            resource,
+            "lock-2",
+            2,
+            TimeSpan.FromMilliseconds(100),
+            AbortToken
+        );
+
+        // then
+        second.Acquired.Should().BeTrue();
+        var ttl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(holdersKey);
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(4));
+    }
+
+    [Fact]
+    public async Task should_not_shrink_holders_key_ttl_when_shorter_holder_extends()
+    {
+        // given
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 2, TimeSpan.FromSeconds(5), AbortToken);
+        await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 2, TimeSpan.FromSeconds(5), AbortToken);
+
+        // when
+        var extended = await fixture.SemaphoreStorage.TryExtendAsync(
+            resource,
+            "lock-2",
+            TimeSpan.FromMilliseconds(100),
+            AbortToken
+        );
+
+        // then
+        extended.Should().BeTrue();
+        var ttl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(holdersKey);
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(4));
+    }
+
+    private static string _GetHoldersKey(string resource)
+    {
+        return "{" + resource + "}:holders";
+    }
 }

@@ -84,6 +84,33 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
+    public void should_warn_when_existing_lock_released_consumer_blocks_wakeup_consumer()
+    {
+        // given
+        var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
+        var services = new ServiceCollection();
+        services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
+        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddScoped<IConsume<DistributedLockReleased>, _CustomLockReleasedConsumer>();
+
+        // when
+        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        _ = provider.GetRequiredService<DistributedLockOptions>();
+
+        // then
+        capturedLogs.Should().ContainSingle(entry => entry.EventId.Id == 24 && entry.Level == LogLevel.Warning);
+        capturedLogs.Should().NotContain(entry => entry.EventId.Id == 18);
+        var hasBuiltInConsumerMetadata = services.Any(descriptor =>
+            descriptor.ServiceType == typeof(ConsumerMetadata)
+            && descriptor.ImplementationInstance is ConsumerMetadata metadata
+            && metadata.ConsumerType == typeof(DistributedLockProvider.LockReleasedConsumer)
+        );
+        hasBuiltInConsumerMetadata.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_not_warn_when_messaging_is_registered_before_add_distributed_lock()
     {
         // given — correct order: messaging first.
@@ -162,6 +189,17 @@ public sealed class SetupTests : TestBase
                     log.Add((logLevel, eventId));
                 }
             }
+        }
+    }
+
+    private sealed class _CustomLockReleasedConsumer : IConsume<DistributedLockReleased>
+    {
+        public ValueTask ConsumeAsync(
+            ConsumeContext<DistributedLockReleased> context,
+            CancellationToken cancellationToken
+        )
+        {
+            return ValueTask.CompletedTask;
         }
     }
 }

@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Redis;
+using System.Text;
 using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
@@ -11,6 +12,10 @@ public sealed class RedisDistributedLockStorage(
     HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedLockStorage
 {
+    private const string PhysicalLockKeyPrefix = "{hflock:";
+    private const string PhysicalLockKeySuffix = "}:value";
+    private const string PhysicalLockKeyPattern = PhysicalLockKeyPrefix + "*" + PhysicalLockKeySuffix;
+
     private IDatabase Db => multiplexer.GetDatabase();
 
     public async ValueTask<DistributedLockAcquireResult> InsertAsync(
@@ -23,10 +28,11 @@ public sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
         var result = await scriptsLoader
-            .TryAcquireLockAsync(Db, key, fenceKey, lockId, ttl, cancellationToken)
+            .TryAcquireLockAsync(Db, lockKey, fenceKey, lockId, ttl, cancellationToken)
             .ConfigureAwait(false);
 
         return result.Acquired
@@ -46,7 +52,7 @@ public sealed class RedisDistributedLockStorage(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await scriptsLoader
-            .ReplaceIfEqualAsync(Db, key, expectedId, newId, newTtl, cancellationToken)
+            .ReplaceIfEqualAsync(Db, _GetLockKey(key), expectedId, newId, newTtl, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -59,28 +65,30 @@ public sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await scriptsLoader.RemoveIfEqualAsync(Db, key, expectedId, cancellationToken).ConfigureAwait(false);
+        return await scriptsLoader
+            .RemoveIfEqualAsync(Db, _GetLockKey(key), expectedId, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.KeyTimeToLiveAsync(key).ConfigureAwait(false);
+        return await Db.KeyTimeToLiveAsync(_GetLockKey(key)).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.KeyExistsAsync(key).ConfigureAwait(false);
+        return await Db.KeyExistsAsync(_GetLockKey(key)).ConfigureAwait(false);
     }
 
     public async ValueTask<string?> GetAsync(string key, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringGetAsync(key).ConfigureAwait(false);
+        var value = await Db.StringGetAsync(_GetLockKey(key)).ConfigureAwait(false);
 
         return value.HasValue ? value.ToString() : null;
     }
@@ -90,9 +98,9 @@ public sealed class RedisDistributedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
+        prefix ??= "";
         cancellationToken.ThrowIfCancellationRequested();
 
-        var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var endpoint in multiplexer.GetEndPoints())
@@ -106,7 +114,7 @@ public sealed class RedisDistributedLockStorage(
             var batch = new List<RedisKey>(1000);
             await foreach (
                 var key in server
-                    .KeysAsync(pattern: pattern, pageSize: 1000)
+                    .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
                     .WithCancellation(cancellationToken)
                     .ConfigureAwait(false)
             )
@@ -114,14 +122,14 @@ public sealed class RedisDistributedLockStorage(
                 batch.Add(key);
                 if (batch.Count >= 1000)
                 {
-                    await _ProcessBatchAsync(batch, result).ConfigureAwait(false);
+                    await _ProcessBatchAsync(batch, prefix, result).ConfigureAwait(false);
                     batch.Clear();
                 }
             }
 
             if (batch.Count > 0)
             {
-                await _ProcessBatchAsync(batch, result).ConfigureAwait(false);
+                await _ProcessBatchAsync(batch, prefix, result).ConfigureAwait(false);
             }
         }
 
@@ -132,9 +140,9 @@ public sealed class RedisDistributedLockStorage(
         IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>
     > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
+        prefix ??= "";
         cancellationToken.ThrowIfCancellationRequested();
 
-        var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
         var result = new Dictionary<string, (string, TimeSpan?)>(StringComparer.Ordinal);
 
         foreach (var endpoint in multiplexer.GetEndPoints())
@@ -148,7 +156,7 @@ public sealed class RedisDistributedLockStorage(
             var batch = new List<RedisKey>(1000);
             await foreach (
                 var key in server
-                    .KeysAsync(pattern: pattern, pageSize: 1000)
+                    .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
                     .WithCancellation(cancellationToken)
                     .ConfigureAwait(false)
             )
@@ -156,14 +164,14 @@ public sealed class RedisDistributedLockStorage(
                 batch.Add(key);
                 if (batch.Count >= 1000)
                 {
-                    await _ProcessBatchWithExpirationAsync(batch, result).ConfigureAwait(false);
+                    await _ProcessBatchWithExpirationAsync(batch, prefix, result).ConfigureAwait(false);
                     batch.Clear();
                 }
             }
 
             if (batch.Count > 0)
             {
-                await _ProcessBatchWithExpirationAsync(batch, result).ConfigureAwait(false);
+                await _ProcessBatchWithExpirationAsync(batch, prefix, result).ConfigureAwait(false);
             }
         }
 
@@ -172,9 +180,9 @@ public sealed class RedisDistributedLockStorage(
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
     {
+        prefix ??= "";
         cancellationToken.ThrowIfCancellationRequested();
 
-        var pattern = string.IsNullOrEmpty(prefix) ? "*" : $"{prefix}*";
         var endpoints = multiplexer.GetEndPoints();
         var tasks = new List<Task<long>>(endpoints.Length);
 
@@ -187,7 +195,7 @@ public sealed class RedisDistributedLockStorage(
                 continue;
             }
 
-            tasks.Add(_CountKeysByPatternAsync(server, pattern, cancellationToken));
+            tasks.Add(_CountKeysByPrefixAsync(server, prefix, cancellationToken));
         }
 
         if (tasks.Count is 0)
@@ -199,19 +207,26 @@ public sealed class RedisDistributedLockStorage(
         return counts.Sum();
     }
 
-    private static async Task<long> _CountKeysByPatternAsync(
+    private static async Task<long> _CountKeysByPrefixAsync(
         IServer server,
-        string pattern,
+        string prefix,
         CancellationToken cancellationToken
     )
     {
         long count = 0;
 
         await foreach (
-            var _ in server.KeysAsync(pattern: pattern).WithCancellation(cancellationToken).ConfigureAwait(false)
+            var key in server
+                .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
+                .WithCancellation(cancellationToken)
+                .ConfigureAwait(false)
         )
         {
-            count++;
+            var logicalKey = _TryGetLogicalKey(key);
+            if (logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                count++;
+            }
         }
 
         return count;
@@ -219,10 +234,55 @@ public sealed class RedisDistributedLockStorage(
 
     private static RedisKey _GetFenceKey(string key)
     {
-        return "fence:{" + key + "}";
+        return "fence:{" + _GetHashTag(key) + "}";
     }
 
-    private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, Dictionary<string, string> result)
+    private static RedisKey _GetLockKey(string key)
+    {
+        return PhysicalLockKeyPrefix + _GetEncodedKey(key) + PhysicalLockKeySuffix;
+    }
+
+    private static string _GetHashTag(string key)
+    {
+        return "hflock:" + _GetEncodedKey(key);
+    }
+
+    private static string _GetEncodedKey(string key)
+    {
+        return Convert.ToHexString(Encoding.UTF8.GetBytes(key));
+    }
+
+    private static string? _TryGetLogicalKey(RedisKey key)
+    {
+        var physicalKey = key.ToString();
+
+        if (
+            !physicalKey.StartsWith(PhysicalLockKeyPrefix, StringComparison.Ordinal)
+            || !physicalKey.EndsWith(PhysicalLockKeySuffix, StringComparison.Ordinal)
+        )
+        {
+            return null;
+        }
+
+        var encodedKey = physicalKey[
+            PhysicalLockKeyPrefix.Length..^PhysicalLockKeySuffix.Length
+        ];
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromHexString(encodedKey));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
+    }
+
+    private async ValueTask _ProcessBatchAsync(
+        List<RedisKey> batch,
+        string prefix,
+        Dictionary<string, string> result
+    )
     {
         // NOTE: We use individual async tasks instead of Db.StringGetAsync(keyArray)
         // for absolute cluster safety across any sharding topology.
@@ -246,15 +306,17 @@ public sealed class RedisDistributedLockStorage(
         foreach (var (key, valueTask) in tasks)
         {
             var value = await valueTask.ConfigureAwait(false);
-            if (value.HasValue)
+            var logicalKey = _TryGetLogicalKey(key);
+            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
             {
-                result[key.ToString()] = value.ToString();
+                result[logicalKey] = value.ToString();
             }
         }
     }
 
     private async ValueTask _ProcessBatchWithExpirationAsync(
         List<RedisKey> batch,
+        string prefix,
         Dictionary<string, (string LockId, TimeSpan? Ttl)> result
     )
     {
@@ -280,10 +342,11 @@ public sealed class RedisDistributedLockStorage(
         foreach (var (key, valueTask, ttlTask) in tasks)
         {
             var value = await valueTask.ConfigureAwait(false);
-            if (value.HasValue)
+            var logicalKey = _TryGetLogicalKey(key);
+            if (value.HasValue && logicalKey is not null && logicalKey.StartsWith(prefix, StringComparison.Ordinal))
             {
                 var ttl = await ttlTask.ConfigureAwait(false);
-                result[key.ToString()] = (value.ToString(), ttl);
+                result[logicalKey] = (value.ToString(), ttl);
             }
         }
     }

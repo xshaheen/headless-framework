@@ -86,7 +86,7 @@ Correctness locks protect invariants where a stale owner could corrupt data. TTL
 
 `IDistributedLock.FencingToken` is a nullable per-resource monotonic grant counter. A protected resource can store the last accepted token and reject writes carrying an older token. `LockId` is separate: it remains the opaque ownership token used for renew and release equality.
 
-Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Durable DB-sequence fencing belongs to database-backed providers.
+Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis mutex storage maps logical lock names to internal hash-tagged keys so the lock key and fence counter share a Redis Cluster slot. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Durable DB-sequence fencing belongs to database-backed providers.
 
 ### Lease Lifecycle Monitoring
 
@@ -147,7 +147,7 @@ await using var write = await readerWriterLocks.AcquireWriteLockAsync(
 
 Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds capacity at creation, so acquire calls cannot disagree about `maxCount`. Acquired slots return the same `IDistributedLock` handle used by mutex locks: `ReleaseAsync()`, `RenewAsync(...)`, `HandleLostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all flow through the same surface.
 
-Redis semaphores store live holders in a ZSET keyed by lock id with expiration timestamps as scores. Lua uses Redis server `TIME`, prunes expired holders before every acquire/count/validate operation, and gives the holders key a safety TTL of roughly `ttl * 2`. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release publishes `DistributedLockReleased`, so waiters can wake through the same optional outbox path as mutex waiters; without messaging they fall back to polling backoff.
+Redis semaphores store live holders in a ZSET keyed by lock id with expiration timestamps as scores. Lua uses Redis server `TIME`, prunes expired holders before every acquire/count/validate operation, and gives the holders key a safety TTL of at least `ttl * 2` without shrinking an existing longer key TTL. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release publishes `DistributedLockReleased`, so waiters can wake through the same optional outbox path as mutex waiters; without messaging they fall back to polling backoff.
 
 ```csharp
 var semaphore = semaphoreProvider.CreateSemaphore("downstream:billing-api", maxCount: 5);
@@ -399,7 +399,7 @@ builder.Services.AddRedisDistributedSemaphore(options =>
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`.
 
-Redis mutex storage creates one lock key and one no-TTL `fence:{lockKey}` counter key. Redis semaphore storage creates `{resource}:holders` (ZSET of `lockId → expiry-epoch-ms`) and `fence:{resource}`. Resource names containing `{` or `}` are rejected where storage-owned hash-tags are required.
+Redis mutex storage maps each logical lock name to an internal hash-tagged lock key and one no-TTL fence counter key in the same Redis Cluster slot. Redis semaphore storage creates `{resource}:holders` (ZSET of `lockId → expiry-epoch-ms`) and `fence:{resource}`. Resource names containing `{` or `}` are rejected where storage-owned hash-tags are required.
 
 Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed marker) and `{resource}:readers` (HASH of `lockId → expiry-epoch-ms`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. The marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s, validated `0 < ttl <= 5 min`).
 

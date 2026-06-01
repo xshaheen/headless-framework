@@ -57,7 +57,11 @@ public static class RedisScripts
 
         local expiryMs = nowMs + tonumber(@expires)
         redis.call('zadd', @holdersKey, expiryMs, @lockId)
-        redis.call('pexpire', @holdersKey, tonumber(@expires) * 2)
+        local safetyTtl = tonumber(@expires) * 2
+        local currentTtl = redis.call('pttl', @holdersKey)
+        if currentTtl < safetyTtl then
+          redis.call('pexpire', @holdersKey, safetyTtl)
+        end
 
         return {1, redis.call('incr', @fenceKey)}
         """;
@@ -70,12 +74,16 @@ public static class RedisScripts
         redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
 
         local expiryMs = nowMs + tonumber(@expires)
-        local changed = redis.call('zadd', @holdersKey, 'XX', expiryMs, @lockId)
+        local changed = redis.call('zadd', @holdersKey, 'XX', 'CH', expiryMs, @lockId)
         if changed == 0 then
           return 0
         end
 
-        redis.call('pexpire', @holdersKey, tonumber(@expires) * 2)
+        local safetyTtl = tonumber(@expires) * 2
+        local currentTtl = redis.call('pttl', @holdersKey)
+        if currentTtl < safetyTtl then
+          redis.call('pexpire', @holdersKey, safetyTtl)
+        end
         return 1
         """;
 

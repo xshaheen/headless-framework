@@ -35,7 +35,7 @@ Traceability to the origin issues:
 
 - **R1 (#364)** — Add `long? FencingToken` to `IDistributedLock` (and `LockInfo`), populated on successful acquire. `null` where a backend provides no fence.
 - **R2 (#364)** — `LockId` semantics unchanged: it stays the opaque ownership token (equality-checked in release/renew). Fencing is a *separate* per-resource monotonic counter, not a repurposing of `LockId`.
-- **R3 (#364)** — Redis fence via `INCR fence:{resource}`, incremented atomically with a successful acquire (only a granted acquire issues a token). Best-effort grade: the fence key carries no TTL; monotonicity holds only while the key is not evicted — document the operational contract (avoid `allkeys-*` eviction).
+- **R3 (#364)** — Redis fence via a per-resource `INCR`, incremented atomically with a successful acquire (only a granted acquire issues a token). Best-effort grade: the fence key carries no TTL; monotonicity holds only while the key is not evicted — document the operational contract (avoid `allkeys-*` eviction).
 - **R4 (#291)** — Define `IDistributedSemaphore` (per-resource handle-factory, binds `maxCount`) and `IDistributedSemaphoreProvider` with `CreateSemaphore(resource, maxCount)`. `maxCount` is bound at creation, **not** per acquire call.
 - **R5 (#291)** — Redis semaphore via ZSET keyed by lock-id with expiration-timestamp scores ("Redis in Action" Ch. 6.3): prune expired, count, add-if-room, set safety TTL. Storage interface `IDistributedSemaphoreStorage` in Core; Redis impl in Redis package. Reuse `LeaseMonitor` for the lease lifecycle.
 - **R6 (#291)** — Acquired slot returns the unified `IDistributedLock` handle (so `HandleLostToken`, `LockMonitoringMode`, auto-extension, and the new `FencingToken` flow through unchanged).
@@ -48,7 +48,7 @@ Traceability to the origin issues:
 
 **KTD1 — Fencing is a separate per-resource counter, distinct from `LockId`.** `LockId` stays the global snowflake ownership token; `FencingToken` is a per-resource Redis `INCR`. Rationale (settled in #364): if `LockId` *were* the counter, a Redis eviction/reset could hand a new acquirer a token equal to a believed-held holder's, breaking the lock's own release/renew equality — not just external fencing. Separate tokens isolate the eviction footgun to external fencing only.
 
-**KTD2 — Mutex acquire moves from `StringSet NX` to a Lua script.** Today `RedisDistributedLockStorage.InsertAsync` uses `StringSetAsync(key, lockId, ttl, When.NotExists)` (`src/Headless.DistributedLocks.Redis/RedisDistributedLockStorage.cs:16-27`). To issue the fence atomically with the grant (increment **only** when the SET-NX wins), acquire becomes a Lua script: `SET NX` → on success `INCR fence:{resource}` → return the token; else return nil. This is the cleanest way to keep "grant ⇒ exactly one new token" atomic. To avoid `CROSSSLOT` sharding errors on a Redis Cluster, the fence key must hash to the same slot as the lock key itself by using the exact lock key as its hash-tag: `$"fence:{{{lockKey}}}"` (resulting in `fence:{lockKey}`).
+**KTD2 — Mutex acquire moves from `StringSet NX` to a Lua script.** Today `RedisDistributedLockStorage.InsertAsync` uses `StringSetAsync(key, lockId, ttl, When.NotExists)` (`src/Headless.DistributedLocks.Redis/RedisDistributedLockStorage.cs:16-27`). To issue the fence atomically with the grant (increment **only** when the SET-NX wins), acquire becomes a Lua script: `SET NX` → on success `INCR` the per-resource fence counter → return the token; else return nil. This is the cleanest way to keep "grant ⇒ exactly one new token" atomic. To avoid `CROSSSLOT` sharding errors on a Redis Cluster, mutex storage maps the logical lock name to an internal hash-tagged lock key and derives the fence counter with the same hash tag.
 
 **KTD3 — `IDistributedLockStorage` acquire return shape changes from `bool` to carry the fence.** `InsertAsync` returns `(bool acquired, long? fencingToken)` (or a small result struct). This is a **breaking** internal interface change (greenfield-OK) that ripples to every storage impl — the Redis storage, `ScopedDistributedLockStorage` (wrapper), and the unit-test fake under `tests/Headless.DistributedLocks.Tests.Unit/Fakes/`. The fake gets an in-memory `Interlocked`-style per-resource counter.
 
@@ -102,7 +102,7 @@ flowchart TD
     B --> C["nowMs = server TIME"]
     C --> D["ZREMRANGEBYSCORE holders -inf nowMs<br/>(prune expired holders)"]
     D --> E{ZCARD holders < maxCount?}
-    E -- yes --> F["ZADD holders score=nowMs+ttl member=lockId<br/>token = INCR fence:{resource}<br/>PEXPIRE holders ttl*2"]
+    E -- yes --> F["ZADD holders score=nowMs+ttl member=lockId<br/>token = INCR fence:{resource}<br/>PEXPIRE holders max(current, ttl*2)"]
     F --> G[return acquired=1, token]
     G --> H[build IDistributedLock handle<br/>+ LeaseMonitor + FencingToken]
     E -- no --> I[return acquired=0]
@@ -154,11 +154,11 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - `src/Headless.Redis/HeadlessRedisScriptsLoader.cs` (add properties, selector delegates, LoadScriptsAsync concurrent loading tasks, and evaluate helper)
   - `tests/Headless.DistributedLocks.Tests.Unit/Fakes/FakeDistributedLockStorage.cs` (per-resource in-memory counter)
   - `tests/Headless.Messaging.Core.Tests.Unit/Fakes/InMemoryDistributedLockStorage.cs` (second fake impl — also breaks on the `InsertAsync` signature change; update to return the new tuple shape)
-- **Approach:** Lua: `SET key lockId NX` (+ `PEXPIRE`); on success `INCR fence:{resource}`, return `{acquired, token}`; else `{0}`. The fence key must be derived from the lock key using curly braces `$"fence:{{{lockKey}}}"` (resulting in `fence:{lockKey}`) to guarantee sharding slot alignment (`CROSSSLOT` safety). The fence key carries **no TTL** (KTD4 — settled per #364; eviction-policy contract documented in U10). Parse `RedisResult` → `(bool, long?)`. Update both fakes to mint a strictly increasing per-resource token on successful insert so unit-level consumers see fencing without Redis.
+- **Approach:** Lua: `SET key lockId NX` (+ `PEXPIRE`); on success `INCR` the per-resource fence counter, return `{acquired, token}`; else `{0}`. Redis mutex storage maps the logical lock name to an internal hash-tagged key pair so the lock key and fence key share a Redis Cluster slot. The fence key carries **no TTL** (KTD4 — settled per #364; eviction-policy contract documented in U10). Parse `RedisResult` → `(bool, long?)`. Update both fakes to mint a strictly increasing per-resource token on successful insert so unit-level consumers see fencing without Redis.
 - **Technical design (directional):**
   ```lua
   -- KEYS[1]=lockKey KEYS[2]=fenceKey ARGV[1]=lockId ARGV[2]=ttlMs
-  -- fenceKey is built caller-side as fence:{lockKey} for CROSSSLOT safety
+  -- logical lock names are mapped to hash-tagged lock/fence keys for CROSSSLOT safety
   if redis.call('SET', KEYS[1], ARGV[1], 'NX', 'PX', ARGV[2]) then
     return {1, redis.call('INCR', KEYS[2])} -- counter persists (no TTL) for monotonicity
   else
@@ -237,7 +237,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - `src/Headless.DistributedLocks.Redis/RedisDistributedSemaphoreStorage.cs` (new)
   - `src/Headless.Redis/RedisScripts.cs` (semaphore acquire/extend Lua constants)
   - `src/Headless.Redis/HeadlessRedisScriptsLoader.cs` (register script properties, static selectors, and integrate concurrent tasks in LoadScriptsAsync)
-- **Approach:** Acquire Lua = prune (`ZREMRANGEBYSCORE … -inf nowMs`) → `ZCARD < maxCount` → `ZADD` + `INCR fence` + `PEXPIRE holders ttl*2`; uses server `TIME` for `nowMs` (no client clock). Extend = `ZADD` with new score **using the 'XX' modifier** (`redis.call('ZADD', KEYS[1], 'XX', ARGV[1], ARGV[2])`) so a pruned/expired member cannot be accidentally re-added to breach the concurrency limit. Key is hash-tagged (`{resource}:holders`) for cluster slot affinity, consistent with RW storage; the fence key reuses the same hash-tag (`fence:{resource}`) for CROSSSLOT safety and carries **no TTL** (KTD4). Note the holders ZSET *does* get a safety TTL (`PEXPIRE … ttl*2`) — distinct from the fence counter, which must persist.
+- **Approach:** Acquire Lua = prune (`ZREMRANGEBYSCORE … -inf nowMs`) → `ZCARD < maxCount` → `ZADD` + `INCR fence` + increase holders TTL to at least `ttl*2`; uses server `TIME` for `nowMs` (no client clock). Extend = `ZADD` with new score **using the 'XX' modifier** (`redis.call('ZADD', KEYS[1], 'XX', ARGV[1], ARGV[2])`) so a pruned/expired member cannot be accidentally re-added to breach the concurrency limit. Key is hash-tagged (`{resource}:holders`) for cluster slot affinity, consistent with RW storage; the fence key reuses the same hash-tag (`fence:{resource}`) for CROSSSLOT safety and carries **no TTL** (KTD4). Note the holders ZSET *does* get a safety TTL (at least `ttl*2`, never shrunk by shorter later holders) — distinct from the fence counter, which must persist.
 - **Technical design (directional):** see the Semaphore acquire flowchart in High-Level Technical Design. Ensure extend Lua uses 'XX'.
 - **Patterns to follow:** `RedisDistributedReaderWriterLockStorage` server-`TIME` + hash-tag + multi-key Lua; `madelson/DistributedLock: src/DistributedLock.Redis` semaphore (loosely based on "Redis in Action" 6.3) as the algorithm reference.
 - **Test suite design:** Redis integration (Testcontainers) — the bulk of coverage lives here.
@@ -247,7 +247,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - Extend: a held entry's score is pushed forward; entry survives beyond original TTL.
   - Release `ZREM`s exactly the holder's entry; others unaffected.
   - Fence: each successful acquire returns a strictly greater per-resource token; failed acquire does not advance it.
-  - Holders key has safety TTL ≈ `ttl*2` (integration: `PTTL` bounded).
+  - Holders key has safety TTL at least `ttl*2` and shorter later holders do not shrink it (integration: `PTTL` bounded).
 - **Verification:** integration suite passes against Testcontainers Redis; server clock authoritative; capacity respected under concurrency.
 
 ### U7. Semaphore handle + `DistributedSemaphoreProvider` (LeaseMonitor + outbox push)
@@ -345,7 +345,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
 ## Risks & Dependencies
 
 - **Atomicity (high):** fence issuance must be inside the same Lua as the grant. Mitigation: KTD2 converts acquire to Lua; tests assert "failed acquire never advances the counter."
-- **CROSSSLOT Key Alignment (high):** Accessing both the lock key and the counter key in Lua will throw cluster alignment errors. Mitigation: U2/U6 enforce slot sharding affinity via nested braces `$"fence:{{{lockKey}}}"`, mapping both keys to the exact same hash slot.
+- **CROSSSLOT Key Alignment (high):** Accessing both the lock key and the counter key in Lua will throw cluster alignment errors. Mitigation: U2/U6 enforce slot sharding affinity by mapping logical mutex names and semaphore resources to storage-owned hash-tagged key pairs.
 - **Semaphore Waiter Starvation (medium):** If a single waiter is woken up but fails to acquire the slot due to a transient Redis error, the slot remains empty while the other waiters remain asleep. Mitigation: U7 wait-loop includes a fail-safe nudge that republishes `DistributedLockReleased` on transient failure to pass the signal.
 - **Redis eviction breaks monotonicity (medium):** the fence counter has no TTL; monotonicity holds only while the key survives. Mitigation: documented operational contract (non-`allkeys-*` eviction policy) in U10; correctness-grade durable fence is the DB backends' job (#293/#294). Memory exposure from high-cardinality resource names is marginal (8-byte counters, bounded by `MaxResourceNameLength`/`MaxConcurrentWaitingResources`); a bounded re-extended TTL is the deferred mitigation if a deployment proves otherwise (KTD4 — deviates from #364, so deferred not adopted).
 - **Breaking storage contract (medium):** `InsertAsync` return-shape change touches every `IDistributedLockStorage` impl — Redis storage, `ScopedDistributedLockStorage` wrapper, **and two test fakes** (`tests/Headless.DistributedLocks.Tests.Unit/Fakes/FakeDistributedLockStorage.cs`, `tests/Headless.Messaging.Core.Tests.Unit/Fakes/InMemoryDistributedLockStorage.cs`). Mitigation: U2 updates all four within the same implementation unit; greenfield posture allows the break.

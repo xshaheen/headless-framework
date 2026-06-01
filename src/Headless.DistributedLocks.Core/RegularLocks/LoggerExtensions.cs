@@ -248,4 +248,12 @@ public static partial class RegularLockLoggerExtensions
         string lockId,
         TimeSpan timeout
     );
+
+    [LoggerMessage(
+        EventId = 24,
+        EventName = "LockReleasedConsumerConflict",
+        Level = LogLevel.Warning,
+        Message = "IOutboxBus is registered, but an existing IConsume<DistributedLockReleased> registration prevented the built-in lock-release wake-up consumer from being registered. Push wake-ups for locks and semaphores are disabled; waiters will fall back to polling. Remove the competing consumer registration or register the Headless lock-release consumer explicitly."
+    )]
+    public static partial void LogLockReleasedConsumerConflict(this ILogger logger);
 }
