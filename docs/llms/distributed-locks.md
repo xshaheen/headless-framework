@@ -15,6 +15,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Fencing Tokens](#fencing-tokens)
     - [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)
     - [Messaging Wake-ups](#messaging-wake-ups)
+    - [Observability](#observability)
 - [Reader-Writer Locks](#reader-writer-locks)
 - [Semaphores](#semaphores)
 - [Choosing a Provider](#choosing-a-provider)
@@ -103,6 +104,19 @@ Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `
 ### Messaging Wake-ups
 
 `DistributedLockProvider` can publish `DistributedLockReleased` through `IOutboxBus` so waiters wake quickly. The same message also nudges active lease monitors for that resource so loss validation can happen before the next polling cadence. Messaging is optional: when no outbox bus is registered, lock acquisition and lease monitoring fall back to polling. This keeps distributed locks usable without forcing `Headless.Messaging`.
+
+### Observability
+
+The package emits OpenTelemetry metrics and traces under a single instrumentation name, `Headless.DistributedLocks` (used for both the `Meter` and the `ActivitySource`). Register them with `AddMeter("Headless.DistributedLocks")` and `AddSource("Headless.DistributedLocks")` in your OpenTelemetry setup.
+
+| Instrument | Kind | Unit | Meaning |
+| --- | --- | --- | --- |
+| `headless.lock.failed` | Counter (`int`) | count | Incremented when a mutex / reader-writer acquire fails or times out. |
+| `headless.lock.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a lock, recorded once per acquire attempt (success or failure). |
+| `headless.semaphore.failed` | Counter (`int`) | count | Incremented when a semaphore slot acquire fails or times out. |
+| `headless.semaphore.wait.time` | Histogram (`double`) | milliseconds | Time spent waiting to acquire a semaphore slot, recorded once per acquire attempt (success or failure). |
+
+Acquire paths start activities on the `ActivitySource` for distributed tracing. Lease-monitor state transitions (`Held`, `Renewed`, `Lost`, `Unknown`) are not metrics; they surface through the `LeaseMonitorStateChanged` log event (see [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)).
 
 ## Reader-Writer Locks
 
