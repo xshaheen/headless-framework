@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Settings;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
@@ -100,6 +101,14 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         // given
         var services = new ServiceCollection();
+        // AddHeadlessSettings auto-registers the management core, whose _AddCore guards on
+        // IStringEncryptionService — register it so the bare provider build does not throw.
+        services.AddStringEncryptionService(options =>
+        {
+            options.DefaultPassPhrase = "TestPassPhrase123456";
+            options.InitVectorBytes = "TestInitVector16"u8.ToArray();
+            options.DefaultSalt = "TestSalt"u8.ToArray();
+        });
         services.AddDbContextFactory<SharedSettingsContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
