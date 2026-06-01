@@ -21,6 +21,12 @@ public sealed class HeadlessRedisScriptsLoader(
 {
     // Cached selectors avoid per-call delegate allocation on the hot path.
     private static readonly ScriptSelector _tryAcquireLockWithFenceSelector = static x => x.TryAcquireLockWithFenceScript;
+    private static readonly ScriptSelector _tryAcquireSemaphoreWithFenceSelector = static x =>
+        x.TryAcquireSemaphoreWithFenceScript;
+    private static readonly ScriptSelector _tryExtendSemaphoreSelector = static x => x.TryExtendSemaphoreScript;
+    private static readonly ScriptSelector _validateSemaphoreSelector = static x => x.ValidateSemaphoreScript;
+    private static readonly ScriptSelector _releaseSemaphoreSelector = static x => x.ReleaseSemaphoreScript;
+    private static readonly ScriptSelector _getSemaphoreCountSelector = static x => x.GetSemaphoreCountScript;
     private static readonly ScriptSelector _replaceIfEqualSelector = static x => x.ReplaceIfEqualScript;
     private static readonly ScriptSelector _removeIfEqualSelector = static x => x.RemoveIfEqualScript;
     private static readonly ScriptSelector _incrementSelector = static x => x.IncrementWithExpireScript;
@@ -39,6 +45,16 @@ public sealed class HeadlessRedisScriptsLoader(
     private readonly AsyncLock _loadScriptsLock = new();
 
     public LoadedLuaScript? TryAcquireLockWithFenceScript { get; private set; }
+
+    public LoadedLuaScript? TryAcquireSemaphoreWithFenceScript { get; private set; }
+
+    public LoadedLuaScript? TryExtendSemaphoreScript { get; private set; }
+
+    public LoadedLuaScript? ValidateSemaphoreScript { get; private set; }
+
+    public LoadedLuaScript? ReleaseSemaphoreScript { get; private set; }
+
+    public LoadedLuaScript? GetSemaphoreCountScript { get; private set; }
 
     public LoadedLuaScript? IncrementWithExpireScript { get; private set; }
 
@@ -83,6 +99,11 @@ public sealed class HeadlessRedisScriptsLoader(
             logger?.LogPreparingLuaScript();
 
             var tryAcquireLockWithFence = LuaScript.Prepare(RedisScripts.TryAcquireLockWithFence);
+            var tryAcquireSemaphoreWithFence = LuaScript.Prepare(RedisScripts.TryAcquireSemaphoreWithFence);
+            var tryExtendSemaphore = LuaScript.Prepare(RedisScripts.TryExtendSemaphore);
+            var validateSemaphore = LuaScript.Prepare(RedisScripts.ValidateSemaphore);
+            var releaseSemaphore = LuaScript.Prepare(RedisScripts.ReleaseSemaphore);
+            var getSemaphoreCount = LuaScript.Prepare(RedisScripts.GetSemaphoreCount);
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
             var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
             var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
@@ -96,6 +117,11 @@ public sealed class HeadlessRedisScriptsLoader(
             var releaseWriteLock = LuaScript.Prepare(RedisScripts.ReleaseWriteLock);
 
             LoadedLuaScript? loadedTryAcquireLockWithFence = null;
+            LoadedLuaScript? loadedTryAcquireSemaphoreWithFence = null;
+            LoadedLuaScript? loadedTryExtendSemaphore = null;
+            LoadedLuaScript? loadedValidateSemaphore = null;
+            LoadedLuaScript? loadedReleaseSemaphore = null;
+            LoadedLuaScript? loadedGetSemaphoreCount = null;
             LoadedLuaScript? loadedIncrement = null;
             LoadedLuaScript? loadedRemove = null;
             LoadedLuaScript? loadedReplace = null;
@@ -120,6 +146,11 @@ public sealed class HeadlessRedisScriptsLoader(
                 logger?.LogLoadingLuaScripts(endpoint);
 
                 var loadTryAcquireLockWithFenceTask = tryAcquireLockWithFence.LoadAsync(server);
+                var loadTryAcquireSemaphoreWithFenceTask = tryAcquireSemaphoreWithFence.LoadAsync(server);
+                var loadTryExtendSemaphoreTask = tryExtendSemaphore.LoadAsync(server);
+                var loadValidateSemaphoreTask = validateSemaphore.LoadAsync(server);
+                var loadReleaseSemaphoreTask = releaseSemaphore.LoadAsync(server);
+                var loadGetSemaphoreCountTask = getSemaphoreCount.LoadAsync(server);
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
                 var loadRemoveScriptTask = removeIfEqual.LoadAsync(server);
                 var loadReplaceScriptTask = replaceIfEqual.LoadAsync(server);
@@ -134,6 +165,11 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 var whenAll = Task.WhenAll(
                     loadTryAcquireLockWithFenceTask,
+                    loadTryAcquireSemaphoreWithFenceTask,
+                    loadTryExtendSemaphoreTask,
+                    loadValidateSemaphoreTask,
+                    loadReleaseSemaphoreTask,
+                    loadGetSemaphoreCountTask,
                     loadIncrementScriptTask,
                     loadRemoveScriptTask,
                     loadReplaceScriptTask,
@@ -149,22 +185,32 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 var results = await whenAll.WithAggregatedExceptions().ConfigureAwait(false);
                 loadedTryAcquireLockWithFence = results[0];
-                loadedIncrement = results[1];
-                loadedRemove = results[2];
-                loadedReplace = results[3];
-                loadedSetIfHigher = results[4];
-                loadedSetIfLower = results[5];
-                loadedTryAcquireReadLock = results[6];
-                loadedTryExtendReadLock = results[7];
-                loadedReleaseReadLock = results[8];
-                loadedTryAcquireWriteLock = results[9];
-                loadedTryExtendWriteLock = results[10];
-                loadedReleaseWriteLock = results[11];
+                loadedTryAcquireSemaphoreWithFence = results[1];
+                loadedTryExtendSemaphore = results[2];
+                loadedValidateSemaphore = results[3];
+                loadedReleaseSemaphore = results[4];
+                loadedGetSemaphoreCount = results[5];
+                loadedIncrement = results[6];
+                loadedRemove = results[7];
+                loadedReplace = results[8];
+                loadedSetIfHigher = results[9];
+                loadedSetIfLower = results[10];
+                loadedTryAcquireReadLock = results[11];
+                loadedTryExtendReadLock = results[12];
+                loadedReleaseReadLock = results[13];
+                loadedTryAcquireWriteLock = results[14];
+                loadedTryExtendWriteLock = results[15];
+                loadedReleaseWriteLock = results[16];
             }
 
             // Only publish loaded scripts after every master endpoint has loaded successfully.
             // Partial assignment on failure would leave stale scripts visible to callers.
             TryAcquireLockWithFenceScript = loadedTryAcquireLockWithFence;
+            TryAcquireSemaphoreWithFenceScript = loadedTryAcquireSemaphoreWithFence;
+            TryExtendSemaphoreScript = loadedTryExtendSemaphore;
+            ValidateSemaphoreScript = loadedValidateSemaphore;
+            ReleaseSemaphoreScript = loadedReleaseSemaphore;
+            GetSemaphoreCountScript = loadedGetSemaphoreCount;
             IncrementWithExpireScript = loadedIncrement;
             RemoveIfEqualScript = loadedRemove;
             ReplaceIfEqualScript = loadedReplace;
@@ -274,6 +320,103 @@ public sealed class HeadlessRedisScriptsLoader(
         }
 
         return (true, (long)values[1]);
+    }
+
+    public async Task<(bool Acquired, long? FencingToken)> TryAcquireSemaphoreAsync(
+        IDatabase db,
+        RedisKey holdersKey,
+        RedisKey fenceKey,
+        string lockId,
+        int maxCount,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetSemaphoreAcquireParameters(holdersKey, fenceKey, lockId, maxCount, ttl);
+        var result = await EvaluateAsync(db, _tryAcquireSemaphoreWithFenceSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+        var values = (RedisResult[]?)result;
+        if (values is null || values.Length == 0)
+        {
+            throw new RedisServerException("Unexpected acquire semaphore script result.");
+        }
+
+        if ((int)values[0] <= 0)
+        {
+            return (false, null);
+        }
+
+        return (true, (long)values[1]);
+    }
+
+    public async Task<bool> TryExtendSemaphoreAsync(
+        IDatabase db,
+        RedisKey holdersKey,
+        string lockId,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetSemaphoreSlotParameters(holdersKey, lockId, ttl);
+        var result = await EvaluateAsync(db, _tryExtendSemaphoreSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> ValidateSemaphoreAsync(
+        IDatabase db,
+        RedisKey holdersKey,
+        string lockId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetSemaphoreSlotParameters(holdersKey, lockId, ttl: null);
+        var result = await EvaluateAsync(db, _validateSemaphoreSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<bool> ReleaseSemaphoreAsync(
+        IDatabase db,
+        RedisKey holdersKey,
+        string lockId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetSemaphoreSlotParameters(holdersKey, lockId, ttl: null);
+        var result = await EvaluateAsync(db, _releaseSemaphoreSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+
+        return (int)result > 0;
+    }
+
+    public async Task<long> GetSemaphoreCountAsync(
+        IDatabase db,
+        RedisKey holdersKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var result = await EvaluateAsync(
+                db,
+                _getSemaphoreCountSelector,
+                new SemaphoreCountParams(holdersKey),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return (long)result;
     }
 
     public async Task<bool> RemoveIfEqualAsync(
@@ -582,6 +725,30 @@ public sealed class HeadlessRedisScriptsLoader(
         return new AcquireLockParams(key, fenceKey, lockId, expiresValue);
     }
 
+    private static SemaphoreAcquireParams _GetSemaphoreAcquireParameters(
+        RedisKey holdersKey,
+        RedisKey fenceKey,
+        string lockId,
+        int maxCount,
+        TimeSpan expires
+    )
+    {
+        return new SemaphoreAcquireParams(
+            holdersKey,
+            fenceKey,
+            lockId,
+            maxCount,
+            (int)expires.TotalMilliseconds
+        );
+    }
+
+    private static SemaphoreSlotParams _GetSemaphoreSlotParameters(RedisKey holdersKey, string lockId, TimeSpan? ttl)
+    {
+        var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new SemaphoreSlotParams(holdersKey, lockId, expiresValue);
+    }
+
     private static RemoveIfEqualParams _GetRemoveIfEqualParameters(RedisKey key, string? expected)
     {
         return new RemoveIfEqualParams(key, expected);
@@ -669,6 +836,24 @@ public sealed class HeadlessRedisScriptsLoader(
         string lockId,
         RedisValue expires
     );
+
+    /// <summary>Parameters for the semaphore acquire + fence Lua script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct SemaphoreAcquireParams(
+        RedisKey holdersKey,
+        RedisKey fenceKey,
+        string lockId,
+        int maxCount,
+        int expires
+    );
+
+    /// <summary>Parameters for semaphore slot scripts.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct SemaphoreSlotParams(RedisKey holdersKey, string lockId, RedisValue expires);
+
+    /// <summary>Parameters for semaphore count script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct SemaphoreCountParams(RedisKey holdersKey);
 
     /// <summary>Parameters for the ReplaceIfEqual Lua script.</summary>
     [StructLayout(LayoutKind.Auto)]

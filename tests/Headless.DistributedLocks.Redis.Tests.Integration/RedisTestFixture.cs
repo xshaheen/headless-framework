@@ -18,6 +18,8 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
     public RedisDistributedReaderWriterLockStorage ReaderWriterLockStorage { get; private set; } = null!;
 
+    public RedisDistributedSemaphoreStorage SemaphoreStorage { get; private set; } = null!;
+
     protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
@@ -31,6 +33,7 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
         LockStorage = new(ConnectionMultiplexer, _scriptLoader);
         ReaderWriterLockStorage = new(ConnectionMultiplexer, _scriptLoader);
+        SemaphoreStorage = new(ConnectionMultiplexer, _scriptLoader);
         await ConnectionMultiplexer.FlushAllAsync();
     }
 

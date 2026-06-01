@@ -16,6 +16,13 @@ internal static partial class DistributedLockMetrics
         DistributedLocksDiagnostics.Meter
     );
 
+    internal static readonly SemaphoreFailedCounter SemaphoreFailed = Instruments.CreateSemaphoreFailedCounter(
+        DistributedLocksDiagnostics.Meter
+    );
+
+    internal static readonly SemaphoreWaitTimeHistogram SemaphoreWaitTime =
+        Instruments.CreateSemaphoreWaitTimeHistogram(DistributedLocksDiagnostics.Meter);
+
     private static partial class Instruments
     {
         [Counter<int>(Name = "headless.lock.failed")]
@@ -23,5 +30,11 @@ internal static partial class DistributedLockMetrics
 
         [Histogram<double>(Name = "headless.lock.wait.time")]
         internal static partial LockWaitTimeHistogram CreateLockWaitTimeHistogram(Meter meter);
+
+        [Counter<int>(Name = "headless.semaphore.failed")]
+        internal static partial SemaphoreFailedCounter CreateSemaphoreFailedCounter(Meter meter);
+
+        [Histogram<double>(Name = "headless.semaphore.wait.time")]
+        internal static partial SemaphoreWaitTimeHistogram CreateSemaphoreWaitTimeHistogram(Meter meter);
     }
 }

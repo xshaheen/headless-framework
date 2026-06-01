@@ -115,8 +115,6 @@ public static class AddDistributedLockExtensions
             // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
             // decorator wrapped around IDistributedLockProvider does not break the lock-release
             // wake-up signal (the consumer always receives the real DistributedLockProvider).
-            services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
-
             // Startup-time hook that warns when IOutboxBus is registered AFTER
             // AddDistributedLock(...). The consumer registration block below only runs at
             // registration time; a later AddMessages(...) call silently skips push wake-ups
@@ -133,14 +131,7 @@ public static class AddDistributedLockExtensions
             // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
             // which themselves only get published via the outbox path. Without IOutboxBus no
             // such messages ever flow, so the consumer registration is dead weight.
-            if (services.Any(d => d.ServiceType == typeof(IOutboxBus)))
-            {
-                services
-                    .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                        "headless.locks.released"
-                    )
-                    .Concurrency(1);
-            }
+            DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
 
             return services;
         }

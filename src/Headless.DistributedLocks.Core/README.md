@@ -1,20 +1,23 @@
 # Headless.DistributedLocks.Core
 
-Provides the distributed-lock and reader-writer lock provider implementations and setup extensions.
+Provides the distributed-lock, reader-writer lock, and semaphore provider implementations and setup extensions.
 
 ## Problem Solved
 
-Implements lock acquisition, renewal, release, inspection, timeout handling, and optional messaging wake-ups over storage contracts.
+Implements lock/semaphore acquisition, renewal, release, inspection, timeout handling, lease monitoring, and optional messaging wake-ups over storage contracts.
 
 ## Key Features
 
 - `DistributedLockProvider` implements `IDistributedLockProvider`.
 - `DistributedReaderWriterLockProvider` implements `IDistributedReaderWriterLockProvider`.
+- `DistributedSemaphoreProvider` implements `IDistributedSemaphoreProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
 - `IDistributedReaderWriterLockStorage` defines read/write acquire, extend, release, and validation operations.
+- `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
 - `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
+- `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
 
 ## Design Notes
 
@@ -83,5 +86,6 @@ await using var lease = await lockProvider.AcquireAsync(
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
+- Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
 - Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.

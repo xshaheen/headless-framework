@@ -12,10 +12,11 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 - [Core Concepts](#core-concepts)
     - [Efficiency Locks](#efficiency-locks)
     - [Correctness Locks](#correctness-locks)
-    - [Weak Fencing With LockId](#weak-fencing-with-lockid)
+    - [Fencing Tokens](#fencing-tokens)
     - [Lease Lifecycle Monitoring](#lease-lifecycle-monitoring)
     - [Messaging Wake-ups](#messaging-wake-ups)
 - [Reader-Writer Locks](#reader-writer-locks)
+- [Semaphores](#semaphores)
 - [Choosing a Provider](#choosing-a-provider)
 - [Headless.DistributedLocks.Abstractions](#headlessdistributedlocksabstractions)
     - [Problem Solved](#problem-solved)
@@ -50,7 +51,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
 
 Use `IDistributedLockProvider` when only one worker should own a named resource at a time. `TryAcquireAsync(...)` returns `null` on timeout; `AcquireAsync(...)` throws `LockAcquisitionTimeoutException` on timeout. Rate limiting is out of scope for this domain — and the framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + a community Redis-backed `RateLimiter` (distributed) when admission control is needed.
 
-Use `IDistributedReaderWriterLockProvider` when concurrent readers are safe and writers need exclusivity. Redis is the only shipped backend today for both mutex and reader-writer locks; in-process scenarios use a test-only fake of `IDistributedLockStorage`.
+Use `IDistributedReaderWriterLockProvider` when concurrent readers are safe and writers need exclusivity. Use `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` when up to N holders may work concurrently. Redis is the only shipped backend today for mutex, reader-writer locks, and semaphores; in-process scenarios use test-only fakes.
 
 ## Agent Instructions
 
@@ -61,7 +62,8 @@ Use `IDistributedReaderWriterLockProvider` when concurrent readers are safe and 
 - Set `Monitoring = LockMonitoringMode.Monitor` when work should observe lease loss through `IDistributedLock.HandleLostToken`; set `Monitoring = LockMonitoringMode.AutoExtend` only when long work should renew its own lease in the background (it implies `Monitor`).
 - Use `GetLockIdAsync(resource)` for operational inspection only; it reads the current lock id and does not renew the lease. If you already hold a monitored handle, observe `HandleLostToken` instead of polling `GetLockIdAsync`.
 - Synchronous `TryUsingAsync(..., Action ...)` overloads force `LockMonitoringMode.None` because synchronous delegates cannot observe a lease-lost cancellation token.
-- Do not use distributed locks as rate limiters. Use `Microsoft.AspNetCore.RateLimiting` (in-process) or `Polly.RateLimiting` + community Redis (distributed) — the framework does not ship a rate-limiting package.
+- Do not use distributed locks (or the semaphore) as rate limiters. A semaphore caps *concurrent holders* (concurrency control); a rate limiter caps *throughput per time window* (rate control). For rate control, delegate to `Microsoft.AspNetCore.RateLimiting` (in-process), `RedisRateLimiting` (distributed), or `Polly.RateLimiting` (composition) — the framework ships no rate-limiting package.
+- Use `IDistributedLock.FencingToken` for stale-write rejection when the backend supplies it. Do not repurpose `LockId` as the fence; `LockId` remains the opaque ownership token used for renew/release equality.
 - Before choosing a backend, classify the use case as efficiency or correctness. Redis locks are efficiency locks, not transaction-coupled correctness locks.
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
 - If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxBus` is registered, the provider still works and falls back to polling backoff with a one-time warning.
@@ -80,9 +82,11 @@ Efficiency locks avoid duplicate work, such as two nodes generating the same rep
 
 Correctness locks protect invariants where a stale owner could corrupt data. TTL-based Redis locks cannot prove correctness through process pauses, partitions, or clock skew. For correctness, use a transaction-coupled backend when one exists, or make the protected resource reject stale writes.
 
-### Weak Fencing With LockId
+### Fencing Tokens
 
-`IDistributedLock.LockId` is a Snowflake-style `long` and can be passed to a protected write path as a weak fencing token. The target resource must store the last accepted fence and reject older values. This is consumer-enforced and does not turn Redis locks into transaction-coupled locks.
+`IDistributedLock.FencingToken` is a nullable per-resource monotonic grant counter. A protected resource can store the last accepted token and reject writes carrying an older token. `LockId` is separate: it remains the opaque ownership token used for renew and release equality.
+
+Redis mutex locks and Redis semaphores issue fencing tokens with an atomic Lua acquire path: the lock/slot grant and `INCR` of the per-resource fence key happen in the same script, and failed acquires do not advance the counter. Redis fencing is best-effort: the fence key intentionally has no TTL and monotonicity holds only while Redis retains the key. Avoid `allkeys-*` eviction policies for Redis deployments that rely on fencing. Durable DB-sequence fencing belongs to database-backed providers.
 
 ### Lease Lifecycle Monitoring
 
@@ -94,7 +98,7 @@ Intermediate monitor states (`Held`, `Renewed`, `Lost`, `Unknown`) are not expos
 
 Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `Timeout.InfiniteTimeSpan` for `TimeUntilExpires` throws `ArgumentException` (`ParamName = "timeUntilExpires"`): lease monitoring requires a finite lease window.
 
-`LockMonitoringMode.AutoExtend` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `LockMonitoringMode.Monitor` (validate only) validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `LockId` when stale owners can corrupt state.
+`LockMonitoringMode.AutoExtend` implies monitoring and renews at `DistributedLockOptions.AutoExtensionCadenceFraction` of the TTL. `LockMonitoringMode.Monitor` (validate only) validates at `PollingCadenceFraction` and never renews the lease. These signals narrow stale-work windows; they do not upgrade Redis or cache locks into correctness locks. Fence protected writes with `FencingToken` when stale owners can corrupt state.
 
 ### Messaging Wake-ups
 
@@ -139,13 +143,32 @@ await using var write = await readerWriterLocks.AcquireWriteLockAsync(
 );
 ```
 
+## Semaphores
+
+Use `IDistributedSemaphoreProvider` when a resource may have N concurrent holders. `CreateSemaphore(resource, maxCount)` binds capacity at creation, so acquire calls cannot disagree about `maxCount`. Acquired slots return the same `IDistributedLock` handle used by mutex locks: `ReleaseAsync()`, `RenewAsync(...)`, `HandleLostToken`, `LockMonitoringMode.Monitor`, `LockMonitoringMode.AutoExtend`, and `FencingToken` all flow through the same surface.
+
+Redis semaphores store live holders in a ZSET keyed by lock id with expiration timestamps as scores. Lua uses Redis server `TIME`, prunes expired holders before every acquire/count/validate operation, and gives the holders key a safety TTL of roughly `ttl * 2`. Each successful slot grant increments the same per-resource fence counter model used by Redis mutex locks. Semaphore release publishes `DistributedLockReleased`, so waiters can wake through the same optional outbox path as mutex waiters; without messaging they fall back to polling backoff.
+
+```csharp
+var semaphore = semaphoreProvider.CreateSemaphore("downstream:billing-api", maxCount: 5);
+
+await using var slot = await semaphore.AcquireAsync(
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(2),
+        Monitoring = LockMonitoringMode.AutoExtend,
+    },
+    ct
+);
+```
+
 ## Choosing a Provider
 
-Redis is the only shipped backend. Use it when you operate Redis and need efficiency locks (mutex or reader-writer) with atomic acquire/release Lua scripts. Do not use distributed locks for correctness locks on protected state mutations; pair them with a transaction-coupled backend or stale-write rejection. Unit tests that need an in-process `IDistributedLockStorage` should provide a project-local fake rather than reaching for `ICache`.
+Redis is the only shipped backend. Use it when you operate Redis and need efficiency locks (mutex, reader-writer, or semaphore) with atomic Lua scripts. Do not use distributed locks for correctness locks on protected state mutations without stale-write rejection through `FencingToken`. Unit tests that need in-process storage should provide a project-local fake rather than reaching for `ICache`.
 
 | Provider | Use when | Avoid when | Trade-off |
 | --- | --- | --- | --- |
-| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks with atomic acquire/release scripts, or Redis-backed reader-writer locks. | You need correctness locks for protected state mutations. | Requires `IConnectionMultiplexer` and Redis script loading. |
+| `Headless.DistributedLocks.Redis` | You want direct Redis-backed efficiency locks, reader-writer locks, or N-holder semaphores. | You need durable transaction-coupled fencing. | Requires `IConnectionMultiplexer`; Redis fencing is best-effort unless the fence key is retained. |
 
 ---
 
@@ -161,7 +184,8 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
 - `IDistributedReaderWriterLockProvider` with `AcquireReadLockAsync(...)`, `TryAcquireReadLockAsync(...)`, `AcquireWriteLockAsync(...)`, and `TryAcquireWriteLockAsync(...)`.
-- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
+- `IDistributedLock` handle with `LockId`, nullable `FencingToken`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - `GetLockIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring. `GetLockIdAsync` does not renew a lease; monitored holders should use `HandleLostToken` for lease-loss observation.
@@ -231,11 +255,14 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 
 - `DistributedLockProvider` implements `IDistributedLockProvider`.
 - `DistributedReaderWriterLockProvider` implements `IDistributedReaderWriterLockProvider`.
+- `DistributedSemaphoreProvider` implements `IDistributedSemaphoreProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
 - `IDistributedReaderWriterLockStorage` defines atomic read/write acquire, extend, release, and validation operations for storage providers.
+- `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
 - `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
+- `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
 
 ### Design Notes
 
@@ -314,6 +341,7 @@ await using var lease = await lockProvider.AcquireAsync(
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
+- Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
 - Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.
 
@@ -321,18 +349,20 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ## Headless.DistributedLocks.Redis
 
-Redis-backed storage and setup helpers for distributed locks.
+Redis-backed storage and setup helpers for distributed locks, reader-writer locks, and semaphores.
 
 ### Problem Solved
 
-Stores lock records directly in Redis with atomic acquire, replace, and release operations.
+Stores lock records directly in Redis with atomic acquire, replace, release, reader-writer transitions, semaphore slots, and fencing-token issuance.
 
 ### Key Features
 
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
 - `RedisDistributedReaderWriterLockStorage` implements `IDistributedReaderWriterLockStorage`.
+- `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
 - `AddRedisDistributedReaderWriterLock(...)` registers a Redis-backed reader-writer lock provider.
+- `AddRedisDistributedSemaphore(...)` registers a Redis-backed semaphore provider.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
 ### Installation
@@ -358,11 +388,18 @@ builder.Services.AddRedisDistributedReaderWriterLock(options =>
 {
     options.KeyPrefix = "distributed-lock:";
 });
+
+builder.Services.AddRedisDistributedSemaphore(options =>
+{
+    options.KeyPrefix = "distributed-lock:";
+});
 ```
 
 ### Configuration
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`.
+
+Redis mutex storage creates one lock key and one no-TTL `fence:{lockKey}` counter key. Redis semaphore storage creates `{resource}:holders` (ZSET of `lockId → expiry-epoch-ms`) and `fence:{resource}`. Resource names containing `{` or `}` are rejected where storage-owned hash-tags are required.
 
 Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed marker) and `{resource}:readers` (HASH of `lockId → expiry-epoch-ms`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. The marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s, validated `0 < ttl <= 5 min`).
 
@@ -377,3 +414,4 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 - Registers `HeadlessRedisScriptsLoader`.
 - Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.
 - Registers `IDistributedReaderWriterLockProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReaderWriterLock(...)` is called.
+- Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedSemaphore(...)` is called.

@@ -44,6 +44,67 @@ public static class RedisScripts
         return {0}
         """;
 
+    /// <summary>Atomically acquires a distributed semaphore slot and issues a fencing token.</summary>
+    public const string TryAcquireSemaphoreWithFence = """
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
+        redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
+
+        if redis.call('zcard', @holdersKey) >= tonumber(@maxCount) then
+          return {0}
+        end
+
+        local expiryMs = nowMs + tonumber(@expires)
+        redis.call('zadd', @holdersKey, expiryMs, @lockId)
+        redis.call('pexpire', @holdersKey, tonumber(@expires) * 2)
+
+        return {1, redis.call('incr', @fenceKey)}
+        """;
+
+    /// <summary>Atomically extends a distributed semaphore slot when the holder is still present.</summary>
+    public const string TryExtendSemaphore = """
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
+        redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
+
+        local expiryMs = nowMs + tonumber(@expires)
+        local changed = redis.call('zadd', @holdersKey, 'XX', expiryMs, @lockId)
+        if changed == 0 then
+          return 0
+        end
+
+        redis.call('pexpire', @holdersKey, tonumber(@expires) * 2)
+        return 1
+        """;
+
+    /// <summary>Prunes expired semaphore slots and checks whether a holder is still live.</summary>
+    public const string ValidateSemaphore = """
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
+        redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
+        if redis.call('zscore', @holdersKey, @lockId) ~= false then
+          return 1
+        end
+        return 0
+        """;
+
+    /// <summary>Atomically releases a distributed semaphore slot.</summary>
+    public const string ReleaseSemaphore = """
+        return redis.call('zrem', @holdersKey, @lockId)
+        """;
+
+    /// <summary>Prunes expired semaphore slots and returns the live holder count.</summary>
+    public const string GetSemaphoreCount = """
+        local nowSecMicro = redis.call('TIME')
+        local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+
+        redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
+        return redis.call('zcard', @holdersKey)
+        """;
+
     /// <summary>
     /// Atomically replaces a value only if it matches the expected value.
     /// </summary>

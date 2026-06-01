@@ -834,7 +834,11 @@ public sealed class DistributedLockProvider(
         return _monitorRegistry.GetResourceCount();
     }
 
-    internal sealed class LockReleasedConsumer(ICanReceiveLockReleased receiver, ILogger<LockReleasedConsumer> logger)
+    internal sealed class LockReleasedConsumer(
+        IEnumerable<DistributedLockProvider> lockProviders,
+        IEnumerable<DistributedSemaphoreProvider> semaphoreProviders,
+        ILogger<LockReleasedConsumer> logger
+    )
         : IConsume<DistributedLockReleased>
     {
         public ValueTask ConsumeAsync(
@@ -849,10 +853,15 @@ public sealed class DistributedLockProvider(
 
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
-            // Routed through ICanReceiveLockReleased so an IDistributedLockProvider decorator
-            // doesn't break the wake-up signal (the registered DistributedLockProvider instance
-            // implements the marker directly).
-            receiver.OnLockReleased(context.Message);
+            foreach (var receiver in lockProviders)
+            {
+                ((ICanReceiveLockReleased)receiver).OnLockReleased(context.Message);
+            }
+
+            foreach (var receiver in semaphoreProviders)
+            {
+                ((ICanReceiveLockReleased)receiver).OnLockReleased(context.Message);
+            }
 
             return ValueTask.CompletedTask;
         }

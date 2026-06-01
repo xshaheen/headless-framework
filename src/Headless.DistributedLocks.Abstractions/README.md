@@ -10,7 +10,8 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 - `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
 - `IDistributedReaderWriterLockProvider` with read/write acquire methods returning `IDistributedLock`.
-- `IDistributedLock` handle with `LockId`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
+- `IDistributedLock` handle with `LockId`, nullable `FencingToken`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - Lock inspection methods for current lock id, expiration, active count, active list, and lock info. `GetLockIdAsync` does not renew a lease; monitored holders should use `HandleLostToken` for lease-loss observation.
@@ -20,7 +21,8 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
 - `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
-- `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `IsMonitored` to disambiguate). It is an observability signal; fence protected writes with `LockId` when correctness matters. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
+- `FencingToken` is a per-resource monotonic grant counter for stale-write rejection. It is distinct from `LockId`, which remains the opaque ownership token used for renew/release equality. It is `null` when the backend or lock type does not support fencing.
+- `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `IsMonitored` to disambiguate). It is an observability signal. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
 ## Installation

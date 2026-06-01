@@ -63,6 +63,36 @@ public static class RedisDistributedLockSetup
 
         #endregion
 
+        #region Redis Distributed Semaphore
+
+        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
+        public IServiceCollection AddRedisDistributedSemaphore(
+            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
+        )
+        {
+            return services._AddRedisDistributedSemaphoreCore(s =>
+                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
+            );
+        }
+
+        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
+        public IServiceCollection AddRedisDistributedSemaphore(Action<DistributedLockOptions> optionSetupAction)
+        {
+            return services._AddRedisDistributedSemaphoreCore(s =>
+                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
+            );
+        }
+
+        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
+        public IServiceCollection AddRedisDistributedSemaphore(IConfiguration config)
+        {
+            return services._AddRedisDistributedSemaphoreCore(s =>
+                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(config)
+            );
+        }
+
+        #endregion
+
         #region Redis Distributed Reader-Writer Lock
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
@@ -105,6 +135,16 @@ public static class RedisDistributedLockSetup
     }
 
     private static IServiceCollection _AddRedisDistributedReaderWriterLockCore(
+        this IServiceCollection services,
+        Func<IServiceCollection, IServiceCollection> registerStorage
+    )
+    {
+        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+
+        return registerStorage(services);
+    }
+
+    private static IServiceCollection _AddRedisDistributedSemaphoreCore(
         this IServiceCollection services,
         Func<IServiceCollection, IServiceCollection> registerStorage
     )
