@@ -46,10 +46,14 @@ public static class RedisDistributedLockSetup
         }
 
         /// <summary>Adds Redis-backed resource lock provider.</summary>
-        public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions> optionSetupAction)
+        /// <remarks>
+        /// <paramref name="optionSetupAction"/> is optional; when omitted, <see cref="DistributedLockOptions"/>
+        /// keeps its defaults.
+        /// </remarks>
+        public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions>? optionSetupAction = null)
         {
             return services._AddRedisDistributedLockCore(s =>
-                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
+                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction ?? (static _ => { }))
             );
         }
 
