@@ -15,6 +15,10 @@ public sealed class FeaturesEntityValidationStartupGateTests(FeaturesTestFixture
     {
         // given
         var builder = Host.CreateApplicationBuilder();
+        // AddHeadlessFeatures auto-registers the management core, whose initialization hosted
+        // service requires TimeProvider — register it so startup reaches the entity-validation gate
+        // rather than failing to activate the hosted service first.
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddDbContextFactory<MissingFeaturesEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );

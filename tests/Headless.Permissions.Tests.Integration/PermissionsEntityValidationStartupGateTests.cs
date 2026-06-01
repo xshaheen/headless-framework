@@ -16,6 +16,10 @@ public sealed class PermissionsEntityValidationStartupGateTests(PermissionsTestF
     {
         // given
         var builder = Host.CreateApplicationBuilder();
+        // AddHeadlessPermissions auto-registers the management core, whose initialization hosted
+        // service requires TimeProvider — register it so startup reaches the entity-validation gate
+        // rather than failing to activate the hosted service first.
+        builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddDbContextFactory<MissingPermissionsEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );

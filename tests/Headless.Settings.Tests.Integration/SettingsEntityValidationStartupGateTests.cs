@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,6 +16,17 @@ public sealed class SettingsEntityValidationStartupGateTests(SettingsTestFixture
     {
         // given
         var builder = Host.CreateApplicationBuilder();
+        // AddHeadlessSettings auto-registers the management core, which requires
+        // IStringEncryptionService (its _AddCore guard) and TimeProvider (its initialization hosted
+        // service) — register both so startup reaches the entity-validation gate rather than throwing
+        // a missing-dependency error first.
+        builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddStringEncryptionService(options =>
+        {
+            options.DefaultPassPhrase = "TestPassPhrase123456";
+            options.InitVectorBytes = "TestInitVector16"u8.ToArray();
+            options.DefaultSalt = "TestSalt"u8.ToArray();
+        });
         builder.Services.AddDbContextFactory<MissingSettingsEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
