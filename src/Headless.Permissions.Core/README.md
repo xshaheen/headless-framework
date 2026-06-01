@@ -26,9 +26,8 @@ dotnet add package Headless.Permissions.Storage.EntityFramework # or PostgreSql 
 ## Quick Start
 
 `AddHeadlessPermissions(...)` registers the management core automatically, so a storage
-provider is all you need — no separate `AddPermissionsManagementCore(...)` call. Register
-the required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`)
-first, then call `AddHeadlessPermissions`.
+provider is all you need. Register the required services (`TimeProvider`, `ICache`,
+`IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -41,11 +40,6 @@ builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 // Add management core + storage in one call (Entity Framework shown)
 builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
-
-Call `AddPermissionsManagementCore(...)` directly only when you need the management core
-without a Headless storage provider, or to set management options (`CacheKeyPrefix`) before
-`AddHeadlessPermissions`. It is idempotent with `AddHeadlessPermissions`, so calling both is
-safe.
 
 ### Authorization Requirement
 
@@ -94,8 +88,12 @@ var result = await permissionManager.GetAsync("Orders.View", currentUser);
 
 ### Options
 
+To tune the management options, register a `Configure<PermissionManagementOptions>(...)`
+callback — it composes with the auto-registration performed by `AddHeadlessPermissions(...)`,
+so order does not matter:
+
 ```csharp
-services.AddPermissionsManagementCore(options =>
+services.Configure<PermissionManagementOptions>(options =>
 {
     options.CacheKeyPrefix = "permissions:";
 });

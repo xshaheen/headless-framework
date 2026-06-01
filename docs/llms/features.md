@@ -69,7 +69,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
-- `AddHeadlessFeatures(...)` registers the management core automatically; you no longer call `AddFeaturesManagementCore(...)` separately. Call it directly only for the management core without a Headless storage provider, or to set management options first — it is idempotent with `AddHeadlessFeatures`.
+- `AddHeadlessFeatures(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, register `services.Configure<FeatureManagementOptions>(...)`; it composes with the auto-registration regardless of call order.
 - Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
 - Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
@@ -193,8 +193,10 @@ builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
 
 ### Options
 
+To tune the management options, register a `Configure<FeatureManagementOptions>(...)` callback; it composes with the auto-registration performed by `AddHeadlessFeatures(...)`, so order does not matter:
+
 ```csharp
-services.AddFeaturesManagementCore(options =>
+services.Configure<FeatureManagementOptions>(options =>
 {
     options.CacheKeyPrefix = "features:";  // Cache key prefix
 });

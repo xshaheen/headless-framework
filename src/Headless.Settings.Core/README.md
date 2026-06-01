@@ -30,9 +30,8 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 ## Quick Start
 
 `AddHeadlessSettings(...)` registers the management core automatically, so a storage
-provider is all you need — no separate `AddSettingsManagementCore(...)` call. Register the
-required services (`TimeProvider`, caching, distributed lock, `IStringEncryptionService`)
-first, then call `AddHeadlessSettings`.
+provider is all you need. Register the required services (`TimeProvider`, caching,
+distributed lock, `IStringEncryptionService`) first, then call `AddHeadlessSettings`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -50,11 +49,6 @@ builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbCont
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
-
-Call `AddSettingsManagementCore(...)` directly only when you need the management core
-without a Headless storage provider (for example, supplying your own
-`ISettingValueRecordRepository`). It is idempotent with `AddHeadlessSettings`, so calling
-both is safe.
 
 ## Usage
 
@@ -107,7 +101,7 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
-Settings management has a prerequisite: register `IStringEncryptionService` before calling `AddHeadlessSettings(...)` (or `AddSettingsManagementCore(...)`). The recommended setup is to bind `Headless:StringEncryption` explicitly:
+Settings management has a prerequisite: register `IStringEncryptionService` before calling `AddHeadlessSettings(...)`. The recommended setup is to bind `Headless:StringEncryption` explicitly:
 
 ```json
 {
@@ -122,14 +116,13 @@ Settings management has a prerequisite: register `IStringEncryptionService` befo
 ```
 
 Register encryption first, then configure settings management. To tune the management
-options, call `AddSettingsManagementCore(...)` before `AddHeadlessSettings(...)` — the
-latter only registers the core when it is not already present, so your configured options
-are preserved:
+options, register a `Configure<SettingManagementOptions>(...)` callback — it composes with
+the auto-registration performed by `AddHeadlessSettings(...)`, so order does not matter:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
 
-services.AddSettingsManagementCore(options =>
+services.Configure<SettingManagementOptions>(options =>
 {
     // Cache expiration for setting values (default: 5 hours)
     options.ValueCacheExpiration = TimeSpan.FromHours(5);

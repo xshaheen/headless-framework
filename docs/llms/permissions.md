@@ -62,7 +62,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - Install `Headless.Permissions.Core` for the full runtime: grant resolution, caching, background init, and `[HasPermission]` authorization attribute.
 - Install `Headless.Permissions.Storage.EntityFramework` for EF Core-backed persistence using the consumer's `DbContext`.
 - Install `Headless.Permissions.Storage.PostgreSql` or `Headless.Permissions.Storage.SqlServer` for raw DDL storage that initializes permissions tables at host startup without requiring an app EF context.
-- Add a definition provider via `AddPermissionDefinitionProvider<T>()`, then wire storage via `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())` — that single call registers the management core automatically, so a separate `AddPermissionsManagementCore(...)` is no longer required.
+- Add a definition provider via `AddPermissionDefinitionProvider<T>()`, then wire storage via `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())` — that single call registers the management core automatically.
 - Permissions follow AWS IAM-style resolution: explicit Deny overrides all Grants; default is Deny.
 
 ## Agent Instructions
@@ -72,7 +72,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - Permission resolution order: User > Role > Store. An explicit `Prohibited` from ANY provider denies access regardless of other grants.
 - Three states: **Granted** (record with `IsGranted = true`), **Prohibited** (record with `IsGranted = false`), **Undefined** (no record, defaults to deny).
 - Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered. Ensure these are wired before adding permissions.
-- `AddHeadlessPermissions(...)` registers the management core automatically; you no longer call `AddPermissionsManagementCore(...)` separately. Call it directly only for the management core without a Headless storage provider, or to set management options first — it is idempotent with `AddHeadlessPermissions`.
+- `AddHeadlessPermissions(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, register `services.Configure<PermissionManagementOptions>(...)`; it composes with the auto-registration regardless of call order.
 - Storage.EntityFramework uses the consumer's `DbContext`. Register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessPermissions(options)` in `OnModelCreating`.
 - Storage.PostgreSql and Storage.SqlServer provide Mode 2 raw providers. Use `AddHeadlessPermissions(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - `PermissionsInitializationBackgroundService` runs on startup — permission definitions are synced to the database automatically.
@@ -234,8 +234,10 @@ var result = await permissionManager.GetAsync("Orders.View", currentUser);
 
 ### Options
 
+To tune the management options, register a `Configure<PermissionManagementOptions>(...)` callback; it composes with the auto-registration performed by `AddHeadlessPermissions(...)`, so order does not matter:
+
 ```csharp
-services.AddPermissionsManagementCore(options =>
+services.Configure<PermissionManagementOptions>(options =>
 {
     options.CacheKeyPrefix = "permissions:";
 });
