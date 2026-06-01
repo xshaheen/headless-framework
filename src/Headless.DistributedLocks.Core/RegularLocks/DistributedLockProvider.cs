@@ -157,7 +157,7 @@ public sealed class DistributedLockProvider(
         using var timeoutCts = timeProvider.CreateCancellationTokenSource(acquireTimeout ?? DefaultAcquireTimeout);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
 
-        var gotLock = false;
+        DistributedLockAcquireResult acquireResult = DistributedLockAcquireResult.Failed;
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
         var isFirstAttempt = true;
@@ -179,7 +179,7 @@ public sealed class DistributedLockProvider(
                 // Try to acquire the lock
                 try
                 {
-                    gotLock = await _storage.InsertAsync(resource, lockId, timeUntilExpires, attemptToken);
+                    acquireResult = await _storage.InsertAsync(resource, lockId, timeUntilExpires, attemptToken);
                 }
                 catch (OperationCanceledException)
                 {
@@ -201,7 +201,7 @@ public sealed class DistributedLockProvider(
                     logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
                 }
 
-                if (gotLock)
+                if (acquireResult.Acquired)
                 {
                     break;
                 }
@@ -245,7 +245,7 @@ public sealed class DistributedLockProvider(
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
         DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
 
-        if (!gotLock)
+        if (!acquireResult.Acquired)
         {
             DistributedLockMetrics.LockFailed.Add(1);
 
@@ -275,6 +275,7 @@ public sealed class DistributedLockProvider(
         return _CreateLockHandle(
             resource,
             lockId,
+            acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
             releaseOnDispose,
@@ -307,11 +308,11 @@ public sealed class DistributedLockProvider(
             : null;
 
         var attemptToken = linkedCts?.Token ?? safetyCts.Token;
-        bool gotLock;
+        DistributedLockAcquireResult acquireResult;
 
         try
         {
-            gotLock = await _storage
+            acquireResult = await _storage
                 .InsertAsync(resource, lockId, timeUntilExpires, attemptToken)
                 .ConfigureAwait(false);
         }
@@ -331,18 +332,18 @@ public sealed class DistributedLockProvider(
             // "lock not acquired" — surface the same null shape as a normal
             // contended try-once result. Distinguishing this from a normal
             // contended result via a dedicated EventId is tracked by #320.
-            gotLock = false;
+            acquireResult = DistributedLockAcquireResult.Failed;
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
         {
             logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
-            gotLock = false;
+            acquireResult = DistributedLockAcquireResult.Failed;
         }
 
         var timeWaitedForLock = timeProvider.GetElapsedTime(timestamp);
         DistributedLockMetrics.LockWaitTime.Record(timeWaitedForLock.TotalMilliseconds);
 
-        if (!gotLock)
+        if (!acquireResult.Acquired)
         {
             DistributedLockMetrics.LockFailed.Add(1);
             logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
@@ -361,6 +362,7 @@ public sealed class DistributedLockProvider(
         return _CreateLockHandle(
             resource,
             lockId,
+            acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
             releaseOnDispose,
@@ -372,6 +374,7 @@ public sealed class DistributedLockProvider(
     private DisposableDistributedLock _CreateLockHandle(
         string resource,
         string lockId,
+        long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,
@@ -382,6 +385,7 @@ public sealed class DistributedLockProvider(
         var handle = new DisposableDistributedLock(
             resource,
             lockId,
+            fencingToken,
             leaseDuration,
             timeWaitedForLock,
             this,
@@ -690,6 +694,7 @@ public sealed class DistributedLockProvider(
         {
             Resource = resource,
             LockId = lockId,
+            FencingToken = null,
             TimeToLive = ttl,
         };
     }
@@ -713,6 +718,7 @@ public sealed class DistributedLockProvider(
             {
                 Resource = resource,
                 LockId = info.LockId,
+                FencingToken = null,
                 TimeToLive = info.Ttl,
             };
 

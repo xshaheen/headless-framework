@@ -69,6 +69,8 @@ internal sealed class DisposableReaderWriterLock : IDistributedLock, LeaseMonito
 
     public string LockId { get; }
 
+    public long? FencingToken => null;
+
     public string Resource { get; }
 
     public int RenewalCount => Volatile.Read(ref _renewalCount);

@@ -415,6 +415,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         private int _renewalCount;
 
         public string LockId => "tracking-lock-id";
+        public long? FencingToken => null;
         public string Resource => "tracking-lock-resource";
         public int RenewalCount => Volatile.Read(ref _renewalCount);
         public DateTimeOffset DateAcquired => DateTimeOffset.UtcNow;

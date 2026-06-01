@@ -98,6 +98,45 @@ public sealed class DistributedLockProviderTests : TestBase
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
         result.LockId.Should().NotBeNullOrEmpty();
+        result.FencingToken.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_issue_monotonic_fencing_tokens_per_resource()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await using var first = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        var firstToken = first.FencingToken;
+        await first.ReleaseAsync();
+        await using var second = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then
+        firstToken.Should().Be(1);
+        second.FencingToken.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_keep_fencing_token_stable_on_renew()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        await using var handle = await provider.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { TimeUntilExpires = TimeSpan.FromMinutes(5) },
+            AbortToken
+        );
+
+        // when
+        var renewed = await handle.RenewAsync(TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        renewed.Should().BeTrue();
+        handle.FencingToken.Should().Be(1);
     }
 
     [Fact]
@@ -301,7 +340,11 @@ public sealed class DistributedLockProviderTests : TestBase
             {
                 callCount++;
                 // Succeed on 3rd attempt
-                return ValueTask.FromResult(callCount >= 3);
+                return ValueTask.FromResult(
+                    callCount >= 3
+                        ? new DistributedLockAcquireResult(Acquired: true, FencingToken: 1)
+                        : DistributedLockAcquireResult.Failed
+                );
             });
 
         var provider = _CreateProvider(storage: storage);
@@ -555,13 +598,13 @@ public sealed class DistributedLockProviderTests : TestBase
 
     private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLockProvider.
 
-    private static Func<NSubstitute.Core.CallInfo, ValueTask<bool>> _HangForeverInsert =>
-        ci => new ValueTask<bool>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
+    private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
+        ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
 
-    private static async Task<bool> _HangUntilCancelledAsync(CancellationToken ct)
+    private static async Task<DistributedLockAcquireResult> _HangUntilCancelledAsync(CancellationToken ct)
     {
         await Task.Delay(Timeout.Infinite, ct).ConfigureAwait(false);
-        return false; // Unreachable — Task.Delay throws OperationCanceledException on cancellation.
+        return DistributedLockAcquireResult.Failed; // Unreachable — Task.Delay throws OperationCanceledException on cancellation.
     }
 
     private async Task _DrainContinuationsAsync(Task acquireTask)
@@ -672,7 +715,9 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 callerCts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
-                return ValueTask.FromException<bool>(new OperationCanceledException(callerCts.Token));
+                return ValueTask.FromException<DistributedLockAcquireResult>(
+                    new OperationCanceledException(callerCts.Token)
+                );
             });
 
         // when
@@ -705,7 +750,7 @@ public sealed class DistributedLockProviderTests : TestBase
             .Returns(_ =>
             {
                 Interlocked.Increment(ref callCount);
-                return ValueTask.FromResult(false);
+                return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
             });
 
         var provider = _CreateProvider(storage: storage);
@@ -890,7 +935,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var storage = Substitute.For<IDistributedLockStorage>();
         storage
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: 1));
         storage
             .RemoveIfEqualAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("release failed"));
@@ -1165,7 +1210,9 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 cts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
-                return ValueTask.FromException<bool>(new OperationCanceledException(cts.Token));
+                return ValueTask.FromException<DistributedLockAcquireResult>(
+                    new OperationCanceledException(cts.Token)
+                );
             });
 
         // when

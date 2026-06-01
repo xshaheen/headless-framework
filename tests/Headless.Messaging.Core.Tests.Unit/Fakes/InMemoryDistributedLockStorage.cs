@@ -13,8 +13,9 @@ namespace Tests.Fakes;
 internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _fencingTokens = new(StringComparer.Ordinal);
 
-    public ValueTask<bool> InsertAsync(
+    public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string lockId,
         TimeSpan? ttl = null,
@@ -29,7 +30,14 @@ internal sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) 
             _entries.TryRemove(new KeyValuePair<string, Entry>(key, existing));
         }
 
-        return ValueTask.FromResult(_entries.TryAdd(key, entry));
+        if (!_entries.TryAdd(key, entry))
+        {
+            return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+        }
+
+        var fencingToken = _fencingTokens.AddOrUpdate(key, static _ => 1, static (_, current) => current + 1);
+
+        return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, fencingToken));
     }
 
     public ValueTask<bool> ReplaceIfEqualAsync(

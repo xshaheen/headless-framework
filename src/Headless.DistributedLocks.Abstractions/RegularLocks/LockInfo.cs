@@ -13,6 +13,12 @@ public sealed record LockInfo
     /// <summary>The unique identifier of the lock holder.</summary>
     public required string LockId { get; init; }
 
+    /// <summary>
+    /// A per-resource monotonic grant counter used by protected resources to reject stale writes,
+    /// or null when the backend or inspection path cannot report a fencing token.
+    /// </summary>
+    public long? FencingToken { get; init; }
+
     /// <summary>Remaining time until the lock expires, or null if no expiration.</summary>
     public TimeSpan? TimeToLive { get; init; }
 }

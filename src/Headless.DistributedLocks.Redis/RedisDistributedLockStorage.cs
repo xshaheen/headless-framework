@@ -13,7 +13,7 @@ public sealed class RedisDistributedLockStorage(
 {
     private IDatabase Db => multiplexer.GetDatabase();
 
-    public async ValueTask<bool> InsertAsync(
+    public async ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string lockId,
         TimeSpan? ttl = null,
@@ -23,7 +23,15 @@ public sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.StringSetAsync(key, lockId, ttl, When.NotExists, CommandFlags.None).ConfigureAwait(false);
+        var fenceKey = _GetFenceKey(key);
+
+        var result = await scriptsLoader
+            .TryAcquireLockAsync(Db, key, fenceKey, lockId, ttl, cancellationToken)
+            .ConfigureAwait(false);
+
+        return result.Acquired
+            ? new DistributedLockAcquireResult(Acquired: true, result.FencingToken)
+            : DistributedLockAcquireResult.Failed;
     }
 
     public async ValueTask<bool> ReplaceIfEqualAsync(
@@ -207,6 +215,11 @@ public sealed class RedisDistributedLockStorage(
         }
 
         return count;
+    }
+
+    private static RedisKey _GetFenceKey(string key)
+    {
+        return "fence:{" + key + "}";
     }
 
     private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, Dictionary<string, string> result)

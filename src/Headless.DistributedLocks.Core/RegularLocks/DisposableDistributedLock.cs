@@ -19,6 +19,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
     internal DisposableDistributedLock(
         string resource,
         string lockId,
+        long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         IDistributedLockProvider lockProvider,
@@ -31,6 +32,7 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
     )
     {
         LockId = lockId;
+        FencingToken = fencingToken;
         Resource = resource;
         DateAcquired = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
@@ -76,6 +78,8 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
 #pragma warning restore IDE0032
 
     public string LockId { get; }
+
+    public long? FencingToken { get; }
 
     public string Resource { get; }
 

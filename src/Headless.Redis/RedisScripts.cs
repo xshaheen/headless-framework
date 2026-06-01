@@ -17,6 +17,34 @@ namespace Headless.Redis;
 public static class RedisScripts
 {
     /// <summary>
+    /// Atomically acquires a mutex lock and issues a fencing token only when the grant succeeds.
+    /// </summary>
+    /// <remarks>
+    /// <b>Parameters:</b>
+    /// <list type="bullet">
+    ///   <item><c>@key</c> - The lock key</item>
+    ///   <item><c>@fenceKey</c> - The per-resource fence counter key</item>
+    ///   <item><c>@lockId</c> - The lock owner id</item>
+    ///   <item><c>@expires</c> - TTL in milliseconds (empty string = no expiration)</item>
+    /// </list>
+    /// <b>Returns:</b> <c>{1, token}</c> when acquired, or <c>{0}</c> when already held.
+    /// </remarks>
+    public const string TryAcquireLockWithFence = """
+        local result
+        if (@expires ~= nil and @expires ~= '') then
+          result = redis.call('set', @key, @lockId, 'NX', 'PX', @expires)
+        else
+          result = redis.call('set', @key, @lockId, 'NX')
+        end
+
+        if result then
+          return {1, redis.call('incr', @fenceKey)}
+        end
+
+        return {0}
+        """;
+
+    /// <summary>
     /// Atomically replaces a value only if it matches the expected value.
     /// </summary>
     /// <remarks>

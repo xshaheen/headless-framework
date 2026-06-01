@@ -32,7 +32,8 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5));
 
         // then
-        result.Should().BeTrue();
+        result.Acquired.Should().BeTrue();
+        result.FencingToken.Should().Be(1);
         var stored = await fixture.LockStorage.GetAsync(key);
         stored.Should().Be(lockId);
     }
@@ -50,9 +51,65 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var result = await fixture.LockStorage.InsertAsync(key, newLockId, TimeSpan.FromMinutes(5));
 
         // then
-        result.Should().BeFalse();
+        result.Acquired.Should().BeFalse();
+        result.FencingToken.Should().BeNull();
         var stored = await fixture.LockStorage.GetAsync(key);
         stored.Should().Be(originalLockId);
+    }
+
+    [Fact]
+    public async Task should_issue_monotonic_fencing_tokens_only_for_successful_acquires()
+    {
+        // given
+        var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
+        var firstLockId = Guid.NewGuid().ToString("N");
+        var failedLockId = Guid.NewGuid().ToString("N");
+        var secondLockId = Guid.NewGuid().ToString("N");
+
+        // when
+        var first = await fixture.LockStorage.InsertAsync(key, firstLockId, TimeSpan.FromMinutes(5));
+        var failed = await fixture.LockStorage.InsertAsync(key, failedLockId, TimeSpan.FromMinutes(5));
+        await fixture.LockStorage.RemoveIfEqualAsync(key, firstLockId);
+        var second = await fixture.LockStorage.InsertAsync(key, secondLockId, TimeSpan.FromMinutes(5));
+
+        // then
+        first.FencingToken.Should().Be(1);
+        failed.Acquired.Should().BeFalse();
+        failed.FencingToken.Should().BeNull();
+        second.FencingToken.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_keep_fence_counter_without_ttl()
+    {
+        // given
+        var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
+        var lockId = Guid.NewGuid().ToString("N");
+        var fenceKey = $"fence:{{{key}}}";
+
+        // when
+        var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5));
+
+        // then
+        result.Acquired.Should().BeTrue();
+        var fenceTtl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(fenceKey);
+        fenceTtl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_issue_independent_fencing_tokens_per_resource()
+    {
+        // given
+        var firstKey = $"lock:{Faker.Random.AlphaNumeric(10)}";
+        var secondKey = $"lock:{Faker.Random.AlphaNumeric(10)}";
+
+        // when
+        var first = await fixture.LockStorage.InsertAsync(firstKey, Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(5));
+        var second = await fixture.LockStorage.InsertAsync(secondKey, Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(5));
+
+        // then
+        first.FencingToken.Should().Be(1);
+        second.FencingToken.Should().Be(1);
     }
 
     [Fact]
@@ -70,7 +127,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
             async (lockId, _) =>
             {
                 var result = await fixture.LockStorage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5), AbortToken);
-                if (result)
+                if (result.Acquired)
                 {
                     Interlocked.Increment(ref successCount);
                 }
@@ -137,7 +194,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var result = await fixture.LockStorage.InsertAsync(key, lockId2, TimeSpan.FromMinutes(5));
 
         // then
-        result.Should().BeTrue();
+        result.Acquired.Should().BeTrue();
         var stored = await fixture.LockStorage.GetAsync(key);
         stored.Should().Be(lockId2);
     }

@@ -18,7 +18,7 @@ public sealed class ScopedDistributedLockStorage : IDistributedLockStorage
         _scopedPrefix = scopedPrefix;
     }
 
-    public ValueTask<bool> InsertAsync(
+    public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string lockId,
         TimeSpan? ttl = null,

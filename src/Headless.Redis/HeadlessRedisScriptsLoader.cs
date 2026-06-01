@@ -20,6 +20,7 @@ public sealed class HeadlessRedisScriptsLoader(
 ) : IDisposable
 {
     // Cached selectors avoid per-call delegate allocation on the hot path.
+    private static readonly ScriptSelector _tryAcquireLockWithFenceSelector = static x => x.TryAcquireLockWithFenceScript;
     private static readonly ScriptSelector _replaceIfEqualSelector = static x => x.ReplaceIfEqualScript;
     private static readonly ScriptSelector _removeIfEqualSelector = static x => x.RemoveIfEqualScript;
     private static readonly ScriptSelector _incrementSelector = static x => x.IncrementWithExpireScript;
@@ -36,6 +37,8 @@ public sealed class HeadlessRedisScriptsLoader(
     private int _version = 1; // Odd = not loaded, Even = loaded
     private bool _eventsSubscribed;
     private readonly AsyncLock _loadScriptsLock = new();
+
+    public LoadedLuaScript? TryAcquireLockWithFenceScript { get; private set; }
 
     public LoadedLuaScript? IncrementWithExpireScript { get; private set; }
 
@@ -79,6 +82,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
             logger?.LogPreparingLuaScript();
 
+            var tryAcquireLockWithFence = LuaScript.Prepare(RedisScripts.TryAcquireLockWithFence);
             var incrementWithExpire = LuaScript.Prepare(RedisScripts.IncrementWithExpire);
             var removeIfEqual = LuaScript.Prepare(RedisScripts.RemoveIfEqual);
             var replaceIfEqual = LuaScript.Prepare(RedisScripts.ReplaceIfEqual);
@@ -91,6 +95,7 @@ public sealed class HeadlessRedisScriptsLoader(
             var tryExtendWriteLock = LuaScript.Prepare(RedisScripts.TryExtendWriteLock);
             var releaseWriteLock = LuaScript.Prepare(RedisScripts.ReleaseWriteLock);
 
+            LoadedLuaScript? loadedTryAcquireLockWithFence = null;
             LoadedLuaScript? loadedIncrement = null;
             LoadedLuaScript? loadedRemove = null;
             LoadedLuaScript? loadedReplace = null;
@@ -114,6 +119,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
                 logger?.LogLoadingLuaScripts(endpoint);
 
+                var loadTryAcquireLockWithFenceTask = tryAcquireLockWithFence.LoadAsync(server);
                 var loadIncrementScriptTask = incrementWithExpire.LoadAsync(server);
                 var loadRemoveScriptTask = removeIfEqual.LoadAsync(server);
                 var loadReplaceScriptTask = replaceIfEqual.LoadAsync(server);
@@ -127,6 +133,7 @@ public sealed class HeadlessRedisScriptsLoader(
                 var loadReleaseWriteLockTask = releaseWriteLock.LoadAsync(server);
 
                 var whenAll = Task.WhenAll(
+                    loadTryAcquireLockWithFenceTask,
                     loadIncrementScriptTask,
                     loadRemoveScriptTask,
                     loadReplaceScriptTask,
@@ -141,21 +148,23 @@ public sealed class HeadlessRedisScriptsLoader(
                 );
 
                 var results = await whenAll.WithAggregatedExceptions().ConfigureAwait(false);
-                loadedIncrement = results[0];
-                loadedRemove = results[1];
-                loadedReplace = results[2];
-                loadedSetIfHigher = results[3];
-                loadedSetIfLower = results[4];
-                loadedTryAcquireReadLock = results[5];
-                loadedTryExtendReadLock = results[6];
-                loadedReleaseReadLock = results[7];
-                loadedTryAcquireWriteLock = results[8];
-                loadedTryExtendWriteLock = results[9];
-                loadedReleaseWriteLock = results[10];
+                loadedTryAcquireLockWithFence = results[0];
+                loadedIncrement = results[1];
+                loadedRemove = results[2];
+                loadedReplace = results[3];
+                loadedSetIfHigher = results[4];
+                loadedSetIfLower = results[5];
+                loadedTryAcquireReadLock = results[6];
+                loadedTryExtendReadLock = results[7];
+                loadedReleaseReadLock = results[8];
+                loadedTryAcquireWriteLock = results[9];
+                loadedTryExtendWriteLock = results[10];
+                loadedReleaseWriteLock = results[11];
             }
 
             // Only publish loaded scripts after every master endpoint has loaded successfully.
             // Partial assignment on failure would leave stale scripts visible to callers.
+            TryAcquireLockWithFenceScript = loadedTryAcquireLockWithFence;
             IncrementWithExpireScript = loadedIncrement;
             RemoveIfEqualScript = loadedRemove;
             ReplaceIfEqualScript = loadedReplace;
@@ -237,6 +246,34 @@ public sealed class HeadlessRedisScriptsLoader(
         var result = (int)redisResult;
 
         return result > 0;
+    }
+
+    public async Task<(bool Acquired, long? FencingToken)> TryAcquireLockAsync(
+        IDatabase db,
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        TimeSpan? ttl = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(db);
+
+        var parameters = _GetAcquireLockParameters(key, fenceKey, lockId, ttl);
+        var result = await EvaluateAsync(db, _tryAcquireLockWithFenceSelector, parameters, cancellationToken)
+            .ConfigureAwait(false);
+        var values = (RedisResult[]?)result;
+        if (values is null || values.Length == 0)
+        {
+            throw new RedisServerException("Unexpected acquire lock script result.");
+        }
+
+        if ((int)values[0] <= 0)
+        {
+            return (false, null);
+        }
+
+        return (true, (long)values[1]);
     }
 
     public async Task<bool> RemoveIfEqualAsync(
@@ -533,6 +570,18 @@ public sealed class HeadlessRedisScriptsLoader(
         return new ReplaceIfEqualParams(key, value, expectedValue, expiresValue);
     }
 
+    private static AcquireLockParams _GetAcquireLockParameters(
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        TimeSpan? expires
+    )
+    {
+        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new AcquireLockParams(key, fenceKey, lockId, expiresValue);
+    }
+
     private static RemoveIfEqualParams _GetRemoveIfEqualParameters(RedisKey key, string? expected)
     {
         return new RemoveIfEqualParams(key, expected);
@@ -611,6 +660,15 @@ public sealed class HeadlessRedisScriptsLoader(
     #endregion
 
     #region Parameter Types
+
+    /// <summary>Parameters for the lock acquire + fence Lua script.</summary>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct AcquireLockParams(
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        RedisValue expires
+    );
 
     /// <summary>Parameters for the ReplaceIfEqual Lua script.</summary>
     [StructLayout(LayoutKind.Auto)]
