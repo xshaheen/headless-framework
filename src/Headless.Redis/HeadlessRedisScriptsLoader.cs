@@ -50,6 +50,13 @@ public sealed class HeadlessRedisScriptsLoader(
                 return;
             }
 
+            definitions = _GetMissingDefinitions(definitions);
+
+            if (definitions.Count is 0)
+            {
+                return;
+            }
+
             logger?.LogPreparingLuaScript();
 
             var loadedScripts = new Dictionary<Type, LoadedLuaScript>(_loadedScripts);
@@ -229,6 +236,11 @@ public sealed class HeadlessRedisScriptsLoader(
     private bool _ContainsAll(IReadOnlyList<RedisScriptDefinition> scriptDefinitions)
     {
         return scriptDefinitions.All(scriptDefinition => _loadedScripts.ContainsKey(scriptDefinition.GetType()));
+    }
+
+    private IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(IReadOnlyList<RedisScriptDefinition> definitions)
+    {
+        return definitions.Where(scriptDefinition => !_loadedScripts.ContainsKey(scriptDefinition.GetType())).ToArray();
     }
 
     private void _ResetScripts(int expectedVersion)

@@ -57,7 +57,7 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
 Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache` for all cache operations.
 
 - **Single-instance / development**: `Headless.Caching.Memory` — call `AddInMemoryCache()`. High performance, per-process, LRU eviction.
-- **Multi-instance / production**: `Headless.Caching.Redis` — call `AddRedisCaching()`. Distributed cache shared across instances via StackExchange.Redis.
+- **Multi-instance / production**: `Headless.Caching.Redis` — call `AddRedisCache(...)`. Distributed cache shared across instances via StackExchange.Redis.
 - **L1 + L2 hybrid**: `Headless.Caching.Hybrid` — call `AddHybridCache()`. Combines in-memory L1 with Redis L2 and automatic cross-instance invalidation via pub/sub messaging.
 
 `ICache` supports: upsert/get/remove with TTL, bulk operations, prefix-based operations, atomic operations (increment, compare-and-swap, SetIfHigher/Lower), and set operations.
@@ -67,7 +67,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 ## Agent Instructions
 
 - Use `ICache` from `Headless.Caching.Abstractions` — NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. The framework has its own `IDistributedCache` marker interface that extends `ICache`.
-- Use `Caching.Memory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCaching()`) for production multi-instance deployments.
+- Use `Caching.Memory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCache(...)`) for production multi-instance deployments.
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value` — cache misses return `HasValue = false`, not null.
 - Key length validation is the consumer's responsibility. The framework does not enforce key length limits for DoS protection — validate at your application boundary.
@@ -234,33 +234,23 @@ dotnet add package Headless.Caching.Redis
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
-// Option 1: Use connection string
-builder.Services.AddRedisCaching(options =>
+builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+builder.Services.AddRedisCache(options =>
 {
-    options.ConnectionString = "localhost:6379";
+    options.ConnectionMultiplexer = redis;
+    options.KeyPrefix = "myapp:";
 });
-
-// Option 2: Use existing IConnectionMultiplexer
-builder.Services.AddRedisCaching();
 ```
 
 ## Configuration
 
-### appsettings.json
-
-```json
-{
-    "Redis": {
-        "ConnectionString": "localhost:6379,password=secret,ssl=true"
-    }
-}
-```
-
 ### Options
 
 ```csharp
-options.ConnectionString = "localhost:6379";
+options.ConnectionMultiplexer = multiplexer;
 options.KeyPrefix = "myapp:";
 ```
 
@@ -290,7 +280,8 @@ This design ensures consumers never observe partial results from batch operation
 
 - Registers `IDistributedCache` as singleton
 - Registers `IDistributedCache<T>` as singleton
-- Uses existing `IConnectionMultiplexer` if registered, otherwise creates one
+- Registers `HeadlessRedisScriptsLoader` as singleton
+- Registers a hosted `IInitializer` that warms Redis cache Lua scripts on host start
 
 ---
 
@@ -315,8 +306,11 @@ dotnet add package Headless.Caching.Hybrid
 ### Basic Setup
 
 ```csharp
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+
 services.AddInMemoryCache(isDefault: false);
-services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
+services.AddSingleton<IConnectionMultiplexer>(redis);
+services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 services.AddHybridCache(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
 ```

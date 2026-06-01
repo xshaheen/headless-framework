@@ -420,12 +420,15 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 ### Dependencies
 
 - `Headless.DistributedLocks.Core`
+- `Headless.Hosting`
 - `Headless.Redis`
 - `StackExchange.Redis`
 
 ### Side Effects
 
 - Registers `HeadlessRedisScriptsLoader`.
+- Registers hosted `IInitializer` warmup for only the Redis lock feature scripts that were registered:
+  mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReaderWriterLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
 - Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.
 - Registers `IDistributedReaderWriterLockProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReaderWriterLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedSemaphore(...)` is called.

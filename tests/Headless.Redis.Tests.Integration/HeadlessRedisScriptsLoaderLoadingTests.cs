@@ -13,9 +13,17 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     {
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        RedisScriptDefinition[] scripts =
+        [
+            IncrementWithExpireScriptDefinition.Instance,
+            RemoveIfEqualScriptDefinition.Instance,
+            ReplaceIfEqualScriptDefinition.Instance,
+            SetIfHigherScriptDefinition.Instance,
+            SetIfLowerScriptDefinition.Instance,
+        ];
 
         // when
-        var act = async () => await loader.LoadAsync(RedisCacheScripts.Definitions);
+        var act = async () => await loader.LoadAsync(scripts);
 
         // then
         await act.Should().NotThrowAsync();
@@ -26,10 +34,18 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
     {
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
+        RedisScriptDefinition[] scripts =
+        [
+            IncrementWithExpireScriptDefinition.Instance,
+            RemoveIfEqualScriptDefinition.Instance,
+            ReplaceIfEqualScriptDefinition.Instance,
+            SetIfHigherScriptDefinition.Instance,
+            SetIfLowerScriptDefinition.Instance,
+        ];
 
         // when
-        await loader.LoadAsync(RedisCacheScripts.Definitions);
-        var act = async () => await loader.LoadAsync(RedisCacheScripts.Definitions);
+        await loader.LoadAsync(scripts);
+        var act = async () => await loader.LoadAsync(scripts);
 
         // then
         await act.Should().NotThrowAsync();

@@ -4,19 +4,17 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 ## Problem Solved
 
-Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default, with optional feature bundles for warmup.
+Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default; provider packages can warm their own script bundles through hosted initializers.
 
 ## Key Features
 
 - `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
-- `RedisCacheScripts` - Cache script bundle for optional preload
-- `RedisDistributedLockScripts` - Distributed lock script bundles for optional preload
 
 ## Design Notes
 
-`Headless.Redis` owns script definitions and generic loading only. Provider packages own typed parameters and result decoding so consumers load only the script definitions they need.
+`Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
 
 ## Installation
 
@@ -32,8 +30,7 @@ var builder = WebApplication.CreateBuilder(args);
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-// Optional warmup for a feature bundle.
-await scriptsLoader.LoadAsync(RedisCacheScripts.Definitions);
+await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 ```
 
 ## Usage

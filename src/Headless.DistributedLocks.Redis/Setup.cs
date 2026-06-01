@@ -5,6 +5,7 @@ using Headless.Redis;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
@@ -40,8 +41,9 @@ public static class SetupRedisDistributedLock
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction),
+                s => s.AddInitializerHostedService<RedisMutexScriptsInitializer>()
             );
         }
 
@@ -52,16 +54,18 @@ public static class SetupRedisDistributedLock
         /// </remarks>
         public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions>? optionSetupAction = null)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction ?? (static _ => { }))
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction ?? (static _ => { })),
+                s => s.AddInitializerHostedService<RedisMutexScriptsInitializer>()
             );
         }
 
         /// <summary>Adds Redis-backed resource lock provider.</summary>
         public IServiceCollection AddRedisDistributedLock(IConfiguration config)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedLock<RedisDistributedLockStorage>(config)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedLock<RedisDistributedLockStorage>(config),
+                s => s.AddInitializerHostedService<RedisMutexScriptsInitializer>()
             );
         }
 
@@ -74,24 +78,27 @@ public static class SetupRedisDistributedLock
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction),
+                s => s.AddInitializerHostedService<RedisSemaphoreScriptsInitializer>()
             );
         }
 
         /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
         public IServiceCollection AddRedisDistributedSemaphore(Action<DistributedLockOptions> optionSetupAction)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction),
+                s => s.AddInitializerHostedService<RedisSemaphoreScriptsInitializer>()
             );
         }
 
         /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
         public IServiceCollection AddRedisDistributedSemaphore(IConfiguration config)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(config)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(config),
+                s => s.AddInitializerHostedService<RedisSemaphoreScriptsInitializer>()
             );
         }
 
@@ -104,24 +111,27 @@ public static class SetupRedisDistributedLock
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction),
+                s => s.AddInitializerHostedService<RedisReaderWriterLockScriptsInitializer>()
             );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(Action<DistributedLockOptions> optionSetupAction)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction),
+                s => s.AddInitializerHostedService<RedisReaderWriterLockScriptsInitializer>()
             );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(IConfiguration config)
         {
-            return services._AddRedisDistributedCore(s =>
-                s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config)
+            return services._AddRedisDistributedCore(
+                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config),
+                s => s.AddInitializerHostedService<RedisReaderWriterLockScriptsInitializer>()
             );
         }
 
@@ -130,10 +140,16 @@ public static class SetupRedisDistributedLock
 
     private static IServiceCollection _AddRedisDistributedCore(
         this IServiceCollection services,
-        Func<IServiceCollection, IServiceCollection> registerStorage
+        Func<IServiceCollection, IServiceCollection> registerStorage,
+        Func<IServiceCollection, IServiceCollection> registerScriptsInitializer
     )
     {
-        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+        services.TryAddSingleton(sp => new HeadlessRedisScriptsLoader(
+            sp.GetRequiredService<IConnectionMultiplexer>(),
+            sp.GetService<TimeProvider>(),
+            sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+        ));
+        registerScriptsInitializer(services);
 
         return registerStorage(services);
     }

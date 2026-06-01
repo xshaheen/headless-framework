@@ -21,7 +21,6 @@ public sealed class RedisCacheFixture : HeadlessRedisFixture, ICollectionFixture
         await ConnectionMultiplexer.FlushAllAsync();
 
         ScriptsLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
-        await ScriptsLoader.LoadAsync(RedisCacheScripts.Definitions);
     }
 
     protected override async ValueTask DisposeAsyncCore()

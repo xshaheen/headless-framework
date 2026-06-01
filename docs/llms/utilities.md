@@ -133,7 +133,7 @@ Install individually as needed -- these packages are independent of each other:
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
 - Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
-- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading, or `LoadAsync(RedisCacheScripts.Definitions)` / `LoadAsync(RedisDistributedLockScripts.Definitions)` for feature-bundle warmup.
+- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading. Provider packages own hosted warmup for their own script bundles.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
 
@@ -658,19 +658,17 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 ## Problem Solved
 
-Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default, with optional feature bundles for warmup.
+Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default; provider packages can warm their own script bundles through hosted initializers.
 
 ## Key Features
 
 - `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
-- `RedisCacheScripts` - Cache script bundle for optional preload
-- `RedisDistributedLockScripts` - Distributed lock script bundles for optional preload
 
 ### Design Notes
 
-`Headless.Redis` owns script definitions and generic loading only. Provider packages own typed parameters and result decoding so consumers load only the script definitions they need.
+`Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
 
 ## Installation
 
@@ -686,8 +684,7 @@ var builder = WebApplication.CreateBuilder(args);
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-// Optional warmup for a feature bundle.
-await scriptsLoader.LoadAsync(RedisCacheScripts.Definitions);
+await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 ```
 
 ## Usage

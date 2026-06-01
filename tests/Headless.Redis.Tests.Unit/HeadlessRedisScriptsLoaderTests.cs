@@ -88,17 +88,42 @@ public sealed class HeadlessRedisScriptsLoaderTests
     public async Task should_load_requested_script_definitions()
     {
         // given
+        RedisScriptDefinition[] scripts =
+        [
+            IncrementWithExpireScriptDefinition.Instance,
+            RemoveIfEqualScriptDefinition.Instance,
+            ReplaceIfEqualScriptDefinition.Instance,
+            SetIfHigherScriptDefinition.Instance,
+            SetIfLowerScriptDefinition.Instance,
+        ];
         var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        await sut.LoadAsync(RedisCacheScripts.Definitions);
+        await sut.LoadAsync(scripts);
 
         // then
-        await server.Received(RedisCacheScripts.Definitions.Count).ScriptLoadAsync(
+        await server.Received(scripts.Length).ScriptLoadAsync(
             Arg.Any<string>(),
             Arg.Any<CommandFlags>()
         );
+    }
+
+    [Fact]
+    public async Task should_only_load_missing_script_definitions_when_bundle_overlaps_loaded_scripts()
+    {
+        // given
+        var script = CustomReturnOneScriptDefinition.Instance;
+        var otherScript = CustomReturnTwoScriptDefinition.Instance;
+        var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+        await sut.LoadAsync([script]);
+
+        // when
+        await sut.LoadAsync([script, otherScript]);
+
+        // then
+        await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -160,5 +185,13 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
         private CustomReturnOneScriptDefinition()
             : base("return 1") { }
+    }
+
+    private sealed class CustomReturnTwoScriptDefinition : RedisScriptDefinition
+    {
+        public static CustomReturnTwoScriptDefinition Instance { get; } = new();
+
+        private CustomReturnTwoScriptDefinition()
+            : base("return 2") { }
     }
 }
