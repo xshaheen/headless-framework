@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms.VictoryLink;
 
 [PublicAPI]
-public static class VictoryLinkSetup
+public static class SetupVictoryLink
 {
     internal const string HttpClientName = "Headless:VictoryLinkSms";
 

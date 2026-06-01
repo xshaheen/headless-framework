@@ -11,6 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Kafka\Headless.Messaging.Kafka.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.PostgreSql\Headless.Messaging.PostgreSql.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />
   </ItemGroup>
 </Project>

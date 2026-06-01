@@ -1,59 +1,64 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using FluentValidation;
+using Headless.Features;
+using Headless.Features.Internal;
 using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
-namespace Headless.Features;
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Microsoft.Extensions.DependencyInjection;
 
 [PublicAPI]
-public static class EntityFrameworkFeaturesSetup
+public static class SetupFeaturesEntityFramework
 {
-    extension(IServiceCollection services)
+    extension(HeadlessFeaturesSetupBuilder setup)
     {
-        public IServiceCollection AddFeaturesManagementDbContextStorage(
-            Action<DbContextOptionsBuilder> setupAction,
-            Action<FeaturesStorageOptions>? configureStorage = null
-        )
+        public HeadlessFeaturesSetupBuilder UseEntityFramework<TContext>()
+            where TContext : DbContext
         {
-            services.AddPooledDbContextFactory<FeaturesDbContext>(options =>
-            {
-                setupAction(options);
-                options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
-            });
-            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
+            setup.RegisterExtension(new EntityFrameworkFeaturesOptionsExtension(typeof(TContext)));
 
-            return services;
+            return setup;
         }
+    }
 
-        public IServiceCollection AddFeaturesManagementDbContextStorage(
-            Action<IServiceProvider, DbContextOptionsBuilder> setupAction,
-            Action<FeaturesStorageOptions>? configureStorage = null
-        )
+    private sealed class EntityFrameworkFeaturesOptionsExtension(Type dbContextType) : IFeaturesStorageOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
         {
-            services.AddPooledDbContextFactory<FeaturesDbContext>(
-                (provider, options) =>
-                {
-                    setupAction(provider, options);
-                    options.ReplaceService<IModelCacheKeyFactory, FeaturesStorageModelCacheKeyFactory>();
-                }
+            services.AddOptions<FeaturesStorageOptions, EntityFrameworkFeaturesStorageOptionsValidator>();
+            services.TryAddSingleton(
+                typeof(IFeatureValueRecordRepository),
+                typeof(EfFeatureValueRecordRecordRepository<>).MakeGenericType(dbContextType)
             );
-            services.AddFeaturesManagementDbContextStorage<FeaturesDbContext>(configureStorage);
-
-            return services;
+            services.TryAddSingleton(
+                typeof(IFeatureDefinitionRecordRepository),
+                typeof(EfFeatureDefinitionRecordRepository<>).MakeGenericType(dbContextType)
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(
+                    typeof(IHostedService),
+                    typeof(FeaturesEntityValidationStartupGate<>).MakeGenericType(dbContextType)
+                )
+            );
         }
+    }
 
-        public IServiceCollection AddFeaturesManagementDbContextStorage<TContext>(
-            Action<FeaturesStorageOptions>? configureStorage = null
-        )
-            where TContext : DbContext, IFeaturesDbContext
+    // EF dispatches to whatever DB the consumer wired up, so the validator uses the most
+    // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
+    // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
+    // migration time.
+    private sealed class EntityFrameworkFeaturesStorageOptionsValidator : AbstractValidator<FeaturesStorageOptions>
+    {
+        public EntityFrameworkFeaturesStorageOptionsValidator()
         {
-            services.Configure<FeaturesStorageOptions, FeaturesStorageOptionsValidator>(configureStorage);
-            services.AddSingleton<IFeatureValueRecordRepository, EfFeatureValueRecordRecordRepository<TContext>>();
-            services.AddSingleton<IFeatureDefinitionRecordRepository, EfFeatureDefinitionRecordRepository<TContext>>();
-
-            return services;
+            RuleFor(x => x.Schema).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.FeatureValuesTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.FeatureDefinitionsTableName).IsValidCrossProviderIdentifier();
+            RuleFor(x => x.FeatureGroupDefinitionsTableName).IsValidCrossProviderIdentifier();
         }
     }
 }

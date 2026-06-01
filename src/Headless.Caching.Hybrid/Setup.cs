@@ -7,7 +7,7 @@ namespace Headless.Caching;
 
 /// <summary>DI registration extension methods for hybrid cache.</summary>
 [PublicAPI]
-public static class HybridCacheSetup
+public static class SetupHybridCache
 {
     extension(IServiceCollection services)
     {

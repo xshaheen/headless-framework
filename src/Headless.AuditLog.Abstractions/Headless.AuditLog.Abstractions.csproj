@@ -4,6 +4,13 @@
     <RootNamespace>Headless.AuditLog</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Orm.EntityFramework" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
   </ItemGroup>
   <ItemGroup>

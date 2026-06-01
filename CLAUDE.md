@@ -30,6 +30,31 @@ Example: `Headless.Caching.Abstractions` + `Headless.Caching.Redis`
 
 **Stack**: xUnit v3 (Microsoft Testing Platform), AwesomeAssertions (fork of FluentAssertions), NSubstitute, Bogus
 
+### When to create a `*.Tests.Harness` package
+
+This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions` + `Headless.<Feature>.<Provider>`) implies that every feature has 2+ providers (EF + PostgreSQL + SqlServer for storage domains; Redis + Memory for caching; etc.). The same observable behavior must hold for each provider. Test that with a `Headless.<Feature>.Tests.Harness` package — do **not** copy-paste fixtures across `<Provider>.Tests.Integration` projects.
+
+**Trigger to extract:**
+- Adding the 2nd or later provider-integration project for a feature: extract the harness first, then add the new provider against it.
+- 3+ hand-rolled fixtures with substantial overlap (>30 lines of copy-pasteable boilerplate) already exist: queue the extraction as a dedicated batch; do not let the count grow.
+
+**What goes in the harness package:**
+- An abstract `<Feature>FixtureBase<TOptions>` owning Testcontainers container lifecycle, host bootstrap (DI + `setup.Use…` pivot), initializer / migration / topology waiters (the `WaitForXxxStorageInitializerAsync` pattern), and inter-test cleanup (DDL drop, container reset).
+- An abstract `<Feature>ConformanceTests<TFixture>` carrying the cross-provider scenarios — round-trip, idempotency, concurrency / contention, error paths, cancellation behavior, schema-init re-entry. `TFixture` satisfies xUnit v3's `IClassFixture<>` / `ICollectionFixture<>` pattern.
+- Shared test-data builders / `Faker<T>` instances for the contract's value types.
+
+**What stays in each leaf integration project:**
+- A concrete `<Provider><Feature>Fixture : <Feature>FixtureBase<<Provider>Options>` that wires the specific `setup.Use<Provider>(…)` extension, container image, and connection-string materialization.
+- Tests that exercise behavior unique to that backend (PostgreSQL `pg_advisory_xact_lock`, SqlServer `sp_getapplock`, Redis Lua scripts, EF Core migration-snapshot drift). These intentionally have no sibling — they don't need a base class because they are non-portable by construction.
+
+**Existing harnesses to reference for shape:**
+- [Headless.Blobs.Tests.Harness](tests/Headless.Blobs.Tests.Harness) — blob-backend conformance (S3, Azure, FS, SSH, Redis)
+- [Headless.DistributedLocks.Tests.Harness](tests/Headless.DistributedLocks.Tests.Harness) — lock-provider conformance
+- [Headless.Orm.Tests.Harness](tests/Headless.Orm.Tests.Harness) — `HeadlessDbContext` runtime + EF Core base behavior
+- [Headless.Messaging.Core.Tests.Harness](tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch/outbox
+
+**Anti-pattern to avoid:** the storage-domain integration tests today (`Headless.{AuditLog,Features,Permissions,Settings}.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration`) each own a private `<Provider><Feature>Fixture.cs` with substantial overlap. This is the exact shape this rule is meant to prevent — when adding a new domain or provider, extract first.
+
 ## Build & Test
 
 - Solution file: [headless-framework.slnx](headless-framework.slnx) (modern XML format).

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Caching;
 
 [PublicAPI]
-public static class InMemoryCacheSetup
+public static class SetupInMemoryCache
 {
     extension(IServiceCollection services)
     {

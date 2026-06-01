@@ -1,6 +1,6 @@
 ---
 domain: Feature Management
-packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
+packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
 ---
 
 # Feature Management
@@ -39,6 +39,8 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
     - [Configuration](#configuration-2)
     - [Dependencies](#dependencies-2)
     - [Side Effects](#side-effects-2)
+- [Headless.Features.Storage.PostgreSql](#headlessfeaturesstoragepostgresql)
+- [Headless.Features.Storage.SqlServer](#headlessfeaturesstoragesqlserver)
 
 > Dynamic feature flags and feature value management with hierarchical resolution (Tenant > Edition > Default), caching, and EF Core persistence.
 
@@ -49,13 +51,15 @@ Install all three packages for a complete setup:
 - `Headless.Features.Abstractions` — interfaces (`IFeatureManager`, `IFeatureDefinitionProvider`)
 - `Headless.Features.Core` — implementation with caching, value providers, background initialization
 - `Headless.Features.Storage.EntityFramework` — database persistence via EF Core
+- `Headless.Features.Storage.PostgreSql` — raw PostgreSQL persistence
+- `Headless.Features.Storage.SqlServer` — raw SQL Server persistence
 
 Typical registration:
 
 ```csharp
-builder.Services.AddFeaturesManagementCore(options => { options.CacheKeyPrefix = "features:"; });
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+// AddHeadlessFeatures registers the management core automatically.
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered.
@@ -65,8 +69,9 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
-- Storage registration: use `AddFeaturesManagementDbContextStorage<TDbContext>()` for custom DbContext, or the overload with `Action<DbContextOptionsBuilder>` for a standalone context.
-- For custom DbContext, implement `IFeaturesDbContext` and call `modelBuilder.AddFeaturesConfiguration(this)` in `OnModelCreating`.
+- `AddHeadlessFeatures(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<FeatureManagementOptions>(...)` works too and composes regardless of order.
+- Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
+- Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
 - Gate access with `RequiresFeatureAttribute` on controllers/actions.
@@ -169,16 +174,13 @@ dotnet add package Headless.Features.Core
 var builder = WebApplication.CreateBuilder(args);
 
 // Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-builder.Services.AddFeaturesManagementCore(options =>
-{
-    options.CacheKeyPrefix = "features:";
-});
 
 // Register feature definition providers
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
-// Add storage (e.g., Entity Framework)
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+// Add management core + storage in one call (e.g., Entity Framework).
+// AddHeadlessFeatures registers the management core automatically.
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 ### Custom Value Provider
@@ -191,12 +193,20 @@ builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
 
 ### Options
 
+Tune the management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessFeatures` block, next to `ConfigureStorage`:
+
 ```csharp
-services.AddFeaturesManagementCore(options =>
+services.AddHeadlessFeatures(setup =>
 {
-    options.CacheKeyPrefix = "features:";  // Cache key prefix
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "features:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+A `(options, IServiceProvider)` overload is available when configuration needs resolved services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with the auto-registration regardless of order.
 
 ## Dependencies
 
@@ -220,16 +230,14 @@ Entity Framework Core storage implementation for feature management.
 
 ## Problem Solved
 
-Provides persistent storage for feature definitions and values using Entity Framework Core, enabling database-backed feature management with full CRUD support.
+Provides EF Core repository implementations for feature values, feature definitions, and feature group definitions using the consumer's own `DbContext`.
 
 ## Key Features
 
-- `IFeaturesDbContext` - DbContext interface for features
-- `FeaturesDbContext` - Ready-to-use DbContext
-- `FeaturesStorageOptions` - Schema and table-name configuration
+- `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())` storage registration
+- `modelBuilder.AddHeadlessFeatures(options)` entity mapping for shared contexts
 - EF repositories for feature definitions and values
-- Model builder extensions for custom DbContext integration
-- Pooled DbContext factory support
+- `FeaturesStorageOptions` for schema and table-name configuration
 
 ## Installation
 
@@ -239,51 +247,28 @@ dotnet add package Headless.Features.Storage.EntityFramework
 
 ## Quick Start
 
-### Using Built-in DbContext
-
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddFeaturesManagementDbContextStorage(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Features"))
-);
-```
-
-### Custom Schema / Table Names
-
-```csharp
-builder.Services.AddFeaturesManagementDbContextStorage(
-    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Features")),
-    storage =>
-    {
-        storage.Schema = "app_features";
-        storage.FeatureValuesTableName = "FeatureValues";
-        storage.FeatureDefinitionsTableName = "FeatureDefinitions";
-        storage.FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions";
-    }
-);
-```
-
-### Using Custom DbContext
-
-```csharp
-public class AppDbContext(DbContextOptions<AppDbContext> options)
-    : DbContext(options), IFeaturesDbContext
+public sealed class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<FeaturesStorageOptions> featuresStorage
+) : DbContext(options)
 {
-    public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
-    public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
-    public DbSet<FeatureValueRecord> FeatureValues => Set<FeatureValueRecord>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddFeaturesConfiguration(this);
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessFeatures(featuresStorage.Value);
     }
 }
 
-// Registration
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+
+// AddHeadlessFeatures registers the management core automatically.
+builder.Services.AddHeadlessFeatures(setup =>
 {
-    storage.Schema = "app_features";
+    setup.ConfigureStorage(storage => storage.Schema = "app_features");
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
@@ -295,8 +280,19 @@ builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>(storage =>
 - `FeatureValuesTableName = "FeatureValues"`
 - `FeatureDefinitionsTableName = "FeatureDefinitions"`
 - `FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions"`
+- `InitializeOnStartup = true`
 
-The storage registration validates these values on startup; schema and table names must be non-empty.
+The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if any features entity is missing.
+
+Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA), so the raw-DDL startup initializer is skipped (no-op). The initializer still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. This only affects raw-DDL self-initializing providers (PostgreSQL / SqlServer); EF-mode storage uses migrations and ignores the flag.
+
+```csharp
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UsePostgreSql(...);
+});
+```
 
 ## Dependencies
 
@@ -309,4 +305,100 @@ The storage registration validates these values on startup; schema and table nam
 - Registers `IFeatureDefinitionRecordRepository` as singleton
 - Registers `IFeatureValueRecordRepository` as singleton
 - Registers validated `FeaturesStorageOptions`
-- Uses pooled DbContext factory for performance
+- Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+---
+# Headless.Features.Storage.PostgreSql
+
+PostgreSQL raw-DDL storage for feature management.
+
+## Problem Solved
+
+Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence.
+
+## Key Features
+
+- `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
+- Shares `FeaturesStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Features.Storage.PostgreSql
+```
+
+## Quick Start
+
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` then registers the management core automatically.
+
+```csharp
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `FeaturesStorageOptions` on the shared features builder. Configure the connection string through `PostgreSqlFeaturesOptions`.
+
+## Dependencies
+
+- `Headless.Features.Storage.EntityFramework`
+- `Headless.Serializer.Json`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw PostgreSQL implementations of `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
+---
+# Headless.Features.Storage.SqlServer
+
+SQL Server raw-DDL storage for feature management.
+
+## Problem Solved
+
+Provides feature repositories and startup schema initialization without requiring the consumer to use Entity Framework for feature persistence.
+
+## Key Features
+
+- `AddHeadlessFeatures(setup => setup.UseSqlServer(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for feature values, feature definitions, and feature group definitions
+- Shares `FeaturesStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Features.Storage.SqlServer
+```
+
+## Quick Start
+
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` then registers the management core automatically.
+
+```csharp
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "features");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `FeaturesStorageOptions` on the shared features builder. Configure the connection string through `SqlServerFeaturesOptions`.
+
+## Dependencies
+
+- `Headless.Features.Storage.EntityFramework`
+- `Headless.Serializer.Json`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Registers `SqlServerFeaturesStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw SQL Server implementations of `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`

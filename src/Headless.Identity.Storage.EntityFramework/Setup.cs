@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.EntityFramework;
 
 [PublicAPI]
-public static class OrmEntityFrameworkIdentitySetup
+public static class SetupIdentityEntityFramework
 {
     extension(IServiceCollection services)
     {
@@ -24,6 +24,7 @@ public static class OrmEntityFrameworkIdentitySetup
             TUserToken
         >(
             Action<DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -57,7 +58,7 @@ public static class OrmEntityFrameworkIdentitySetup
                 TRoleClaim,
                 TUserToken,
                 IdentityUserPasskey<TKey>
-            >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
+            >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
         public IServiceCollection AddHeadlessDbContext<
@@ -72,6 +73,7 @@ public static class OrmEntityFrameworkIdentitySetup
             TUserToken
         >(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -105,7 +107,7 @@ public static class OrmEntityFrameworkIdentitySetup
                 TRoleClaim,
                 TUserToken,
                 IdentityUserPasskey<TKey>
-            >(optionsAction, contextLifetime, optionsLifetime);
+            >(optionsAction, configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
         public IServiceCollection AddHeadlessDbContext<
@@ -121,6 +123,7 @@ public static class OrmEntityFrameworkIdentitySetup
             TUserPasskey
         >(
             Action<DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -156,7 +159,7 @@ public static class OrmEntityFrameworkIdentitySetup
                 TRoleClaim,
                 TUserToken,
                 TUserPasskey
-            >((_, ob) => optionsAction?.Invoke(ob), contextLifetime, optionsLifetime);
+            >((_, ob) => optionsAction?.Invoke(ob), configureHeadlessOptions, contextLifetime, optionsLifetime);
         }
 
         public IServiceCollection AddHeadlessDbContext<
@@ -172,6 +175,7 @@ public static class OrmEntityFrameworkIdentitySetup
             TUserPasskey
         >(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
         )
@@ -196,7 +200,17 @@ public static class OrmEntityFrameworkIdentitySetup
             where TUserToken : IdentityUserToken<TKey>
             where TUserPasskey : IdentityUserPasskey<TKey>
         {
+            // Identity defaults first so the IdentityOptions configurator is in place before any
+            // hosted service or option-validation pass observes it.
             services._ConfigureHeadlessIdentityDefaults();
+
+            // Wire the full headless service surface that HeadlessIdentityDbContext requires —
+            // HeadlessDbContextServices (scoped, injected into the ctor), save-changes pipeline,
+            // audit persistence, ambient transaction accessor, change capture, message dispatcher,
+            // tenancy guard options, clock, current tenant/user, correlation ID. The canonical
+            // SetupEntityFramework helper centralizes this so Identity stays parity with plain
+            // HeadlessDbContext registration.
+            services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
@@ -214,10 +228,10 @@ public static class OrmEntityFrameworkIdentitySetup
 
     private static void _ConfigureHeadlessIdentityDefaults(this IServiceCollection services)
     {
-        // Sentinel-based idempotency: AddHeadlessDbContext can be invoked once per DbContext
-        // type, so multiple calls would otherwise accumulate duplicate IConfigureOptions
-        // delegates on IdentityOptions. The TryAddSingleton sentinel collapses subsequent
-        // calls to a no-op for the shared IdentityOptions wiring.
+        // Sentinel-based idempotency: repeated AddHeadlessDbContext calls (e.g., multiple Identity
+        // contexts in one host) configure IdentityOptions exactly once. The delegate is itself
+        // idempotent (writes a fixed value), so multiple registrations are wasteful rather than
+        // wrong — the sentinel keeps startup cost flat.
         if (services.Any(static d => d.ServiceType == typeof(HeadlessIdentityDefaultsSentinel)))
         {
             return;
@@ -229,6 +243,6 @@ public static class OrmEntityFrameworkIdentitySetup
             options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
         });
     }
-
-    private sealed class HeadlessIdentityDefaultsSentinel;
 }
+
+internal sealed class HeadlessIdentityDefaultsSentinel;

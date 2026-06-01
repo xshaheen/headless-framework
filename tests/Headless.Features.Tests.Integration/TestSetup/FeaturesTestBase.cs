@@ -11,6 +11,7 @@ using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Tests.TestSetup;
@@ -31,11 +32,11 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
     protected HostApplicationBuilder CreateHostBuilder()
     {
         var builder = Host.CreateApplicationBuilder();
-        ConfigurePermissionsServices(builder);
+        ConfigureFeaturesServices(builder);
         return builder;
     }
 
-    protected void ConfigurePermissionsServices(IHostApplicationBuilder builder)
+    protected void ConfigureFeaturesServices(IHostApplicationBuilder builder)
     {
         var services = builder.Services;
 
@@ -63,13 +64,28 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         // Resource Lock
         services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
-        services
-            .AddFeaturesManagementCore()
-            .AddFeaturesManagementDbContextStorage(
-                options => options.UseNpgsql(Fixture.SqlConnectionString),
-                ConfigureFeaturesStorage
-            );
+        services.AddDbContextFactory<FeaturesTestDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+
+        services.AddHeadlessFeatures(setup =>
+        {
+            setup.ConfigureStorage(ConfigureFeaturesStorage);
+            setup.UseEntityFramework<FeaturesTestDbContext>();
+        });
     }
 
     protected virtual void ConfigureFeaturesStorage(FeaturesStorageOptions options) { }
+
+    protected sealed class FeaturesTestDbContext(
+        DbContextOptions<FeaturesTestDbContext> options,
+        IOptions<FeaturesStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+        }
+    }
 }

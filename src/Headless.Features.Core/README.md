@@ -19,25 +19,29 @@ Provides the full feature management implementation including hierarchical value
 
 ```bash
 dotnet add package Headless.Features.Core
+dotnet add package Headless.Features.Storage.EntityFramework
 ```
 
 ## Quick Start
+
+`AddHeadlessFeatures(...)` registers the management core automatically, so a storage
+provider is all you need. Register the required services (`TimeProvider`, `ICache`,
+`IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessFeatures`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
 // Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-builder.Services.AddFeaturesManagementCore(options =>
-{
-    options.CacheKeyPrefix = "features:";
-});
 
 // Register feature definition providers
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
-// Add storage (e.g., Entity Framework)
-builder.Services.AddFeaturesManagementDbContextStorage<AppDbContext>();
+// Add management core + storage in one call (Entity Framework shown)
+builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
+
+For Entity Framework storage, register an `IDbContextFactory<AppDbContext>` and call
+`modelBuilder.AddHeadlessFeatures(featuresStorageOptions)` from your DbContext model configuration.
 
 ### Custom Value Provider
 
@@ -49,12 +53,23 @@ builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
 
 ### Options
 
+Tune the management options through `setup.ConfigureManagement(...)` inside the
+`AddHeadlessFeatures` block, next to `ConfigureStorage`:
+
 ```csharp
-services.AddFeaturesManagementCore(options =>
+services.AddHeadlessFeatures(setup =>
 {
-    options.CacheKeyPrefix = "features:";  // Cache key prefix
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "features:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

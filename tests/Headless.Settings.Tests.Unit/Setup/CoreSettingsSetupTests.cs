@@ -3,6 +3,7 @@
 using Headless;
 using Headless.Abstractions;
 using Headless.Settings;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -12,20 +13,20 @@ namespace Tests.Setup;
 public sealed class CoreSettingsSetupTests
 {
     [Fact]
-    public void add_settings_management_core_should_require_string_encryption_service()
+    public void add_headless_settings_should_require_string_encryption_service()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
 
-        // when
-        var action = () => builder.Services.AddSettingsManagementCore();
+        // when - the management core (auto-registered by AddHeadlessSettings) requires encryption
+        var action = () => builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
         // then
         action.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(IStringEncryptionService)}*");
     }
 
     [Fact]
-    public void add_settings_management_core_should_not_override_existing_string_encryption_registration()
+    public void add_headless_settings_should_not_override_existing_string_encryption_registration()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
@@ -38,7 +39,7 @@ public sealed class CoreSettingsSetupTests
         });
 
         // when
-        builder.Services.AddSettingsManagementCore();
+        builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
         var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
@@ -48,4 +49,6 @@ public sealed class CoreSettingsSetupTests
         encryptionOptions.InitVectorBytes.Should().BeEquivalentTo("ExplicitInitVect"u8.ToArray());
         encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ExplicitSalt"u8.ToArray());
     }
+
+    private sealed class OptionsTestDbContext(DbContextOptions<OptionsTestDbContext> options) : DbContext(options);
 }

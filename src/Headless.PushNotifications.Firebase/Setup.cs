@@ -17,7 +17,7 @@ using Polly.Retry;
 namespace Headless.PushNotifications.Firebase;
 
 [PublicAPI]
-public static class FirebaseSetup
+public static class SetupFirebase
 {
     extension(IServiceCollection services)
     {

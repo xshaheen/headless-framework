@@ -1,6 +1,6 @@
 ---
 domain: Settings
-packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
+packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer
 ---
 
 # Settings
@@ -38,6 +38,22 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
   - [Configuration](#configuration-2)
   - [Dependencies](#dependencies-2)
   - [Side Effects](#side-effects-2)
+- [Headless.Settings.Storage.PostgreSql](#headlesssettingsstoragepostgresql)
+  - [Problem Solved](#problem-solved-3)
+  - [Key Features](#key-features-3)
+  - [Installation](#installation-3)
+  - [Quick Start](#quick-start-3)
+  - [Configuration](#configuration-3)
+  - [Dependencies](#dependencies-3)
+  - [Side Effects](#side-effects-3)
+- [Headless.Settings.Storage.SqlServer](#headlesssettingsstoragesqlserver)
+  - [Problem Solved](#problem-solved-4)
+  - [Key Features](#key-features-4)
+  - [Installation](#installation-4)
+  - [Quick Start](#quick-start-4)
+  - [Configuration](#configuration-4)
+  - [Dependencies](#dependencies-4)
+  - [Side Effects](#side-effects-4)
 
 > Dynamic, hierarchical application settings with runtime read/write support and multiple value providers (default, config, global, tenant, user).
 
@@ -46,7 +62,7 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 Install the three settings packages:
 - `Headless.Settings.Abstractions` -- interfaces (`ISettingManager`, `ISettingDefinitionProvider`, `SettingDefinition`)
 - `Headless.Settings.Core` -- implementation with hierarchical providers, caching, encryption, background init
-- `Headless.Settings.Storage.EntityFramework` -- EF Core persistence for setting values and definitions
+- one storage provider: `Headless.Settings.Storage.EntityFramework`, `Headless.Settings.Storage.PostgreSql`, or `Headless.Settings.Storage.SqlServer`
 
 Minimal wiring:
 ```csharp
@@ -55,8 +71,8 @@ builder.Services.AddDistributedLock();
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
-builder.Services.AddSettingsManagementCore(_ => { });
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+// AddHeadlessSettings registers the management core automatically.
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
 
@@ -70,9 +86,10 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read/write via `ISett
 - Provider names are constants on `SettingValueProviderNames`: `Default`, `Configuration`, `Global`, `Tenant`, `User`.
 - For sensitive settings, set `isEncrypted: true` on `SettingDefinition` -- Core handles encryption/decryption automatically.
 - Core registers a `SettingsInitializationBackgroundService` hosted service -- do not register your own init logic for settings.
-- For shared DbContext, implement `ISettingsDbContext` and call `modelBuilder.AddSettingsConfiguration(this)` in `OnModelCreating`.
+- For EF storage, register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessSettings(options)` in `OnModelCreating`, then `AddHeadlessSettings(setup => setup.UseEntityFramework<TContext>())`.
 - Dependencies: Core requires `Headless.Caching.Abstractions` and `Headless.DistributedLocks.Abstractions` to be registered.
-- Pre-requisite: register `IStringEncryptionService` before `AddSettingsManagementCore(...)`. Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
+- `AddHeadlessSettings(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<SettingManagementOptions>(...)` works too and composes regardless of order.
+- Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching, distributed lock, and `IStringEncryptionService` (the core throws on startup if encryption is missing). Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
 
 ---
 # Headless.Settings.Abstractions
@@ -181,14 +198,9 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
-// Add settings management
-builder.Services.AddSettingsManagementCore(options =>
-{
-    options.CacheKeyPrefix = "settings:";
-});
-
-// Add storage (EF Core)
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+// Add settings management + storage in one call (EF Core).
+// AddHeadlessSettings registers the management core automatically.
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
@@ -259,24 +271,26 @@ Pre-requisite: configure and register string encryption before settings manageme
 }
 ```
 
-Then register settings management:
+Then register settings management. Tune management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessSettings` block, next to `ConfigureStorage`:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
 
-services.AddSettingsManagementCore(options =>
+services.AddHeadlessSettings(setup =>
 {
-    // Cache expiration for setting values (default: 5 hours)
-    options.ValueCacheExpiration = TimeSpan.FromHours(5);
+    setup.ConfigureManagement(options =>
+    {
+        // Cache expiration for setting values (default: 5 hours)
+        options.ValueCacheExpiration = TimeSpan.FromHours(5);
 
-    // Cache expiration for dynamic definitions (default: 30 seconds)
-    options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
-
-    // Lock settings for cross-application updates
-    options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
-    options.CrossApplicationsCommonLockExpiration = TimeSpan.FromMinutes(10);
+        // Lock settings for cross-application updates
+        options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+A `(options, IServiceProvider)` overload is available when configuration needs resolved services. `services.Configure<SettingManagementOptions>(...)` also works and composes with the auto-registration regardless of order.
 
 ## Dependencies
 
@@ -298,16 +312,21 @@ Entity Framework Core storage for settings management.
 
 ## Problem Solved
 
-Provides EF Core repository implementations for storing setting definitions and values, with support for both dedicated DbContext and shared application DbContext.
+Provides EF Core repository implementations for setting definitions and values using the consumer's own `DbContext`.
 
 ## Key Features
 
-- `EfSettingValueRecordRepository` - Setting value storage
-- `EfSettingDefinitionRecordRepository` - Definition record storage
-- `SettingsDbContext` - Dedicated settings DbContext
-- `ISettingsDbContext` - Interface for shared DbContext integration
-- `SettingsStorageOptions` - Schema and table-name configuration
-- Model builder extensions for entity configuration
+- `AddHeadlessSettings(setup => setup.UseEntityFramework<TContext>())` storage registration
+- `modelBuilder.AddHeadlessSettings(options)` entity mapping for shared contexts
+- `EfSettingValueRecordRepository` for setting values
+- `EfSettingDefinitionRecordRepository` for definition records
+- `SettingsStorageOptions` for schema and table-name configuration
+
+## Design Notes
+
+The package no longer ships a dedicated a dedicated settings DbContext or settings-specific DbContext interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties.
+
+Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository, so they are not enlisted in the consumer's outer transaction.
 
 ## Installation
 
@@ -317,73 +336,59 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 
 ## Quick Start
 
-### Option 1: Dedicated DbContext
-
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+public sealed class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<SettingsStorageOptions> settingsStorage
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessSettings(settingsStorage.Value);
+    }
+}
+
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
 
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
-builder.Services.AddSettingsManagementCore(_ => { });
-builder.Services.AddSettingsManagementDbContextStorage(options =>
+// AddHeadlessSettings registers the management core automatically.
+builder.Services.AddHeadlessSettings(setup =>
 {
-    options.UseNpgsql(connectionString);
-});
-```
-
-### Custom Schema / Table Names
-
-```csharp
-builder.Services.AddSettingsManagementDbContextStorage(
-    options => options.UseNpgsql(connectionString),
-    storage =>
+    setup.ConfigureStorage(storage =>
     {
         storage.Schema = "app_settings";
         storage.SettingValuesTableName = "SettingValues";
         storage.SettingDefinitionsTableName = "SettingDefinitions";
-    }
-);
-```
-
-### Option 2: Shared DbContext
-
-```csharp
-// In your DbContext
-public class AppDbContext(DbContextOptions<AppDbContext> options)
-    : DbContext(options), ISettingsDbContext
-{
-    public DbSet<SettingValueRecord> SettingValues => Set<SettingValueRecord>();
-    public DbSet<SettingDefinitionRecord> SettingDefinitions => Set<SettingDefinitionRecord>();
-
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        modelBuilder.AddSettingsConfiguration(this);
-    }
-}
-
-// In Program.cs
-builder.Services.AddStringEncryptionService(
-    builder.Configuration.GetRequiredSection("Headless:StringEncryption")
-);
-builder.Services.AddSettingsManagementCore(_ => { });
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>(storage =>
-{
-    storage.Schema = "app_settings";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
 ## Configuration
 
-Pre-requisite: register string encryption before calling `AddSettingsManagementCore(...)`.
-
-`SettingsStorageOptions` defaults preserve the original physical layout:
+`SettingsStorageOptions` defaults:
 
 - `Schema = "settings"`
 - `SettingValuesTableName = "SettingValues"`
 - `SettingDefinitionsTableName = "SettingDefinitions"`
+- `InitializeOnStartup = true`
 
-The storage registration validates these values on startup; schema and table names must be non-empty.
+The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if `SettingValueRecord` or `SettingDefinitionRecord` is missing.
+
+Set `InitializeOnStartup = false` when the schema is provisioned out-of-band (a migrations job or DBA), so the raw-DDL startup initializer is skipped (no-op). The initializer still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. This only affects raw-DDL self-initializing providers (PostgreSQL / SqlServer); EF-mode storage uses migrations and ignores the flag.
+
+```csharp
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(o => o.InitializeOnStartup = false);
+    setup.UsePostgreSql(...);
+});
+```
 
 ## Dependencies
 
@@ -396,4 +401,100 @@ The storage registration validates these values on startup; schema and table nam
 - Registers `ISettingValueRecordRepository` as singleton
 - Registers `ISettingDefinitionRecordRepository` as singleton
 - Registers validated `SettingsStorageOptions`
-- Optionally registers pooled `SettingsDbContext` factory
+- Registers an `IHostedLifecycleService` startup gate for missing entity mappings
+---
+# Headless.Settings.Storage.PostgreSql
+
+PostgreSQL raw-DDL storage for settings management.
+
+## Problem Solved
+
+Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence.
+
+## Key Features
+
+- `AddHeadlessSettings(setup => setup.UsePostgreSql(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for setting values and definitions
+- Shares `SettingsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Settings.Storage.PostgreSql
+```
+
+## Quick Start
+
+Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+
+```csharp
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `SettingsStorageOptions` on the shared settings builder. Configure the connection string through `PostgreSqlSettingsOptions`.
+
+## Dependencies
+
+- `Headless.Settings.Storage.EntityFramework`
+- `Headless.Serializer.Json`
+- `Npgsql`
+
+## Side Effects
+
+- Registers `PostgreSqlSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw PostgreSQL implementations of the settings repositories
+---
+# Headless.Settings.Storage.SqlServer
+
+SQL Server raw-DDL storage for settings management.
+
+## Problem Solved
+
+Provides settings repositories and startup schema initialization without requiring the consumer to use Entity Framework for settings persistence.
+
+## Key Features
+
+- `AddHeadlessSettings(setup => setup.UseSqlServer(connectionString))`
+- Idempotent schema, table, and index creation at host startup
+- Raw ADO.NET repositories for setting values and definitions
+- Shares `SettingsStorageOptions` with the EF provider
+
+## Installation
+
+```bash
+dotnet add package Headless.Settings.Storage.SqlServer
+```
+
+## Quick Start
+
+Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+
+```csharp
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.ConfigureStorage(storage => storage.Schema = "settings");
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Configuration
+
+Configure schema and table names through `SettingsStorageOptions` on the shared settings builder. Configure the connection string through `SqlServerSettingsOptions`.
+
+## Dependencies
+
+- `Headless.Settings.Storage.EntityFramework`
+- `Headless.Serializer.Json`
+- `Microsoft.Data.SqlClient`
+
+## Side Effects
+
+- Registers `SqlServerSettingsStorageInitializer` as `IHostedService` and `IInitializer`
+- Registers raw SQL Server implementations of the settings repositories
