@@ -22,6 +22,10 @@ dotnet add package Headless.Features.Storage.EntityFramework
 
 ## Quick Start
 
+`AddHeadlessFeatures(...)` registers the features management core automatically. Register
+the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
+`IGuidGenerator`.
+
 ```csharp
 public sealed class AppDbContext(
     DbContextOptions<AppDbContext> options,
@@ -39,7 +43,6 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
-builder.Services.AddFeaturesManagementCore();
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "app_features");

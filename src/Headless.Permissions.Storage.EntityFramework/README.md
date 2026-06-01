@@ -28,6 +28,10 @@ dotnet add package Headless.Permissions.Storage.EntityFramework
 
 ## Quick Start
 
+`AddHeadlessPermissions(...)` registers the permissions management core automatically.
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
+`IGuidGenerator`.
+
 ```csharp
 public sealed class AppDbContext(
     DbContextOptions<AppDbContext> options,
@@ -45,7 +49,6 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
-builder.Services.AddPermissionsManagementCore();
 builder.Services.AddHeadlessPermissions(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "app_permissions");
