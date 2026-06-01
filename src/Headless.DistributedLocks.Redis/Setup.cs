@@ -40,7 +40,7 @@ public static class RedisDistributedLockSetup
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
             );
         }
@@ -48,7 +48,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed resource lock provider.</summary>
         public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions> optionSetupAction)
         {
-            return services._AddRedisDistributedLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction)
             );
         }
@@ -56,7 +56,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed resource lock provider.</summary>
         public IServiceCollection AddRedisDistributedLock(IConfiguration config)
         {
-            return services._AddRedisDistributedLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedLock<RedisDistributedLockStorage>(config)
             );
         }
@@ -70,7 +70,7 @@ public static class RedisDistributedLockSetup
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedSemaphoreCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
             );
         }
@@ -78,7 +78,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
         public IServiceCollection AddRedisDistributedSemaphore(Action<DistributedLockOptions> optionSetupAction)
         {
-            return services._AddRedisDistributedSemaphoreCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction)
             );
         }
@@ -86,7 +86,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
         public IServiceCollection AddRedisDistributedSemaphore(IConfiguration config)
         {
-            return services._AddRedisDistributedSemaphoreCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(config)
             );
         }
@@ -100,7 +100,7 @@ public static class RedisDistributedLockSetup
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
-            return services._AddRedisDistributedReaderWriterLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
             );
         }
@@ -108,7 +108,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(Action<DistributedLockOptions> optionSetupAction)
         {
-            return services._AddRedisDistributedReaderWriterLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction)
             );
         }
@@ -116,7 +116,7 @@ public static class RedisDistributedLockSetup
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
         public IServiceCollection AddRedisDistributedReaderWriterLock(IConfiguration config)
         {
-            return services._AddRedisDistributedReaderWriterLockCore(s =>
+            return services._AddRedisDistributedCore(s =>
                 s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config)
             );
         }
@@ -124,27 +124,7 @@ public static class RedisDistributedLockSetup
         #endregion
     }
 
-    private static IServiceCollection _AddRedisDistributedLockCore(
-        this IServiceCollection services,
-        Func<IServiceCollection, IServiceCollection> registerStorage
-    )
-    {
-        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-        return registerStorage(services);
-    }
-
-    private static IServiceCollection _AddRedisDistributedReaderWriterLockCore(
-        this IServiceCollection services,
-        Func<IServiceCollection, IServiceCollection> registerStorage
-    )
-    {
-        services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-
-        return registerStorage(services);
-    }
-
-    private static IServiceCollection _AddRedisDistributedSemaphoreCore(
+    private static IServiceCollection _AddRedisDistributedCore(
         this IServiceCollection services,
         Func<IServiceCollection, IServiceCollection> registerStorage
     )

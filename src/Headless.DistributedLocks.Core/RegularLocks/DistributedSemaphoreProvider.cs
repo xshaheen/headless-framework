@@ -23,6 +23,7 @@ public sealed class DistributedSemaphoreProvider(
 {
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
     private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
     private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(timeProvider, logger);
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(StringComparer.Ordinal);
@@ -100,11 +101,21 @@ public sealed class DistributedSemaphoreProvider(
 
             try
             {
-                singleResult = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, attemptToken)
+                singleResult = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, timestamp, attemptToken)
                     .ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                // Cancellation may have fired after storage accepted the ZADD but before we
+                // received the reply; best-effort cleanup so we don't strand an orphan slot
+                // (holding capacity) until the lease TTL expires.
+                await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+
                 singleResult = DistributedLockAcquireResult.Failed;
             }
 
@@ -134,13 +145,22 @@ public sealed class DistributedSemaphoreProvider(
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token, cancellationToken);
         ResetEventWithRefCount? autoResetEvent = null;
         var retryAttempt = 0;
+        var isFirstAttempt = true;
         DistributedLockAcquireResult result = DistributedLockAcquireResult.Failed;
 
         try
         {
             do
             {
-                result = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, cts.Token)
+                // Very tight non-zero acquire timeouts can leave timeoutCts already cancelled by
+                // the first attempt, preempting the storage call before it can run. Fall back to
+                // the caller's bare token on that first attempt so acquisition gets one real
+                // chance; retries use the linked token so the caller's budget governs the loop.
+                // Mirrors DistributedLockProvider (Issue #282).
+                var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
+                isFirstAttempt = false;
+
+                result = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, timestamp, attemptToken)
                     .ConfigureAwait(false);
 
                 if (result.Acquired)
@@ -163,8 +183,17 @@ public sealed class DistributedSemaphoreProvider(
                 await autoResetEvent.Target.SafeWaitAsync(linkedCancellationTokenSource.Token).ConfigureAwait(false);
             } while (!cts.IsCancellationRequested);
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
+            // Cancellation may have fired after storage accepted the ZADD but before we received
+            // the reply; best-effort cleanup so we don't strand an orphan slot until lease TTL.
+            await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
             result = DistributedLockAcquireResult.Failed;
         }
         finally
@@ -290,6 +319,7 @@ public sealed class DistributedSemaphoreProvider(
         string lockId,
         int maxCount,
         TimeSpan ttl,
+        long startTimestamp,
         CancellationToken cancellationToken
     )
     {
@@ -300,8 +330,27 @@ public sealed class DistributedSemaphoreProvider(
         }
         catch (Exception e) when (e is not (OperationCanceledException or ObjectDisposedException or InvalidOperationException))
         {
-            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timeProvider.GetTimestamp());
+            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, startTimestamp);
+
+            // A transient backend failure may surface after the acquire script already committed
+            // the ZADD; best-effort cleanup keyed on the unique lockId is idempotent and prevents
+            // a stranded slot from holding capacity until the lease TTL expires.
+            await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+
             return DistributedLockAcquireResult.Failed;
+        }
+    }
+
+    private async Task _TryReleaseOrphanSlotAsync(string resource, string lockId)
+    {
+        try
+        {
+            using var cleanupCts = timeProvider.CreateCancellationTokenSource(_OrphanSlotCleanupTimeout);
+            await storage.ReleaseAsync(_StorageResource(resource), lockId, cleanupCts.Token).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            logger.LogBestEffortLockCleanupFailed(e, resource, lockId);
         }
     }
 

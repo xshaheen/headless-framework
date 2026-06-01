@@ -22,6 +22,7 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
 
     public Task<long> GetHolderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
+        Argument.IsNotNullOrWhiteSpace(resource);
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult(0L);

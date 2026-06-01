@@ -16,6 +16,8 @@ internal sealed class DisposableSemaphoreSlot : IDistributedLock, LeaseMonitor.I
     private readonly ILogger _logger;
     private readonly AsyncLock _lock = new();
     private readonly TimeSpan _monitoringCadenceSnapshot;
+    private readonly TimeSpan _storageDeadlineSnapshot;
+    private readonly TimeProvider _timeProvider;
 
     private volatile bool _isReleased;
     private int _disposed;
@@ -55,6 +57,9 @@ internal sealed class DisposableSemaphoreSlot : IDistributedLock, LeaseMonitor.I
         var fraction = autoExtend ? options.AutoExtensionCadenceFraction : options.PollingCadenceFraction;
         var cadenceTicks = Math.Max(1, (long)(leaseDuration.Ticks * fraction));
         _monitoringCadenceSnapshot = TimeSpan.FromTicks(cadenceTicks);
+        _storageDeadlineSnapshot =
+            _monitoringCadenceSnapshot.TotalSeconds < 5.0 ? _monitoringCadenceSnapshot : TimeSpan.FromSeconds(5);
+        _timeProvider = timeProvider;
     }
 
     public string LockId { get; }
@@ -142,16 +147,50 @@ internal sealed class DisposableSemaphoreSlot : IDistributedLock, LeaseMonitor.I
         CancellationToken cancellationToken
     )
     {
-        if (_autoExtend)
+        // Per-iteration storage deadline: bounds a single storage round-trip so a stuck/blocked
+        // backend call (e.g., a Redis reconnect storm that ignores its CT) cannot wedge the
+        // monitoring task — and therefore cannot wedge LeaseMonitor.DisposeAsync, which awaits
+        // it. Capped at min(5s, cadence) and snapshotted at construction. On deadline trip we
+        // classify as Unknown (transient) and let the safety net self-promote on repeated misses.
+        try
         {
-            var renewed = await RenewAsync(_leaseDuration, cancellationToken).ConfigureAwait(false);
+            if (_autoExtend)
+            {
+                var renewed = await _WithStorageDeadlineAsync(
+                        RenewAsync(_leaseDuration, cancellationToken),
+                        _storageDeadlineSnapshot,
+                        _timeProvider,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
 
-            return renewed ? LeaseMonitor.LeaseState.Renewed : LeaseMonitor.LeaseState.Lost;
+                return renewed ? LeaseMonitor.LeaseState.Renewed : LeaseMonitor.LeaseState.Lost;
+            }
+
+            var valid = await _WithStorageDeadlineAsync(
+                    _provider.ValidateAsync(Resource, LockId, cancellationToken),
+                    _storageDeadlineSnapshot,
+                    _timeProvider,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return valid ? LeaseMonitor.LeaseState.Held : LeaseMonitor.LeaseState.Lost;
         }
+        catch (TimeoutException)
+        {
+            return LeaseMonitor.LeaseState.Unknown;
+        }
+    }
 
-        var valid = await _provider.ValidateAsync(Resource, LockId, cancellationToken).ConfigureAwait(false);
-
-        return valid ? LeaseMonitor.LeaseState.Held : LeaseMonitor.LeaseState.Lost;
+    private static async Task<T> _WithStorageDeadlineAsync<T>(
+        Task<T> operation,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        return await operation.WaitAsync(timeout, timeProvider, cancellationToken).ConfigureAwait(false);
     }
 
     private async ValueTask _StopMonitorAsync()
