@@ -27,12 +27,12 @@ Storage choices:
 Typical setup:
 
 ```csharp
-services.AddHeadlessAuditLog(o =>
-{
-    o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
-});
 services.AddHeadlessAuditLog(setup =>
 {
+    setup.ConfigureOptions(o =>
+    {
+        o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
+    });
     setup.ConfigureStorage(options => options.JsonColumnType = AuditLogJsonColumnType.Jsonb);
     setup.UseEntityFramework<AppDbContext>();
 });
@@ -86,7 +86,7 @@ Query audit entries through `IReadAuditLog<TContext>` rather than touching the `
 - Mark auditable entities with `IAuditTracked`. To audit every entity by default, set `AuditByDefault = true` on `AuditLogOptions` and use `[AuditIgnore]` to opt out.
 - Mark PII/secret fields with `[AuditSensitive]`. Choose the global strategy via `AuditLogOptions.SensitiveDataStrategy`: `Redact` (default), `Exclude`, or `Transform`. When using `Transform`, set `SensitiveValueTransformer` to a pure synchronous function; options validation fails otherwise.
 - Use `[AuditIgnore]` on properties (or whole entities) that should not be captured.
-- Register global audit options with `services.AddHeadlessAuditLog(...)`, then configure exactly one storage provider with `services.AddHeadlessAuditLog(setup => setup.Use...)`.
+- Register audit log with one `services.AddHeadlessAuditLog(setup => ...)` call when configuring storage. Put global audit options in `setup.ConfigureOptions(...)` and configure exactly one storage provider with `setup.Use...`.
 - For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` inside `OnModelCreating`.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`; the provider creates the audit table at host startup and writes audit rows over its own connection.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type-arg.
@@ -186,7 +186,6 @@ dotnet add package Headless.AuditLog.Storage.EntityFramework
 ### EntityFramework setup
 
 ```csharp
-services.AddHeadlessAuditLog();
 services.AddHeadlessAuditLog(setup =>
 {
     setup.ConfigureStorage(options =>
@@ -257,7 +256,6 @@ dotnet add package Headless.AuditLog.Storage.PostgreSql
 ## Setup
 
 ```csharp
-services.AddHeadlessAuditLog();
 services.AddHeadlessAuditLog(setup =>
 {
     setup.ConfigureStorage(options =>
@@ -291,7 +289,6 @@ dotnet add package Headless.AuditLog.Storage.SqlServer
 ## Setup
 
 ```csharp
-services.AddHeadlessAuditLog();
 services.AddHeadlessAuditLog(setup =>
 {
     setup.ConfigureStorage(options =>

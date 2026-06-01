@@ -30,13 +30,13 @@ dotnet add package Headless.AuditLog.Storage.EntityFramework
 ### DI setup
 
 ```csharp
-services.AddHeadlessAuditLog(o =>
-{
-    o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
-});
-
 services.AddHeadlessAuditLog(setup =>
 {
+    setup.ConfigureOptions(o =>
+    {
+        o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
+    });
+
     setup.ConfigureStorage(options =>
     {
         options.Schema = "audit";

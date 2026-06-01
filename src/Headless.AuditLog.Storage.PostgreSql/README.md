@@ -7,7 +7,6 @@ dotnet add package Headless.AuditLog.Storage.PostgreSql
 ```
 
 ```csharp
-services.AddHeadlessAuditLog();
 services.AddHeadlessAuditLog(setup =>
 {
     setup.ConfigureStorage(options =>
