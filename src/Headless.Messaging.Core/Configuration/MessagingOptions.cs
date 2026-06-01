@@ -212,7 +212,7 @@ public sealed class MessagingOptions
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
-    /// <see cref="IConsumerBuilderBase{TConsumer}.WithCircuitBreaker"/>.
+    /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 

@@ -81,6 +81,17 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         return this;
     }
 
+    /// <summary>
+    /// Registers a single consumer directly into the consumer registry at setup time and wires its
+    /// DI descriptors.
+    /// </summary>
+    /// <remarks>
+    /// Internal setup-time registration seam. Unlike the public <c>ForMessage&lt;T&gt;</c> surface,
+    /// this does not validate <paramref name="messageName"/>, so it can register wildcard
+    /// subscriptions (e.g. <c>"orders.*"</c>) that selector/runtime scenarios and their tests rely
+    /// on. Kept internal deliberately — it is not dead code and must not be promoted to the public API.
+    /// </remarks>
+    [UsedImplicitly]
     internal ConsumerMetadata RegisterConsumer(
         Type consumerType,
         Type messageType,

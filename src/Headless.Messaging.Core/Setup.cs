@@ -287,7 +287,7 @@ public static class SetupMessaging
             )
             .ToHashSet();
 
-        var registeredKeys = new HashSet<ConsumerRegistrationKey>();
+        var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
 
         foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
         {
@@ -300,7 +300,7 @@ public static class SetupMessaging
             if (explicitMessageNames.Count > 1)
             {
                 throw new InvalidOperationException(
-                    $"Message type {group.Key.Name} is already mapped to messageName '{explicitMessageNames[0]}'. "
+                    $"Message type {group.Key.FullName ?? group.Key.Name} is already mapped to messageName '{explicitMessageNames[0]}'. "
                         + $"Cannot map to '{explicitMessageNames[1]}'."
                 );
             }
@@ -341,11 +341,32 @@ public static class SetupMessaging
                         resolved.ConsumerType
                     );
 
-                    if (!registeredKeys.Add(key))
+                    var settings = new ConsumerRegistrationSettings(
+                        resolved.Concurrency,
+                        resolved.ResolvedHandlerId,
+                        consumer.CircuitBreakerOverride is not null
+                    );
+
+                    if (registeredKeys.TryGetValue(key, out var existing))
                     {
+                        // R9a: re-registering the SAME consumer for the same (message name, group, intent)
+                        // is an idempotent merge only when the registration is genuinely identical. Diverging
+                        // concurrency / handler id / circuit-breaker overrides would otherwise be silently
+                        // dropped here, so fail fast and name the conflict instead.
+                        if (existing != settings)
+                        {
+                            throw new InvalidOperationException(
+                                $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
+                                    + $"more than once for message name '{resolved.MessageName}' "
+                                    + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                    + "Register the consumer once, or make every registration identical."
+                            );
+                        }
+
                         continue;
                     }
 
+                    registeredKeys.Add(key, settings);
                     registry.Register(resolved);
                     _ApplyCircuitBreakerOverride(setup, resolved, consumer);
                 }
@@ -372,5 +393,11 @@ public static class SetupMessaging
         string? Group,
         IntentType IntentType,
         Type ConsumerType
+    );
+
+    private readonly record struct ConsumerRegistrationSettings(
+        byte Concurrency,
+        string ResolvedHandlerId,
+        bool HasCircuitBreaker
     );
 }
