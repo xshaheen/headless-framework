@@ -68,7 +68,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
 
-        services.AddFeaturesManagementCore().AddHeadlessFeatures(setup =>
+        services.AddHeadlessFeatures(setup =>
         {
             setup.ConfigureStorage(ConfigureFeaturesStorage);
             setup.UseEntityFramework<FeaturesTestDbContext>();

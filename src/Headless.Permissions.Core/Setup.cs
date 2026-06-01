@@ -25,22 +25,6 @@ public static class PermissionsSetup
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementCore(
-            Action<PermissionManagementOptions, IServiceProvider> setupAction
-        )
-        {
-            services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
-        public IServiceCollection AddPermissionsManagementCore(Action<PermissionManagementOptions>? setupAction = null)
-        {
-            services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
         public HeadlessPermissionsBuilder AddHeadlessPermissions(Action<HeadlessPermissionsSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -107,10 +91,10 @@ public static class PermissionsSetup
         HeadlessPermissionsSetupBuilder setup
     )
     {
-        // Ensure management core is registered so consumers no longer need a separate
-        // AddPermissionsManagementCore() call. Guarded on IPermissionGrantStore so calling both
-        // AddPermissionsManagementCore and AddHeadlessPermissions stays safe (no duplicate value
-        // providers / authorization handlers from the non-idempotent registrations in _AddCore).
+        // Register the management core as part of storage setup so AddHeadlessPermissions is the
+        // single entry point. Guarded on IPermissionGrantStore so a repeated AddHeadlessPermissions
+        // stays safe (no duplicate value providers / authorization handlers from the non-idempotent
+        // registrations in _AddCore).
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IPermissionGrantStore)))
         {
             serviceCollection.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(_ => { });

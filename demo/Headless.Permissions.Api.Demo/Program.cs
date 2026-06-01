@@ -6,14 +6,19 @@ using Headless.Permissions.Definitions;
 using Headless.Permissions.Grants;
 using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add permissions management core
-// Note: In a real application, you would also call:
-// builder.Services.AddHeadlessPermissions(...)
-// to configure the database storage
-builder.Services.AddPermissionsManagementCore();
+// AddHeadlessPermissions registers the management core automatically; a storage provider must be
+// configured for the managers to resolve their repositories. This demo uses the EF Core provider
+// with a minimal DbContext against a local PostgreSQL instance.
+const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
+
+builder.Services.AddDbContextFactory<PermissionsDemoDbContext>(options => options.UseNpgsql(connectionString));
+
+builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<PermissionsDemoDbContext>());
 
 // Configure OpenAPI documentation
 builder.Services.AddNswagOpenApi();
@@ -195,3 +200,15 @@ app.MapDelete(
     .Produces(StatusCodes.Status403Forbidden);
 
 await app.RunAsync();
+
+internal sealed class PermissionsDemoDbContext(
+    DbContextOptions<PermissionsDemoDbContext> options,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+    }
+}

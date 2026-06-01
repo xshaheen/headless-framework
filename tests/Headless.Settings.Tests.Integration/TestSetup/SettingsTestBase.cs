@@ -69,7 +69,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
 
-        services.AddSettingsManagementCore().AddHeadlessSettings(setup =>
+        services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(ConfigureSettingsStorage);
             setup.UseEntityFramework<SettingsTestDbContext>();

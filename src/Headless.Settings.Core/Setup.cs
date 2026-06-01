@@ -22,32 +22,6 @@ public static class CoreSettingsSetup
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddSettingsManagementCore(
-            Action<SettingManagementOptions, IServiceProvider> setupAction
-        )
-        {
-            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
-        /// <summary>
-        /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddSettingsManagementCore(Action<SettingManagementOptions>? setupAction = null)
-        {
-            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
         public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -112,11 +86,10 @@ public static class CoreSettingsSetup
         HeadlessSettingsSetupBuilder setup
     )
     {
-        // Ensure management core is registered so consumers no longer need a separate
-        // AddSettingsManagementCore() call. Guarded on ISettingManager so calling both
-        // AddSettingsManagementCore and AddHeadlessSettings stays safe (no duplicate value
-        // providers from the non-idempotent TypeList registrations in _AddCore). The
-        // IStringEncryptionService guard inside _AddCore still fires when it is absent.
+        // Register the management core as part of storage setup so AddHeadlessSettings is the
+        // single entry point. Guarded on ISettingManager so a repeated AddHeadlessSettings stays
+        // safe (no duplicate value providers from the non-idempotent TypeList registrations in
+        // _AddCore). The IStringEncryptionService guard inside _AddCore still fires when it is absent.
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
         {
             serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
@@ -146,7 +119,7 @@ public static class CoreSettingsSetup
         {
             throw new InvalidOperationException(
                 $"{nameof(IStringEncryptionService)} must be registered before calling "
-                    + $"{nameof(AddHeadlessSettings)} or {nameof(AddSettingsManagementCore)}. "
+                    + $"{nameof(AddHeadlessSettings)}. "
                     + "Register it via AddStringEncryptionService(...) on IServiceCollection."
             );
         }

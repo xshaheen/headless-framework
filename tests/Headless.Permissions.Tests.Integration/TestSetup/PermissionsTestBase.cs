@@ -70,7 +70,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
 
-        services.AddPermissionsManagementCore().AddHeadlessPermissions(setup =>
+        services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(ConfigurePermissionsStorage);
             setup.UseEntityFramework<PermissionsTestDbContext>();

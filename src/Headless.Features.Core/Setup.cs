@@ -21,32 +21,6 @@ public static class CoreSetup
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
-        /// to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(
-            Action<FeatureManagementOptions, IServiceProvider> setupAction
-        )
-        {
-            services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
-        /// <summary>
-        /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
-        /// to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(Action<FeatureManagementOptions>? setupAction = null)
-        {
-            services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
-        }
-
         public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -107,10 +81,9 @@ public static class CoreSetup
         HeadlessFeaturesSetupBuilder setup
     )
     {
-        // Ensure management core is registered so consumers no longer need a separate
-        // AddFeaturesManagementCore() call. Guarded on IFeatureManager so calling both
-        // AddFeaturesManagementCore and AddHeadlessFeatures stays safe (no duplicate value
-        // providers from the non-idempotent registrations in _AddCore).
+        // Register the management core as part of storage setup so AddHeadlessFeatures is the
+        // single entry point. Guarded on IFeatureManager so a repeated AddHeadlessFeatures stays
+        // safe (no duplicate value providers from the non-idempotent registrations in _AddCore).
         if (!serviceCollection.Any(static s => s.ServiceType == typeof(IFeatureManager)))
         {
             serviceCollection.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(_ => { });
