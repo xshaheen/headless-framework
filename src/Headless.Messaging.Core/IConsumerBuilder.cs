@@ -13,13 +13,13 @@ namespace Headless.Messaging;
 /// <remarks>
 /// <para>
 /// The consumer builder allows fine-grained control over a specific consumer's runtime behavior,
-/// including topic routing, handler identity, and concurrency limits.
+/// including message name routing, handler identity, and concurrency limits.
 /// </para>
 /// <para>
 /// All configuration methods return <c>this</c> for method chaining, enabling fluent configuration:
 /// <code>
 /// options.Subscribe&lt;OrderHandler&gt;()
-///     .Topic("orders.v2")
+///     .MessageName("orders.v2")
 ///     .Group("order-service")
 ///     .Concurrency(maxInFlight: 10);
 /// </code>
@@ -30,29 +30,29 @@ public interface IConsumerBuilder<TConsumer>
     where TConsumer : class
 {
     /// <summary>
-    /// Overrides the default topic name for this consumer.
+    /// Overrides the default message name for this consumer.
     /// </summary>
-    /// <param name="topic">
-    /// The topic name to subscribe to. Must not be null or whitespace.
+    /// <param name="messageName">
+    /// The message name to subscribe to. Must not be null or whitespace.
     /// </param>
     /// <returns>
     /// The current <see cref="IConsumerBuilder{TConsumer}"/> instance for method chaining.
     /// </returns>
     /// <remarks>
     /// <para>
-    /// By default, consumers subscribe to a topic named after the message type (e.g., <c>OrderPlaced</c>).
-    /// Use this method to override the convention and subscribe to a custom topic name.
+    /// By default, consumers subscribe to a message name derived from the message type (e.g., <c>OrderPlaced</c>).
+    /// Use this method to override the convention and subscribe to a custom message name.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
     /// <code>
-    /// // Subscribe to versioned topic instead of default
+    /// // Subscribe to versioned message name instead of default
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed.v2");
+    ///     .MessageName("orders.placed.v2");
     /// </code>
     /// </para>
     /// </remarks>
-    IConsumerBuilder<TConsumer> Topic(string topic);
+    IConsumerBuilder<TConsumer> MessageName(string messageName);
 
     /// <summary>
     /// Sets the consumer group name for this consumer.
@@ -80,7 +80,7 @@ public interface IConsumerBuilder<TConsumer>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed")
+    ///     .MessageName("orders.placed")
     ///     .Group("order-processing-service");
     /// </code>
     /// </para>
@@ -118,12 +118,12 @@ public interface IConsumerBuilder<TConsumer>
     /// <code>
     /// // Process up to 10 messages concurrently
     /// options.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///     .Topic("orders.placed")
+    ///     .MessageName("orders.placed")
     ///     .Concurrency(10);
     ///
     /// // Strictly sequential processing
     /// options.Subscribe&lt;PaymentHandler&gt;()
-    ///     .Topic("payments.process")
+    ///     .MessageName("payments.process")
     ///     .Concurrency(1);
     /// </code>
     /// </para>
@@ -161,7 +161,7 @@ public interface IConsumerBuilder<TConsumer>
     /// <strong>Example:</strong>
     /// <code>
     /// options.Subscribe&lt;PaymentHandler&gt;()
-    ///     .Topic("payments.process")
+    ///     .MessageName("payments.process")
     ///     .WithCircuitBreaker(cb =>
     ///     {
     ///         cb.FailureThreshold = 3;

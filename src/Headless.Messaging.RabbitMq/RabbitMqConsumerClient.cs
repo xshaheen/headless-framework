@@ -56,23 +56,23 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
     public BrokerAddress BrokerAddress => new("rabbitmq", $"{_rabbitMqOptions.HostName}:{_rabbitMqOptions.Port}");
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topics);
+        Argument.IsNotNull(messageNames);
 
         await ConnectAsync();
 
-        foreach (var topic in topics)
+        foreach (var messageName in messageNames)
         {
-            RabbitMqValidation.ValidateTopicName(topic);
-            var queueName = _GetQueueName(topic);
+            RabbitMqValidation.ValidateMessageName(messageName);
+            var queueName = _GetQueueName(messageName);
             if (!_queueNames.Contains(queueName, StringComparer.Ordinal))
             {
                 await _DeclareQueueAsync(queueName).ConfigureAwait(false);
                 _queueNames.Add(queueName);
             }
 
-            await _channel!.QueueBindAsync(queueName, _exchangeName, topic).ConfigureAwait(false);
+            await _channel!.QueueBindAsync(queueName, _exchangeName, messageName).ConfigureAwait(false);
         }
     }
 
@@ -277,14 +277,14 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
     }
 
-    private string _GetQueueName(string topic)
+    private string _GetQueueName(string messageName)
     {
-        return GetQueueName(_groupName, topic, _intentType);
+        return GetQueueName(_groupName, messageName, _intentType);
     }
 
-    internal static string GetQueueName(string groupName, string topic, IntentType intentType)
+    internal static string GetQueueName(string groupName, string messageName, IntentType intentType)
     {
-        return intentType == IntentType.Queue ? topic : groupName;
+        return intentType == IntentType.Queue ? messageName : groupName;
     }
 
     private async Task _DeclareQueueAsync(string queueName)

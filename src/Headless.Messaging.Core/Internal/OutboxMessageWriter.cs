@@ -97,7 +97,7 @@ internal sealed class OutboxMessageWriter(
             {
                 var mediumMessage = await storage
                     .StoreMessageAsync(
-                        publishRequest.Topic,
+                        publishRequest.MessageName,
                         _CreateStorageEnvelope(publishRequest),
                         null,
                         cancellationToken
@@ -129,7 +129,7 @@ internal sealed class OutboxMessageWriter(
 
                 var mediumMessage = await storage
                     .StoreMessageAsync(
-                        publishRequest.Topic,
+                        publishRequest.MessageName,
                         _CreateStorageEnvelope(publishRequest),
                         currentTransaction.DbTransaction,
                         cancellationToken

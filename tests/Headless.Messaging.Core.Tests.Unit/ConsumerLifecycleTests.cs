@@ -31,7 +31,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when
@@ -67,7 +67,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when
@@ -102,7 +102,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         var secondContext = new ConsumeContext<TestMessage>
@@ -113,7 +113,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when
@@ -152,7 +152,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when
@@ -187,7 +187,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when & then - should not throw
@@ -215,7 +215,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when & then - should not throw, exception in OnStoppingAsync is suppressed
@@ -248,7 +248,7 @@ public sealed class ConsumerLifecycleTests
             CorrelationId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test-topic",
+            MessageName = "test-messageName",
         };
 
         // when

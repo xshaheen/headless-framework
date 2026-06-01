@@ -74,8 +74,8 @@ public sealed class MessageObservationTimeoutException : TimeoutException
                     .Append(msg.MessageId)
                     .Append(" intent=")
                     .Append(msg.IntentType)
-                    .Append(" topic=")
-                    .AppendLine(msg.Topic);
+                    .Append(" messageName=")
+                    .AppendLine(msg.MessageName);
             }
         }
 

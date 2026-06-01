@@ -107,12 +107,12 @@ internal static partial class LoggerExtensions
         EventId = 11,
         EventName = "ConsumerExecuteFailed",
         Level = LogLevel.Error,
-        Message = "An exception occurred while executing the subscription method. Topic:{Topic}, StorageId:{StorageId}, Instance: {Instance}"
+        Message = "An exception occurred while executing the subscription method. MessageName:{MessageName}, StorageId:{StorageId}, Instance: {Instance}"
     )]
     public static partial void ConsumerExecuteFailed(
         this ILogger logger,
         Exception? exception,
-        string topic,
+        string messageName,
         long storageId,
         string? instance
     );

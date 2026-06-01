@@ -30,7 +30,7 @@ public sealed class MessageSenderTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = "test.topic",
+            [Headers.MessageName] = "test.messageName",
         };
 
         return new MediumMessage
@@ -49,7 +49,7 @@ public sealed class MessageSenderTests : TestBase
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageId] = Guid.NewGuid().ToString(),
-                [Headers.MessageName] = "test.topic",
+                [Headers.MessageName] = "test.messageName",
             },
             ReadOnlyMemory<byte>.Empty
         );

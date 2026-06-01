@@ -27,7 +27,7 @@ public interface IConsumerServiceSelector
     /// Selects the best <see cref="ConsumerExecutorDescriptor" /> candidate from <paramref name="candidates" /> for the
     /// current message associated.
     /// </summary>
-    /// <param name="key">topic or exchange router key.</param>
+    /// <param name="key">message name or exchange router key.</param>
     /// <param name="candidates">the set of <see cref="ConsumerExecutorDescriptor" /> candidates.</param>
     ConsumerExecutorDescriptor? SelectBestCandidate(string key, IReadOnlyList<ConsumerExecutorDescriptor> candidates);
 
@@ -140,10 +140,10 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
                 ServiceTypeInfo = consumer.ConsumerType.GetTypeInfo(),
                 ImplTypeInfo = consumer.ConsumerType.GetTypeInfo(),
                 MethodInfo = consumeMethod,
-                TopicName = consumer.Topic,
+                MessageName = consumer.MessageName,
                 GroupName = _GetGroupName(consumer),
                 Parameters = _BuildParameters(consumeMethod),
-                TopicNamePrefix = _messagingOptions.TopicNamePrefix,
+                MessageNamePrefix = _messagingOptions.MessageNamePrefix,
                 Concurrency = consumer.Concurrency,
                 HandlerId = consumer.ResolvedHandlerId,
                 IntentType = consumer.IntentType,
@@ -193,7 +193,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     {
         Argument.IsNotNull(key);
 
-        return executeDescriptor.FirstOrDefault(x => x.TopicName.Equals(key, StringComparison.OrdinalIgnoreCase));
+        return executeDescriptor.FirstOrDefault(x => x.MessageName.Equals(key, StringComparison.OrdinalIgnoreCase));
     }
 
     private ConsumerExecutorDescriptor? _MatchWildcardUsingRegex(
@@ -207,7 +207,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             tmpList = executeDescriptor
                 .Select(x => new RegexExecuteDescriptor<ConsumerExecutorDescriptor>
                 {
-                    Name = Helper.WildcardToRegex(x.TopicName),
+                    Name = Helper.WildcardToRegex(x.MessageName),
                     Descriptor = x,
                 })
                 .ToList();

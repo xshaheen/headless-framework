@@ -27,11 +27,11 @@ namespace Headless.Messaging;
 public interface IBus
 {
     /// <summary>
-    /// Publishes a message to the configured bus transport using the resolved topic.
+    /// Publishes a message to the configured bus transport using the resolved message name.
     /// </summary>
     /// <typeparam name="T">The message type.</typeparam>
     /// <param name="contentObj">The message payload. Can be <see langword="null"/>.</param>
-    /// <param name="options">Optional publish overrides for topic, correlation, and custom headers.</param>
+    /// <param name="options">Optional publish overrides for message name, correlation, and custom headers.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the publish operation.</returns>
     /// <exception cref="ArgumentException">

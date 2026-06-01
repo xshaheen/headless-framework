@@ -18,7 +18,7 @@ public static class Headers
     public const string MessageId = "headless-msg-id";
 
     /// <summary>
-    /// The topic or message name that identifies what kind of message this is.
+    /// The message name that identifies what kind of message this is.
     /// Used for routing to the correct subscribers.
     /// Value: "headless-msg-name"
     /// </summary>
@@ -40,7 +40,7 @@ public static class Headers
 
     /// <summary>
     /// Correlation ID for linking related messages in a message flow or saga pattern.
-    /// Allows tracing a chain of messages across different topics and services.
+    /// Allows tracing a chain of messages across different message names and services.
     /// Value: "headless-corr-id"
     /// </summary>
     public const string CorrelationId = "headless-corr-id";

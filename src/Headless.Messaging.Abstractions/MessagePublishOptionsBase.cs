@@ -4,7 +4,7 @@ namespace Headless.Messaging;
 
 /// <summary>
 /// Shared base for publish-side option records. Carries the intent-agnostic metadata fields
-/// (topic, identifiers, tenancy, headers, callback) that every publisher accepts.
+/// (message name, identifiers, tenancy, headers, callback) that every publisher accepts.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -33,9 +33,9 @@ public abstract record MessagePublishOptionsBase
     public const int TenantIdMaxLength = 200;
 
     /// <summary>
-    /// Gets the explicit topic override. When <see langword="null"/>, the topic is resolved from mappings or conventions.
+    /// Gets the explicit message name override. When <see langword="null"/>, the message name is resolved from mappings or conventions.
     /// </summary>
-    public string? Topic { get; init; }
+    public string? MessageName { get; init; }
 
     /// <summary>
     /// Gets custom application headers. Reserved messaging headers are rejected.
@@ -62,7 +62,7 @@ public abstract record MessagePublishOptionsBase
     public int? CorrelationSequence { get; init; }
 
     /// <summary>
-    /// Gets the callback topic override used for response messages.
+    /// Gets the callback message name override used for response messages.
     /// </summary>
     public string? CallbackName { get; init; }
 
@@ -110,7 +110,7 @@ public abstract record MessagePublishOptionsBase
             return false;
         }
 
-        return string.Equals(Topic, other.Topic, StringComparison.Ordinal)
+        return string.Equals(MessageName, other.MessageName, StringComparison.Ordinal)
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && CorrelationSequence == other.CorrelationSequence
@@ -123,7 +123,7 @@ public abstract record MessagePublishOptionsBase
     public override int GetHashCode()
     {
         var hash = new HashCode();
-        hash.Add(Topic, StringComparer.Ordinal);
+        hash.Add(MessageName, StringComparer.Ordinal);
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CorrelationSequence);

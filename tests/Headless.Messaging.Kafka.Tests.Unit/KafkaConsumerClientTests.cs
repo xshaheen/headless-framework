@@ -89,14 +89,14 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
 
         // when
-        var act = async () => await client.FetchTopicsAsync(null!);
+        var act = async () => await client.FetchMessageNamesAsync(null!);
 
         // then
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
     [Fact]
-    public async Task FetchTopicsAsync_should_return_topics()
+    public async Task FetchMessageNamesAsync_should_return_topics()
     {
         // given
         var options = Options.Create(
@@ -109,9 +109,9 @@ public sealed class KafkaConsumerClientTests : TestBase
         await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
         client.OnLogCallback = _ => { }; // Set callback to avoid null ref
 
-        // when - FetchTopicsAsync will return topics even if admin client fails
+        // when - FetchMessageNamesAsync will return topics even if admin client fails
         // The topic names are returned regardless of whether topic creation succeeds
-        var result = await client.FetchTopicsAsync(["topic1", "topic2"]);
+        var result = await client.FetchMessageNamesAsync(["topic1", "topic2"]);
 
         // then
         result.Should().HaveCount(2);
@@ -120,7 +120,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task FetchTopicsAsync_should_use_kafka_override_when_called_via_interface()
+    public async Task FetchMessageNamesAsync_should_use_kafka_override_when_called_via_interface()
     {
         // given
         var adminClient = Substitute.For<IAdminClient>();
@@ -137,7 +137,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         );
 
         // when
-        var result = await client.FetchTopicsAsync(["orders.created", "orders.*"]);
+        var result = await client.FetchMessageNamesAsync(["orders.created", "orders.*"]);
 
         // then
         result.Should().Contain("orders.created");

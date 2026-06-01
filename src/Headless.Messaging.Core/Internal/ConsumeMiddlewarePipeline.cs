@@ -75,7 +75,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             if (
                 descriptor.HandlerId is { Length: > 0 } handlerId
                 && runtimeRegistry.TryGetInvoker(
-                    descriptor.TopicName,
+                    descriptor.MessageName,
                     descriptor.GroupName,
                     handlerId,
                     out var runtimeInvoker
@@ -256,7 +256,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var tenantIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TenantId))!;
         var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
         var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
-        var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Topic))!;
+        var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageName))!;
         var intentTypeProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.IntentType))!;
 
         var dictionaryIndexer = typeof(IDictionary<string, string?>).GetProperty(
@@ -431,7 +431,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var consumerIntent = descriptor.IntentType.ToString();
         if (!string.Equals(wireIntent, consumerIntent, StringComparison.OrdinalIgnoreCase))
         {
-            logger.ConsumeIntentMismatch(descriptor.TopicName, wireIntent, consumerIntent);
+            logger.ConsumeIntentMismatch(descriptor.MessageName, wireIntent, consumerIntent);
         }
     }
 

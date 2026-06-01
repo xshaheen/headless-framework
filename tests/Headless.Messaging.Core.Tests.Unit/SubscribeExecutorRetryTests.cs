@@ -25,7 +25,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = "test.topic",
+            [Headers.MessageName] = "test.messageName",
             [Headers.Group] = "test-group",
         };
 
@@ -55,7 +55,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
             ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test-group",
             Parameters = consumeMethod
                 .GetParameters()
@@ -83,7 +83,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic").Group("test-group");
+            setup.Subscribe<CancellationExecutorTestConsumer>().MessageName("test.messageName").Group("test-group");
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

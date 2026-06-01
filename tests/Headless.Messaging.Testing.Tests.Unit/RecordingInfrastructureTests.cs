@@ -18,7 +18,7 @@ public sealed class RecordingInfrastructureTests : TestBase
 
     private static IDictionary<string, string?> _BaseHeaders(
         string id = "msg-1",
-        string name = "test-topic",
+        string name = "test-messageName",
         string? correlationId = null,
         string? typeName = null
     )
@@ -44,7 +44,7 @@ public sealed class RecordingInfrastructureTests : TestBase
 
     private static MediumMessage _MakeMediumMessage(
         string id = "msg-1",
-        string name = "test-topic",
+        string name = "test-messageName",
         string? correlationId = null
     )
     {
@@ -69,7 +69,7 @@ public sealed class RecordingInfrastructureTests : TestBase
                 [typeof(MediumMessage)]
             )!,
             ImplTypeInfo = typeof(RecordingInfrastructureTests).GetTypeInfo(),
-            TopicName = medium.Origin.Headers[Headers.MessageName]!,
+            MessageName = medium.Origin.Headers[Headers.MessageName]!,
             GroupName = "test-group",
         };
 
@@ -125,14 +125,14 @@ public sealed class RecordingInfrastructureTests : TestBase
 
         // when
         await transport.SendAsync(
-            new TransportMessage(_BaseHeaders(id: "id-42", name: "my-topic"), ReadOnlyMemory<byte>.Empty),
+            new TransportMessage(_BaseHeaders(id: "id-42", name: "my-messageName"), ReadOnlyMemory<byte>.Empty),
             AbortToken
         );
 
         // then
         var recorded = store.Published.Single();
         recorded.MessageId.Should().Be("id-42");
-        recorded.Topic.Should().Be("my-topic");
+        recorded.MessageName.Should().Be("my-messageName");
     }
 
     [Fact]
@@ -342,7 +342,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     {
         // given
         var store = new MessageObservationStore();
-        var medium = _MakeMediumMessage(id: "ctx-id-7", name: "ctx-topic");
+        var medium = _MakeMediumMessage(id: "ctx-id-7", name: "ctx-messageName");
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
         var inner = new FakePipeline(new ConsumerExecutedResult(null, "ctx-id-7", null, null));
@@ -354,7 +354,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // then
         var recorded = store.Consumed.Single();
         recorded.MessageId.Should().Be("ctx-id-7");
-        recorded.Topic.Should().Be("ctx-topic");
+        recorded.MessageName.Should().Be("ctx-messageName");
     }
 
     [Fact]

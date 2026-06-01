@@ -14,7 +14,7 @@ public sealed class MessagingConventionsTests : TestBase
         var conventions = new MessagingConventions();
 
         // then
-        conventions.TopicNaming.Should().Be(TopicNamingConvention.TypeName);
+        conventions.MessageNaming.Should().Be(MessageNamingConvention.TypeName);
     }
 
     [Fact]
@@ -24,7 +24,7 @@ public sealed class MessagingConventionsTests : TestBase
         var conventions = new MessagingConventions();
 
         // then
-        conventions.TopicPrefix.Should().BeNull();
+        conventions.MessageNamePrefix.Should().BeNull();
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public sealed class MessagingConventionsTests : TestBase
         var conventions = new MessagingConventions();
 
         // then
-        conventions.TopicSuffix.Should().BeNull();
+        conventions.MessageNameSuffix.Should().BeNull();
     }
 
     [Fact]
@@ -51,20 +51,20 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_allow_custom_prefix()
     {
         // given
-        var conventions = new MessagingConventions { TopicPrefix = "my-service." };
+        var conventions = new MessagingConventions { MessageNamePrefix = "my-service." };
 
         // then
-        conventions.TopicPrefix.Should().Be("my-service.");
+        conventions.MessageNamePrefix.Should().Be("my-service.");
     }
 
     [Fact]
     public void should_allow_custom_suffix()
     {
         // given
-        var conventions = new MessagingConventions { TopicSuffix = ".v1" };
+        var conventions = new MessagingConventions { MessageNameSuffix = ".v1" };
 
         // then
-        conventions.TopicSuffix.Should().Be(".v1");
+        conventions.MessageNameSuffix.Should().Be(".v1");
     }
 
     [Fact]
@@ -81,10 +81,10 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_generate_topic_name_using_type_name_convention()
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.TypeName };
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.TypeName };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
         topicName.Should().Be("OrderPlacedEvent");
@@ -94,10 +94,10 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_generate_topic_name_using_kebab_case_convention()
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
         topicName.ToLowerInvariant().Should().Be("order-placed-event");
@@ -109,12 +109,12 @@ public sealed class MessagingConventionsTests : TestBase
         // given
         var conventions = new MessagingConventions
         {
-            TopicNaming = TopicNamingConvention.TypeName,
-            TopicPrefix = "prod.",
+            MessageNaming = MessageNamingConvention.TypeName,
+            MessageNamePrefix = "prod.",
         };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
         topicName.Should().Be("prod.OrderPlacedEvent");
@@ -126,12 +126,12 @@ public sealed class MessagingConventionsTests : TestBase
         // given
         var conventions = new MessagingConventions
         {
-            TopicNaming = TopicNamingConvention.TypeName,
-            TopicSuffix = ".v2",
+            MessageNaming = MessageNamingConvention.TypeName,
+            MessageNameSuffix = ".v2",
         };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
         topicName.Should().Be("OrderPlacedEvent.v2");
@@ -143,13 +143,13 @@ public sealed class MessagingConventionsTests : TestBase
         // given
         var conventions = new MessagingConventions
         {
-            TopicNaming = TopicNamingConvention.TypeName,
-            TopicPrefix = "myapp.",
-            TopicSuffix = ".events",
+            MessageNaming = MessageNamingConvention.TypeName,
+            MessageNamePrefix = "myapp.",
+            MessageNameSuffix = ".events",
         };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
         topicName.Should().Be("myapp.OrderPlacedEvent.events");
@@ -161,28 +161,26 @@ public sealed class MessagingConventionsTests : TestBase
         // given
         var conventions = new MessagingConventions
         {
-            TopicNaming = TopicNamingConvention.KebabCase,
-            TopicPrefix = "app-",
-            TopicSuffix = "-topic",
+            MessageNaming = MessageNamingConvention.KebabCase,
+            MessageNamePrefix = "app-",
+            MessageNameSuffix = "-messageName",
         };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(OrderPlacedEvent));
+        var topicName = conventions.GetMessageName(typeof(OrderPlacedEvent));
 
         // then
-        // Note: Due to regex bug with ExplicitCapture, the output is not correct.
-        // See should_generate_topic_name_using_kebab_case_convention for details.
-        topicName.Should().StartWith("app-order").And.EndWith("-topic");
+        topicName.Should().Be("app-order-placed-event-messageName");
     }
 
     [Fact]
     public void should_handle_single_word_type_name_in_kebab_case()
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(Order));
+        var topicName = conventions.GetMessageName(typeof(Order));
 
         // then
         topicName.Should().Be("order");
@@ -192,25 +190,23 @@ public sealed class MessagingConventionsTests : TestBase
     public void should_handle_consecutive_uppercase_in_kebab_case()
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(XmlParser));
+        var topicName = conventions.GetMessageName(typeof(XmlParser));
 
         // then
-        // Note: Due to regex bug with ExplicitCapture, the output contains literal "$1".
-        // Simply verify it starts with xml (lowercase).
-        topicName.ToLowerInvariant().Should().StartWith("xml");
+        topicName.Should().Be("xml-parser");
     }
 
     [Fact]
     public void should_handle_numbers_in_type_name()
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = TopicNamingConvention.KebabCase };
+        var conventions = new MessagingConventions { MessageNaming = MessageNamingConvention.KebabCase };
 
         // when
-        var topicName = conventions.GetTopicName(typeof(Order123Event));
+        var topicName = conventions.GetMessageName(typeof(Order123Event));
 
         // then
         // Note: Due to regex bug with ExplicitCapture, the output contains literal "$1".
@@ -219,19 +215,19 @@ public sealed class MessagingConventionsTests : TestBase
     }
 
     [Theory]
-    [InlineData(TopicNamingConvention.TypeName)]
-    [InlineData(TopicNamingConvention.KebabCase)]
-    public void should_set_topic_naming_convention(TopicNamingConvention convention)
+    [InlineData(MessageNamingConvention.TypeName)]
+    [InlineData(MessageNamingConvention.KebabCase)]
+    public void should_set_topic_naming_convention(MessageNamingConvention convention)
     {
         // given
-        var conventions = new MessagingConventions { TopicNaming = convention };
+        var conventions = new MessagingConventions { MessageNaming = convention };
 
         // then
-        conventions.TopicNaming.Should().Be(convention);
+        conventions.MessageNaming.Should().Be(convention);
     }
 }
 
-// Test types for topic name generation
+// Test types for message-name generation
 public sealed record OrderPlacedEvent(Guid OrderId);
 
 public sealed record Order(Guid Id);

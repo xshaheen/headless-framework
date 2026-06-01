@@ -31,7 +31,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
 
-        var topics = await client.FetchTopicsAsync([subject]);
+        var topics = await client.FetchMessageNamesAsync([subject]);
         await client.SubscribeAsync(topics);
 
         var received = new TaskCompletionSource<(TransportMessage msg, object? sender)>(
@@ -82,7 +82,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
 
-        await client.FetchTopicsAsync([subject]);
+        await client.FetchMessageNamesAsync([subject]);
         await client.SubscribeAsync([subject]);
 
         var received = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -114,7 +114,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task FetchTopicsAsync_should_create_stream_when_enabled()
+    public async Task FetchMessageNamesAsync_should_create_stream_when_enabled()
     {
         // given
         var streamName = $"autocreate-{Guid.NewGuid():N}"[..25];
@@ -124,8 +124,8 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
 
-        // when — FetchTopicsAsync with EnableSubscriberClientStreamAndSubjectCreation=true
-        var result = await client.FetchTopicsAsync([subject]);
+        // when — FetchMessageNamesAsync with EnableSubscriberClientStreamAndSubjectCreation=true
+        var result = await client.FetchMessageNamesAsync([subject]);
 
         // then — stream should exist on the NATS server
         result.Should().Contain(subject);
@@ -137,7 +137,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task FetchTopicsAsync_should_apply_StreamOptions_callback()
+    public async Task FetchMessageNamesAsync_should_apply_StreamOptions_callback()
     {
         // given
         var streamName = $"stropts-{Guid.NewGuid():N}"[..22];
@@ -159,7 +159,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         await client.ConnectAsync();
 
         // when
-        await client.FetchTopicsAsync([subject]);
+        await client.FetchMessageNamesAsync([subject]);
 
         // then — stream should use Memory storage (from callback)
         var conn = await fixture.GetConnectionAsync();
@@ -180,7 +180,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
-        await client.FetchTopicsAsync([subject]);
+        await client.FetchMessageNamesAsync([subject]);
         await client.SubscribeAsync([subject]);
 
         var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -252,7 +252,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TestBase
         var options = _CreateOptions(enableStreamCreation: false);
         await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
         await client.ConnectAsync();
-        await client.FetchTopicsAsync([subject]);
+        await client.FetchMessageNamesAsync([subject]);
         await client.SubscribeAsync([subject]);
 
         var messageReceived = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

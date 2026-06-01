@@ -46,10 +46,10 @@ public enum RuntimeSubscriptionDuplicateBehavior
 public sealed class RuntimeSubscriptionOptions
 {
     /// <summary>
-    /// Gets or sets the explicit topic to subscribe to.
-    /// When omitted, the topic is resolved from configured mappings or deterministic conventions for the message type.
+    /// Gets or sets the explicit message name to subscribe to.
+    /// When omitted, the message name is resolved from configured mappings or deterministic conventions for the message type.
     /// </summary>
-    public string? Topic { get; init; }
+    public string? MessageName { get; init; }
 
     /// <summary>
     /// Gets or sets the explicit consumer group.
@@ -86,14 +86,14 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
     private int _disposed;
 
     internal static RuntimeSubscriptionHandle Detached(
-        string topic,
+        string messageName,
         string group,
         string handlerId,
         string? subscriptionId = null
     ) =>
         new(() => ValueTask.CompletedTask)
         {
-            Topic = topic,
+            MessageName = messageName,
             Group = group,
             HandlerId = handlerId,
             SubscriptionId = subscriptionId,
@@ -102,14 +102,14 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
 
     internal static RuntimeSubscriptionHandle Attached(
         string subscriptionId,
-        string topic,
+        string messageName,
         string group,
         string handlerId,
         Func<ValueTask> unsubscribe
     ) =>
         new(unsubscribe)
         {
-            Topic = topic,
+            MessageName = messageName,
             Group = group,
             HandlerId = handlerId,
             SubscriptionId = subscriptionId,
@@ -122,9 +122,9 @@ public sealed class RuntimeSubscriptionHandle(Func<ValueTask> unsubscribe) : IAs
     public string? SubscriptionId { get; private init; }
 
     /// <summary>
-    /// Gets the resolved topic for the runtime handler.
+    /// Gets the resolved message name for the runtime handler.
     /// </summary>
-    public string Topic { get; private init; } = string.Empty;
+    public string MessageName { get; private init; } = string.Empty;
 
     /// <summary>
     /// Gets the resolved group for the runtime handler.
@@ -172,7 +172,7 @@ public interface IRuntimeSubscriber
     /// </summary>
     /// <typeparam name="TMessage">The message type handled by the runtime delegate.</typeparam>
     /// <param name="handler">The runtime delegate to execute for matching messages.</param>
-    /// <param name="options">Optional overrides for topic, group, concurrency, handler identity, and duplicate behavior.</param>
+    /// <param name="options">Optional overrides for message name, group, concurrency, handler identity, and duplicate behavior.</param>
     /// <param name="cancellationToken">The cancellation token for the registration operation.</param>
     /// <returns>A handle that can be disposed to detach the runtime subscription.</returns>
     /// <remarks>

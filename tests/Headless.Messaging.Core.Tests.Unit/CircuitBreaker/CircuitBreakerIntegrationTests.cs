@@ -62,7 +62,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = "integration.test.topic",
+            [Headers.MessageName] = "integration.test.messageName",
         };
 
         if (group is not null)

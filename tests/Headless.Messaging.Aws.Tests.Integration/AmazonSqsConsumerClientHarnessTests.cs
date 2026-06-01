@@ -36,7 +36,7 @@ public sealed class AmazonSqsConsumerClientHarnessTests(LocalStackTestFixture fi
         IReadOnlyList<string> topics
     )
     {
-        var resolved = await consumer.FetchTopicsAsync(topics);
+        var resolved = await consumer.FetchMessageNamesAsync(topics);
         return resolved.ToList();
     }
 

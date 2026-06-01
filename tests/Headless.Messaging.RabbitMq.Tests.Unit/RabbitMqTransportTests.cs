@@ -27,7 +27,7 @@ public sealed class RabbitMqTransportTests : TestBase
 
         _pool.Exchange.Returns("test.exchange");
         _pool.HostAddress.Returns("localhost:5672");
-        _pool.Rent().Returns(_channel);
+        _pool.Rent(Arg.Any<CancellationToken>()).Returns(_channel);
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -252,7 +252,7 @@ public sealed class RabbitMqTransportTests : TestBase
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 { MessagingHeaders.MessageId, "msg-123" },
-                { MessagingHeaders.MessageName, "invalid topic name" },
+                { MessagingHeaders.MessageName, "invalid message name" },
             },
             body: "test-body"u8.ToArray()
         );
@@ -261,7 +261,7 @@ public sealed class RabbitMqTransportTests : TestBase
         var act = async () => await transport.SendAsync(message);
         await act.Should()
             .ThrowAsync<ArgumentException>()
-            .WithMessage("*Topic name must contain only alphanumeric characters*");
+            .WithMessage("*Message name must contain only alphanumeric characters*");
     }
 
     [Fact]
@@ -283,7 +283,7 @@ public sealed class RabbitMqTransportTests : TestBase
         var act = async () => await transport.SendAsync(message);
         await act.Should()
             .ThrowAsync<ArgumentOutOfRangeException>()
-            .WithMessage("*Topic name must not exceed 255 characters*");
+            .WithMessage("*Message name must not exceed 255 characters*");
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public sealed class RabbitMqTransportTests : TestBase
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 { MessagingHeaders.MessageId, "msg-123" },
-                { MessagingHeaders.MessageName, "" }, // empty topic name - validation fails before rent
+                { MessagingHeaders.MessageName, "" }, // empty message name - validation fails before rent
             },
             body: "test-body"u8.ToArray()
         );
@@ -315,7 +315,7 @@ public sealed class RabbitMqTransportTests : TestBase
 
         // then - validation fails before channel rent, so exception is thrown
         await act.Should().ThrowAsync<ArgumentException>();
-        await _pool.DidNotReceive().Rent();
+        await _pool.DidNotReceive().Rent(Arg.Any<CancellationToken>());
     }
 
     [Fact]

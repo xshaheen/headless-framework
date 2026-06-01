@@ -17,7 +17,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new ScopedMessage("class"),
-            new PublishOptions { Topic = "scope.class" },
+            new PublishOptions { MessageName = "scope.class" },
             AbortToken
         );
 
@@ -44,7 +44,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
             },
             new RuntimeSubscriptionOptions
             {
-                Topic = "scope.runtime",
+                MessageName = "scope.runtime",
                 Group = "scope.runtime",
                 HandlerId = "Tests.IntegrationTests.SharedConsumeScopeIntegrationTests.RuntimeHandler",
             },
@@ -53,7 +53,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
 
         await publisher.PublishAsync(
             new ScopedMessage("runtime"),
-            new PublishOptions { Topic = "scope.runtime" },
+            new PublishOptions { MessageName = "scope.runtime" },
             AbortToken
         );
 
@@ -86,7 +86,7 @@ public sealed class SharedConsumeScopeIntegrationTests : TestBase
                     c.UseApplicationId("shared-scope-tests");
                     c.UseVersion("v1");
                 });
-                options.Subscribe<ScopedClassConsumer>().Topic("scope.class").Group("scope.class");
+                options.Subscribe<ScopedClassConsumer>().MessageName("scope.class").Group("scope.class");
             })
             .AddBusConsumeMiddleware<ScopedExecutionMiddleware>();
 

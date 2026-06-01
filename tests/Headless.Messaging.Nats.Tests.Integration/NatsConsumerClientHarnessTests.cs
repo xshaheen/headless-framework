@@ -54,7 +54,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     ///     dot-separated subject (<c>{prefix}.{topic}</c>). The dot keeps the resulting JetStream
     ///     subject a multi-token name (<c>{prefix}.&gt;</c>) so it never overlaps with the
     ///     single-token <c>*</c> wildcard used by neighbouring test fixtures.</item>
-    ///   <item><c>FetchTopicsAsync</c> (gated behind <c>EnableSubscriberClientStreamAndSubjectCreation</c>)
+    ///   <item><c>FetchMessageNamesAsync</c> (gated behind <c>EnableSubscriberClientStreamAndSubjectCreation</c>)
     ///     materialises the stream + subject bindings before <c>SubscribeAsync</c>.</item>
     /// </list>
     /// Without these, <c>ListeningAsync</c> would spin forever in <c>CreateOrUpdateConsumerAsync</c>
@@ -66,7 +66,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     )
     {
         var prefixed = topics.Select(t => $"{_topicPrefix}.{t}").ToList();
-        await consumer.FetchTopicsAsync(prefixed);
+        await consumer.FetchMessageNamesAsync(prefixed);
         return prefixed;
     }
 
@@ -86,7 +86,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
     [Fact]
     public override async Task should_fetch_topics()
     {
-        // The base test invokes FetchTopicsAsync with a hardcoded set of single-token topic names
+        // The base test invokes FetchMessageNamesAsync with a hardcoded set of single-token topic names
         // (e.g., "topic-1"). NATS rejects those when a neighbouring test fixture has already
         // created a stream with subject "*" because single-token subjects overlap with "*".
         // We mirror the base assertions but prefix the topics with the test-instance namespace
@@ -95,7 +95,7 @@ public sealed class NatsConsumerClientHarnessTests(NatsFixture fixture) : Consum
         await using var consumer = await GetConsumerClientAsync();
         var requestedTopics = new[] { $"{_topicPrefix}.topic-1", $"{_topicPrefix}.topic-2", $"{_topicPrefix}.topic-3" };
 
-        var result = await consumer.FetchTopicsAsync(requestedTopics);
+        var result = await consumer.FetchMessageNamesAsync(requestedTopics);
 
         result.Should().NotBeNull();
         result.Should().HaveCountGreaterThanOrEqualTo(0);

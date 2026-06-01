@@ -49,12 +49,10 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
     /// </param>
     /// <param name="endpoint">
     /// The network endpoint or connection address of the broker (e.g., "localhost:5672", "kafka:9092").
-    /// If null, it is treated as an empty string. Must not contain the '$' character — see
-    /// <paramref name="name"/>.
+    /// If null, it is treated as an empty string.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="name"/> or <paramref name="endpoint"/> contains the reserved
-    /// '$' separator.
+    /// Thrown when <paramref name="name"/> contains the reserved '$' separator.
     /// </exception>
     public BrokerAddress(string name, string? endpoint)
     {
@@ -63,14 +61,6 @@ public readonly struct BrokerAddress : IEquatable<BrokerAddress>
             throw new ArgumentException(
                 "BrokerAddress.Name must not contain the reserved '$' separator.",
                 nameof(name)
-            );
-        }
-
-        if (endpoint is not null && endpoint.Contains('$', StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                "BrokerAddress.Endpoint must not contain the reserved '$' separator.",
-                nameof(endpoint)
             );
         }
 

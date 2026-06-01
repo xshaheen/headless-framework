@@ -12,7 +12,7 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         //Check whether the compared objects reference the same data.
         if (ReferenceEquals(x, y))
         {
-            logger.ConsumerDuplicates(x!.TopicName, x.GroupName);
+            logger.ConsumerDuplicates(x!.MessageName, x.GroupName);
             return true;
         }
 
@@ -23,10 +23,10 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         }
 
         //Check whether the ConsumerExecutorDescriptor' properties are equal.
-        //IntentType is part of the identity: a (Topic, Group) pair under Bus and the same pair
+        //IntentType is part of the identity: a (MessageName, Group) pair under Bus and the same pair
         //under Queue are two independent subscriptions and must not collapse.
         var ret =
-            x.TopicName.Equals(y.TopicName, StringComparison.OrdinalIgnoreCase)
+            x.MessageName.Equals(y.MessageName, StringComparison.OrdinalIgnoreCase)
             && x.IntentType == y.IntentType
             && (
                 (y.GroupName is null && x.GroupName is null)
@@ -35,7 +35,7 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
 
         if (ret && (x.ImplTypeInfo != y.ImplTypeInfo || x.MethodInfo != y.MethodInfo))
         {
-            logger.ConsumerDuplicates(x.TopicName, x.GroupName);
+            logger.ConsumerDuplicates(x.MessageName, x.GroupName);
         }
 
         return ret;
@@ -52,10 +52,10 @@ public class ConsumerExecutorDescriptorComparer(ILogger logger) : IEqualityCompa
         //Get hash code for the GroupName field if it is not null.
         var hashGroup = obj.GroupName == null ? 0 : StringComparer.Ordinal.GetHashCode(obj.GroupName);
 
-        //Get hash code for the TopicName field.
-        var hashTopicName = StringComparer.Ordinal.GetHashCode(obj.TopicName);
+        //Get hash code for the MessageName field.
+        var hashMessageName = StringComparer.Ordinal.GetHashCode(obj.MessageName);
 
         //Calculate the hash code (IntentType participates so Bus and Queue do not collide).
-        return HashCode.Combine(hashTopicName, hashGroup, obj.IntentType);
+        return HashCode.Combine(hashMessageName, hashGroup, obj.IntentType);
     }
 }

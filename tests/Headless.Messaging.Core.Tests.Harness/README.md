@@ -251,7 +251,7 @@ Collects received messages for assertions:
 
 ```csharp
 var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
-await Publisher.PublishAsync(message, new PublishOptions { Topic = "topic" });
+await Publisher.PublishAsync(message, new PublishOptions { MessageName = "topic" });
 var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10));
 received.Should().BeTrue();
 subscriber.ReceivedMessages.Should().ContainSingle(m => m.Id == message.Id);

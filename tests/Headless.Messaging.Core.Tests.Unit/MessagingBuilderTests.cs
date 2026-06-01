@@ -53,7 +53,7 @@ public sealed class MessagingBuilderTests
 
         // then
         var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
-        orderConsumer.Topic.Should().Be(nameof(TestOrderMessage));
+        orderConsumer.MessageName.Should().Be(nameof(TestOrderMessage));
     }
 
     [Fact]
@@ -66,7 +66,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Subscribe<TestOrderConsumer>(consumer =>
-                consumer.Topic("orders.placed").Group("order-service").Concurrency(5)
+                consumer.MessageName("orders.placed").Group("order-service").Concurrency(5)
             );
         });
 
@@ -79,7 +79,7 @@ public sealed class MessagingBuilderTests
 
         var consumer = consumers[0];
         consumer.ConsumerType.Should().Be<TestOrderConsumer>();
-        consumer.Topic.Should().Be("orders.placed");
+        consumer.MessageName.Should().Be("orders.placed");
         consumer.Group.Should().Be("order-service");
         consumer.Concurrency.Should().Be(5);
     }
@@ -93,7 +93,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
             messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
         });
 
@@ -102,7 +102,29 @@ public sealed class MessagingBuilderTests
 
         // then
         var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
-        orderConsumer.Topic.Should().Be("orders.placed");
+        orderConsumer.MessageName.Should().Be("orders.placed");
+    }
+
+    [Fact]
+    public void should_apply_message_name_prefix_after_mapping_for_scanned_consumers()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.Options.MessageNamePrefix = "billing";
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        // then
+        var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
+        orderConsumer.MessageName.Should().Be("billing.orders.placed");
     }
 
     [Fact]
@@ -114,8 +136,8 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
-            messaging.Subscribe<TestOrderConsumer>().Topic("custom.orders");
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("custom.orders");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -123,7 +145,7 @@ public sealed class MessagingBuilderTests
 
         // then
         var consumer = registry.GetAll()[0];
-        consumer.Topic.Should().Be("custom.orders");
+        consumer.MessageName.Should().Be("custom.orders");
     }
 
     [Fact]
@@ -135,7 +157,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -156,9 +178,9 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("order-service");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Group("order-service");
 
-            messaging.Subscribe<AnotherOrderConsumer>().Topic("orders.placed").Group("analytics-service");
+            messaging.Subscribe<AnotherOrderConsumer>().MessageName("orders.placed").Group("analytics-service");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -183,14 +205,14 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Group("billing");
-                messaging.Subscribe<AnotherOrderConsumer>().Topic("orders.placed").Group("billing");
+                messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Group("billing");
+                messaging.Subscribe<AnotherOrderConsumer>().MessageName("orders.placed").Group("billing");
             });
 
         // then
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for topic/group identity*");
+            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
     }
 
     [Fact]
@@ -247,7 +269,7 @@ public sealed class MessagingBuilderTests
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
-        var consumers = registry.GetAll().Where(c => c.Topic == "orders.placed").ToList();
+        var consumers = registry.GetAll().Where(c => c.MessageName == "orders.placed").ToList();
 
         consumers.Should().HaveCount(2);
         consumers.Select(c => c.Group).Should().OnlyHaveUniqueItems();
@@ -266,14 +288,14 @@ public sealed class MessagingBuilderTests
         {
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
-            messaging.Options.TopicNamePrefix = "billing";
+            messaging.Options.MessageNamePrefix = "billing";
         });
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
-        registry.GetAll().Single().Topic.Should().Be("billing.orders.placed");
+        registry.GetAll().Single().MessageName.Should().Be("billing.orders.placed");
     }
 
     [Fact]
@@ -286,7 +308,7 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.Subscribe<InvalidConsumer>().Topic("test");
+                messaging.Subscribe<InvalidConsumer>().MessageName("test");
             });
 
         // then
@@ -303,12 +325,12 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
-                messaging.WithTopicMapping<TestOrderMessage>("orders.created");
+                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+                messaging.WithMessageNameMapping<TestOrderMessage>("orders.created");
             });
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped to topic*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped to messageName*");
     }
 
     [Fact]
@@ -321,8 +343,8 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
-                messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
             });
 
         // then
@@ -338,7 +360,7 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -360,7 +382,7 @@ public sealed class MessagingBuilderTests
         {
             return services.AddHeadlessMessaging(messaging =>
             {
-                messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed").Concurrency(0);
+                messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Concurrency(0);
             });
         };
 
@@ -435,11 +457,11 @@ public sealed class MessagingBuilderTests
         var act = () =>
             services.AddHeadlessMessaging(messaging =>
             {
-                messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
                 messaging.Subscribe<TestOrderConsumer>(consumer =>
-                    consumer.Topic("orders.test").Group("test-group").Concurrency(3)
+                    consumer.MessageName("orders.test").Group("test-group").Concurrency(3)
                 );
-                messaging.Subscribe<TestPaymentConsumer>(consumer => consumer.Topic("payments.received"));
+                messaging.Subscribe<TestPaymentConsumer>(consumer => consumer.MessageName("payments.received"));
             });
 
         // then
@@ -468,7 +490,7 @@ public sealed class MessagingBuilderTests
 
         // then
         var consumer = registry.GetAll()[0];
-        consumer.Topic.Should().Be("orders.placed");
+        consumer.MessageName.Should().Be("orders.placed");
         consumer.ConsumerType.Should().Be<TestOrderConsumer>();
     }
 
@@ -482,8 +504,8 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             // Old way (still supported):
-            // messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
-            // messaging.WithTopicMapping<TestOrderMessage>("orders.placed");
+            // messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
+            // messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
 
             // New way - single call, implicit mapping:
             messaging.Subscribe<TestOrderConsumer>("orders.placed");
@@ -494,7 +516,7 @@ public sealed class MessagingBuilderTests
 
         // then
         var consumer = registry.GetAll()[0];
-        consumer.Topic.Should().Be("orders.placed");
+        consumer.MessageName.Should().Be("orders.placed");
     }
 
     [Fact]
@@ -507,7 +529,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(messaging =>
         {
             messaging.Options.DefaultGroupName = "shared-group";
-            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -532,7 +554,7 @@ public sealed class MessagingBuilderTests
                 conventions.UseApplicationId("orders");
                 conventions.UseVersion("v1");
             });
-            messaging.Subscribe<TestOrderConsumer>().Topic("orders.placed");
+            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -561,7 +583,7 @@ public sealed class MessagingBuilderTests
 
         // then
         var consumer = registry.GetAll()[0];
-        consumer.Topic.Should().Be("orders.placed");
+        consumer.MessageName.Should().Be("orders.placed");
         consumer.Concurrency.Should().Be(5);
         consumer.Group.Should().Be("order-service");
     }
@@ -577,7 +599,7 @@ public sealed class MessagingBuilderTests
         {
             messaging
                 .Subscribe<TestOrderConsumer>()
-                .Topic("orders.placed")
+                .MessageName("orders.placed")
                 .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
                 .Group("my-group");
         });
@@ -601,7 +623,7 @@ public sealed class MessagingBuilderTests
         {
             messaging
                 .Subscribe<TestOrderConsumer>()
-                .Topic("orders.placed")
+                .MessageName("orders.placed")
                 .Group("my-group")
                 .WithCircuitBreaker(cb => cb.FailureThreshold = 5);
         });
@@ -654,7 +676,7 @@ public sealed class MessagingBuilderTests
         {
             messaging
                 .Subscribe<TestOrderConsumer>()
-                .Topic("orders.placed")
+                .MessageName("orders.placed")
                 .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
                 .Group("final-group");
         });

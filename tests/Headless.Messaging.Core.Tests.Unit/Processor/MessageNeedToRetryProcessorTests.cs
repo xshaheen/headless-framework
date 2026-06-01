@@ -32,7 +32,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = "test.topic",
+            [Headers.MessageName] = "test.messageName",
         };
 
         if (group is not null)

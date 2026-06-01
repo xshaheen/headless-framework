@@ -21,7 +21,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Group("test-group");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName").Group("test-group");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -38,7 +38,7 @@ public sealed class ConsumerServiceSelectorTests
         descriptor.ServiceTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
         descriptor.MethodInfo.Name.Should().Be(nameof(IConsume<>.ConsumeAsync));
-        descriptor.TopicName.Should().Be("test.topic");
+        descriptor.MessageName.Should().Be("test.messageName");
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public sealed class ConsumerServiceSelectorTests
                 conventions.UseApplicationId("my-app");
                 conventions.UseVersion("v2");
             });
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Group("test-group");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName").Group("test-group");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -81,7 +81,7 @@ public sealed class ConsumerServiceSelectorTests
                 conventions.UseApplicationId("default-app");
                 conventions.UseVersion("v1");
             });
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -108,10 +108,10 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging =>
         {
-            messaging.Options.TopicNamePrefix = "my-app";
+            messaging.Options.MessageNamePrefix = "my-app";
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -122,7 +122,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         var descriptor = candidates[0];
-        descriptor.TopicNamePrefix.Should().Be("my-app");
+        descriptor.MessageNamePrefix.Should().Be("my-app");
     }
 
     [Fact]
@@ -135,8 +135,8 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
-            messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.cancelled");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("orders.placed");
+            messaging.Subscribe<AnotherSelectorConsumer>().MessageName("orders.cancelled");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -148,7 +148,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         best.Should().NotBeNull();
-        best.TopicName.Should().Be("orders.placed");
+        best.MessageName.Should().Be("orders.placed");
         best.ImplTypeInfo.Should().Be(typeof(SelectorTestConsumer).GetTypeInfo());
     }
 
@@ -162,7 +162,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -170,7 +170,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // when
         var candidates = selector.SelectCandidates();
-        var best = selector.SelectBestCandidate("non.existent.topic", candidates);
+        var best = selector.SelectBestCandidate("non.existent.messageName", candidates);
 
         // then
         best.Should().BeNull();
@@ -186,7 +186,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.*");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("orders.*");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -198,7 +198,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         best.Should().NotBeNull();
-        best.TopicName.Should().Be("orders.*");
+        best.MessageName.Should().Be("orders.*");
     }
 
     [Fact]
@@ -211,8 +211,8 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("orders.placed").Group("group1");
-            messaging.Subscribe<AnotherSelectorConsumer>().Topic("orders.placed").Group("group2");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("orders.placed").Group("group1");
+            messaging.Subscribe<AnotherSelectorConsumer>().MessageName("orders.placed").Group("group2");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -223,7 +223,7 @@ public sealed class ConsumerServiceSelectorTests
 
         // then
         candidates.Should().HaveCount(2);
-        var ordersCandidates = candidates.Where(c => c.TopicName == "orders.placed").ToList();
+        var ordersCandidates = candidates.Where(c => c.MessageName == "orders.placed").ToList();
         ordersCandidates.Should().HaveCount(2);
     }
 
@@ -237,7 +237,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -288,7 +288,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic").Concurrency(5);
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName").Concurrency(5);
         });
 
         using var provider = services.BuildServiceProvider();
@@ -312,7 +312,7 @@ public sealed class ConsumerServiceSelectorTests
         {
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<SelectorTestConsumer>().Topic("test.topic");
+            messaging.Subscribe<SelectorTestConsumer>().MessageName("test.messageName");
         });
 
         using var provider = services.BuildServiceProvider();

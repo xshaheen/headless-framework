@@ -87,7 +87,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), Arg.Any<CancellationToken>()).Returns(channel);
         _pool.GetConnectionAsync().Returns(connection);
 
-        var invalidTopics = new[] { "invalid topic name" };
+        var invalidTopics = new[] { "invalid message name" };
 
         // when
         var action = async () => await client.SubscribeAsync(invalidTopics);
@@ -107,7 +107,7 @@ public sealed class RabbitMqConsumerClientValidationTests : TestBase
         connection.CreateChannelAsync(Arg.Any<CreateChannelOptions?>(), AbortToken).Returns(channel);
         _pool.GetConnectionAsync().Returns(connection);
 
-        var validTopics = new[] { "valid-topic.name_123" };
+        var validTopics = new[] { "valid-messageName.name_123" };
 
         // when
         var action = async () => await client.SubscribeAsync(validTopics);

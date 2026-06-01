@@ -15,7 +15,7 @@ public sealed class PublishMiddlewarePipelineMigratedTests : TestBase
     {
         // given
         var pipeline = _BuildPipeline(new ServiceCollection());
-        var callerOptions = new PublishOptions { TenantId = "caller", Topic = "orders" };
+        var callerOptions = new PublishOptions { TenantId = "caller", MessageName = "orders" };
         PublishOptions? observedOptions = null;
         TimeSpan? observedDelay = null;
 

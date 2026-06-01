@@ -46,7 +46,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_send_message_successfully()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-topic"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"]);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -70,7 +70,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
 
         await Task.Delay(50, AbortToken);
 
-        var message = _CreateTestMessage("msg-1", "test-topic");
+        var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // when
         var result = await _transport.SendAsync(message, AbortToken);
@@ -88,8 +88,8 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_return_success_result_on_send()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-topic"]);
-        var message = _CreateTestMessage("msg-1", "test-topic");
+        await _consumerClient.SubscribeAsync(["test-messageName"]);
+        var message = _CreateTestMessage("msg-1", "test-messageName");
 
         // when
         var result = await _transport.SendAsync(message);
@@ -103,7 +103,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_return_success_when_no_subscriber()
     {
         // given — no subscriber registered; real-broker semantics: publish-without-subscriber is a no-op
-        var message = _CreateTestMessage("msg-1", "unsubscribed-topic");
+        var message = _CreateTestMessage("msg-1", "unsubscribed-messageName");
 
         // when
         var result = await _transport.SendAsync(message);
@@ -116,7 +116,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_support_message_headers()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-topic"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"]);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -143,7 +143,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "msg-1",
-            [Headers.MessageName] = "test-topic",
+            [Headers.MessageName] = "test-messageName",
             [Headers.CorrelationId] = "corr-123",
             ["custom-header"] = "custom-value",
         };
@@ -166,7 +166,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_send_message_body()
     {
         // given
-        await _consumerClient.SubscribeAsync(["test-topic"]);
+        await _consumerClient.SubscribeAsync(["test-messageName"]);
 
         TransportMessage? receivedMessage = null;
         _consumerClient.OnMessageCallback = (msg, _) =>
@@ -195,7 +195,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = "msg-1",
-            [Headers.MessageName] = "test-topic",
+            [Headers.MessageName] = "test-messageName",
         };
         var message = new TransportMessage(headers, bodyContent);
 
@@ -230,7 +230,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
     public async Task should_be_thread_safe_for_concurrent_sends()
     {
         // given
-        await _consumerClient.SubscribeAsync(["concurrent-topic"]);
+        await _consumerClient.SubscribeAsync(["concurrent-messageName"]);
 
         var receivedMessages = new List<TransportMessage>();
         var lockObj = new Lock();
@@ -271,7 +271,7 @@ public sealed class InMemoryQueueTransportTests : TestBase
         // when - send messages concurrently via transport
         var sendTasks = Enumerable
             .Range(0, messageCount)
-            .Select(i => _transport.SendAsync(_CreateTestMessage($"msg-{i}", "concurrent-topic"), AbortToken));
+            .Select(i => _transport.SendAsync(_CreateTestMessage($"msg-{i}", "concurrent-messageName"), AbortToken));
 
         var results = await Task.WhenAll(sendTasks);
 
@@ -350,12 +350,12 @@ public sealed class InMemoryQueueTransportTests : TestBase
         received.Should().Be(1);
     }
 
-    private static TransportMessage _CreateTestMessage(string id, string topic)
+    private static TransportMessage _CreateTestMessage(string id, string messageName)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = id,
-            [Headers.MessageName] = topic,
+            [Headers.MessageName] = messageName,
         };
 
         return new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);

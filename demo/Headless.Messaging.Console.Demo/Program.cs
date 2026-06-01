@@ -11,7 +11,7 @@ container.AddLogging(x => x.AddConsole());
 container
     .AddHeadlessMessaging(setup =>
     {
-        setup.Subscribe<EventConsumer>().Topic("sample.console.showtime");
+        setup.Subscribe<EventConsumer>().MessageName("sample.console.showtime");
         // Console app does not support dashboard
         setup.UseInMemoryStorage();
         setup.UseInMemory();
@@ -30,7 +30,11 @@ _ = Task.Run(
             await Task.Delay(2000, cts.Token);
 
             await sp.GetRequiredService<IOutboxBus>()
-                .PublishAsync(DateTime.UtcNow, new PublishOptions { Topic = "sample.console.showtime" }, cts.Token);
+                .PublishAsync(
+                    DateTime.UtcNow,
+                    new PublishOptions { MessageName = "sample.console.showtime" },
+                    cts.Token
+                );
         }
     },
     cts.Token

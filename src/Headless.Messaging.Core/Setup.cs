@@ -55,12 +55,12 @@ public static class SetupMessaging
     ///
     ///     // Or register specific consumers
     ///     setup.Subscribe&lt;OrderPlacedHandler&gt;()
-    ///         .Topic("orders.placed")
+    ///         .MessageName("orders.placed")
     ///         .Group("order-service")
     ///         .Concurrency(5);
     ///
-    ///     // Map message types to topics
-    ///     setup.WithTopicMapping&lt;OrderPlaced&gt;("orders.placed");
+    ///     // Map message types to message names
+    ///     setup.WithMessageNameMapping&lt;OrderPlaced&gt;("orders.placed");
     /// });
     /// </code>
     /// </para>
@@ -258,14 +258,14 @@ public static class SetupMessaging
         var resolved = options.CreateConsumerMetadata(
             metadata.ConsumerType,
             metadata.MessageType,
-            metadata.Topic,
+            metadata.MessageName,
             metadata.Group,
             metadata.Concurrency,
             metadata.HandlerId,
             metadata.IntentType
         );
 
-        // CreateConsumerMetadata normalizes topic/group but doesn't carry over builder-only
+        // CreateConsumerMetadata normalizes messageName/group but doesn't carry over builder-only
         // fields. If ConsumerMetadata gains new builder-set fields, copy them here too.
         return resolved with
         {

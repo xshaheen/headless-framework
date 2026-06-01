@@ -117,10 +117,10 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_accept_valid_topic_name()
     {
         // given
-        const string validName = "my-topic.name_123";
+        const string validName = "my-messageName.name_123";
 
         // when
-        var action = () => RabbitMqValidation.ValidateTopicName(validName);
+        var action = () => RabbitMqValidation.ValidateMessageName(validName);
 
         // then
         action.Should().NotThrow();
@@ -133,7 +133,7 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_reject_null_or_whitespace_topic_name(string? invalidName)
     {
         // given, When
-        var action = () => RabbitMqValidation.ValidateTopicName(invalidName!);
+        var action = () => RabbitMqValidation.ValidateMessageName(invalidName!);
 
         // then
         action.Should().Throw<ArgumentException>();
@@ -146,7 +146,7 @@ public sealed class RabbitMqValidationTests : TestBase
         var tooLongName = new string('a', 256);
 
         // when
-        var action = () => RabbitMqValidation.ValidateTopicName(tooLongName);
+        var action = () => RabbitMqValidation.ValidateMessageName(tooLongName);
 
         // then
         action.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*must not exceed 255 characters*");
@@ -158,7 +158,7 @@ public sealed class RabbitMqValidationTests : TestBase
     public void should_reject_topic_name_with_invalid_characters(string invalidName)
     {
         // given, When
-        var action = () => RabbitMqValidation.ValidateTopicName(invalidName);
+        var action = () => RabbitMqValidation.ValidateMessageName(invalidName);
 
         // then
         action.Should().Throw<ArgumentException>().WithMessage("*alphanumeric*");

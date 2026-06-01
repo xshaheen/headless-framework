@@ -41,7 +41,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
 
     protected override void ConfigureMessaging(MessagingSetupBuilder setup)
     {
-        setup.Options.TopicNamePrefix = _topicPrefix;
+        setup.Options.MessageNamePrefix = _topicPrefix;
         setup.Options.RetryProcessor.BaseInterval = TimeSpan.FromSeconds(1);
     }
 
@@ -100,7 +100,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
 
         var directPublisher = ServiceProvider.GetRequiredService<IBus>();
 
-        await directPublisher.PublishAsync(message, new PublishOptions { Topic = "test-message" }, AbortToken);
+        await directPublisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
 
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
         received.Should().BeTrue("bus should still deliver through the NATS transport");
@@ -129,7 +129,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             },
             new RuntimeSubscriptionOptions
             {
-                Topic = "runtime-message",
+                MessageName = "runtime-message",
                 Group = "runtime-subscriber",
                 HandlerId = "nats-postgresql-runtime-subscriber",
             },
@@ -144,13 +144,13 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             Payload = "runtime",
         };
 
-        await publisher.PublishAsync(message, new PublishOptions { Topic = "runtime-message" }, AbortToken);
+        await publisher.PublishAsync(message, new PublishOptions { MessageName = "runtime-message" }, AbortToken);
 
         var consumed = await probe.Delivered.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         handle.IsAttached.Should().BeTrue();
         consumed.Message.Id.Should().Be(message.Id);
-        consumed.Topic.Should().Be($"{_topicPrefix}.runtime-message");
+        consumed.MessageName.Should().Be($"{_topicPrefix}.runtime-message");
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     {
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
-        var topic = ResolveTopicName("test-message");
+        var messageName = ResolveMessageName("test-message");
 
         var correlationId = Guid.NewGuid().ToString("N");
         var publishMessageId = $"msg-{correlationId}";
@@ -173,7 +173,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             message,
             new PublishOptions
             {
-                Topic = "test-message",
+                MessageName = "test-message",
                 MessageId = publishMessageId,
                 CorrelationId = correlationId,
             },
@@ -208,8 +208,8 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             AbortToken
         );
 
-        publishedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == topic);
-        receivedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == topic);
+        publishedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == messageName);
+        receivedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == messageName);
     }
 
     protected override void ConfigureServices(IServiceCollection services)

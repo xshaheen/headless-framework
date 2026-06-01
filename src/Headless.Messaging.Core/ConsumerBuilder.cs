@@ -19,7 +19,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
     private ConsumerMetadata _registeredMetadata;
     private readonly Type _messageType;
     private readonly bool _autoRegistered;
-    private string? _topic;
+    private string? _messageName;
     private string? _group;
     private string? _handlerId;
     private byte _concurrency = 1;
@@ -31,7 +31,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         ConsumerRegistry registry,
         ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
         ConsumerMetadata registeredMetadata,
-        string? topic = null,
+        string? messageName = null,
         bool autoRegistered = false
     )
     {
@@ -40,16 +40,16 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         _circuitBreakerRegistry = circuitBreakerRegistry;
         _registeredMetadata = registeredMetadata;
         _messageType = registeredMetadata.MessageType;
-        _topic = topic;
+        _messageName = messageName;
         _autoRegistered = autoRegistered;
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Topic(string topic)
+    public IConsumerBuilder<TConsumer> MessageName(string messageName)
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
-        _topic = topic;
+        _messageName = messageName;
         _UpdateIfAutoRegistered();
         return this;
     }
@@ -108,7 +108,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         var metadata = _parent.CreateConsumerMetadata(
             typeof(TConsumer),
             _messageType,
-            _topic,
+            _messageName,
             _group,
             _concurrency,
             _handlerId,
@@ -131,7 +131,7 @@ internal sealed class ConsumerBuilder<TConsumer> : IConsumerBuilder<TConsumer>
         var metadata = _parent.CreateConsumerMetadata(
             typeof(TConsumer),
             _messageType,
-            _topic,
+            _messageName,
             _group,
             _concurrency,
             _handlerId,

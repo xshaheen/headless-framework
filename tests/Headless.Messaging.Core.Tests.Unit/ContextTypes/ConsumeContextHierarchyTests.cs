@@ -69,7 +69,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
             TenantId = null,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "orders",
+            MessageName = "orders",
         };
 
         // then
@@ -88,7 +88,7 @@ public sealed class ConsumeContextHierarchyTests : TestBase
             TenantId = "tenant-1",
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "orders",
+            MessageName = "orders",
         };
     }
 

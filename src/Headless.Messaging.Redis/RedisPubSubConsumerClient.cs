@@ -31,14 +31,14 @@ internal sealed class RedisPubSubConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis_pubsub", options.Value.DisplayEndpoint);
 
-    public ValueTask<ICollection<string>> FetchTopicsAsync(IEnumerable<string> topicNames)
+    public ValueTask<ICollection<string>> FetchMessageNamesAsync(IEnumerable<string> messageNames)
     {
-        return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(topicNames)]);
+        return ValueTask.FromResult<ICollection<string>>([.. Argument.IsNotNull(messageNames)]);
     }
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topics);
+        Argument.IsNotNull(messageNames);
 
         if (Volatile.Read(ref _disposed) != 0)
         {
@@ -48,16 +48,16 @@ internal sealed class RedisPubSubConsumerClient(
         var connection = await connectionProvider.ConnectAsync().ConfigureAwait(false);
         var subscriber = connection.GetSubscriber();
 
-        foreach (var topic in Argument.IsNotNull(topics).Distinct(StringComparer.Ordinal))
+        foreach (var messageName in Argument.IsNotNull(messageNames).Distinct(StringComparer.Ordinal))
         {
-            if (_subscriptions.ContainsKey(topic))
+            if (_subscriptions.ContainsKey(messageName))
             {
                 continue;
             }
 
-            var queue = await subscriber.SubscribeAsync(RedisChannel.Literal(topic)).ConfigureAwait(false);
+            var queue = await subscriber.SubscribeAsync(RedisChannel.Literal(messageName)).ConfigureAwait(false);
             queue.OnMessage(_DispatchWithConcurrencyAsync);
-            _subscriptions.Add(topic, queue);
+            _subscriptions.Add(messageName, queue);
         }
 
         _ready.TrySetResult();

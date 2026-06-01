@@ -87,7 +87,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             foreach (var consumeInterface in consumer.ConsumeInterfaces)
             {
                 var messageType = consumeInterface.GetGenericArguments()[0];
-                RegisterConsumer(consumer.Type, messageType, topic: null, group: null, concurrency: 1);
+                RegisterConsumer(consumer.Type, messageType, messageName: null, group: null, concurrency: 1);
             }
         }
 
@@ -103,7 +103,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         where TConsumer : class
     {
         var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic: null, group: null, concurrency: 1);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, messageName: null, group: null, concurrency: 1);
 
         return new ConsumerBuilder<TConsumer>(
             Options,
@@ -115,21 +115,21 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string topic)
+    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string messageName)
         where TConsumer : class
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
         var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-        Options.WithTopicMapping(messageType, topic);
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, topic, group: null, concurrency: 1);
+        Options.WithMessageNameMapping(messageType, messageName);
+        var metadata = RegisterConsumer(typeof(TConsumer), messageType, messageName, group: null, concurrency: 1);
 
         return new ConsumerBuilder<TConsumer>(
             Options,
             Registry,
             CircuitBreakerRegistry,
             metadata,
-            topic,
+            messageName,
             autoRegistered: true
         );
     }
@@ -145,12 +145,12 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder WithTopicMapping<TMessage>(string topic)
+    public IMessagingBuilder WithMessageNameMapping<TMessage>(string messageName)
         where TMessage : class
     {
-        Argument.IsNotNullOrWhiteSpace(topic);
+        Argument.IsNotNullOrWhiteSpace(messageName);
 
-        Options.WithTopicMapping(typeof(TMessage), topic);
+        Options.WithMessageNameMapping(typeof(TMessage), messageName);
         return this;
     }
 
@@ -167,7 +167,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     internal ConsumerMetadata RegisterConsumer(
         Type consumerType,
         Type messageType,
-        string? topic,
+        string? messageName,
         string? group,
         byte concurrency,
         IntentType intentType = IntentType.Bus
@@ -176,7 +176,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         var metadata = Options.CreateConsumerMetadata(
             consumerType,
             messageType,
-            topic,
+            messageName,
             group,
             concurrency,
             intentType: intentType

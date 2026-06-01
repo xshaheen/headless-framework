@@ -24,12 +24,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 {
     private static readonly IServiceProvider _EmptyScope = new ServiceCollection().BuildServiceProvider();
 
-    private static MediumMessage _CreateMediumMessage(string topic = "test.topic")
+    private static MediumMessage _CreateMediumMessage(string messageName = "test.messageName")
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = Guid.NewGuid().ToString(),
-            [Headers.MessageName] = topic,
+            [Headers.MessageName] = messageName,
         };
 
         return new MediumMessage
@@ -58,7 +58,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             ServiceTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             ImplTypeInfo = typeof(CancellationExecutorTestConsumer).GetTypeInfo(),
             MethodInfo = consumeMethod,
-            TopicName = "test.topic",
+            MessageName = "test.messageName",
             GroupName = "test",
             Parameters = consumeMethod
                 .GetParameters()
@@ -87,7 +87,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Subscribe<CancellationExecutorTestConsumer>().Topic("test.topic");
+            setup.Subscribe<CancellationExecutorTestConsumer>().MessageName("test.messageName");
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

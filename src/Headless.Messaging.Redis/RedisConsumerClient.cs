@@ -23,7 +23,7 @@ internal sealed class RedisConsumerClient(
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private int _disposed;
-    private string[] _topics = null!;
+    private string[] _messageNames = null!;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -31,18 +31,18 @@ internal sealed class RedisConsumerClient(
 
     public BrokerAddress BrokerAddress => new("redis", options.Value.DisplayEndpoint);
 
-    public async ValueTask SubscribeAsync(IEnumerable<string> topics)
+    public async ValueTask SubscribeAsync(IEnumerable<string> messageNames)
     {
-        Argument.IsNotNull(topics);
+        Argument.IsNotNull(messageNames);
 
-        var arr = topics.ToArray();
+        var arr = messageNames.ToArray();
 
-        foreach (var topic in arr)
+        foreach (var messageName in arr)
         {
-            await redis.CreateStreamWithConsumerGroupAsync(topic, groupId);
+            await redis.CreateStreamWithConsumerGroupAsync(messageName, groupId);
         }
 
-        _topics = arr;
+        _messageNames = arr;
         _ready.TrySetResult();
     }
 
@@ -112,12 +112,12 @@ internal sealed class RedisConsumerClient(
     private async Task _ListeningForMessagesAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
         //first time, we want to read our pending messages, in case we crashed and are recovering.
-        var pendingMsgs = redis.PollStreamsPendingMessagesAsync(_topics, groupId, timeout, cancellationToken);
+        var pendingMsgs = redis.PollStreamsPendingMessagesAsync(_messageNames, groupId, timeout, cancellationToken);
 
         await _ConsumeMessages(pendingMsgs, StreamPosition.Beginning, cancellationToken).ConfigureAwait(false);
 
         //Once we consumed our history, we can start getting new messages.
-        var newMsgs = redis.PollStreamsLatestMessagesAsync(_topics, groupId, timeout, cancellationToken);
+        var newMsgs = redis.PollStreamsLatestMessagesAsync(_messageNames, groupId, timeout, cancellationToken);
 
         _ObserveBackgroundHandler(_ConsumeMessages(newMsgs, StreamPosition.NewMessages, cancellationToken));
     }

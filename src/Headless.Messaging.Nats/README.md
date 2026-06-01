@@ -6,7 +6,7 @@ NATS JetStream transport provider for the Headless messaging system.
 
 - **Lightweight**: Minimal resource footprint, cloud-native
 - **JetStream**: Persistent streams with at-least-once delivery
-- **Subject Routing**: Hierarchical topic patterns (e.g., `orders.*.created`)
+- **Subject Routing**: Hierarchical subject/message-name patterns (e.g., `orders.*.created`)
 - **Connection Pooling**: Round-robin pool for publish throughput
 
 ## Installation

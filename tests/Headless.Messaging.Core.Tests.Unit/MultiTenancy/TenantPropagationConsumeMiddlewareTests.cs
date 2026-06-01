@@ -115,7 +115,7 @@ public sealed class TenantPropagationConsumeMiddlewareTests : TestBase
             TenantId = tenantId,
             Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UtcNow,
-            Topic = "test.topic",
+            MessageName = "test.messageName",
         };
     }
 

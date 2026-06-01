@@ -46,14 +46,14 @@ public sealed class RedisConsumerClientTests : TestBase
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
         await using var client = new RedisConsumerClient("my-group", 1, _mockStreamManager, _options, logger);
 
-        var topics = new[] { "topic-1", "topic-2" };
+        var messageNames = new[] { "messageName-1", "messageName-2" };
 
         // when
-        await client.SubscribeAsync(topics);
+        await client.SubscribeAsync(messageNames);
 
         // then
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("topic-1", "my-group");
-        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("topic-2", "my-group");
+        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-1", "my-group");
+        await _mockStreamManager.Received(1).CreateStreamWithConsumerGroupAsync("messageName-2", "my-group");
     }
 
     [Fact]

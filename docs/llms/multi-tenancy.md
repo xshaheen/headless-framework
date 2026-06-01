@@ -415,7 +415,7 @@ This registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.Tena
 
 Tenant propagation is composed exclusively through the root tenancy seam — the previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. The seam registration is idempotent and fails fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
 
-**Trust boundary.** The consume middleware trusts the inbound envelope. The framework assumes the message bus is internal-only; topics exposed to external producers must layer envelope validation or signing in front of this middleware. Otherwise an attacker who can publish to the bus can impersonate any tenant.
+**Trust boundary.** The consume middleware trusts the inbound envelope. The framework assumes the message bus is internal-only; message names exposed to external producers must layer envelope validation or signing in front of this middleware. Otherwise an attacker who can publish to the bus can impersonate any tenant.
 
 #### Manual Propagation
 
