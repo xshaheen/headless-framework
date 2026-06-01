@@ -364,7 +364,7 @@ public static class SetupMessaging
                     var settings = new ConsumerRegistrationSettings(
                         resolved.Concurrency,
                         resolved.ResolvedHandlerId,
-                        consumer.CircuitBreakerOverride is not null
+                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride)
                     );
 
                     if (registeredKeys.TryGetValue(key, out var existing))
@@ -418,6 +418,28 @@ public static class SetupMessaging
     private readonly record struct ConsumerRegistrationSettings(
         byte Concurrency,
         string ResolvedHandlerId,
-        bool HasCircuitBreaker
+        ConsumerCircuitBreakerSettings CircuitBreaker
     );
+
+    private readonly record struct ConsumerCircuitBreakerSettings(
+        bool HasOverride,
+        bool Enabled,
+        int? FailureThreshold,
+        TimeSpan? OpenDuration,
+        Func<Exception, bool>? IsTransientException
+    )
+    {
+        public static ConsumerCircuitBreakerSettings From(ConsumerCircuitBreakerOptions? options)
+        {
+            return options is null
+                ? default
+                : new ConsumerCircuitBreakerSettings(
+                    HasOverride: true,
+                    options.Enabled,
+                    options.FailureThreshold,
+                    options.OpenDuration,
+                    options.IsTransientException
+                );
+        }
+    }
 }

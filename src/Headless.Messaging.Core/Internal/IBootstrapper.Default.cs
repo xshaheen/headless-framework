@@ -330,7 +330,7 @@ internal sealed class Bootstrapper(
     {
         var registry = serviceProvider.GetService<IConsumerRegistry>();
         var consumers = registry?.GetAll() ?? [];
-        var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.Ordinal);
+        var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var consumer in consumers)
         {

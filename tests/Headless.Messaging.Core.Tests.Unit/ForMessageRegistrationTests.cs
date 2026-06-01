@@ -201,6 +201,36 @@ public sealed class ForMessageRegistrationTests
     }
 
     [Fact]
+    public void should_reject_duplicate_same_consumer_registration_with_conflicting_circuit_breaker()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.OnBus<OrderPlacedHandler>(consumer =>
+                        consumer.WithCircuitBreaker(options => options.FailureThreshold = 3)
+                    )
+                );
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.OnBus<OrderPlacedHandler>(consumer =>
+                        consumer.WithCircuitBreaker(options => options.FailureThreshold = 5)
+                    )
+                );
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*registered more than once*conflicting settings*");
+    }
+
+    [Fact]
     public void should_reject_different_consumers_with_same_name_group_and_intent()
     {
         // given
@@ -259,6 +289,34 @@ public sealed class ForMessageRegistrationTests
             setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
             setup.ForMessage<OtherOrderPlaced>(message =>
                 message.MessageName("orders.same").OnBus<OtherOrderPlacedHandler>()
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () =>
+            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*orders.same*OrderPlaced*OtherOrderPlaced*");
+    }
+
+    [Fact]
+    public async Task should_reject_cross_type_message_name_collisions_ignoring_case_at_startup()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.same").OnBus<OrderPlacedHandler>());
+            setup.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName("Orders.Same").OnBus<OtherOrderPlacedHandler>()
             );
             setup.UseInMemory();
             setup.UseInMemoryStorage();
