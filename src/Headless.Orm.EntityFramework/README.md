@@ -102,7 +102,7 @@ var everything = await dbContext.Products
 
 ### Extending Context Processing
 
-`AddHeadlessDbContextServices()` registers ordered, composable save-time services. Add focused entry processors through `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control. Keep module-specific model mapping explicit with `ModelBuilder` extensions, such as `modelBuilder.AddSettingsConfiguration(this)`.
+`AddHeadlessDbContextServices()` registers ordered, composable save-time services. Add focused entry processors through `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control. Keep module-specific model mapping explicit with `ModelBuilder` extensions, such as `modelBuilder.AddHeadlessSettings(settingsStorageOptions)`.
 
 - `IHeadlessSaveEntryProcessor` for per-entry mutations before `SaveChanges`
 - `IHeadlessMessageDispatcher` for local message publishing and distributed message enqueueing

@@ -28,6 +28,23 @@ public sealed class SettingValueRecord : Entity<Guid>, IAggregateRoot<Guid>, ICr
         ProviderKey = providerKey;
     }
 
+    public static SettingValueRecord FromStorage(
+        Guid id,
+        string name,
+        string value,
+        string providerName,
+        string? providerKey,
+        DateTimeOffset dateCreated,
+        DateTimeOffset? dateUpdated
+    )
+    {
+        return new SettingValueRecord(id, name, value, providerName, providerKey)
+        {
+            DateCreated = dateCreated,
+            DateUpdated = dateUpdated,
+        };
+    }
+
     public string Name { get; private init; }
 
     public string Value { get; internal set; }

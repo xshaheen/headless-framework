@@ -2,6 +2,8 @@
 
 using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
@@ -58,6 +60,13 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         _runtime.Initialize();
     }
 
+    /// <summary>
+    /// Optional service scope owned by this context — set by <c>HeadlessDbContextFactory</c> when the
+    /// context is created via <c>IDbContextFactory&lt;TDbContext&gt;</c>. Disposed alongside the context
+    /// so factory-created contexts don't leak per-call scopes.
+    /// </summary>
+    internal IServiceScope? OwnedScope { get; set; }
+
     public abstract string? DefaultSchema { get; }
 
     public string? TenantId => _runtime.TenantId;
@@ -90,13 +99,32 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // Synchronously dispose the runtime alongside the base context. DisposeAsync's body is
         // synchronous (ValueTask.CompletedTask), so the sync path can call DisposeAsync().AsTask()
         // safely without blocking. We keep the dispose contract symmetrical with DisposeAsync.
-        var disposeTask = _runtime.DisposeAsync();
-        if (!disposeTask.IsCompletedSuccessfully)
+        // try/finally guarantees OwnedScope.Dispose runs even if runtime or base disposal throws.
+        // The inner try/catch inside finally guards against secondary scope-dispose exceptions
+        // masking the primary runtime/base exception — the original failure is what operators need.
+        var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
+        try
         {
-            disposeTask.AsTask().GetAwaiter().GetResult();
+            var disposeTask = _runtime.DisposeAsync();
+            if (!disposeTask.IsCompletedSuccessfully)
+            {
+                disposeTask.AsTask().GetAwaiter().GetResult();
+            }
+            base.Dispose();
         }
-        base.Dispose();
-        GC.SuppressFinalize(this);
+        finally
+        {
+            try
+            {
+                OwnedScope?.Dispose();
+            }
+            catch (Exception scopeEx)
+            {
+                logger?.LogOwnedScopeDisposeFailed(scopeEx);
+            }
+
+            GC.SuppressFinalize(this);
+        }
     }
 
     public override async ValueTask DisposeAsync()
@@ -104,9 +132,37 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         // Detach the per-DbContext runtime's ChangeTracker handlers BEFORE we let the base context
         // tear down its services. Avoids EF's "still tracking" assertions and prevents handler leaks
         // when the same DbContext type is resolved repeatedly under the same service provider.
-        await _runtime.DisposeAsync().ConfigureAwait(false);
-        await base.DisposeAsync().ConfigureAwait(false);
-        GC.SuppressFinalize(this);
+        // try/finally guarantees OwnedScope disposal even if runtime or base disposal throws.
+        // The inner try/catch inside finally guards against secondary scope-dispose exceptions
+        // masking the primary runtime/base exception.
+        var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
+        try
+        {
+            await _runtime.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                // Prefer async scope disposal — MS DI scopes implement IAsyncDisposable
+                // (AsyncServiceScope) and may hold async-only-disposable scoped services.
+                if (OwnedScope is IAsyncDisposable asyncDisposableScope)
+                {
+                    await asyncDisposableScope.DisposeAsync().ConfigureAwait(false);
+                }
+                else
+                {
+                    OwnedScope?.Dispose();
+                }
+            }
+            catch (Exception scopeEx)
+            {
+                logger?.LogOwnedScopeDisposeFailed(scopeEx);
+            }
+
+            GC.SuppressFinalize(this);
+        }
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
@@ -125,4 +181,15 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext
         base.OnModelCreating(modelBuilder);
         _runtime.ProcessModelCreating(modelBuilder);
     }
+}
+
+internal static partial class HeadlessDbContextLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "HeadlessDbContextOwnedScopeDisposeFailed",
+        Level = LogLevel.Warning,
+        Message = "HeadlessDbContext: OwnedScope disposal failed; the primary disposal exception (if any) takes precedence and is rethrown to the caller."
+    )]
+    public static partial void LogOwnedScopeDisposeFailed(this ILogger logger, Exception exception);
 }

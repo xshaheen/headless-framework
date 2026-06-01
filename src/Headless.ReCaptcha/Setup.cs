@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.ReCaptcha;
 
 [PublicAPI]
-public static class ReCaptchaSetup
+public static class SetupReCaptcha
 {
     internal const string V3Name = "Headless:ReCaptchaV3";
     internal const string V2Name = "Headless:ReCaptchaV2";

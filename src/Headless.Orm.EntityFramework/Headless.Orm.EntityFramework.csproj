@@ -18,5 +18,8 @@
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Identity.Storage.EntityFramework" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.AuditLog.Storage.EntityFramework.Tests.Integration" />
+    <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 </Project>

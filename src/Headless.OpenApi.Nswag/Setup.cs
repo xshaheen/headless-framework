@@ -22,7 +22,7 @@ using UserId = Headless.Primitives.UserId;
 namespace Headless.Api;
 
 [PublicAPI]
-public static class NswagSetup
+public static class SetupNswag
 {
     #region Add
 

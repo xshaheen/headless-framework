@@ -38,7 +38,7 @@ public sealed class CequensSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
-        using var httpClient = httpClientFactory.CreateClient(CequensSetup.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(SetupCequens.HttpClientName);
 
         var jwtToken =
             await _GetTokenRequestAsync(httpClient, cancellationToken).ConfigureAwait(false) ?? _options.Token;

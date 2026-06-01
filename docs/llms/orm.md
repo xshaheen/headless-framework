@@ -66,6 +66,7 @@ Validation notes:
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses.
 - Use `ExecuteTransactionAsync(...)` (from `DbContextTransactionExtensions`) for multi-step EF operations that must be atomic under retry execution strategies.
 - Customize the save pipeline through `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
+- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside the consumer's `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)`, `modelBuilder.AddHeadlessFeatures(featuresStorageOptions)`, `modelBuilder.AddHeadlessPermissions(permissionsStorageOptions)`, `modelBuilder.AddHeadlessSettings(settingsStorageOptions)`. The legacy `Add*Configuration(this)` shapes were replaced by these options-driven extensions.
 - Entities that emit local or distributed messages require a registered `IHeadlessMessageDispatcher` (default is `ThrowHeadlessMessageDispatcher`, which fails the save). Distributed messages are enqueued before the EF transaction commits, so implementations must be transaction-bound or idempotent.
 - Do not mix framework concurrency stamping with ASP.NET Identity `ConcurrencyStamp` ownership on identity entities.
 - For Couchbase, use `CouchbaseBucketContext` + `IBucketContextProvider` and keep cluster/bucket names explicit.
@@ -164,6 +165,23 @@ Use this when multiple operations must commit or roll back as one unit.
 - Registration API: `AddHeadlessDbContext<TDbContext>(...)`
 - EF options can be provided with `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`
 - Framework extension is added through `AddHeadlessExtension()` internally during registration
+
+### Module Model Mapping
+
+Each feature-storage EF package exposes a `ModelBuilder` extension that maps its entities using the corresponding storage options. Call them inside `OnModelCreating` after `base.OnModelCreating(modelBuilder)`:
+
+```csharp
+protected override void OnModelCreating(ModelBuilder modelBuilder)
+{
+    base.OnModelCreating(modelBuilder);
+    modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
+    modelBuilder.AddHeadlessFeatures(_featuresStorage.Value);
+    modelBuilder.AddHeadlessPermissions(_permissionsStorage.Value);
+    modelBuilder.AddHeadlessSettings(_settingsStorage.Value);
+}
+```
+
+These replace the older `Add*Configuration(this)` shapes — the options-driven extensions read `Schema` and `*TableName` from the validated `*StorageOptions` (validated for SQL-identifier safety) and apply them consistently across providers.
 
 ### Tenant Write Guard
 

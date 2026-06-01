@@ -8,16 +8,17 @@ using Headless.Features;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 // To add a migration use:
-// dotnet ef migrations add InitialMigration -p .\demo\Headless.EntityFramework.Migrations.Startup --context FeaturesDbContext
+// dotnet ef migrations add InitialMigration -p .\demo\Headless.EntityFramework.Migrations.Startup --context FeaturesMigrationDbContext
 
 // To generate the script use:
-// dotnet ef migrations script --idempotent -s .\demo\Headless.EntityFramework.Migrations.Startup -o .\postgre-init.sql --context FeaturesDbContext
+// dotnet ef migrations script --idempotent -s .\demo\Headless.EntityFramework.Migrations.Startup -o .\postgre-init.sql --context FeaturesMigrationDbContext
 
 // To generate the bundler use:
-// dotnet ef migrations bundle --idempotent -p .\demo\Headless.EntityFramework.Migrations.Startup -o .\postgre-init.exe --context FeaturesDbContext
+// dotnet ef migrations bundle --idempotent -p .\demo\Headless.EntityFramework.Migrations.Startup -o .\postgre-init.exe --context FeaturesMigrationDbContext
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,26 +41,32 @@ addRedisDistributedLock(builder.Services);
 
 const string connectionString = "Host=localhost;Database=Headless;Username=postgres;Password=postgres";
 
-builder
-    .Services.AddPermissionsManagementCore()
-    .AddPermissionsManagementDbContextStorage(options =>
-    {
-        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
-    });
+builder.Services.AddDbContextFactory<PermissionsMigrationDbContext>(options =>
+    options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
+);
 
-builder
-    .Services.AddSettingsManagementCore(_ => { })
-    .AddSettingsManagementDbContextStorage(options =>
-    {
-        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
-    });
+builder.Services.AddHeadlessPermissions(setup =>
+{
+    setup.UseEntityFramework<PermissionsMigrationDbContext>();
+});
 
-builder
-    .Services.AddFeaturesManagementCore()
-    .AddFeaturesManagementDbContextStorage(options =>
-    {
-        options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName));
-    });
+builder.Services.AddDbContextFactory<SettingsMigrationDbContext>(options =>
+    options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
+);
+
+builder.Services.AddHeadlessSettings(setup =>
+{
+    setup.UseEntityFramework<SettingsMigrationDbContext>();
+});
+
+builder.Services.AddDbContextFactory<FeaturesMigrationDbContext>(options =>
+    options.UseNpgsql(connectionString, b => b.MigrationsAssembly(Assembly.GetExecutingAssembly().FullName))
+);
+
+builder.Services.AddHeadlessFeatures(setup =>
+{
+    setup.UseEntityFramework<FeaturesMigrationDbContext>();
+});
 
 var app = builder.Build();
 
@@ -81,4 +88,40 @@ static void addRedisDistributedLock(IServiceCollection services)
 
     // Resource Locks
     services.AddRedisDistributedLock(static _ => { });
+}
+
+internal sealed class SettingsMigrationDbContext(
+    DbContextOptions<SettingsMigrationDbContext> options,
+    IOptions<SettingsStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessSettings(storageOptions.Value);
+    }
+}
+
+internal sealed class PermissionsMigrationDbContext(
+    DbContextOptions<PermissionsMigrationDbContext> options,
+    IOptions<PermissionsStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+    }
+}
+
+internal sealed class FeaturesMigrationDbContext(
+    DbContextOptions<FeaturesMigrationDbContext> options,
+    IOptions<FeaturesStorageOptions> storageOptions
+) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+    }
 }

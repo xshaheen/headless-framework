@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless;
 
 [PublicAPI]
-public static class SecuritySetup
+public static class SetupSecurity
 {
     extension(IServiceCollection services)
     {

@@ -11,7 +11,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
     ILocalMessagePublisher localPublisher
 ) : IFeatureValueRecordRepository
-    where TContext : DbContext, IFeaturesDbContext
+    where TContext : DbContext
 {
     public async Task<FeatureValueRecord?> FindAsync(
         string name,
@@ -23,7 +23,9 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
-            .FeatureValues.OrderBy(x => x.Id)
+            .Set<FeatureValueRecord>()
+            .AsNoTracking()
+            .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(
                 s => s.Name == name && s.ProviderName == providerName && s.ProviderKey == providerKey,
                 cancellationToken
@@ -39,7 +41,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        var query = db.FeatureValues.Where(s => s.Name == name);
+        var query = db.Set<FeatureValueRecord>().AsNoTracking().Where(s => s.Name == name);
 
         if (providerName != null)
         {
@@ -63,14 +65,16 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
         return await db
-            .FeatureValues.Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
+            .Set<FeatureValueRecord>()
+            .AsNoTracking()
+            .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);
     }
 
     public async Task InsertAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        db.FeatureValues.Add(featureValue);
+        db.Set<FeatureValueRecord>().Add(featureValue);
         await db.SaveChangesAsync(cancellationToken);
 
         await localPublisher.PublishAsync(
@@ -82,7 +86,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     public async Task UpdateAsync(FeatureValueRecord featureValue, CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        db.FeatureValues.Update(featureValue);
+        db.Set<FeatureValueRecord>().Update(featureValue);
         await db.SaveChangesAsync(cancellationToken);
 
         await localPublisher.PublishAsync(
@@ -97,7 +101,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     )
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        db.FeatureValues.RemoveRange(featureValues);
+        db.Set<FeatureValueRecord>().RemoveRange(featureValues);
         await db.SaveChangesAsync(cancellationToken);
 
         foreach (var featureValue in featureValues)

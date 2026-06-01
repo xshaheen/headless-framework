@@ -9,7 +9,7 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 namespace Headless.Emails.Mailkit;
 
 [PublicAPI]
-public static class MailkitSetup
+public static class SetupMailkit
 {
     extension(IServiceCollection services)
     {

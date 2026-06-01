@@ -27,7 +27,7 @@ Register the broker through `MessagingOptions.RegisterExtension(...)`. A transpo
 - any broker-owned singletons such as connection pools
 
 ```csharp
-public static class MessagesMyBrokerSetup
+public static class SetupMessagesMyBroker
 {
     extension(MessagingOptions options)
     {

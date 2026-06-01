@@ -100,7 +100,9 @@ Property-level audit logging for tracking entity mutations and explicit business
 | Package | Description |
 |---------|-------------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
-| [Headless.AuditLog.EntityFramework](src/Headless.AuditLog.EntityFramework/README.md) | EF Core audit log persistence |
+| [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
+| [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
+| [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
 
 ### Blob Storage
 
@@ -212,8 +214,8 @@ Reliable distributed message bus with transactional outbox, automatic retries, d
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Messaging.PostgreSql](src/Headless.Messaging.PostgreSql/README.md) | PostgreSQL message persistence |
-| [Headless.Messaging.SqlServer](src/Headless.Messaging.SqlServer/README.md) | SQL Server message persistence |
+| [Headless.Messaging.Storage.PostgreSql](src/Headless.Messaging.Storage.PostgreSql/README.md) | PostgreSQL message persistence |
+| [Headless.Messaging.Storage.SqlServer](src/Headless.Messaging.Storage.SqlServer/README.md) | SQL Server message persistence |
 | [Headless.Messaging.InMemoryStorage](src/Headless.Messaging.InMemoryStorage/README.md) | Ephemeral storage (dev/testing) |
 
 ### Jobs

@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Settings.Definitions;
 using Headless.Settings.Entities;
 using Headless.Settings.Helpers;
@@ -16,34 +18,18 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Settings;
 
 [PublicAPI]
-public static class CoreSettingsSetup
+public static class SetupCoreSettings
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddSettingsManagementCore(
-            Action<SettingManagementOptions, IServiceProvider> setupAction
-        )
+        public HeadlessSettingsBuilder AddHeadlessSettings(Action<HeadlessSettingsSetupBuilder> configure)
         {
-            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
+            Argument.IsNotNull(configure);
 
-            return _AddCore(services);
-        }
+            var setup = new HeadlessSettingsSetupBuilder(services);
+            configure(setup);
 
-        /// <summary>
-        /// Adds core setting management services to the host builder and registers default setting value providers.
-        /// You should also add TimeProvider, Cache, DistributedLock, GuidGenerator, IConfiguration, ICurrentUser,
-        /// ICurrentTenant, and IStringEncryptionService implementations to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddSettingsManagementCore(Action<SettingManagementOptions>? setupAction = null)
-        {
-            services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
+            return _AddSettingsStorageCore(services, setup);
         }
 
         public IServiceCollection AddSettingDefinitionProvider<T>()
@@ -95,12 +81,45 @@ public static class CoreSettingsSetup
         }
     }
 
+    private static HeadlessSettingsBuilder _AddSettingsStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessSettingsSetupBuilder setup
+    )
+    {
+        // Register the management core as part of storage setup so AddHeadlessSettings is the
+        // single entry point. Guarded on ISettingManager so a repeated AddHeadlessSettings stays
+        // safe (no duplicate value providers from the non-idempotent TypeList registrations in
+        // _AddCore). The IStringEncryptionService guard inside _AddCore still fires when it is absent.
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(ISettingManager)))
+        {
+            serviceCollection.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Settings",
+            static name => new SettingsStorageProviderRegistration(name)
+        );
+
+        serviceCollection.Configure<SettingsStorageOptions>(options => setup.StorageOptions.CopyTo(options));
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessSettingsBuilder(serviceCollection);
+    }
+
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         if (!services.Any(s => s.ServiceType == typeof(IStringEncryptionService)))
         {
             throw new InvalidOperationException(
-                $"{nameof(IStringEncryptionService)} must be registered before calling {nameof(AddSettingsManagementCore)}. "
+                $"{nameof(IStringEncryptionService)} must be registered before calling "
+                    + $"{nameof(AddHeadlessSettings)}. "
                     + "Register it via AddStringEncryptionService(...) on IServiceCollection."
             );
         }
@@ -138,4 +157,6 @@ public static class CoreSettingsSetup
 
         return services;
     }
+
+    private sealed record SettingsStorageProviderRegistration(string Provider);
 }

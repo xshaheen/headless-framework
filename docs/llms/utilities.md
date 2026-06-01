@@ -130,7 +130,7 @@ Install individually as needed -- these packages are independent of each other:
 - Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
 - Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `AddOptionsWithFluentValidation<TOptions, TValidator>(sectionName)`.
-- Use `ISeeder` / `IPreSeeder` from Hosting for database seeding. Call `await app.Services.RunSeedersAsync()` at startup. Use `[SeederPriority(n)]` to control order.
+- Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
 - Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
 - Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading, or `LoadAsync(RedisCacheScripts.Definitions)` / `LoadAsync(RedisDistributedLockScripts.Definitions)` for feature-bundle warmup.
@@ -392,7 +392,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
-- Database seeder infrastructure (`ISeeder`, `IPreSeeder`)
+- Database seeder infrastructure (`ISeeder`, ordered by `[SeederPriority]`)
 - Keyed services helpers
 - Hosted service management
 - Background startup processes can expose readiness signals so dependent flows can wait for initialization completion.
@@ -438,15 +438,23 @@ services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
 
 ### Database Seeders
 
+Implement `ISeeder` and register with `AddSeeder<T>()`. All seeders run via a single
+`SeedAsync()` ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations
+use `int.MinValue` so they run before data seeders).
+
 ```csharp
-public class UserSeeder : ISeeder
+[SeederPriority(1)]
+public sealed class UserSeeder : ISeeder
 {
-    [SeederPriority(1)]
-    public async Task SeedAsync(CancellationToken ct) { /* ... */ }
+    public ValueTask SeedAsync(CancellationToken ct = default) { /* seed users */ return ValueTask.CompletedTask; }
 }
 
-// In startup
-await app.Services.RunSeedersAsync();
+// Registration
+builder.Services.AddSeeder<UserSeeder>();
+builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPriority int.MinValue)
+
+// In startup — runs all seeders in priority order
+await app.Services.SeedAsync();
 ```
 
 ### Service Replacement

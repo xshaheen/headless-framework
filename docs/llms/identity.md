@@ -27,12 +27,14 @@ Single package: `Headless.Identity.Storage.EntityFramework`. Provides `HeadlessI
 Typical registration:
 
 ```csharp
-builder.Services.AddHeadlessDbContext<
-    AppDbContext,
-    AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken, AppUserPasskey
->(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessIdentity(setup =>
+    setup.UseEntityFramework<
+        AppDbContext,
+        AppUser, AppRole, Guid,
+        AppUserClaim, AppUserRole, AppUserLogin,
+        AppRoleClaim, AppUserToken, AppUserPasskey
+    >(options => options.UseNpgsql(connectionString))
+);
 ```
 
 Requires `Headless.Orm.EntityFramework` to be available (transitive dependency).
@@ -40,8 +42,8 @@ Requires `Headless.Orm.EntityFramework` to be available (transitive dependency).
 ## Agent Instructions
 
 - Prefer inheriting from `HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>` for .NET 10 passkey-aware stores. The 8-type-parameter form remains available and uses `IdentityUserPasskey<TKey>`.
-- Register via `AddHeadlessDbContext<>()` — do NOT use `AddDbContext<>()` directly, as this bypasses framework interceptors and conventions.
-- `AddHeadlessDbContext<>()` defaults `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3`; use a later `Configure<IdentityOptions>()` only when a host intentionally targets an older schema.
+- Register via `AddHeadlessIdentity(setup => setup.UseEntityFramework<...>())` — do NOT use `AddDbContext<>()` directly, as this bypasses framework interceptors and conventions.
+- `AddHeadlessIdentity(setup => setup.UseEntityFramework<...>())` defaults `IdentityOptions.Stores.SchemaVersion` to `IdentitySchemaVersions.Version3`; use a later `Configure<IdentityOptions>()` only when a host intentionally targets an older schema.
 - This package depends on `Headless.Orm.EntityFramework` — all ORM conventions (audit fields, soft delete, multi-tenancy filters) apply automatically.
 - Default service lifetime is Scoped. Override via the options if needed.
 - For Identity-only projects without the full framework, this package is NOT appropriate — use `Microsoft.AspNetCore.Identity.EntityFrameworkCore` directly instead.
@@ -87,12 +89,14 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions o
 // Registration
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddHeadlessDbContext<
-    AppDbContext,
-    AppUser, AppRole, Guid,
-    AppUserClaim, AppUserRole, AppUserLogin,
-    AppRoleClaim, AppUserToken, AppUserPasskey
->(options => options.UseNpgsql(connectionString));
+builder.Services.AddHeadlessIdentity(setup =>
+    setup.UseEntityFramework<
+        AppDbContext,
+        AppUser, AppRole, Guid,
+        AppUserClaim, AppUserRole, AppUserLogin,
+        AppRoleClaim, AppUserToken, AppUserPasskey
+    >(options => options.UseNpgsql(connectionString))
+);
 ```
 
 ## Configuration

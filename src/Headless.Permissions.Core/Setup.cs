@@ -2,7 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Checks;
 using Headless.Domain;
+using Headless.Hosting.Initialization;
 using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.GrantProviders;
@@ -19,24 +21,18 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Permissions;
 
 [PublicAPI]
-public static class PermissionsSetup
+public static class SetupPermissions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddPermissionsManagementCore(
-            Action<PermissionManagementOptions, IServiceProvider> setupAction
-        )
+        public HeadlessPermissionsBuilder AddHeadlessPermissions(Action<HeadlessPermissionsSetupBuilder> configure)
         {
-            services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
+            Argument.IsNotNull(configure);
 
-            return _AddCore(services);
-        }
+            var setup = new HeadlessPermissionsSetupBuilder(services);
+            configure(setup);
 
-        public IServiceCollection AddPermissionsManagementCore(Action<PermissionManagementOptions>? setupAction = null)
-        {
-            services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
+            return _AddPermissionsStorageCore(services, setup);
         }
 
         public IServiceCollection AddPermissionDefinitionProvider<T>()
@@ -90,6 +86,38 @@ public static class PermissionsSetup
         }
     }
 
+    private static HeadlessPermissionsBuilder _AddPermissionsStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessPermissionsSetupBuilder setup
+    )
+    {
+        // Register the management core as part of storage setup so AddHeadlessPermissions is the
+        // single entry point. Guarded on IPermissionGrantStore so a repeated AddHeadlessPermissions
+        // stays safe (no duplicate value providers / authorization handlers from the non-idempotent
+        // registrations in _AddCore).
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(IPermissionGrantStore)))
+        {
+            serviceCollection.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Permissions",
+            static name => new PermissionsStorageProviderRegistration(name)
+        );
+
+        serviceCollection.Configure<PermissionsStorageOptions>(options => setup.StorageOptions.CopyTo(options));
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessPermissionsBuilder(serviceCollection);
+    }
+
     private static IServiceCollection _AddCore(IServiceCollection services)
     {
         services._AddCoreValueProvider();
@@ -131,4 +159,6 @@ public static class PermissionsSetup
 
         return services;
     }
+
+    private sealed record PermissionsStorageProviderRegistration(string Provider);
 }

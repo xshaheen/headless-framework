@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Blobs.Aws;
 
 [PublicAPI]
-public static class AwsS3Setup
+public static class SetupAwsS3
 {
     /// <summary>
     /// AWSOptions usage:

@@ -51,7 +51,7 @@ services.AddHeadlessAuditLog(o =>
 });
 ```
 
-> This package registers options only. Add `Headless.AuditLog.EntityFramework` for the EF Core implementation that wires up storage and change capture.
+> This package registers options only. Add `Headless.AuditLog.Storage.EntityFramework`, `Headless.AuditLog.Storage.PostgreSql`, or `Headless.AuditLog.Storage.SqlServer` for storage.
 
 ## Configuration
 

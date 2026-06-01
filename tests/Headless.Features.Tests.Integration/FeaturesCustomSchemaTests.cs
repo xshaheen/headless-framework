@@ -54,18 +54,26 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     [Fact]
     public async Task should_keep_default_schema_and_table_names_without_storage_configuration()
     {
-        // given
-        await Fixture.ResetAsync();
+        // given — a context that does NOT override ConfigureFeaturesStorage, so the storage
+        // options keep their defaults. Asserting the EF model mapping exercises the no-configuration
+        // path directly, without mutating the shared fixture schema.
+        await using var db = _CreateDefaultSchemaContext();
 
         // when
-        var valuesTableExists = await _TableExistsAsync("features", "FeatureValues");
-        var definitionsTableExists = await _TableExistsAsync("features", "FeatureDefinitions");
-        var groupDefinitionsTableExists = await _TableExistsAsync("features", "FeatureGroupDefinitions");
+        var valuesEntity = db.Model.FindEntityType(typeof(FeatureValueRecord));
+        var definitionsEntity = db.Model.FindEntityType(typeof(FeatureDefinitionRecord));
+        var groupDefinitionsEntity = db.Model.FindEntityType(typeof(FeatureGroupDefinitionRecord));
 
         // then
-        valuesTableExists.Should().BeTrue();
-        definitionsTableExists.Should().BeTrue();
-        groupDefinitionsTableExists.Should().BeTrue();
+        valuesEntity.Should().NotBeNull();
+        valuesEntity!.GetSchema().Should().Be("features");
+        valuesEntity.GetTableName().Should().Be("FeatureValues");
+        definitionsEntity.Should().NotBeNull();
+        definitionsEntity!.GetSchema().Should().Be("features");
+        definitionsEntity.GetTableName().Should().Be("FeatureDefinitions");
+        groupDefinitionsEntity.Should().NotBeNull();
+        groupDefinitionsEntity!.GetSchema().Should().Be("features");
+        groupDefinitionsEntity.GetTableName().Should().Be("FeatureGroupDefinitions");
     }
 
     [Fact]
@@ -98,7 +106,11 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         services.AddDbContextFactory<SharedFeaturesDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
-        services.AddFeaturesManagementDbContextStorage<SharedFeaturesDbContext>(ConfigureFeaturesStorage);
+        services.AddHeadlessFeatures(setup =>
+        {
+            setup.ConfigureStorage(ConfigureFeaturesStorage);
+            setup.UseEntityFramework<SharedFeaturesDbContext>();
+        });
         await using var provider = services.BuildServiceProvider();
         await using var db = await provider
             .GetRequiredService<IDbContextFactory<SharedFeaturesDbContext>>()
@@ -121,104 +133,6 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         groupDefinitionsEntity.GetTableName().Should().Be(_GroupDefinitionsTableName);
     }
 
-    [Fact]
-    public void should_produce_distinct_model_cache_keys_for_distinct_storage_options()
-    {
-        // given
-        var factory = new FeaturesStorageModelCacheKeyFactory();
-        var contextA = _BuildContextWithOptions(
-            new FeaturesStorageOptions
-            {
-                Schema = "features_a",
-                FeatureValuesTableName = "FeatureValues",
-                FeatureDefinitionsTableName = "FeatureDefinitions",
-                FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
-            }
-        );
-        var contextB = _BuildContextWithOptions(
-            new FeaturesStorageOptions
-            {
-                Schema = "features_b",
-                FeatureValuesTableName = "FeatureValues",
-                FeatureDefinitionsTableName = "FeatureDefinitions",
-                FeatureGroupDefinitionsTableName = "FeatureGroupDefinitions",
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().NotBe(keyB);
-        keyA.Should().Be(factory.Create(contextA, designTime: false));
-    }
-
-    [Fact]
-    public void should_produce_equal_model_cache_keys_for_equal_storage_options()
-    {
-        // given
-        var factory = new FeaturesStorageModelCacheKeyFactory();
-        var optionsValues = new FeaturesStorageOptions
-        {
-            Schema = "shared",
-            FeatureValuesTableName = "Values",
-            FeatureDefinitionsTableName = "Definitions",
-            FeatureGroupDefinitionsTableName = "Groups",
-        };
-        var contextA = _BuildContextWithOptions(optionsValues);
-        var contextB = _BuildContextWithOptions(
-            new FeaturesStorageOptions
-            {
-                Schema = optionsValues.Schema,
-                FeatureValuesTableName = optionsValues.FeatureValuesTableName,
-                FeatureDefinitionsTableName = optionsValues.FeatureDefinitionsTableName,
-                FeatureGroupDefinitionsTableName = optionsValues.FeatureGroupDefinitionsTableName,
-            }
-        );
-
-        // when
-        var keyA = factory.Create(contextA, designTime: false);
-        var keyB = factory.Create(contextB, designTime: false);
-
-        // then
-        keyA.Should().Be(keyB);
-    }
-
-    [Fact]
-    public void should_distinguish_designtime_in_model_cache_key()
-    {
-        // given
-        var factory = new FeaturesStorageModelCacheKeyFactory();
-        var context = _BuildContextWithOptions(new FeaturesStorageOptions());
-
-        // when
-        var runtimeKey = factory.Create(context, designTime: false);
-        var designTimeKey = factory.Create(context, designTime: true);
-
-        // then
-        runtimeKey.Should().NotBe(designTimeKey);
-    }
-
-    private static FeaturesDbContext _BuildContextWithOptions(FeaturesStorageOptions storageOptions)
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton(Options.Create(storageOptions));
-        var sp = services.BuildServiceProvider();
-
-        var dbOptions = new DbContextOptionsBuilder<FeaturesDbContext>()
-            .UseNpgsql("Host=localhost;Database=test;Username=test;Password=test")
-            .UseApplicationServiceProvider(sp)
-            .Options;
-
-        return new FeaturesDbContext(dbOptions)
-        {
-            FeatureValues = null!,
-            FeatureDefinitions = null!,
-            FeatureGroupDefinitions = null!,
-        };
-    }
-
     private async Task<IHost> _CreateHostWithCustomTablesAsync(Action<IHostApplicationBuilder>? configure = null)
     {
         await Fixture.ResetAsync();
@@ -231,7 +145,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
     private async Task _RecreateCustomTablesAsync(IServiceProvider services)
     {
         await using var scope = services.CreateAsyncScope();
-        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FeaturesDbContext>>();
+        var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FeaturesTestDbContext>>();
         await using var db = await factory.CreateDbContextAsync(AbortToken);
 
         await db.Database.ExecuteSqlRawAsync($"""DROP SCHEMA IF EXISTS "{_Schema}" CASCADE""", AbortToken);
@@ -273,20 +187,38 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         return (bool)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
-    private sealed class SharedFeaturesDbContext(DbContextOptions<SharedFeaturesDbContext> options)
-        : DbContext(options),
-            IFeaturesDbContext
+    private DefaultSchemaFeaturesContext _CreateDefaultSchemaContext()
     {
-        public DbSet<FeatureValueRecord> FeatureValues => Set<FeatureValueRecord>();
+        // No ConfigureStorage call → FeaturesStorageOptions stays at its defaults
+        // (schema "features" + default table names).
+        var options = new DbContextOptionsBuilder<DefaultSchemaFeaturesContext>()
+            .UseNpgsql(Fixture.SqlConnectionString)
+            .Options;
 
-        public DbSet<FeatureDefinitionRecord> FeatureDefinitions => Set<FeatureDefinitionRecord>();
+        return new DefaultSchemaFeaturesContext(options, Options.Create(new FeaturesStorageOptions()));
+    }
 
-        public DbSet<FeatureGroupDefinitionRecord> FeatureGroupDefinitions => Set<FeatureGroupDefinitionRecord>();
-
+    private sealed class DefaultSchemaFeaturesContext(
+        DbContextOptions<DefaultSchemaFeaturesContext> options,
+        IOptions<FeaturesStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddFeaturesConfiguration(this);
+            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
+        }
+    }
+
+    private sealed class SharedFeaturesDbContext(
+        DbContextOptions<SharedFeaturesDbContext> options,
+        IOptions<FeaturesStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessFeatures(storageOptions.Value);
         }
     }
 

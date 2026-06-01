@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
 
-public static class OpenTelemetrySetup
+public static class SetupOpenTelemetry
 {
     /// <summary>
     /// Adds OpenTelemetry instrumentation with activity tracing for Jobs jobs.

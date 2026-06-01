@@ -12,7 +12,7 @@ Provides essential DI extensions, configuration helpers, options validation, and
 - Options validation with FluentValidation
 - Configuration binding extensions
 - Environment detection extensions
-- Database seeder infrastructure (`ISeeder`, `IPreSeeder`)
+- Database seeder infrastructure (`ISeeder`, ordered by `[SeederPriority]`)
 - Keyed services helpers
 - Hosted service management
 
@@ -60,15 +60,23 @@ services.AddOptionsWithFluentValidation<AppOptions, AppOptionsValidator>("App");
 
 ### Database Seeders
 
+Implement `ISeeder` and register with `AddSeeder<T>()`. All seeders run via a single
+`SeedAsync()` ascending by `[SeederPriority(n)]` (default `0`; lower runs first — EF migrations
+use `int.MinValue` so they run before data seeders).
+
 ```csharp
-public class UserSeeder : ISeeder
+[SeederPriority(1)]
+public sealed class UserSeeder : ISeeder
 {
-    [SeederPriority(1)]
-    public async Task SeedAsync(CancellationToken ct) { /* ... */ }
+    public ValueTask SeedAsync(CancellationToken ct = default) { /* seed users */ return ValueTask.CompletedTask; }
 }
 
-// In startup
-await app.Services.RunSeedersAsync();
+// Registration
+builder.Services.AddSeeder<UserSeeder>();
+builder.Services.AddDbMigrationSeeder<AppDbContext>(); // runs first (SeederPriority int.MinValue)
+
+// In startup — runs all seeders in priority order
+await app.Services.SeedAsync();
 ```
 
 ### Service Replacement
