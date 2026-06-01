@@ -10,14 +10,13 @@ namespace Tests.Retry;
 public sealed class RetryExceptionClassifierTests : TestBase
 {
     public static TheoryData<Exception> PermanentExceptions =>
-        new()
-        {
+        [
             new SubscriberNotFoundException("Not found"),
             new ArgumentNullException("value"),
             new ArgumentException("Invalid", "value"),
             new NotSupportedException("Not supported"),
             new CustomArgumentException(),
-        };
+        ];
 
     [Theory]
     [MemberData(nameof(PermanentExceptions))]
@@ -48,13 +47,12 @@ public sealed class RetryExceptionClassifierTests : TestBase
     }
 
     public static TheoryData<Exception> PermanentInnerExceptions =>
-        new()
-        {
+        [
             new SubscriberNotFoundException("Not found"),
             new ArgumentNullException("value"),
             new ArgumentException("Invalid", "value"),
             new NotSupportedException("Not supported"),
-        };
+        ];
 
     [Theory]
     [MemberData(nameof(PermanentInnerExceptions))]

@@ -48,7 +48,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
 
     internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
 
-    internal IList<IMessagesOptionsExtension> Extensions { get; } = new List<IMessagesOptionsExtension>();
+    internal IList<IMessagesOptionsExtension> Extensions { get; } = [];
 
     /// <summary>
     /// Registers a messaging options extension executed when configuring messaging services.

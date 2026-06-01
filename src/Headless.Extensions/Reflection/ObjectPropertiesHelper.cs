@@ -13,7 +13,7 @@ public static class ObjectPropertiesHelper
     private static readonly ConditionalWeakTable<
         Type,
         ConcurrentDictionary<PropertyCacheKey, CachedResult<PropertyInfo>>
-    > _Cache = new();
+    > _Cache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

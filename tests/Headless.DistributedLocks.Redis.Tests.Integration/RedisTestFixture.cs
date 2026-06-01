@@ -29,7 +29,7 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
         await ConnectionMultiplexer.FlushAllAsync();
 
         _scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
-        await _scriptLoader.LoadScriptsAsync();
+        await _scriptLoader.LoadAsync(RedisDistributedLockScripts.Definitions);
 
         LockStorage = new(ConnectionMultiplexer, _scriptLoader);
         ReaderWriterLockStorage = new(ConnectionMultiplexer, _scriptLoader);

@@ -15,7 +15,7 @@ public sealed partial class Url
     private string _userInfo = "";
     private string _host = "";
     private List<string> _pathSegments = [];
-    private QueryParamCollection _queryParams = new();
+    private QueryParamCollection _queryParams = [];
     private string _fragment = "";
     private int? _port;
     private bool _leadingSlash;
@@ -697,7 +697,7 @@ public sealed partial class Url
             _host = "";
             _port = null;
             _pathSegments = [];
-            _queryParams = new();
+            _queryParams = [];
             _fragment = "";
             _leadingSlash = false;
             _trailingSlash = false;

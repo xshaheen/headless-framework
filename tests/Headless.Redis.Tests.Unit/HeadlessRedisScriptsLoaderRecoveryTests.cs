@@ -24,6 +24,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         multiplexer.GetEndPoints().Returns([endpoint]);
         multiplexer.GetServer(endpoint).Returns(server);
         multiplexer.GetDatabase().Returns(db);
+        server.IsConnected.Returns(true);
 
         using var sut = new HeadlessRedisScriptsLoader(
             multiplexer,
@@ -39,14 +40,24 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             );
 
         // when
-        var result = await sut.ReplaceIfEqualAsync(db, "key", "expected", "new");
+        var result = await sut.EvaluateAsync(
+            db,
+            ReplaceIfEqualScriptDefinition.Instance,
+            new
+            {
+                key = (RedisKey)"key",
+                value = (RedisValue)"new",
+                expected = (RedisValue)"expected",
+                expires = RedisValue.EmptyString,
+            },
+            AbortToken
+        );
 
         // then
-        result.Should().BeTrue();
+        ((int)result).Should().Be(1);
 
-        // Verify script was loaded twice (initial + once after NOSCRIPT)
-        // Each load triggers 5 ScriptLoadAsync calls (one for each script in the loader)
-        await server.Received(10).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+        // Verify only the required script was loaded twice (initial + once after NOSCRIPT).
+        await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
 
         // Verify evaluate was called twice
         await db.Received(2).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
@@ -63,6 +74,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
 
         multiplexer.GetEndPoints().Returns([endpoint]);
         multiplexer.GetServer(endpoint).Returns(server);
+        server.IsConnected.Returns(true);
 
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
@@ -71,7 +83,19 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns<Task<RedisResult>>(_ => throw new RedisServerException("NOSCRIPT Still no script."));
 
         // when
-        var act = () => sut.ReplaceIfEqualAsync(db, "key", "expected", "new");
+        var act = () =>
+            sut.EvaluateAsync(
+                db,
+                ReplaceIfEqualScriptDefinition.Instance,
+                new
+                {
+                    key = (RedisKey)"key",
+                    value = (RedisValue)"new",
+                    expected = (RedisValue)"expected",
+                    expires = RedisValue.EmptyString,
+                },
+                AbortToken
+            );
 
         // then
         await act.Should().ThrowAsync<RedisServerException>().WithMessage("NOSCRIPT*");

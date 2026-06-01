@@ -18,7 +18,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
     private static readonly ConditionalWeakTable<
         Type,
         ConcurrentDictionary<Type, bool>
-    > _ImplementsGenericInterfaceCache = new();
+    > _ImplementsGenericInterfaceCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

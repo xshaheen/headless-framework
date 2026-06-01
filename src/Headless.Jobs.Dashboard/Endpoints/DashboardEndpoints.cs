@@ -456,7 +456,7 @@ internal static class DashboardEndpoints
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
         where TCronJob : CronJobEntity, new()
     {
-        var idList = ids is { Length: > 0 } ? new List<Guid>(ids) : new List<Guid>();
+        var idList = ids is { Length: > 0 } ? new List<Guid>(ids) : [];
         var result = await timeJobsManager.DeleteBatchAsync(idList, cancellationToken);
 
         return Results.Json(

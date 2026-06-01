@@ -103,10 +103,9 @@ internal sealed class DiagnosticListener(
                         new ActivityEvent(
                             "message.persist.success",
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                            new ActivityTagsCollection
-                            {
+                            [
                                 new(MessagingTags.PersistenceDurationMs, eventData.ElapsedTimeMs),
-                            }
+                            ]
                         )
                     );
 
@@ -219,10 +218,9 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "message.publish.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection
-                                {
+                                [
                                     new(MessagingTags.SendDurationMs, eventData.ElapsedTimeMs),
-                                }
+                                ]
                             )
                         );
 
@@ -334,10 +332,9 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "message.consume.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection
-                                {
+                                [
                                     new(MessagingTags.ReceiveDurationMs, eventData.ElapsedTimeMs),
-                                }
+                                ]
                             )
                         );
 
@@ -448,10 +445,9 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "subscriber.invoke.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                new ActivityTagsCollection
-                                {
+                                [
                                     new(MessagingTags.InvokeDurationMs, eventData.ElapsedTimeMs),
-                                }
+                                ]
                             )
                         );
 

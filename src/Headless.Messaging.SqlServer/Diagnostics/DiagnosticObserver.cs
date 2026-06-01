@@ -12,7 +12,7 @@ internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOut
     : IObserver<KeyValuePair<string, object?>>
 {
     private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache =
-        new();
+        [];
 
     private static readonly ConditionalWeakTable<
         Type,

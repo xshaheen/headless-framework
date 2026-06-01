@@ -17,7 +17,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
     private static readonly ConditionalWeakTable<
         Type,
         ConcurrentDictionary<string, AuditPropertyMetadata>
-    > _PropertyCache = new();
+    > _PropertyCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

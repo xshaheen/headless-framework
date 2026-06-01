@@ -120,7 +120,7 @@ Install individually as needed -- these packages are independent of each other:
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **ReCaptcha** -- Google reCAPTCHA v2/v3 server-side verification (`IReCaptchaSiteVerifyV2`/`V3`) plus Razor tag helpers.
-- **Redis** -- `HeadlessRedisScriptsLoader` for centralized Lua script loading/execution with StackExchange.Redis.
+- **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
 
@@ -133,7 +133,7 @@ Install individually as needed -- these packages are independent of each other:
 - Use `ISeeder` / `IPreSeeder` from Hosting for database seeding. Call `await app.Services.RunSeedersAsync()` at startup. Use `[SeederPriority(n)]` to control order.
 - Use `Headless.NetTopologySuite` for geospatial work. Key methods: `SanitizeForSqlGeography()`, `PermissiveIntersection()`, `PermissiveUnion()`, `ComputeOverlap()`, `EnsureIsOrientedCounterClockwise()`, `Simplify()`. Use `GeoConstants.GoogleMapsSrid` (4326) for SRID.
 - Use `Headless.ReCaptcha` (note capital C in directory name) for Google reCAPTCHA. Register with `AddReCaptchaV3(options => ...)`. Verify with `IReCaptchaSiteVerifyV3.VerifyAsync()`. Check `result.Success` and `result.Score`.
-- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.LoadAsync()` on startup.
+- Use `Headless.Redis` for Lua script management only, not for general Redis operations. Call `HeadlessRedisScriptsLoader.EvaluateAsync(...)` for on-demand loading, or `LoadAsync(RedisCacheScripts.Definitions)` / `LoadAsync(RedisDistributedLockScripts.Definitions)` for feature-bundle warmup.
 - Use `Headless.Sitemaps` for XML sitemap generation. Create `List<SitemapUrl>` and call `urls.WriteToAsync(stream)`. Auto-splits at 50,000 URLs via `urls.WriteAsync()`. Use `SitemapAlternateUrl` for hreflang/localized URLs.
 - Use `Slug.Create(text)` for slug generation. Customize with `SlugOptions` (separator, max length, casing, character replacements). Handles Unicode/Arabic text natively.
 
@@ -650,14 +650,19 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 ## Problem Solved
 
-Provides Redis helper extensions and centralized Lua script loading/execution for StackExchange.Redis, eliminating boilerplate and ensuring consistent script management.
+Provides Redis helper extensions plus definition-first Lua script loading/execution for StackExchange.Redis. Scripts are loaded on demand by default, with optional feature bundles for warmup.
 
 ## Key Features
 
 - `ConnectionMultiplexerExtensions` - Helper extensions for Redis connections
-- `HeadlessRedisScriptsLoader` - Centralized Lua script management
-- `RedisScripts` - Pre-defined script references
-- Script caching and execution helpers
+- `RedisScriptDefinition` - Base type for named Lua script definitions
+- `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
+- `RedisCacheScripts` - Cache script bundle for optional preload
+- `RedisDistributedLockScripts` - Distributed lock script bundles for optional preload
+
+### Design Notes
+
+`Headless.Redis` owns script definitions and generic loading only. Provider packages own typed parameters and result decoding so consumers load only the script definitions they need.
 
 ## Installation
 
@@ -673,8 +678,8 @@ var builder = WebApplication.CreateBuilder(args);
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-// Load scripts on startup
-await scriptsLoader.LoadAsync();
+// Optional warmup for a feature bundle.
+await scriptsLoader.LoadAsync(RedisCacheScripts.Definitions);
 ```
 
 ## Usage
@@ -683,10 +688,15 @@ await scriptsLoader.LoadAsync();
 
 ```csharp
 var db = redis.GetDatabase();
-var result = await db.ScriptEvaluateAsync(
-    RedisScripts.YourScript,
-    keys: [key],
-    values: [value]
+var result = await scriptsLoader.EvaluateAsync(
+    db,
+    IncrementWithExpireScriptDefinition.Instance,
+    new
+    {
+        key = (RedisKey)"counter",
+        value = (RedisValue)1,
+        expires = 60_000,
+    }
 );
 ```
 
