@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms.Vodafone;
 
 [PublicAPI]
-public static class VodafoneSetup
+public static class SetupVodafone
 {
     internal const string HttpClientName = "Headless:VodafoneSms";
 

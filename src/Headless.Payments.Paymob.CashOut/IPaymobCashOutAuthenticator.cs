@@ -81,7 +81,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
     private async Task<CashOutAuthenticationResponse> _GenerateTokenAsync(CancellationToken cancellationToken)
     {
         var options = _options.CurrentValue;
-        var httpClient = _httpClientFactory.CreateClient(PaymobCashOutSetup.HttpClientName);
+        var httpClient = _httpClientFactory.CreateClient(SetupPaymobCashOut.HttpClientName);
 
         using var request = new HttpRequestMessage();
 
@@ -123,7 +123,7 @@ public sealed class PaymobCashOutAuthenticator : IPaymobCashOutAuthenticator, ID
     {
         var options = _options.CurrentValue;
         var requestUrl = Url.Combine(options.ApiBaseUrl, "o/token");
-        var httpClient = _httpClientFactory.CreateClient(PaymobCashOutSetup.HttpClientName);
+        var httpClient = _httpClientFactory.CreateClient(SetupPaymobCashOut.HttpClientName);
 
         using var request = new HttpRequestMessage();
 

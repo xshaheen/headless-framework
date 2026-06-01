@@ -46,7 +46,7 @@ public sealed class VictoryLinkSmsSender(
                 : request.Destinations[0].Number,
         };
 
-        using var httpClient = httpClientFactory.CreateClient(VictoryLinkSetup.HttpClientName);
+        using var httpClient = httpClientFactory.CreateClient(SetupVictoryLink.HttpClientName);
         var response = await httpClient
             .PostAsJsonAsync(_uri, victoryLinkRequest, _JsonOptions, cancellationToken)
             .ConfigureAwait(false);

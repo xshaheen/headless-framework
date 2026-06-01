@@ -21,7 +21,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Permissions;
 
 [PublicAPI]
-public static class PermissionsSetup
+public static class SetupPermissions
 {
     extension(IServiceCollection services)
     {

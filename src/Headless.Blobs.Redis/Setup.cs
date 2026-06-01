@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Blobs.Redis;
 
 [PublicAPI]
-public static class RedisBlobSetup
+public static class SetupRedisBlob
 {
     extension(IServiceCollection services)
     {

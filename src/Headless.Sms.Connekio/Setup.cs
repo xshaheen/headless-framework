@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms.Connekio;
 
 [PublicAPI]
-public static class ConnekioSetup
+public static class SetupConnekio
 {
     internal const string HttpClientName = "Headless:ConnekioSms";
 

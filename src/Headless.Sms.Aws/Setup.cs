@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sms.Aws;
 
 [PublicAPI]
-public static class AwsSnsSetup
+public static class SetupAwsSns
 {
     /// <summary>
     /// AWSOptions usage:

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Blobs.SshNet;
 
 [PublicAPI]
-public static class SshSetup
+public static class SetupSsh
 {
     extension(IServiceCollection services)
     {

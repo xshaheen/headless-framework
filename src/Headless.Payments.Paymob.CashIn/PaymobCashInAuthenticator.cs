@@ -53,7 +53,7 @@ public sealed class PaymobCashInAuthenticator : IPaymobCashInAuthenticator, IDis
         var requestUrl = Url.Combine(config.ApiBaseUrl, "auth/tokens");
         var request = new CashInAuthenticationTokenRequest { ApiKey = config.ApiKey };
 
-        var httpClient = _httpClientFactory.CreateClient(PaymobCashInSetup.HttpClientName);
+        var httpClient = _httpClientFactory.CreateClient(SetupPaymobCashIn.HttpClientName);
 
         using var response = await httpClient
             .PostAsJsonAsync(requestUrl, request, CashInJsonOptions.JsonOptions, cancellationToken)

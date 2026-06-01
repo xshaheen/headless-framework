@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Hosting.Seeders;
 
 [PublicAPI]
-public static class DbMigrationSeederSetup
+public static class SetupDbMigrationSeeder
 {
     public static void AddDbMigrationSeeder<TContext>(this IServiceCollection services)
         where TContext : DbContext

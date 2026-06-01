@@ -17,7 +17,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Features;
 
 [PublicAPI]
-public static class CoreSetup
+public static class SetupCore
 {
     extension(IServiceCollection services)
     {

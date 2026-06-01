@@ -43,7 +43,7 @@ Use C# 14 extension members on `IServiceCollection` for the root entry and on `H
 Root entry, `src/Headless.Settings.Core/Setup.cs`:
 
 ```csharp
-public static class CoreSettingsSetup
+public static class SetupCoreSettings
 {
     extension(IServiceCollection services)
     {
@@ -218,7 +218,7 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 | Feature | Root setup | Builder | EF provider | Raw PG provider | Raw SqlServer provider |
 | --- | --- | --- | --- | --- | --- |
 | AuditLog | `src/Headless.AuditLog.Abstractions/Setup.cs` | `HeadlessAuditLogSetupBuilder.cs` | `src/Headless.AuditLog.Storage.EntityFramework/Setup.cs` | `src/Headless.AuditLog.Storage.PostgreSql/Setup.cs` | `src/Headless.AuditLog.Storage.SqlServer/Setup.cs` |
-| Settings | `src/Headless.Settings.Core/Setup.cs` (`CoreSettingsSetup`) | `HeadlessSettingsSetupBuilder.cs` | `src/Headless.Settings.Storage.EntityFramework/Setup.cs` | `src/Headless.Settings.Storage.PostgreSql/Setup.cs` | `src/Headless.Settings.Storage.SqlServer/Setup.cs` |
+| Settings | `src/Headless.Settings.Core/Setup.cs` (`SetupCoreSettings`) | `HeadlessSettingsSetupBuilder.cs` | `src/Headless.Settings.Storage.EntityFramework/Setup.cs` | `src/Headless.Settings.Storage.PostgreSql/Setup.cs` | `src/Headless.Settings.Storage.SqlServer/Setup.cs` |
 | Permissions | `src/Headless.Permissions.Core/Setup.cs` | `HeadlessPermissionsSetupBuilder.cs` | `src/Headless.Permissions.Storage.EntityFramework/Setup.cs` | `src/Headless.Permissions.Storage.PostgreSql/Setup.cs` | `src/Headless.Permissions.Storage.SqlServer/Setup.cs` |
 | Features | `src/Headless.Features.Core/Setup.cs` | `HeadlessFeaturesSetupBuilder.cs` | `src/Headless.Features.Storage.EntityFramework/Setup.cs` | `src/Headless.Features.Storage.PostgreSql/Setup.cs` | `src/Headless.Features.Storage.SqlServer/Setup.cs` |
 | Identity | `src/Headless.Identity.Storage.EntityFramework/Setup.cs` | `HeadlessIdentitySetupBuilder.cs` | (same package) | — | — |

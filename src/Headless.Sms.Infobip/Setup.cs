@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms.Infobip;
 
 [PublicAPI]
-public static class InfobipSetup
+public static class SetupInfobip
 {
     public static IServiceCollection AddInfobipSmsSender(
         this IServiceCollection services,

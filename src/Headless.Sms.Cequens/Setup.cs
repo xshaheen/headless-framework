@@ -7,7 +7,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms.Cequens;
 
 [PublicAPI]
-public static class CequensSetup
+public static class SetupCequens
 {
     internal const string HttpClientName = "Headless:CequensSms";
 
