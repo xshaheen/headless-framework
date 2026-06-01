@@ -8,7 +8,7 @@ namespace Headless.Hosting.Seeders;
 
 [PublicAPI]
 [SeederPriority(int.MinValue)]
-public sealed class DbMigrationPreSeeder<TDbContext>(IServiceProvider provider) : IPreSeeder
+public sealed class DbMigrationSeeder<TDbContext>(IServiceProvider provider) : ISeeder
     where TDbContext : DbContext
 {
     public async ValueTask SeedAsync(CancellationToken cancellationToken = default)

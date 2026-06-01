@@ -9,9 +9,9 @@ namespace Headless.Hosting.Seeders;
 [PublicAPI]
 public static class DbMigrationSeederSetup
 {
-    public static void AddDbMigrationPreSeeder<TContext>(this IServiceCollection services)
+    public static void AddDbMigrationSeeder<TContext>(this IServiceCollection services)
         where TContext : DbContext
     {
-        services.AddPreSeeder<DbMigrationPreSeeder<TContext>>();
+        services.AddSeeder<DbMigrationSeeder<TContext>>();
     }
 }
