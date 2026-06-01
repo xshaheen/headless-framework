@@ -12,7 +12,7 @@ namespace Headless.Mediator;
 /// Provides dependency-injection setup helpers for Headless Mediator behaviors.
 /// </summary>
 [PublicAPI]
-public static class MediatorSetup
+public static class SetupMediator
 {
     extension(IServiceCollection services)
     {

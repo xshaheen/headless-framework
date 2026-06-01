@@ -8,12 +8,12 @@ namespace Headless.Settings;
 
 public sealed class EfSettingDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : ISettingDefinitionRecordRepository
-    where TContext : DbContext, ISettingsDbContext
+    where TContext : DbContext
 {
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        var list = await db.SettingDefinitions.ToListAsync(cancellationToken);
+        var list = await db.Set<SettingDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
 
         return list;
     }
@@ -27,9 +27,9 @@ public sealed class EfSettingDefinitionRecordRepository<TContext>(IDbContextFact
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.SettingDefinitions.AddRange(addedRecords);
-        db.SettingDefinitions.UpdateRange(changedRecords);
-        db.SettingDefinitions.RemoveRange(deletedRecords);
+        db.Set<SettingDefinitionRecord>().AddRange(addedRecords);
+        db.Set<SettingDefinitionRecord>().UpdateRange(changedRecords);
+        db.Set<SettingDefinitionRecord>().RemoveRange(deletedRecords);
 
         await db.SaveChangesAsync(cancellationToken);
     }

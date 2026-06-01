@@ -11,4 +11,7 @@
     <ProjectReference Include="..\..\src\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+  </ItemGroup>
 </Project>

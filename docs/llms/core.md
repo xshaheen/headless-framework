@@ -84,7 +84,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
 - `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api.Core` or other host packages — do not register them manually.
-- `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddSettingsManagementCore(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
+- `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
 

@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Blobs.FileSystem;
 
 [PublicAPI]
-public static class FileSystemBlobSetup
+public static class SetupFileSystemBlob
 {
     extension(IServiceCollection services)
     {

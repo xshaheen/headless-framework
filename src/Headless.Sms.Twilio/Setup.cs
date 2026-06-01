@@ -9,7 +9,7 @@ using Twilio.Clients;
 namespace Headless.Sms.Twilio;
 
 [PublicAPI]
-public static class TwilioSetup
+public static class SetupTwilio
 {
     public static IServiceCollection AddTwilioSmsSender(this IServiceCollection services, IConfiguration config)
     {

@@ -24,9 +24,14 @@ Provides full settings management implementation with multiple value providers (
 
 ```bash
 dotnet add package Headless.Settings.Core
+dotnet add package Headless.Settings.Storage.EntityFramework
 ```
 
 ## Quick Start
+
+`AddHeadlessSettings(...)` registers the management core automatically, so a storage
+provider is all you need. Register the required services (`TimeProvider`, caching,
+distributed lock, `IStringEncryptionService`) first, then call `AddHeadlessSettings`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -38,14 +43,8 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
-// Add settings management
-builder.Services.AddSettingsManagementCore(options =>
-{
-    options.CacheKeyPrefix = "settings:";
-});
-
-// Add storage (EF Core)
-builder.Services.AddSettingsManagementDbContextStorage<AppDbContext>();
+// Add settings management + storage in one call (choose EF Core, PostgreSQL, or SQL Server)
+builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
@@ -102,7 +101,7 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
-`AddSettingsManagementCore(...)` has a prerequisite: register `IStringEncryptionService` before settings management. The recommended setup is to bind `Headless:StringEncryption` explicitly:
+Settings management has a prerequisite: register `IStringEncryptionService` before calling `AddHeadlessSettings(...)`. The recommended setup is to bind `Headless:StringEncryption` explicitly:
 
 ```json
 {
@@ -116,24 +115,30 @@ public sealed class ConfigService(ISettingManager settings)
 }
 ```
 
-Register encryption first, then configure settings management:
+Register encryption first, then configure settings management. Tune the management options
+through `setup.ConfigureManagement(...)` inside the `AddHeadlessSettings` block, next to
+`ConfigureStorage`:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
 
-services.AddSettingsManagementCore(options =>
+services.AddHeadlessSettings(setup =>
 {
-    // Cache expiration for setting values (default: 5 hours)
-    options.ValueCacheExpiration = TimeSpan.FromHours(5);
+    setup.ConfigureManagement(options =>
+    {
+        // Cache expiration for setting values (default: 5 hours)
+        options.ValueCacheExpiration = TimeSpan.FromHours(5);
 
-    // Cache expiration for dynamic definitions (default: 30 seconds)
-    options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
-
-    // Lock settings for cross-application updates
-    options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
-    options.CrossApplicationsCommonLockExpiration = TimeSpan.FromMinutes(10);
+        // Lock settings for cross-application updates
+        options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<SettingManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

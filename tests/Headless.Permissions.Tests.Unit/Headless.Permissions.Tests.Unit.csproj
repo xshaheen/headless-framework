@@ -12,6 +12,7 @@
     <ExcludeByAttribute>CompilerGenerated,GeneratedCode,ExcludeFromCodeCoverage</ExcludeByAttribute>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>

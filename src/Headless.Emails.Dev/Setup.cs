@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails.Dev;
 
 [PublicAPI]
-public static class DevEmailSetup
+public static class SetupDevEmail
 {
     extension(IServiceCollection services)
     {

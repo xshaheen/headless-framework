@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sms.Dev;
 
 [PublicAPI]
-public static class DevSmsSetup
+public static class SetupDevSms
 {
     public static void AddDevSmsSender(this IServiceCollection services, string filePath)
     {

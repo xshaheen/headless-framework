@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
+using Headless.Checks;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Filters;
@@ -9,40 +10,25 @@ using Headless.Features.Resources;
 using Headless.Features.Seeders;
 using Headless.Features.ValueProviders;
 using Headless.Features.Values;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Features;
 
 [PublicAPI]
-public static class CoreSetup
+public static class SetupCore
 {
     extension(IServiceCollection services)
     {
-        /// <summary>
-        /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
-        /// to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(
-            Action<FeatureManagementOptions, IServiceProvider> setupAction
-        )
+        public HeadlessFeaturesBuilder AddHeadlessFeatures(Action<HeadlessFeaturesSetupBuilder> configure)
         {
-            services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
+            Argument.IsNotNull(configure);
 
-            return _AddCore(services);
-        }
+            var setup = new HeadlessFeaturesSetupBuilder(services);
+            configure(setup);
 
-        /// <summary>
-        /// Adds core feature management services to the host builder and registers default feature value providers.
-        /// You should add TimeProvider, Cache, DistributedLock, and GuidGenerator implementations
-        /// to be able to use this feature.
-        /// </summary>
-        public IServiceCollection AddFeaturesManagementCore(Action<FeatureManagementOptions>? setupAction = null)
-        {
-            services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(setupAction);
-
-            return _AddCore(services);
+            return _AddFeaturesStorageCore(services, setup);
         }
 
         public IServiceCollection AddFeatureDefinitionProvider<T>()
@@ -89,6 +75,39 @@ public static class CoreSetup
             services.AddSingleton<TenantFeatureValueProvider>();
         }
     }
+
+    private static HeadlessFeaturesBuilder _AddFeaturesStorageCore(
+        IServiceCollection serviceCollection,
+        HeadlessFeaturesSetupBuilder setup
+    )
+    {
+        // Register the management core as part of storage setup so AddHeadlessFeatures is the
+        // single entry point. Guarded on IFeatureManager so a repeated AddHeadlessFeatures stays
+        // safe (no duplicate value providers from the non-idempotent registrations in _AddCore).
+        if (!serviceCollection.Any(static s => s.ServiceType == typeof(IFeatureManager)))
+        {
+            serviceCollection.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(_ => { });
+            _AddCore(serviceCollection);
+        }
+
+        serviceCollection.GuardSingleStorageProvider(
+            setup.Extensions.Count,
+            setup.Extensions.Count == 1 ? setup.Extensions.Single().GetType().FullName ?? "unknown" : "unknown",
+            "Headless.Features",
+            static name => new FeaturesStorageProviderRegistration(name)
+        );
+
+        serviceCollection.Configure<FeaturesStorageOptions>(options => setup.StorageOptions.CopyTo(options));
+
+        foreach (var extension in setup.Extensions)
+        {
+            extension.AddServices(serviceCollection);
+        }
+
+        return new HeadlessFeaturesBuilder(serviceCollection);
+    }
+
+    private sealed record FeaturesStorageProviderRegistration(string Provider);
 
     private static IServiceCollection _AddCore(IServiceCollection services)
     {

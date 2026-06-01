@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Domain;
 
 [PublicAPI]
-public static class LocalPublisherSetup
+public static class SetupLocalPublisher
 {
     public static IServiceCollection AddServiceProviderLocalMessagePublisher(this IServiceCollection services)
     {

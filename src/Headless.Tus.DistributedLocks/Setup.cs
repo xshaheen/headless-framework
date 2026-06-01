@@ -7,7 +7,7 @@ using tusdotnet.Interfaces;
 namespace Headless.Tus;
 
 [PublicAPI]
-public static class TusDistributedLockSetup
+public static class SetupTusDistributedLock
 {
     /// <summary>
     /// Extension method to add the <see cref="DistributedLockTusLockProvider"/> as the implementation

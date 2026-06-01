@@ -12,7 +12,7 @@ namespace Headless.ReCaptcha.V3.TagHelpers;
 [HtmlTargetElement("recaptcha-script-v3-js", TagStructure = TagStructure.WithoutEndTag)]
 public sealed partial class ReCaptchaV3ScriptJsTagHelper(IOptionsSnapshot<ReCaptchaOptions> optionsAccessor) : TagHelper
 {
-    private readonly ReCaptchaOptions _options = optionsAccessor.Get(ReCaptchaSetup.V3Name);
+    private readonly ReCaptchaOptions _options = optionsAccessor.Get(SetupReCaptcha.V3Name);
 
     [GeneratedRegex("^[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.Compiled, 100)]
     private static partial Regex _ValidJsIdentifierRegex();

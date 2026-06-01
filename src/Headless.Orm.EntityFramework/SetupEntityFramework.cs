@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.AuditLog;
 using Headless.Checks;
 using Headless.EntityFramework.Contexts.Runtime;
 using Headless.EntityFramework.GlobalFilters;
@@ -83,6 +84,12 @@ public static class SetupEntityFramework
                 optionsLifetime
             );
 
+            // Register IDbContextFactory<TDbContext> alongside AddDbContext so consumers can
+            // resolve detached contexts (background work, IInitializer, BackgroundService) without
+            // a separate AddDbContextFactory call. Singleton wrapper that creates a fresh scope per
+            // call and transfers ownership to the returned context.
+            services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
+
             return services;
         }
 
@@ -101,6 +108,10 @@ public static class SetupEntityFramework
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
+            services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
+            // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based
+            // consumer gets it wired regardless of which IAuditLogStore (EF/PG/SqlServer) they pick.
+            services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
             services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 

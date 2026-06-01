@@ -594,7 +594,11 @@ public static class DependencyInjectionExtensions
 
     /// <summary>
     /// Registers <typeparamref name="T"/> as a singleton, forwards it as <see cref="IInitializer"/>,
-    /// and registers it as a hosted service — all using the same singleton instance.
+    /// and registers it as a hosted service — all using the same singleton instance. When
+    /// <typeparamref name="T"/> also implements <see cref="IHostedLifecycleService"/>, the .NET
+    /// host detects that interface on the registered <see cref="IHostedService"/> entry and
+    /// invokes the <c>StartingAsync</c> / <c>StartedAsync</c> / <c>StoppingAsync</c> /
+    /// <c>StoppedAsync</c> hooks automatically — no extra registration is required.
     /// </summary>
     /// <typeparam name="T">
     /// A type that implements both <see cref="IHostedService"/> and <see cref="IInitializer"/>.
@@ -602,12 +606,6 @@ public static class DependencyInjectionExtensions
     /// <param name="services">The service collection.</param>
     /// <returns>The same service collection.</returns>
     /// <remarks>
-    /// Equivalent to:
-    /// <code>
-    /// services.TryAddSingleton&lt;T&gt;();
-    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IInitializer, T&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
-    /// services.TryAddEnumerable(ServiceDescriptor.Singleton&lt;IHostedService, T&gt;(sp => sp.GetRequiredService&lt;T&gt;()));
-    /// </code>
     /// Using <c>TryAddSingleton</c> and <c>TryAddEnumerable</c> guards against double-registration
     /// when the setup method is called more than once. The <c>ImplementationType</c> carried by the
     /// two-argument overload of <c>ServiceDescriptor.Singleton&lt;TService, TImplementation&gt;</c>
@@ -621,6 +619,11 @@ public static class DependencyInjectionExtensions
         services.TryAddSingleton<T>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IInitializer, T>(sp => sp.GetRequiredService<T>()));
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, T>(sp => sp.GetRequiredService<T>()));
+
+        // No separate IHostedLifecycleService registration is required. .NET's hosting
+        // infrastructure iterates registered IHostedService instances and pattern-matches each on
+        // IHostedLifecycleService — so an initializer that implements IHostedLifecycleService gets
+        // its StartingAsync/StartedAsync/StoppingAsync/StoppedAsync hooks invoked automatically.
 
         return services;
     }

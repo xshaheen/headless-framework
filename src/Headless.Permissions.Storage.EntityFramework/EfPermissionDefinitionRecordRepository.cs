@@ -8,7 +8,7 @@ namespace Headless.Permissions;
 
 public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextFactory<TContext> dbFactory)
     : IPermissionDefinitionRecordRepository
-    where TContext : DbContext, IPermissionsDbContext
+    where TContext : DbContext
 {
     public async Task<List<PermissionGroupDefinitionRecord>> GetGroupsListAsync(
         CancellationToken cancellationToken = default
@@ -16,7 +16,7 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db.PermissionGroupDefinitions.ToListAsync(cancellationToken);
+        return await db.Set<PermissionGroupDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
     public async Task<List<PermissionDefinitionRecord>> GetPermissionsListAsync(
@@ -25,7 +25,7 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db.PermissionDefinitions.ToListAsync(cancellationToken);
+        return await db.Set<PermissionDefinitionRecord>().AsNoTracking().ToListAsync(cancellationToken);
     }
 
     public async Task SaveAsync(
@@ -40,13 +40,13 @@ public sealed class EfPermissionDefinitionRecordRepository<TContext>(IDbContextF
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        db.PermissionGroupDefinitions.AddRange(newGroups);
-        db.PermissionGroupDefinitions.UpdateRange(updatedGroups);
-        db.PermissionGroupDefinitions.RemoveRange(deletedGroups);
+        db.Set<PermissionGroupDefinitionRecord>().AddRange(newGroups);
+        db.Set<PermissionGroupDefinitionRecord>().UpdateRange(updatedGroups);
+        db.Set<PermissionGroupDefinitionRecord>().RemoveRange(deletedGroups);
 
-        db.PermissionDefinitions.AddRange(newPermissions);
-        db.PermissionDefinitions.UpdateRange(updatedPermissions);
-        db.PermissionDefinitions.RemoveRange(deletedPermissions);
+        db.Set<PermissionDefinitionRecord>().AddRange(newPermissions);
+        db.Set<PermissionDefinitionRecord>().UpdateRange(updatedPermissions);
+        db.Set<PermissionDefinitionRecord>().RemoveRange(deletedPermissions);
 
         await db.SaveChangesAsync(cancellationToken);
     }

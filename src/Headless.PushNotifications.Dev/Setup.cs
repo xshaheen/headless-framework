@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications.Dev;
 
 [PublicAPI]
-public static class NoopPushNotificationSetup
+public static class SetupNoopPushNotification
 {
     public static IServiceCollection AddNoopPushNotification(this IServiceCollection services)
     {
