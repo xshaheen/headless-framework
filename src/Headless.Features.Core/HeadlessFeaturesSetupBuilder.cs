@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Features;
@@ -24,6 +25,24 @@ public sealed class HeadlessFeaturesSetupBuilder
         Argument.IsNotNull(configure);
 
         configure(StorageOptions);
+
+        return this;
+    }
+
+    public HeadlessFeaturesSetupBuilder ConfigureManagement(Action<FeatureManagementOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(configure);
+
+        return this;
+    }
+
+    public HeadlessFeaturesSetupBuilder ConfigureManagement(Action<FeatureManagementOptions, IServiceProvider> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<FeatureManagementOptions, FeatureManagementOptionsValidator>(configure);
 
         return this;
     }

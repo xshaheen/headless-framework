@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Settings;
@@ -24,6 +25,24 @@ public sealed class HeadlessSettingsSetupBuilder
         Argument.IsNotNull(configure);
 
         configure(StorageOptions);
+
+        return this;
+    }
+
+    public HeadlessSettingsSetupBuilder ConfigureManagement(Action<SettingManagementOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(configure);
+
+        return this;
+    }
+
+    public HeadlessSettingsSetupBuilder ConfigureManagement(Action<SettingManagementOptions, IServiceProvider> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<SettingManagementOptions, SettingManagementOptionsValidator>(configure);
 
         return this;
     }

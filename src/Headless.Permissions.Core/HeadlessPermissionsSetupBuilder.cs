@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Permissions;
@@ -24,6 +25,26 @@ public sealed class HeadlessPermissionsSetupBuilder
         Argument.IsNotNull(configure);
 
         configure(StorageOptions);
+
+        return this;
+    }
+
+    public HeadlessPermissionsSetupBuilder ConfigureManagement(Action<PermissionManagementOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(configure);
+
+        return this;
+    }
+
+    public HeadlessPermissionsSetupBuilder ConfigureManagement(
+        Action<PermissionManagementOptions, IServiceProvider> configure
+    )
+    {
+        Argument.IsNotNull(configure);
+
+        Services.Configure<PermissionManagementOptions, PermissionManagementOptionsValidator>(configure);
 
         return this;
     }
