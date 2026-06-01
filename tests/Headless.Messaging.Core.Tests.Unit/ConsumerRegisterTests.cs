@@ -340,8 +340,6 @@ public sealed class ConsumerRegisterTests : TestBase
             builder.SetMinimumLevel(LogLevel.Debug);
         });
 
-        configureServices?.Invoke(services);
-
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -354,6 +352,11 @@ public sealed class ConsumerRegisterTests : TestBase
 
             configureMessaging?.Invoke(setup);
         });
+
+        // Run service overrides AFTER AddHeadlessMessaging so test-supplied registrations (e.g. a fake
+        // IConsumerClientFactory) win last-writer-wins over the InMemory transport's defaults. Consumer
+        // registration belongs in configureMessaging via setup.ForMessage, which runs inside the callback.
+        configureServices?.Invoke(services);
 
         if (circuitBreakerStateManager is not null)
         {
