@@ -259,6 +259,56 @@ public sealed class ForMessageRegistrationTests
     }
 
     [Fact]
+    public void should_reject_different_consumers_with_case_variant_names_in_same_group_and_intent()
+    {
+        // given — names differ only by case; dispatch matches names case-insensitively, so these are
+        // the same identity and the competing-identity guard must fire (otherwise one consumer is
+        // silently shadowed at dispatch).
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.ForMessage<OrderPlaced>(message =>
+                    message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+                );
+                setup.ForMessage<OtherOrderPlaced>(message =>
+                    message
+                        .MessageName("Orders.Placed")
+                        .OnBus<OtherOrderPlacedHandler>(consumer => consumer.Group("orders"))
+                );
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
+    }
+
+    [Fact]
+    public void should_treat_case_variant_explicit_names_for_same_message_type_as_idempotent()
+    {
+        // given — same type, names differ only by case: the same logical name, not a conflict.
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("Orders.Placed"));
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    [Fact]
     public void should_reject_conflicting_explicit_names_for_same_message_type()
     {
         // given

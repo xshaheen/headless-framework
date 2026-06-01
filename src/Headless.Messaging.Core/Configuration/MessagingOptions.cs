@@ -328,7 +328,7 @@ public sealed class MessagingOptions
 
         if (
             MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
-            && existingMessageName != messageName
+            && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
         )
         {
             throw new InvalidOperationException(

@@ -314,7 +314,9 @@ public static class SetupMessaging
             var explicitMessageNames = group
                 .Select(static registration => registration.MessageName)
                 .Where(static messageName => messageName is not null)
-                .Distinct(StringComparer.Ordinal)
+                // Message names match case-insensitively at dispatch (IConsumerServiceSelector), so
+                // case-variant explicit names for one type are the same name, not a conflict.
+                .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (explicitMessageNames.Count > 1)
@@ -413,7 +415,24 @@ public static class SetupMessaging
         string? Group,
         IntentType IntentType,
         Type ConsumerType
-    );
+    )
+    {
+        // Message names are matched case-insensitively at dispatch, so the dedup key must treat
+        // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
+        public bool Equals(ConsumerRegistrationKey other) =>
+            IntentType == other.IntentType
+            && ConsumerType == other.ConsumerType
+            && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Group, other.Group, StringComparison.Ordinal);
+
+        public override int GetHashCode() =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
+                Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
+                IntentType,
+                ConsumerType
+            );
+    }
 
     private readonly record struct ConsumerRegistrationSettings(
         byte Concurrency,
