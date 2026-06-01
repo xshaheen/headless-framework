@@ -128,6 +128,115 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         slot.FencingToken.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_fire_handle_lost_token_when_lease_is_lost_in_poll_mode()
+    {
+        // given — acquire with Monitor mode; storage will expire the slot when time advances
+        var options = new DistributedLockOptions();
+        var provider = _CreateProvider(options);
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+        await using var slot = await semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(2),
+                Monitoring = LockMonitoringMode.Monitor,
+            },
+            AbortToken
+        );
+        slot.Should().NotBeNull();
+        slot!.HandleLostToken.Should().NotBe(CancellationToken.None);
+
+        // when — advance the fake clock past TTL so storage evicts the holder entry
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        // drive multiple cadence intervals so the monitor probe fires
+        for (var i = 0; i < 10 && !slot.HandleLostToken.IsCancellationRequested; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(2));
+            await _DrainUntilAsync(() => slot.HandleLostToken.IsCancellationRequested);
+        }
+
+        // then
+        slot.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_retain_slot_beyond_ttl_when_auto_extend_mode()
+    {
+        // given — acquire with AutoExtend; each cadence tick renews the storage entry
+        var provider = _CreateProvider();
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+        await using var slot = await semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions
+            {
+                TimeUntilExpires = TimeSpan.FromSeconds(3),
+                Monitoring = LockMonitoringMode.AutoExtend,
+            },
+            AbortToken
+        );
+        slot.Should().NotBeNull();
+
+        // when — advance past TTL multiple cadence intervals; auto-extend should renew
+        for (var i = 0; i < 4; i++)
+        {
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Yield();
+        }
+
+        // then — HandleLostToken NOT fired; slot is still valid
+        slot!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_wake_waiting_acquirer_on_push_lock_released_signal()
+    {
+        // given — fill the semaphore (capacity 1), then start a waiter with a longer timeout
+        var resource = Faker.Random.AlphaNumeric(10);
+        var provider = _CreateProvider();
+        var semaphore = provider.CreateSemaphore(resource, maxCount: 1);
+
+        await using var holder = await semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        holder.Should().NotBeNull();
+
+        // start a waiter that will block until a slot frees up
+        using var waiterCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var waiterTask = semaphore.TryAcquireAsync(
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(4) },
+            waiterCts.Token
+        );
+
+        // when — release the slot and immediately send the push wake-up signal
+        await holder.ReleaseAsync();
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LockId));
+
+        // then — waiter is unblocked faster than the polling budget
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        await using var second = await waiterTask;
+        stopwatch.Stop();
+
+        second.Should().NotBeNull();
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task should_make_at_least_one_storage_attempt_when_acquire_timeout_is_sub_millisecond()
+    {
+        // given — sub-millisecond timeout; the first-attempt guard ensures one real storage call
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+        var semaphore = provider.CreateSemaphore(resource, maxCount: 1);
+        var options = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromTicks(1) };
+
+        // when — even with a near-zero timeout, acquisition should succeed on an empty semaphore
+        await using var slot = await semaphore.TryAcquireAsync(options, AbortToken);
+
+        // then — at least one storage attempt was made (we obtained the slot)
+        slot.Should().NotBeNull();
+        (await provider.GetHolderCountAsync(resource, AbortToken)).Should().Be(1);
+    }
+
     private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)
     {
         var counter = 1000L;
@@ -141,5 +250,20 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );
+    }
+
+    private static async Task _DrainUntilAsync(Func<bool> condition)
+    {
+        for (var i = 0; i < 2000 && !condition(); i++)
+        {
+            if (i % 100 == 0)
+            {
+                await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(1));
+            }
+            else
+            {
+                await Task.Yield();
+            }
+        }
     }
 }

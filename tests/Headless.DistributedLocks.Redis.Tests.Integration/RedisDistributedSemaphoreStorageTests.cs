@@ -144,6 +144,100 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
         ttl!.Value.Should().BeGreaterThan(TimeSpan.FromSeconds(4));
     }
 
+    [Fact]
+    public async Task should_extend_live_slot_and_survive_past_original_ttl()
+    {
+        // given
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        var ttl = TimeSpan.FromSeconds(2);
+        await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 1, ttl, AbortToken);
+
+        // when — extend before the original TTL elapses
+        var extended = await fixture.SemaphoreStorage.TryExtendAsync(resource, "lock-1", TimeSpan.FromSeconds(10), AbortToken);
+
+        // then — TryExtendAsync returns true and the score in the ZSET is beyond the original TTL
+        extended.Should().BeTrue();
+        var keyTtl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(holdersKey);
+        keyTtl.Should().NotBeNull();
+        keyTtl!.Value.Should().BeGreaterThan(ttl);
+    }
+
+    [Fact]
+    public async Task should_allow_exactly_max_count_concurrent_holders_under_parallel_load()
+    {
+        // given
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        const int maxCount = 5;
+        const int totalCandidates = 10;
+        var successCount = 0;
+
+        // when — 10 tasks all race to acquire a semaphore with capacity 5
+        var lockIds = Enumerable.Range(1, totalCandidates).Select(i => $"lock-{i}").ToList();
+        await Parallel.ForEachAsync(
+            lockIds,
+            new ParallelOptions { MaxDegreeOfParallelism = totalCandidates },
+            async (lockId, _) =>
+            {
+                var result = await fixture.SemaphoreStorage.TryAcquireAsync(
+                    resource,
+                    lockId,
+                    maxCount,
+                    TimeSpan.FromMinutes(5),
+                    AbortToken
+                );
+
+                if (result.Acquired)
+                {
+                    Interlocked.Increment(ref successCount);
+                }
+            }
+        );
+
+        // then — exactly max_count tasks succeeded
+        successCount.Should().Be(maxCount);
+        (await fixture.SemaphoreStorage.GetCountAsync(resource, AbortToken)).Should().Be(maxCount);
+    }
+
+    [Fact]
+    public async Task should_not_advance_fencing_token_on_failed_capacity_rejected_acquire()
+    {
+        // given — fill capacity
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var first = await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when — rejected acquire (capacity full)
+        var rejected = await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // release first slot and acquire again
+        await fixture.SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
+        var second = await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-3", 1, TimeSpan.FromMinutes(5), AbortToken);
+
+        // then — fencing token is strictly +1 from the last success (rejected attempt did not advance counter)
+        first.FencingToken.Should().Be(1);
+        rejected.Acquired.Should().BeFalse();
+        rejected.FencingToken.Should().BeNull();
+        second.FencingToken.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_set_holders_key_safety_ttl_approximately_double_slot_ttl()
+    {
+        // given
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        var slotTtl = TimeSpan.FromSeconds(10);
+
+        // when
+        await fixture.SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 1, slotTtl, AbortToken);
+
+        // then — the ZSET key's TTL must be in the range (slotTtl, 2 * slotTtl]
+        var keyTtl = await fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(holdersKey);
+        keyTtl.Should().NotBeNull();
+        keyTtl!.Value.Should().BeGreaterThan(slotTtl);
+        keyTtl!.Value.Should().BeLessThanOrEqualTo(slotTtl * 2);
+    }
+
     private static string _GetHoldersKey(string resource)
     {
         return "{" + resource + "}:holders";
