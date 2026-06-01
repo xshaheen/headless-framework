@@ -335,6 +335,32 @@ public sealed class ForMessageRegistrationTests
     }
 
     [Fact]
+    public async Task should_reject_cross_type_collision_between_scanned_and_explicit_registration_at_startup()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.ForMessage<OtherOrderPlaced>(message =>
+                message.MessageName(nameof(OrderPlaced)).OnBus<OtherOrderPlacedHandler>()
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () =>
+            provider.GetRequiredService<IBootstrapper>().BootstrapAsync(TestContext.Current.CancellationToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*OrderPlaced*OtherOrderPlaced*");
+    }
+
+    [Fact]
     public void should_scan_assembly_consumers_as_bus_registrations()
     {
         // given

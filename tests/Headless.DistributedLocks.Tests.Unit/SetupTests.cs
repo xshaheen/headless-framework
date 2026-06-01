@@ -50,6 +50,12 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
+
+        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        metadata.ConsumerType.Should().Be(typeof(DistributedLockProvider.LockReleasedConsumer));
+        metadata.MessageName.Should().Be("headless.locks.released");
+        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Concurrency.Should().Be(1);
     }
 
     [Fact]
