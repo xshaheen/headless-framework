@@ -37,7 +37,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             $"""SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[Description],[DefaultValue],[IsVisibleToClients],[IsAvailableToHost],[Providers],[ExtraProperties] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureDefinitionsTableName)};""";
 
         var result = new List<FeatureDefinitionRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -79,7 +79,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
             $"""SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureGroupDefinitionsTableName)};""";
 
         var result = new List<FeatureGroupDefinitionRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -112,7 +112,7 @@ internal sealed class SqlServerFeatureDefinitionRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 

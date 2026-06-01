@@ -16,7 +16,7 @@ internal sealed class SqlServerSettingsStorageInitializer(
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
         {

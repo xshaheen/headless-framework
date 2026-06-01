@@ -136,7 +136,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     )
     {
         var result = new List<FeatureValueRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -163,7 +163,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken, params SqlParameter[] parameters)
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {

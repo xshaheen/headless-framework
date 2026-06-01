@@ -23,7 +23,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
             $"""SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[IsEnabled],[Providers],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)};""";
 
         var result = new List<PermissionDefinitionRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -62,7 +62,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
             $"""SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)};""";
 
         var result = new List<PermissionGroupDefinitionRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -95,7 +95,7 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 

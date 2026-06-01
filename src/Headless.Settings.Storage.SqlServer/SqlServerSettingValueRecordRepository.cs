@@ -165,7 +165,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
     )
     {
         var result = new List<SettingValueRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -196,7 +196,7 @@ internal sealed class SqlServerSettingValueRecordRepository(
 
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken, params SqlParameter[] parameters)
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {

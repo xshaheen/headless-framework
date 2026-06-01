@@ -92,7 +92,7 @@ internal sealed class SqlServerPermissionGrantRepository(
         CancellationToken cancellationToken = default
     )
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         var sql =
@@ -154,7 +154,7 @@ internal sealed class SqlServerPermissionGrantRepository(
     )
     {
         var result = new List<PermissionGrantRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -182,7 +182,7 @@ internal sealed class SqlServerPermissionGrantRepository(
 
     private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken, params SqlParameter[] parameters)
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {

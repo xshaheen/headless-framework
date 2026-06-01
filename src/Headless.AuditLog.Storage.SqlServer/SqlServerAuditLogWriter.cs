@@ -43,7 +43,7 @@ internal sealed class SqlServerAuditLogWriter(
             return;
         }
 
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
@@ -75,7 +75,7 @@ internal sealed class SqlServerAuditLogWriter(
             return;
         }
 
-        using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        using var connection = providerOptions.Value.CreateConnection();
         connection.Open();
         using var transaction = connection.BeginTransaction();
 

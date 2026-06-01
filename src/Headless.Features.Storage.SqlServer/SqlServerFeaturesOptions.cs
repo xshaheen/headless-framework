@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Microsoft.Data.SqlClient;
 
 namespace Headless.Features.SqlServer;
 
@@ -11,6 +12,8 @@ public sealed class SqlServerFeaturesOptions
 
     /// <summary>Timeout applied to DDL/DML commands issued by this provider. Defaults to 30 seconds.</summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    internal SqlConnection CreateConnection() => new(ConnectionString);
 }
 
 internal sealed class SqlServerFeaturesOptionsValidator : AbstractValidator<SqlServerFeaturesOptions>

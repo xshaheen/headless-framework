@@ -21,7 +21,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
             $"""SELECT [Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties] FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)};""";
 
         var result = new List<SettingDefinitionRecord>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection)
         {
@@ -61,7 +61,7 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 

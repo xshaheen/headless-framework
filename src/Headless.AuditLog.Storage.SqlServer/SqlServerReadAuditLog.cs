@@ -51,7 +51,7 @@ internal sealed class SqlServerReadAuditLog<TContext>(
             $"""SELECT TOP(@Limit) [UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY [CreatedAt] DESC, [Id] DESC;""";
 
         var result = new List<AuditLogEntryData>();
-        await using var connection = new SqlConnection(providerOptions.Value.ConnectionString);
+        await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new SqlCommand(sql, connection);
         command.Parameters.AddRange(parameters.ToArray());
