@@ -10,7 +10,7 @@ namespace Headless.AuditLog.SqlServer;
 internal sealed class SqlServerAuditLogStorageInitializer(
     IOptions<SqlServerAuditLogOptions> providerOptions,
     IOptions<AuditLogStorageOptions> storageOptions
-) : StorageInitializerBase
+) : HostedInitializer
 {
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {

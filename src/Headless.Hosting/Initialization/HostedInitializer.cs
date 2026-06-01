@@ -5,10 +5,11 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Hosting.Initialization;
 
 /// <summary>
-/// Base class for storage initializers that need <see cref="IHostedLifecycleService"/> +
+/// Base class for hosted-lifecycle initializers that need <see cref="IHostedLifecycleService"/> +
 /// <see cref="IInitializer"/> with TCS-based completion semantics. Subclasses override
-/// <see cref="InitializeAsync"/> with their DDL/schema work; this base owns lifecycle plumbing,
-/// host-restart re-entry, and the wait-for-completion promise.
+/// <see cref="InitializeAsync"/> with their startup work (DDL/schema bootstrap, topology
+/// provisioning, warm-up, etc.); this base owns lifecycle plumbing, host-restart re-entry, and the
+/// wait-for-completion promise.
 /// </summary>
 /// <remarks>
 /// On a host restart, the completion source is swapped atomically and the previous promise is
@@ -17,7 +18,7 @@ namespace Headless.Hosting.Initialization;
 /// initializer's TCS is never <c>IsCompleted</c>, so the cancel path is skipped.
 /// </remarks>
 [PublicAPI]
-public abstract class StorageInitializerBase : IHostedLifecycleService, IInitializer
+public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
 {
     private volatile TaskCompletionSource _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

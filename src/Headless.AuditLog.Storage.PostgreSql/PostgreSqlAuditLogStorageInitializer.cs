@@ -13,7 +13,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
     IOptions<PostgreSqlAuditLogOptions> providerOptions,
     IOptions<AuditLogStorageOptions> storageOptions,
     ILogger<PostgreSqlAuditLogStorageInitializer>? logger = null
-) : StorageInitializerBase
+) : HostedInitializer
 {
     private readonly ILogger<PostgreSqlAuditLogStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlAuditLogStorageInitializer>.Instance;

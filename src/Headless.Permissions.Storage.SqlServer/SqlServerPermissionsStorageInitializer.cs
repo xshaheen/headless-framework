@@ -10,7 +10,7 @@ namespace Headless.Permissions.SqlServer;
 internal sealed class SqlServerPermissionsStorageInitializer(
     IOptions<SqlServerPermissionsOptions> providerOptions,
     IOptions<PermissionsStorageOptions> storageOptions
-) : StorageInitializerBase
+) : HostedInitializer
 {
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {

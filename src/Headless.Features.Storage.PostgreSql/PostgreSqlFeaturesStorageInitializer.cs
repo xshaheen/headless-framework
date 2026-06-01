@@ -13,7 +13,7 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
     IOptions<PostgreSqlFeaturesOptions> providerOptions,
     IOptions<FeaturesStorageOptions> storageOptions,
     ILogger<PostgreSqlFeaturesStorageInitializer>? logger = null
-) : StorageInitializerBase
+) : HostedInitializer
 {
     private readonly ILogger<PostgreSqlFeaturesStorageInitializer> _logger =
         logger ?? NullLogger<PostgreSqlFeaturesStorageInitializer>.Instance;

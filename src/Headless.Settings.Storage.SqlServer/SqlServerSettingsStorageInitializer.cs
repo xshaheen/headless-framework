@@ -10,7 +10,7 @@ namespace Headless.Settings.SqlServer;
 internal sealed class SqlServerSettingsStorageInitializer(
     IOptions<SqlServerSettingsOptions> providerOptions,
     IOptions<SettingsStorageOptions> storageOptions
-) : StorageInitializerBase
+) : HostedInitializer
 {
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
