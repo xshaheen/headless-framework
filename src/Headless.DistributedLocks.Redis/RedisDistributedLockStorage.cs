@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Redis;
+using System.Runtime.InteropServices;
 using System.Text;
 using StackExchange.Redis;
 
@@ -12,9 +13,9 @@ public sealed class RedisDistributedLockStorage(
     HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedLockStorage
 {
-    private const string PhysicalLockKeyPrefix = "{hflock:";
-    private const string PhysicalLockKeySuffix = "}:value";
-    private const string PhysicalLockKeyPattern = PhysicalLockKeyPrefix + "*" + PhysicalLockKeySuffix;
+    private const string _PhysicalLockKeyPrefix = "{hflock:";
+    private const string _PhysicalLockKeySuffix = "}:value";
+    private const string _PhysicalLockKeyPattern = _PhysicalLockKeyPrefix + "*" + _PhysicalLockKeySuffix;
 
     private IDatabase Db => multiplexer.GetDatabase();
 
@@ -31,8 +32,7 @@ public sealed class RedisDistributedLockStorage(
         var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
-        var result = await scriptsLoader
-            .TryAcquireLockAsync(Db, lockKey, fenceKey, lockId, ttl, cancellationToken)
+        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, lockId, ttl, cancellationToken)
             .ConfigureAwait(false);
 
         return result.Acquired
@@ -51,9 +51,12 @@ public sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await scriptsLoader
-            .ReplaceIfEqualAsync(Db, _GetLockKey(key), expectedId, newId, newTtl, cancellationToken)
+        var parameters = _GetReplaceIfEqualParameters(_GetLockKey(key), newId, expectedId, newTtl);
+        var result = await scriptsLoader
+            .EvaluateAsync(Db, ReplaceIfEqualScriptDefinition.Instance, parameters, cancellationToken)
             .ConfigureAwait(false);
+
+        return (int)result > 0;
     }
 
     public async ValueTask<bool> RemoveIfEqualAsync(
@@ -65,9 +68,16 @@ public sealed class RedisDistributedLockStorage(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await scriptsLoader
-            .RemoveIfEqualAsync(Db, _GetLockKey(key), expectedId, cancellationToken)
+        var result = await scriptsLoader
+            .EvaluateAsync(
+                Db,
+                RemoveIfEqualScriptDefinition.Instance,
+                new RemoveIfEqualParams(_GetLockKey(key), expectedId),
+                cancellationToken
+            )
             .ConfigureAwait(false);
+
+        return (int)result > 0;
     }
 
     public async ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default)
@@ -114,7 +124,7 @@ public sealed class RedisDistributedLockStorage(
             var batch = new List<RedisKey>(1000);
             await foreach (
                 var key in server
-                    .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
+                    .KeysAsync(pattern: _PhysicalLockKeyPattern, pageSize: 1000)
                     .WithCancellation(cancellationToken)
                     .ConfigureAwait(false)
             )
@@ -156,7 +166,7 @@ public sealed class RedisDistributedLockStorage(
             var batch = new List<RedisKey>(1000);
             await foreach (
                 var key in server
-                    .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
+                    .KeysAsync(pattern: _PhysicalLockKeyPattern, pageSize: 1000)
                     .WithCancellation(cancellationToken)
                     .ConfigureAwait(false)
             )
@@ -217,7 +227,7 @@ public sealed class RedisDistributedLockStorage(
 
         await foreach (
             var key in server
-                .KeysAsync(pattern: PhysicalLockKeyPattern, pageSize: 1000)
+                .KeysAsync(pattern: _PhysicalLockKeyPattern, pageSize: 1000)
                 .WithCancellation(cancellationToken)
                 .ConfigureAwait(false)
         )
@@ -232,6 +242,65 @@ public sealed class RedisDistributedLockStorage(
         return count;
     }
 
+    private async Task<(bool Acquired, long? FencingToken)> _TryAcquireLockAsync(
+        IDatabase db,
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        TimeSpan? ttl,
+        CancellationToken cancellationToken
+    )
+    {
+        var parameters = _GetAcquireLockParameters(key, fenceKey, lockId, ttl);
+        var result = await scriptsLoader
+            .EvaluateAsync(db, TryAcquireLockWithFenceScriptDefinition.Instance, parameters, cancellationToken)
+            .ConfigureAwait(false);
+        var values = (RedisResult[]?)result;
+
+        if (values is null || values.Length == 0)
+        {
+            throw new RedisServerException("Unexpected acquire lock script result.");
+        }
+
+        if ((int)values[0] <= 0)
+        {
+            return (false, null);
+        }
+
+        if (values.Length < 2)
+        {
+            throw new RedisServerException("Acquire lock script reported success without a fencing token.");
+        }
+
+        return (true, (long)values[1]);
+    }
+
+    private static ReplaceIfEqualParams _GetReplaceIfEqualParameters(
+        RedisKey key,
+        string? value,
+        string? expected,
+        TimeSpan? expires
+    )
+    {
+        // Use empty string as sentinel for null expected (key should not exist).
+        var expectedValue = expected ?? string.Empty;
+        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new ReplaceIfEqualParams(key, value, expectedValue, expiresValue);
+    }
+
+    private static AcquireLockParams _GetAcquireLockParameters(
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        TimeSpan? expires
+    )
+    {
+        var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
+
+        return new AcquireLockParams(key, fenceKey, lockId, expiresValue);
+    }
+
     private static RedisKey _GetFenceKey(string key)
     {
         return "fence:{" + _GetHashTag(key) + "}";
@@ -239,7 +308,7 @@ public sealed class RedisDistributedLockStorage(
 
     private static RedisKey _GetLockKey(string key)
     {
-        return PhysicalLockKeyPrefix + _GetEncodedKey(key) + PhysicalLockKeySuffix;
+        return _PhysicalLockKeyPrefix + _GetEncodedKey(key) + _PhysicalLockKeySuffix;
     }
 
     private static string _GetHashTag(string key)
@@ -257,15 +326,15 @@ public sealed class RedisDistributedLockStorage(
         var physicalKey = key.ToString();
 
         if (
-            !physicalKey.StartsWith(PhysicalLockKeyPrefix, StringComparison.Ordinal)
-            || !physicalKey.EndsWith(PhysicalLockKeySuffix, StringComparison.Ordinal)
+            !physicalKey.StartsWith(_PhysicalLockKeyPrefix, StringComparison.Ordinal)
+            || !physicalKey.EndsWith(_PhysicalLockKeySuffix, StringComparison.Ordinal)
         )
         {
             return null;
         }
 
         var encodedKey = physicalKey[
-            PhysicalLockKeyPrefix.Length..^PhysicalLockKeySuffix.Length
+            _PhysicalLockKeyPrefix.Length..^_PhysicalLockKeySuffix.Length
         ];
 
         try
@@ -350,4 +419,23 @@ public sealed class RedisDistributedLockStorage(
             }
         }
     }
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct AcquireLockParams(
+        RedisKey key,
+        RedisKey fenceKey,
+        string lockId,
+        RedisValue expires
+    );
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct ReplaceIfEqualParams(
+        RedisKey key,
+        string? value,
+        string expected,
+        RedisValue expires
+    );
+
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
 }
