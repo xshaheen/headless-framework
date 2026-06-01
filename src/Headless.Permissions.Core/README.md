@@ -88,16 +88,23 @@ var result = await permissionManager.GetAsync("Orders.View", currentUser);
 
 ### Options
 
-To tune the management options, register a `Configure<PermissionManagementOptions>(...)`
-callback — it composes with the auto-registration performed by `AddHeadlessPermissions(...)`,
-so order does not matter:
+Tune the management options through `setup.ConfigureManagement(...)` inside the
+`AddHeadlessPermissions` block, next to `ConfigureStorage`:
 
 ```csharp
-services.Configure<PermissionManagementOptions>(options =>
+services.AddHeadlessPermissions(setup =>
 {
-    options.CacheKeyPrefix = "permissions:";
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "permissions:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<PermissionManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

@@ -53,16 +53,23 @@ builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
 
 ### Options
 
-To tune the management options, register a `Configure<FeatureManagementOptions>(...)`
-callback — it composes with the auto-registration performed by `AddHeadlessFeatures(...)`,
-so order does not matter:
+Tune the management options through `setup.ConfigureManagement(...)` inside the
+`AddHeadlessFeatures` block, next to `ConfigureStorage`:
 
 ```csharp
-services.Configure<FeatureManagementOptions>(options =>
+services.AddHeadlessFeatures(setup =>
 {
-    options.CacheKeyPrefix = "features:";  // Cache key prefix
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "features:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

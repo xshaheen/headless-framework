@@ -115,26 +115,30 @@ Settings management has a prerequisite: register `IStringEncryptionService` befo
 }
 ```
 
-Register encryption first, then configure settings management. To tune the management
-options, register a `Configure<SettingManagementOptions>(...)` callback — it composes with
-the auto-registration performed by `AddHeadlessSettings(...)`, so order does not matter:
+Register encryption first, then configure settings management. Tune the management options
+through `setup.ConfigureManagement(...)` inside the `AddHeadlessSettings` block, next to
+`ConfigureStorage`:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
 
-services.Configure<SettingManagementOptions>(options =>
+services.AddHeadlessSettings(setup =>
 {
-    // Cache expiration for setting values (default: 5 hours)
-    options.ValueCacheExpiration = TimeSpan.FromHours(5);
+    setup.ConfigureManagement(options =>
+    {
+        // Cache expiration for setting values (default: 5 hours)
+        options.ValueCacheExpiration = TimeSpan.FromHours(5);
 
-    // Cache expiration for dynamic definitions (default: 30 seconds)
-    options.DynamicDefinitionsMemoryCacheExpiration = TimeSpan.FromSeconds(30);
-
-    // Lock settings for cross-application updates
-    options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
-    options.CrossApplicationsCommonLockExpiration = TimeSpan.FromMinutes(10);
+        // Lock settings for cross-application updates
+        options.CrossApplicationsCommonLockKey = "settings:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<SettingManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

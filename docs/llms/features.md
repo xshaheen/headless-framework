@@ -69,7 +69,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
-- `AddHeadlessFeatures(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, register `services.Configure<FeatureManagementOptions>(...)`; it composes with the auto-registration regardless of call order.
+- `AddHeadlessFeatures(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<FeatureManagementOptions>(...)` works too and composes regardless of order.
 - Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
 - Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
@@ -193,14 +193,20 @@ builder.Services.AddFeatureValueProvider<CustomFeatureValueProvider>();
 
 ### Options
 
-To tune the management options, register a `Configure<FeatureManagementOptions>(...)` callback; it composes with the auto-registration performed by `AddHeadlessFeatures(...)`, so order does not matter:
+Tune the management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessFeatures` block, next to `ConfigureStorage`:
 
 ```csharp
-services.Configure<FeatureManagementOptions>(options =>
+services.AddHeadlessFeatures(setup =>
 {
-    options.CacheKeyPrefix = "features:";  // Cache key prefix
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "features:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+A `(options, IServiceProvider)` overload is available when configuration needs resolved services. `services.Configure<FeatureManagementOptions>(...)` also works and composes with the auto-registration regardless of order.
 
 ## Dependencies
 

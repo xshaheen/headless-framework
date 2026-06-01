@@ -72,7 +72,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - Permission resolution order: User > Role > Store. An explicit `Prohibited` from ANY provider denies access regardless of other grants.
 - Three states: **Granted** (record with `IsGranted = true`), **Prohibited** (record with `IsGranted = false`), **Undefined** (no record, defaults to deny).
 - Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered. Ensure these are wired before adding permissions.
-- `AddHeadlessPermissions(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, register `services.Configure<PermissionManagementOptions>(...)`; it composes with the auto-registration regardless of call order.
+- `AddHeadlessPermissions(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<PermissionManagementOptions>(...)` works too and composes regardless of order.
 - Storage.EntityFramework uses the consumer's `DbContext`. Register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessPermissions(options)` in `OnModelCreating`.
 - Storage.PostgreSql and Storage.SqlServer provide Mode 2 raw providers. Use `AddHeadlessPermissions(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - `PermissionsInitializationBackgroundService` runs on startup — permission definitions are synced to the database automatically.
@@ -234,14 +234,20 @@ var result = await permissionManager.GetAsync("Orders.View", currentUser);
 
 ### Options
 
-To tune the management options, register a `Configure<PermissionManagementOptions>(...)` callback; it composes with the auto-registration performed by `AddHeadlessPermissions(...)`, so order does not matter:
+Tune the management options through `setup.ConfigureManagement(...)` inside the `AddHeadlessPermissions` block, next to `ConfigureStorage`:
 
 ```csharp
-services.Configure<PermissionManagementOptions>(options =>
+services.AddHeadlessPermissions(setup =>
 {
-    options.CacheKeyPrefix = "permissions:";
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "permissions:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+A `(options, IServiceProvider)` overload is available when configuration needs resolved services. `services.Configure<PermissionManagementOptions>(...)` also works and composes with the auto-registration regardless of order.
 
 ## Dependencies
 
