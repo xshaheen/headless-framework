@@ -57,8 +57,8 @@ Install all three packages for a complete setup:
 Typical registration:
 
 ```csharp
-builder.Services.AddFeaturesManagementCore(options => { options.CacheKeyPrefix = "features:"; });
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
+// AddHeadlessFeatures registers the management core automatically.
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
@@ -69,6 +69,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Inject `IFeatureManager` to read/write feature values. Do NOT use Microsoft.FeatureManagement — this is a separate system.
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
+- `AddHeadlessFeatures(...)` registers the management core automatically; you no longer call `AddFeaturesManagementCore(...)` separately. Call it directly only for the management core without a Headless storage provider, or to set management options first — it is idempotent with `AddHeadlessFeatures`.
 - Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
 - Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
@@ -173,15 +174,12 @@ dotnet add package Headless.Features.Core
 var builder = WebApplication.CreateBuilder(args);
 
 // Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-builder.Services.AddFeaturesManagementCore(options =>
-{
-    options.CacheKeyPrefix = "features:";
-});
 
 // Register feature definition providers
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
-// Add storage (e.g., Entity Framework)
+// Add management core + storage in one call (e.g., Entity Framework).
+// AddHeadlessFeatures registers the management core automatically.
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
@@ -258,7 +256,7 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
     options.UseNpgsql(connectionString)
 );
 
-builder.Services.AddFeaturesManagementCore();
+// AddHeadlessFeatures registers the management core automatically.
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "app_features");
@@ -313,8 +311,9 @@ dotnet add package Headless.Features.Storage.PostgreSql
 
 ## Quick Start
 
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` then registers the management core automatically.
+
 ```csharp
-builder.Services.AddFeaturesManagementCore();
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "features");
@@ -329,6 +328,7 @@ Configure schema and table names through `FeaturesStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Features.Storage.EntityFramework`
+- `Headless.Serializer.Json`
 - `Npgsql`
 
 ## Side Effects
@@ -359,8 +359,9 @@ dotnet add package Headless.Features.Storage.SqlServer
 
 ## Quick Start
 
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and `IGuidGenerator`. `AddHeadlessFeatures` then registers the management core automatically.
+
 ```csharp
-builder.Services.AddFeaturesManagementCore();
 builder.Services.AddHeadlessFeatures(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "features");
@@ -375,6 +376,7 @@ Configure schema and table names through `FeaturesStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Features.Storage.EntityFramework`
+- `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects

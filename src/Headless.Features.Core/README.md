@@ -24,24 +24,29 @@ dotnet add package Headless.Features.Storage.EntityFramework
 
 ## Quick Start
 
+`AddHeadlessFeatures(...)` registers the management core automatically, so a storage
+provider is all you need — no separate `AddFeaturesManagementCore(...)` call. Register the
+required services (`TimeProvider`, `ICache`, `IDistributedLock`, `IGuidGenerator`) first,
+then call `AddHeadlessFeatures`.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
 // Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-builder.Services.AddFeaturesManagementCore(options =>
-{
-    options.CacheKeyPrefix = "features:";
-});
 
 // Register feature definition providers
 builder.Services.AddFeatureDefinitionProvider<MyFeatureDefinitionProvider>();
 
-// Add storage (e.g., Entity Framework)
+// Add management core + storage in one call (Entity Framework shown)
 builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 For Entity Framework storage, register an `IDbContextFactory<AppDbContext>` and call
 `modelBuilder.AddHeadlessFeatures(featuresStorageOptions)` from your DbContext model configuration.
+
+Call `AddFeaturesManagementCore(...)` directly only when you need the management core
+without a Headless storage provider, or to set management options (`CacheKeyPrefix`) before
+`AddHeadlessFeatures`. It is idempotent with `AddHeadlessFeatures`, so calling both is safe.
 
 ### Custom Value Provider
 

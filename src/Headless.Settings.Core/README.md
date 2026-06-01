@@ -29,6 +29,11 @@ dotnet add package Headless.Settings.Storage.EntityFramework
 
 ## Quick Start
 
+`AddHeadlessSettings(...)` registers the management core automatically, so a storage
+provider is all you need — no separate `AddSettingsManagementCore(...)` call. Register the
+required services (`TimeProvider`, caching, distributed lock, `IStringEncryptionService`)
+first, then call `AddHeadlessSettings`.
+
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,18 +44,17 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
-// Add settings management
-builder.Services.AddSettingsManagementCore(options =>
-{
-    options.CacheKeyPrefix = "settings:";
-});
-
-// Add storage (choose Entity Framework, PostgreSQL raw, or SQL Server raw)
+// Add settings management + storage in one call (choose EF Core, PostgreSQL, or SQL Server)
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
+
+Call `AddSettingsManagementCore(...)` directly only when you need the management core
+without a Headless storage provider (for example, supplying your own
+`ISettingValueRecordRepository`). It is idempotent with `AddHeadlessSettings`, so calling
+both is safe.
 
 ## Usage
 
@@ -103,7 +107,7 @@ public sealed class ConfigService(ISettingManager settings)
 
 ## Configuration
 
-`AddSettingsManagementCore(...)` has a prerequisite: register `IStringEncryptionService` before settings management. The recommended setup is to bind `Headless:StringEncryption` explicitly:
+Settings management has a prerequisite: register `IStringEncryptionService` before calling `AddHeadlessSettings(...)` (or `AddSettingsManagementCore(...)`). The recommended setup is to bind `Headless:StringEncryption` explicitly:
 
 ```json
 {
@@ -117,7 +121,10 @@ public sealed class ConfigService(ISettingManager settings)
 }
 ```
 
-Register encryption first, then configure settings management:
+Register encryption first, then configure settings management. To tune the management
+options, call `AddSettingsManagementCore(...)` before `AddHeadlessSettings(...)` — the
+latter only registers the core when it is not already present, so your configured options
+are preserved:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));

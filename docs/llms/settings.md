@@ -71,7 +71,7 @@ builder.Services.AddDistributedLock();
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
-builder.Services.AddSettingsManagementCore(_ => { });
+// AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 builder.Services.AddSettingDefinitionProvider<AppSettingDefinitionProvider>();
 ```
@@ -88,7 +88,8 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read/write via `ISett
 - Core registers a `SettingsInitializationBackgroundService` hosted service -- do not register your own init logic for settings.
 - For EF storage, register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessSettings(options)` in `OnModelCreating`, then `AddHeadlessSettings(setup => setup.UseEntityFramework<TContext>())`.
 - Dependencies: Core requires `Headless.Caching.Abstractions` and `Headless.DistributedLocks.Abstractions` to be registered.
-- Pre-requisite: register `IStringEncryptionService` before `AddSettingsManagementCore(...)`. Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
+- `AddHeadlessSettings(...)` registers the management core automatically; you no longer call `AddSettingsManagementCore(...)` separately. Call it directly only for the management core without a Headless storage provider, or to set management options first — it is idempotent with `AddHeadlessSettings`.
+- Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching, distributed lock, and `IStringEncryptionService` (the core throws on startup if encryption is missing). Recommended: `AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"))`.
 
 ---
 # Headless.Settings.Abstractions
@@ -197,13 +198,8 @@ builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
 
-// Add settings management
-builder.Services.AddSettingsManagementCore(options =>
-{
-    options.CacheKeyPrefix = "settings:";
-});
-
-// Add storage (EF Core)
+// Add settings management + storage in one call (EF Core).
+// AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<AppDbContext>());
 
 // Register setting definition providers
@@ -275,7 +271,7 @@ Pre-requisite: configure and register string encryption before settings manageme
 }
 ```
 
-Then register settings management:
+Then register settings management. To tune management options, call `AddSettingsManagementCore(...)` before `AddHeadlessSettings(...)`; the latter only registers the core when it is not already present, so configured options are preserved:
 
 ```csharp
 services.AddStringEncryptionService(configuration.GetRequiredSection("Headless:StringEncryption"));
@@ -358,7 +354,7 @@ builder.Services.AddDbContextFactory<AppDbContext>(options =>
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
-builder.Services.AddSettingsManagementCore(_ => { });
+// AddHeadlessSettings registers the management core automatically.
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(storage =>
@@ -417,8 +413,9 @@ dotnet add package Headless.Settings.Storage.PostgreSql
 
 ## Quick Start
 
+Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+
 ```csharp
-builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "settings");
@@ -433,6 +430,7 @@ Configure schema and table names through `SettingsStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Settings.Storage.EntityFramework`
+- `Headless.Serializer.Json`
 - `Npgsql`
 
 ## Side Effects
@@ -463,8 +461,9 @@ dotnet add package Headless.Settings.Storage.SqlServer
 
 ## Quick Start
 
+Register the required services first — `TimeProvider`, caching, distributed lock, and `IStringEncryptionService`. `AddHeadlessSettings` then registers the management core automatically.
+
 ```csharp
-builder.Services.AddSettingsManagementCore(_ => { });
 builder.Services.AddHeadlessSettings(setup =>
 {
     setup.ConfigureStorage(storage => storage.Schema = "settings");
@@ -479,6 +478,7 @@ Configure schema and table names through `SettingsStorageOptions` on the shared 
 ## Dependencies
 
 - `Headless.Settings.Storage.EntityFramework`
+- `Headless.Serializer.Json`
 - `Microsoft.Data.SqlClient`
 
 ## Side Effects
