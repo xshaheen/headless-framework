@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Redis;
+using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.InteropServices;
 using System.Text;
 using StackExchange.Redis;
@@ -10,7 +11,7 @@ namespace Headless.DistributedLocks.Redis;
 
 public sealed class RedisDistributedLockStorage(
     IConnectionMultiplexer multiplexer,
-    HeadlessRedisScriptsLoader scriptsLoader
+    [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedLockStorage
 {
     private const string _PhysicalLockKeyPrefix = "{hflock:";

@@ -12,6 +12,10 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) : IDistributedSemaphoreProvider
 {
+    public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
+
+    public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+
     public IDistributedSemaphore CreateSemaphore(string resource, int maxCount)
     {
         Argument.IsNotNullOrWhiteSpace(resource);

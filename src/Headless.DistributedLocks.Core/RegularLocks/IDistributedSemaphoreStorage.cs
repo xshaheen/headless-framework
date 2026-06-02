@@ -3,6 +3,7 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+[PublicAPI]
 public interface IDistributedSemaphoreStorage
 {
     ValueTask<DistributedLockAcquireResult> TryAcquireAsync(

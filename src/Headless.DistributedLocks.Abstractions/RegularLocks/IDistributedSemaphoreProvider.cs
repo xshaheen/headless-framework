@@ -7,6 +7,10 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public interface IDistributedSemaphoreProvider
 {
+    TimeSpan DefaultTimeUntilExpires { get; }
+
+    TimeSpan DefaultAcquireTimeout { get; }
+
     /// <summary>Creates a semaphore for <paramref name="resource"/> with a fixed maximum holder count.</summary>
     IDistributedSemaphore CreateSemaphore(string resource, int maxCount);
 

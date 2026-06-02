@@ -144,11 +144,14 @@ public static class SetupRedisDistributedLock
         Func<IServiceCollection, IServiceCollection> registerScriptsInitializer
     )
     {
-        services.TryAddSingleton(sp => new HeadlessRedisScriptsLoader(
-            sp.GetRequiredService<IConnectionMultiplexer>(),
-            sp.GetService<TimeProvider>(),
-            sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
-        ));
+        services.TryAddKeyedSingleton(
+            RedisDistributedLockServiceKeys.ScriptsLoader,
+            (sp, _) => new HeadlessRedisScriptsLoader(
+                sp.GetRequiredService<IConnectionMultiplexer>(),
+                sp.GetService<TimeProvider>(),
+                sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+            )
+        );
         registerScriptsInitializer(services);
 
         return registerStorage(services);

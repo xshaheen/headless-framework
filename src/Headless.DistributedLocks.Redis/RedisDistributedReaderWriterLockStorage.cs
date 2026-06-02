@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Redis;
+using Microsoft.Extensions.DependencyInjection;
 using System.Runtime.InteropServices;
 using StackExchange.Redis;
 
@@ -9,7 +10,7 @@ namespace Headless.DistributedLocks.Redis;
 
 public sealed class RedisDistributedReaderWriterLockStorage(
     IConnectionMultiplexer multiplexer,
-    HeadlessRedisScriptsLoader scriptsLoader
+    [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : IDistributedReaderWriterLockStorage
 {
     private IDatabase Db => multiplexer.GetDatabase();

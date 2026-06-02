@@ -2,10 +2,13 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Redis;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Caching;
 
-internal sealed class RedisCacheScriptsInitializer(HeadlessRedisScriptsLoader scriptsLoader) : HostedInitializer
+internal sealed class RedisCacheScriptsInitializer(
+    [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
+) : HostedInitializer
 {
     private readonly List<RedisScriptDefinition> _definitions =
     [

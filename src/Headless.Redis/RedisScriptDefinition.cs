@@ -24,4 +24,12 @@ public abstract class RedisScriptDefinition
     {
         return _script.LoadAsync(server);
     }
+
+    internal Task<RedisResult> EvaluateWithoutScriptCacheAsync(IDatabase db, object? parameters)
+    {
+        // The LuaScript overload carries the full body; NoScriptCache forces EVAL instead of
+        // EVALSHA, so this call cannot raise NOSCRIPT. The loader's recovery path uses it when a
+        // node is missing the cached script (e.g. a freshly promoted primary).
+        return db.ScriptEvaluateAsync(_script, parameters, CommandFlags.NoScriptCache);
+    }
 }

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
+using Microsoft.Extensions.DependencyInjection;
 using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -32,7 +33,7 @@ public sealed class RedisCache(
     ISerializer serializer,
     TimeProvider timeProvider,
     RedisCacheOptions options,
-    HeadlessRedisScriptsLoader scriptsLoader,
+    [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null
 ) : IDistributedCache, IDisposable
 {

@@ -2,10 +2,13 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Redis;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.DistributedLocks.Redis;
 
-internal sealed class RedisMutexScriptsInitializer(HeadlessRedisScriptsLoader scriptsLoader) : HostedInitializer
+internal sealed class RedisMutexScriptsInitializer(
+    [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
+) : HostedInitializer
 {
     private readonly List<RedisScriptDefinition> _definitions =
     [

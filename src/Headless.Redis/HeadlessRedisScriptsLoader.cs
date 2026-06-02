@@ -127,13 +127,15 @@ public sealed class HeadlessRedisScriptsLoader(
         {
             logger?.LogNoScriptRetry();
 
-            // Only reset if no one has successfully loaded scripts since we started this call.
-            // This prevents redundant reloads in high-concurrency scenarios.
+            // The node that served this EVALSHA is missing the script — typically a replica that
+            // was promoted to primary after the initial SCRIPT LOAD, or a flushed/cold cache.
+            // Recover by re-running the full body via EVAL, which cannot raise NOSCRIPT and
+            // re-populates that node's script cache as a side effect. The version-guarded reset
+            // (skipped if another caller already reloaded) drops the stale SHA handles so the next
+            // caller reloads against the current topology and resumes the fast EVALSHA path.
             _ResetScripts(versionAtStart);
 
-            script = await _GetOrLoadScriptAsync(scriptDefinition, cancellationToken).ConfigureAwait(false);
-
-            return await db.ScriptEvaluateAsync(script, parameters).ConfigureAwait(false);
+            return await scriptDefinition.EvaluateWithoutScriptCacheAsync(db, parameters).ConfigureAwait(false);
         }
     }
 

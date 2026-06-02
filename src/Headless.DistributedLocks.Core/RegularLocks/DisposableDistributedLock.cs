@@ -147,8 +147,6 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
                 return;
             }
 
-            _isReleased = true;
-
             if (_logger.IsEnabled(LogLevel.Debug))
             {
                 var elapsed = _timeProvider.GetElapsedTime(_timestamp);
@@ -158,6 +156,11 @@ internal sealed class DisposableDistributedLock : IDistributedLock, LeaseMonitor
 
             await _StopMonitorAsync().ConfigureAwait(false);
             await _lockProvider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
+
+            // Mark released only after storage release succeeds: a transient failure leaves the
+            // handle reusable so a later ReleaseAsync/DisposeAsync retries instead of orphaning the
+            // lock until its TTL. Mirrors DisposableSemaphoreSlot.
+            _isReleased = true;
         }
     }
 

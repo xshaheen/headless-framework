@@ -115,9 +115,14 @@ internal sealed class DisposableSemaphoreSlot : IDistributedLock, LeaseMonitor.I
                 return;
             }
 
-            _isReleased = true;
+            // Stop the monitor unconditionally so it does not fire HandleLostToken after an
+            // explicit release, regardless of whether the storage call below succeeds.
             await _StopMonitorAsync().ConfigureAwait(false);
+
+            // Mark released AFTER storage succeeds so a transient failure leaves _isReleased
+            // false and a subsequent DisposeAsync / ReleaseAsync can retry the storage call.
             await _provider.ReleaseAsync(Resource, LockId, CancellationToken.None).ConfigureAwait(false);
+            _isReleased = true;
         }
     }
 

@@ -2,11 +2,13 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Redis;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.DistributedLocks.Redis;
 
-internal sealed class RedisReaderWriterLockScriptsInitializer(HeadlessRedisScriptsLoader scriptsLoader)
-    : HostedInitializer
+internal sealed class RedisReaderWriterLockScriptsInitializer(
+    [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
+) : HostedInitializer
 {
     private readonly List<RedisScriptDefinition> _definitions =
     [
