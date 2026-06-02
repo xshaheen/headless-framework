@@ -43,7 +43,7 @@ internal static partial class RedisLoggerExtensions
         EventId = 5,
         EventName = "NoScriptRetry",
         Level = LogLevel.Debug,
-        Message = "Redis returned NOSCRIPT; reloading Lua scripts and retrying once"
+        Message = "Redis returned NOSCRIPT; evaluating Lua script without the script cache and resetting loaded scripts"
     )]
     public static partial void LogNoScriptRetry(this ILogger logger);
 }

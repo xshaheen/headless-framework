@@ -63,7 +63,7 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 
 ## Side Effects
 
-- Registers `HeadlessRedisScriptsLoader`.
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
 - Registers hosted `IInitializer` warmup for only the Redis lock feature scripts that were registered:
   mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReaderWriterLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
 - Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.

@@ -280,7 +280,7 @@ This design ensures consumers never observe partial results from batch operation
 
 - Registers `IDistributedCache` as singleton
 - Registers `IDistributedCache<T>` as singleton
-- Registers `HeadlessRedisScriptsLoader` as singleton
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`
 - Registers a hosted `IInitializer` that warms Redis cache Lua scripts on host start
 
 ---

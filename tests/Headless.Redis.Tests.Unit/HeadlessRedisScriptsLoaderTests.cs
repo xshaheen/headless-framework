@@ -85,6 +85,42 @@ public sealed class HeadlessRedisScriptsLoaderTests
     }
 
     [Fact]
+    public async Task should_skip_replica_and_disconnected_endpoints_when_loading_requested_scripts()
+    {
+        // given
+        RedisScriptDefinition[] scripts =
+        [
+            CustomReturnOneScriptDefinition.Instance,
+            CustomReturnTwoScriptDefinition.Instance,
+        ];
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        var writableEndpoint = new IPEndPoint(IPAddress.Loopback, 6379);
+        var replicaEndpoint = new IPEndPoint(IPAddress.Loopback, 6380);
+        var disconnectedEndpoint = new IPEndPoint(IPAddress.Loopback, 6381);
+        var writableServer = _CreateServer(isConnected: true, isReplica: false);
+        var replicaServer = _CreateServer(isConnected: true, isReplica: true);
+        var disconnectedServer = _CreateServer(isConnected: false, isReplica: false);
+
+        multiplexer.GetEndPoints().Returns([writableEndpoint, replicaEndpoint, disconnectedEndpoint]);
+        multiplexer.GetServer(writableEndpoint).Returns(writableServer);
+        multiplexer.GetServer(replicaEndpoint).Returns(replicaServer);
+        multiplexer.GetServer(disconnectedEndpoint).Returns(disconnectedServer);
+
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+
+        // when
+        await sut.LoadAsync(scripts);
+
+        // then
+        await writableServer.Received(scripts.Length).ScriptLoadAsync(
+            Arg.Any<string>(),
+            Arg.Any<CommandFlags>()
+        );
+        await replicaServer.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+        await disconnectedServer.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
     public async Task should_load_requested_script_definitions()
     {
         // given
@@ -162,6 +198,29 @@ public sealed class HeadlessRedisScriptsLoaderTests
         await db.Received(1).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
     }
 
+    [Fact]
+    public async Task should_reload_script_after_reset_scripts_clears_loaded_state()
+    {
+        // given
+        var script = CustomReturnOneScriptDefinition.Instance;
+        var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
+        var db = Substitute.For<IDatabase>();
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+
+        db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
+            .Returns(Task.FromResult(RedisResult.Create(1)));
+
+        _ = await sut.EvaluateAsync(db, script, parameters: null);
+
+        // when
+        sut.ResetScripts();
+        _ = await sut.EvaluateAsync(db, script, parameters: null);
+
+        // then
+        await server.Received(2).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+        await db.Received(2).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
+    }
+
     private static (IConnectionMultiplexer Multiplexer, IServer Server) _CreateMultiplexerWithServer(
         bool isConnected,
         bool isReplica
@@ -177,6 +236,16 @@ public sealed class HeadlessRedisScriptsLoaderTests
         server.IsReplica.Returns(isReplica);
 
         return (multiplexer, server);
+    }
+
+    private static IServer _CreateServer(bool isConnected, bool isReplica)
+    {
+        var server = Substitute.For<IServer>();
+
+        server.IsConnected.Returns(isConnected);
+        server.IsReplica.Returns(isReplica);
+
+        return server;
     }
 
     private sealed class CustomReturnOneScriptDefinition : RedisScriptDefinition

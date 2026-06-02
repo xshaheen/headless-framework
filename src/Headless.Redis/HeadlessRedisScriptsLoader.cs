@@ -59,7 +59,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
             logger?.LogPreparingLuaScript();
 
-            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(_loadedScripts);
+            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(Volatile.Read(ref _loadedScripts));
             var loadedEndpointCount = 0;
 
             foreach (var endpoint in multiplexer.GetEndPoints())
@@ -92,7 +92,7 @@ public sealed class HeadlessRedisScriptsLoader(
                 );
             }
 
-            _loadedScripts = loadedScripts;
+            Volatile.Write(ref _loadedScripts, loadedScripts);
             _MarkLoaded();
             _SubscribeConnectionRestored();
 
@@ -146,7 +146,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
         if ((version & 1) == 0 && Interlocked.CompareExchange(ref _version, version + 1, version) == version)
         {
-            _loadedScripts = [];
+            Volatile.Write(ref _loadedScripts, []);
         }
     }
 
@@ -217,12 +217,12 @@ public sealed class HeadlessRedisScriptsLoader(
                 );
             }
 
-            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(_loadedScripts)
+            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(Volatile.Read(ref _loadedScripts))
             {
                 [scriptDefinition.GetType()] = loadedScript,
             };
 
-            _loadedScripts = loadedScripts;
+            Volatile.Write(ref _loadedScripts, loadedScripts);
             _MarkLoaded();
             _SubscribeConnectionRestored();
 
@@ -232,17 +232,21 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private LoadedLuaScript? _GetLoadedScript(RedisScriptDefinition scriptDefinition)
     {
-        return _loadedScripts.GetValueOrDefault(scriptDefinition.GetType());
+        return Volatile.Read(ref _loadedScripts).GetValueOrDefault(scriptDefinition.GetType());
     }
 
     private bool _ContainsAll(IReadOnlyList<RedisScriptDefinition> scriptDefinitions)
     {
-        return scriptDefinitions.All(scriptDefinition => _loadedScripts.ContainsKey(scriptDefinition.GetType()));
+        var loadedScripts = Volatile.Read(ref _loadedScripts);
+
+        return scriptDefinitions.All(scriptDefinition => loadedScripts.ContainsKey(scriptDefinition.GetType()));
     }
 
     private IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(IReadOnlyList<RedisScriptDefinition> definitions)
     {
-        return definitions.Where(scriptDefinition => !_loadedScripts.ContainsKey(scriptDefinition.GetType())).ToArray();
+        var loadedScripts = Volatile.Read(ref _loadedScripts);
+
+        return definitions.Where(scriptDefinition => !loadedScripts.ContainsKey(scriptDefinition.GetType())).ToArray();
     }
 
     private void _ResetScripts(int expectedVersion)
@@ -252,15 +256,17 @@ public sealed class HeadlessRedisScriptsLoader(
             && Interlocked.CompareExchange(ref _version, expectedVersion + 1, expectedVersion) == expectedVersion
         )
         {
-            _loadedScripts = [];
+            Volatile.Write(ref _loadedScripts, []);
         }
     }
 
     private void _MarkLoaded()
     {
-        if ((_version & 1) != 0)
+        var version = Volatile.Read(ref _version);
+
+        if ((version & 1) != 0)
         {
-            _version++;
+            Volatile.Write(ref _version, version + 1);
         }
     }
 
