@@ -16,7 +16,8 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
-        const string unreachable = "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
+        const string unreachable =
+            "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
@@ -39,7 +40,10 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
     public async Task should_throw_and_keep_initializer_unmarked_when_authentication_fails()
     {
         // given — point at the real fixture but with a wrong password
-        var badAuth = new SqlConnectionStringBuilder(fixture.ConnectionString) { Password = "wrong-password" }.ToString();
+        var badAuth = new SqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            Password = "wrong-password",
+        }.ToString();
         using var host = _CreateHost(badAuth);
 
         // when / then
@@ -60,7 +64,10 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         // designed to be idempotent via OBJECT_ID checks + duplicate-error suppression.
         await _DropSchemaAsync("audit_log_sql_concurrent");
         const int hostCount = 5;
-        var hosts = Enumerable.Range(0, hostCount).Select(_ => _CreateHost(fixture.ConnectionString, "audit_log_sql_concurrent")).ToArray();
+        var hosts = Enumerable
+            .Range(0, hostCount)
+            .Select(_ => _CreateHost(fixture.ConnectionString, "audit_log_sql_concurrent"))
+            .ToArray();
 
         try
         {
@@ -71,8 +78,10 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             // then — all initializers report ready, exactly one audit_log table exists, and the
             // full 5-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
-                .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
+            hosts
+                .Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>().Single().IsInitialized)
+                .Should()
+                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(1);
             (await _CountIndexesAsync("audit_log_sql_concurrent", "audit_log")).Should().Be(5);
         }
@@ -126,7 +135,10 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 
     private async Task<int> _CountIndexesAsync(string schema, string table)
@@ -140,6 +152,9 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
             connection
         );
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 }

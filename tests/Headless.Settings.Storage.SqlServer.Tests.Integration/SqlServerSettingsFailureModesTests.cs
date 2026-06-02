@@ -1,16 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
+using Headless.Settings.Seeders;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Headless;
-using Microsoft.Extensions.Configuration;
-using Headless.Settings.Seeders;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 [Collection<SqlServerSettingsFixture>]
 public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture fixture)
 {
@@ -19,7 +20,8 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
-        const string unreachable = "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
+        const string unreachable =
+            "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
@@ -29,7 +31,8 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             .ThrowAsync<Exception>()
             .Where(e => e is SqlException || e.InnerException is SqlException);
 
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not SettingsInitializationBackgroundService);
         initializer.IsInitialized.Should().BeFalse();
 
@@ -46,7 +49,10 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         // designed to be idempotent via OBJECT_ID checks + duplicate-error suppression.
         await _DropSchemaAsync("settings_sql_concurrent");
         const int hostCount = 5;
-        var hosts = Enumerable.Range(0, hostCount).Select(_ => _CreateHost(fixture.ConnectionString, "settings_sql_concurrent")).ToArray();
+        var hosts = Enumerable
+            .Range(0, hostCount)
+            .Select(_ => _CreateHost(fixture.ConnectionString, "settings_sql_concurrent"))
+            .ToArray();
 
         try
         {
@@ -57,9 +63,14 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
             // then — all initializers report ready, exactly one of each table exists, and the
             // full 3-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                    .Single(x => x is not SettingsInitializationBackgroundService).IsInitialized)
-                .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
+            hosts
+                .Select(h =>
+                    h.Services.GetRequiredService<IEnumerable<IInitializer>>()
+                        .Single(x => x is not SettingsInitializationBackgroundService)
+                        .IsInitialized
+                )
+                .Should()
+                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("settings_sql_concurrent", "SettingValues")).Should().Be(1);
             (await _CountTablesAsync("settings_sql_concurrent", "SettingDefinitions")).Should().Be(1);
             (await _CountIndexesAsync("settings_sql_concurrent")).Should().Be(3);
@@ -79,14 +90,14 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
         // AddHeadlessSettings now registers the management core, which requires IStringEncryptionService.
-        builder.Configuration.AddInMemoryCollection(
-            [
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            ]
+        builder.Configuration.AddInMemoryCollection([
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+        ]);
+        builder.Services.AddStringEncryptionService(
+            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
         );
-        builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
         builder.Services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = schema);
@@ -126,7 +137,10 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
@@ -147,6 +161,9 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
         );
         command.Parameters.AddWithValue("@schema", schema);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 }

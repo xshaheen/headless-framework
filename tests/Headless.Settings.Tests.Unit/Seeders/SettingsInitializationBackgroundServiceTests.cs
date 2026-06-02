@@ -11,6 +11,7 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Seeders;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 {
     private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
@@ -29,10 +30,10 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
     #region IInitializer Contract
 
     [Fact]
-    public async Task should_report_not_initialized_before_start()
+    public void should_report_not_initialized_before_start()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new SettingManagementOptions { SaveStaticSettingsToDatabase = true, IsDynamicSettingStoreEnabled = false }
         );
 
@@ -44,7 +45,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
     public async Task should_report_initialized_when_options_disabled()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new SettingManagementOptions { SaveStaticSettingsToDatabase = false, IsDynamicSettingStoreEnabled = false }
         );
 
@@ -74,7 +75,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -97,7 +98,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
 
         _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -124,7 +125,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
             .GetAllAsync(Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<SettingDefinition>>(_ => throw exception);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(CancellationToken.None);
@@ -156,7 +157,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
                 await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -182,7 +183,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
             IsDynamicSettingStoreEnabled = false,
         };
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -218,7 +219,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -251,7 +252,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
                 return Task.FromResult<IReadOnlyList<SettingDefinition>>([]);
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -349,7 +350,7 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
                 }
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when - start with a cancellable token
         await sut.StartAsync(cts.Token);

@@ -1,16 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
+using Headless.Settings.Seeders;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Headless;
-using Microsoft.Extensions.Configuration;
-using Headless.Settings.Seeders;
 
 namespace Tests;
 
@@ -28,7 +28,8 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not SettingsInitializationBackgroundService);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
@@ -64,7 +65,9 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         await host.StartAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await _IndexExistsAsync("SettingDefinitions", "IX_SettingDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("SettingDefinitions", "IX_SettingDefinitions_Name"))
+            .Should()
+            .BeTrue();
         (await _IndexExistsAsync("SettingValues", "IX_SettingValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
     }
 
@@ -110,14 +113,14 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
         // AddHeadlessSettings now registers the management core, which requires IStringEncryptionService.
-        builder.Configuration.AddInMemoryCollection(
-            [
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            ]
+        builder.Configuration.AddInMemoryCollection([
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+        ]);
+        builder.Services.AddStringEncryptionService(
+            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
         );
-        builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
         builder.Services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);
@@ -222,7 +225,7 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
 
     private async Task _BulkInsertSettingValuesAsync(int totalRows)
     {
-        var table = new DataTable();
+        using var table = new DataTable();
         table.Columns.Add("Id", typeof(Guid));
         table.Columns.Add("Name", typeof(string));
         table.Columns.Add("Value", typeof(string));
@@ -237,10 +240,9 @@ public sealed class SqlServerSettingsStorageTests(SqlServerSettingsFixture fixtu
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(TestContext.Current.CancellationToken);
-        using var bulkCopy = new SqlBulkCopy(connection)
-        {
-            DestinationTableName = $"[{_Schema}].[SettingValues]",
-        };
+        using var bulkCopy = new SqlBulkCopy(connection);
+
+        bulkCopy.DestinationTableName = $"[{_Schema}].[SettingValues]";
         bulkCopy.ColumnMappings.Add("Id", "Id");
         bulkCopy.ColumnMappings.Add("Name", "Name");
         bulkCopy.ColumnMappings.Add("Value", "Value");

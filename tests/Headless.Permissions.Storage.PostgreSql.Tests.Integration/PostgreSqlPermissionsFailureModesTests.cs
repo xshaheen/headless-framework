@@ -2,10 +2,10 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
+using Headless.Permissions.Seeders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Headless.Permissions.Seeders;
 
 namespace Tests;
 
@@ -17,7 +17,8 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Credentials are placeholders; we never reach the auth handshake because the TCP connect fails first.
-        const string unreachable = "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
+        const string unreachable =
+            "Host=127.0.0.1;Port=1;Database=missing;Username=postgres;Password=placeholder-never-used;Timeout=2";
         using var host = _CreateHost(unreachable);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is NpgsqlException
@@ -27,7 +28,8 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             .ThrowAsync<Exception>()
             .Where(e => e is NpgsqlException || e.InnerException is NpgsqlException);
 
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not PermissionsInitializationBackgroundService);
         initializer.IsInitialized.Should().BeFalse();
 
@@ -44,7 +46,10 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         // designed to be idempotent via CREATE IF NOT EXISTS + duplicate-error suppression.
         await _DropSchemaAsync("permissions_pg_concurrent");
         const int hostCount = 5;
-        var hosts = Enumerable.Range(0, hostCount).Select(_ => _CreateHost(fixture.ConnectionString, "permissions_pg_concurrent")).ToArray();
+        var hosts = Enumerable
+            .Range(0, hostCount)
+            .Select(_ => _CreateHost(fixture.ConnectionString, "permissions_pg_concurrent"))
+            .ToArray();
 
         try
         {
@@ -55,9 +60,14 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             // then — all initializers report ready, exactly one of each table exists, and the
             // full 5-index complement is present (regression guard: a swallowed CREATE INDEX
             // failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                    .Single(x => x is not PermissionsInitializationBackgroundService).IsInitialized)
-                .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
+            hosts
+                .Select(h =>
+                    h.Services.GetRequiredService<IEnumerable<IInitializer>>()
+                        .Single(x => x is not PermissionsInitializationBackgroundService)
+                        .IsInitialized
+                )
+                .Should()
+                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("permissions_pg_concurrent", "PermissionGrants")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "PermissionDefinitions")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "PermissionGroupDefinitions")).Should().Be(1);
@@ -109,7 +119,10 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
@@ -128,6 +141,9 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
         );
         command.Parameters.AddWithValue("schema", schema);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 }

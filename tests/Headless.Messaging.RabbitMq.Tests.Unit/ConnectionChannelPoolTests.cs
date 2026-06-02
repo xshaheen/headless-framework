@@ -145,13 +145,14 @@ public sealed class ConnectionChannelPoolTests : TestBase
         );
 
         await using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+        var sut = (IConnectionChannelPool)pool;
 
         // when/Then - both should fail but semaphore should be released
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
 
         // Verify pool is not exhausted - can still attempt rentals
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
     }
 
     [Fact]
@@ -173,13 +174,14 @@ public sealed class ConnectionChannelPoolTests : TestBase
         );
 
         await using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+        var sut = (IConnectionChannelPool)pool;
 
         // when/Then - should fail but not exhaust semaphore
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
 
         // Verify pool is not exhausted after exceptions
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
     }
 
     [Fact]
@@ -199,6 +201,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
         );
 
         await using var pool = new ConnectionChannelPool(_logger, _capOptions, options);
+        var sut = (IConnectionChannelPool)pool;
 
         // when - force multiple exceptions (up to pool size of 15)
         var rentTasks = Enumerable
@@ -207,7 +210,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
             {
                 try
                 {
-                    await pool.Rent();
+                    await sut.Rent();
                 }
                 catch
                 {
@@ -220,7 +223,40 @@ public sealed class ConnectionChannelPoolTests : TestBase
         await Task.WhenAll(rentTasks).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
 
         // Verify pool is still usable
-        await pool.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+        await sut.Invoking(p => p.Rent()).Should().ThrowAsync<Exception>();
+    }
+
+    [Fact]
+    public async Task should_not_over_release_semaphore_when_rented_and_returned_through_interface()
+    {
+        // given - a channel pre-seeded into the pool so interface Rent() can hand it out without a
+        // real broker. The interface Rent acquires _poolSemaphore; the interface Return releases it.
+        // Each rent/return cycle must be balanced.
+        await using var pool = new ConnectionChannelPool(_logger, _capOptions, _rabbitOptions);
+        var sut = (IConnectionChannelPool)pool;
+        var channel = Substitute.For<IChannel>();
+        channel.IsOpen.Returns(true);
+
+        // seed the pool so Rent() dequeues this channel instead of opening a connection
+        pool.Return(channel);
+
+        // when - cycle Rent+Return more times than the pool size (_DefaultPoolSize = 15).
+        // Pre-fix, Return released the semaphore without Rent acquiring it, so after 15 returns the
+        // semaphore over-released and threw SemaphoreFullException.
+        Func<Task> act = async () =>
+        {
+            for (var i = 0; i < 30; i++)
+            {
+                var rented = await sut.Rent();
+                sut.Return(rented);
+            }
+        };
+
+        // then - no over-release, and the pool stays usable for one more cycle
+        await act.Should().NotThrowAsync();
+
+        var last = await sut.Rent();
+        sut.Return(last).Should().BeTrue();
     }
 
     [Fact]

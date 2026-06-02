@@ -1,6 +1,7 @@
 using Dapper;
 using Demo;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 
 var builder = WebApplication.CreateBuilder(args);

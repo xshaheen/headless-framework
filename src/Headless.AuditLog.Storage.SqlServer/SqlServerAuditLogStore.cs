@@ -23,10 +23,11 @@ internal sealed partial class SqlServerAuditLogStore(
     // path. Fires once per distinct DbContext shape where the consumer never opened an explicit
     // transaction — audit rows then commit on a separate connection and are NOT atomic with the
     // consumer's SaveChanges, so an entity-save failure leaves orphan audit rows.
-    private static readonly ConcurrentDictionary<string, byte> _WarnedMissingTransactionContexts = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte> _WarnedMissingTransactionContexts = new(
+        StringComparer.Ordinal
+    );
 
-    private readonly ILogger<SqlServerAuditLogStore> _logger =
-        logger ?? NullLogger<SqlServerAuditLogStore>.Instance;
+    private readonly ILogger<SqlServerAuditLogStore> _logger = logger ?? NullLogger<SqlServerAuditLogStore>.Instance;
 
     public IReadOnlyList<IAuditLogStoreEntry> Save(IReadOnlyList<AuditLogEntryData> entries, object savingContext)
     {
@@ -88,8 +89,10 @@ internal sealed partial class SqlServerAuditLogStore(
         return (null, null);
     }
 
-    private static IReadOnlyList<IAuditLogStoreEntry> _Entries(int count) =>
-        count == 0 ? [] : Enumerable.Repeat(NoopAuditLogStoreEntry.Instance, count).ToArray();
+    private static IAuditLogStoreEntry[] _Entries(int count)
+    {
+        return count == 0 ? [] : [.. Enumerable.Repeat(NoopAuditLogStoreEntry.Instance, count)];
+    }
 
     private sealed class NoopAuditLogStoreEntry : IAuditLogStoreEntry
     {
@@ -106,6 +109,7 @@ internal sealed partial class SqlServerAuditLogStore(
         Level = LogLevel.Warning,
         Message = "SqlServer audit log store could not enroll in the consumer's ambient transaction because the active connection is {ConnectionType}, not SqlConnection. Audit rows will commit on a separate connection and are NOT atomic with the consumer's SaveChanges. Subsequent occurrences of this exact mismatch are suppressed for the remainder of this process."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogProviderMismatch(ILogger logger, string connectionType);
 
     [LoggerMessage(
@@ -114,5 +118,6 @@ internal sealed partial class SqlServerAuditLogStore(
         Level = LogLevel.Warning,
         Message = "SqlServer audit log store could not enroll in an ambient transaction for saving context {SavingContextType} because the consumer did not open one (e.g. no BeginTransaction call). Audit rows will commit on a separate connection BEFORE the consumer's SaveChanges and are NOT atomic with it — an entity-save failure will leave orphan audit rows. Subsequent occurrences for this saving-context type are suppressed for the remainder of this process."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogProviderMissingAmbientTransaction(ILogger logger, string savingContextType);
 }

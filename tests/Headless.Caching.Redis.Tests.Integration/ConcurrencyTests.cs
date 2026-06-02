@@ -10,7 +10,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         const int incrementCount = 100;
 
@@ -30,7 +30,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         const string baseKey = "concurrent-upsert:";
         const int count = 50;
 
@@ -52,7 +52,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         await cache.UpsertAsync(key, "initial", TimeSpan.FromMinutes(5), AbortToken);
         const int iterations = 50;
@@ -77,7 +77,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         const int concurrency = 10;
 
@@ -132,7 +132,7 @@ public sealed class ConcurrencyTests(RedisCacheFixture fixture) : RedisCacheTest
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         const string prefix = "concurrent-remove:";
         for (var i = 0; i < 50; i++)
         {

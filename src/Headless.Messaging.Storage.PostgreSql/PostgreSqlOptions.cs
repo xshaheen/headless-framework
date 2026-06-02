@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 public sealed class PostgreSqlOptions : PostgreSqlEntityFrameworkMessagingOptions
 {

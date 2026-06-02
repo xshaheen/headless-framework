@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
 /// Provides Entity Framework-specific transaction helpers for PostgreSQL.

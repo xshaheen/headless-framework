@@ -45,10 +45,8 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -77,10 +75,8 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -93,8 +89,12 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         }
     }
 
-    internal static string Qualified(AuditLogStorageOptions options) =>
-        $@"""{options.Schema}"".""{options.TableName}""";
+    internal static string Qualified(AuditLogStorageOptions options)
+    {
+        return $"""
+            "{options.Schema}"."{options.TableName}"
+            """;
+    }
 
     private static string _CreateSchemaAndTableScript(AuditLogStorageOptions options)
     {
@@ -110,7 +110,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         // both attempt to insert into pg_namespace and one fails with 23505. The lock is
         // automatically released on COMMIT/ROLLBACK, no explicit release needed.
         var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -147,7 +147,7 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         // Re-acquire the advisory lock so multi-replica races on CREATE INDEX serialize the same
         // way as the table-create path. Released automatically on COMMIT/ROLLBACK.
         var lockResource = $"headless_audit_init:{options.Schema}.{options.TableName}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -166,5 +166,6 @@ internal sealed partial class PostgreSqlAuditLogStorageInitializer(
         Level = LogLevel.Information,
         Message = "PostgreSql audit-log initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

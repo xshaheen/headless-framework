@@ -13,7 +13,7 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IDataStorage"/> for outbox pattern message persistence.

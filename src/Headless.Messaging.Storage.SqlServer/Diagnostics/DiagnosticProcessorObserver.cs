@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 
-namespace Headless.Messaging.SqlServer.Diagnostics;
+namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 
 /// <summary>
 /// Observes diagnostic events from SQL Server to track outbox transactions.

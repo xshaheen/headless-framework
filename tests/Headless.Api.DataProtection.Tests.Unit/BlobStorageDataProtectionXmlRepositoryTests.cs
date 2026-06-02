@@ -564,7 +564,12 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests
     private static ValueTask<BlobDownloadResult?> _CreateDownloadResult(string xmlContent)
     {
         var stream = new MemoryStream(Encoding.UTF8.GetBytes(xmlContent));
-        return ValueTask.FromResult<BlobDownloadResult?>(new BlobDownloadResult(stream, "test.xml"));
+
+#pragma warning disable CA2000 // Dispose objects before losing scope
+        var blobDownloadResult = new BlobDownloadResult(stream, "test.xml");
+#pragma warning restore CA2000
+
+        return ValueTask.FromResult<BlobDownloadResult?>(blobDownloadResult);
     }
 
     #endregion

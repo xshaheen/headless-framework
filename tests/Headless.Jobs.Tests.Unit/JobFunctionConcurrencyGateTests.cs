@@ -2,6 +2,7 @@ using Headless.Jobs;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class JobFunctionConcurrencyGateTests
 {
     private readonly JobFunctionConcurrencyGate _sut = new();
@@ -75,7 +76,7 @@ public sealed class JobFunctionConcurrencyGateTests
     {
         const int threadCount = 50;
         var semaphores = new SemaphoreSlim?[threadCount];
-        var barrier = new Barrier(threadCount);
+        using var barrier = new Barrier(threadCount);
 
         Parallel.For(
             0,

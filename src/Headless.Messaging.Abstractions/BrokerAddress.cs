@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Transport;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents the address information of a message broker, including its name (type) and network endpoint.

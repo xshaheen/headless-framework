@@ -6,6 +6,7 @@ using Headless.Sql;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 /// <summary>
 /// Unit tests for <see cref="DefaultSqlCurrentConnection"/>.
 /// </summary>
@@ -136,7 +137,7 @@ public sealed class DefaultSqlCurrentConnectionTests
         // given
         var cancellationToken = TestContext.Current.CancellationToken;
         var factory = Substitute.For<ISqlConnectionFactory>();
-        var closedConnection = new FakeDbConnection { StateValue = ConnectionState.Closed };
+        await using var closedConnection = new FakeDbConnection { StateValue = ConnectionState.Closed };
 
         var openConnection = Substitute.For<DbConnection>();
         openConnection.State.Returns(ConnectionState.Open);
@@ -213,7 +214,7 @@ public sealed class DefaultSqlCurrentConnectionTests
         connection.State.Returns(ConnectionState.Open);
         factory.CreateNewConnectionAsync(Arg.Any<CancellationToken>()).Returns(connection);
 
-        var sut = new DefaultSqlCurrentConnection(factory);
+        await using var sut = new DefaultSqlCurrentConnection(factory);
         _ = await sut.GetOpenConnectionAsync(cancellationToken);
 
         // Change state to closed before dispose
@@ -255,7 +256,7 @@ public sealed class DefaultSqlCurrentConnectionTests
     /// </summary>
     private sealed class FakeDbConnection : DbConnection
     {
-        public ConnectionState StateValue { get; set; } = ConnectionState.Closed;
+        public ConnectionState StateValue { get; init; } = ConnectionState.Closed;
         public int DisposeCallCount { get; private set; }
 
 #pragma warning disable CS8765 // Nullability of type of parameter doesn't match overridden member
