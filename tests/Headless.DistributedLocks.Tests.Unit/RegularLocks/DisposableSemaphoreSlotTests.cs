@@ -260,6 +260,34 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
     }
 
     [Fact]
+    public async Task should_treat_renew_false_with_owning_validate_as_unknown_under_auto_extend()
+    {
+        // given — auto-extend slot whose renew (TryExtendAsync) returns false (transient
+        // retry-exhaustion), but the ownership probe (ValidateAsync) still confirms we own the slot.
+        var resource = Faker.Random.AlphaNumeric(10);
+        _storage
+            .TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(false);
+        _storage
+            .ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+        var slot = await _AcquireSlotAsync(resource, autoExtend: true);
+
+        // when
+        var result = await ((LeaseMonitor.ILeaseHandle)slot).RenewOrValidateLeaseAsync(AbortToken);
+
+        // then — still owner: classify as Unknown so the safety net governs, not Lost; the handle is
+        // not signalled lost.
+        result.Should().Be(LeaseMonitor.LeaseState.Unknown);
+        slot.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        await _storage.Received(1).ValidateAsync(
+            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>()
+        );
+    }
+
+    [Fact]
     public async Task should_return_lost_when_validate_returns_false_in_monitor_mode()
     {
         // given

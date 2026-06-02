@@ -135,6 +135,16 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
     /// <summary>Hook invoked when the monitor fails to dispose; allows provider-specific logging.</summary>
     protected virtual void OnMonitorDisposeFailed(Exception exception) { }
 
+    /// <summary>
+    /// Classifies an auto-extend renew that returned <see langword="false"/> when the subsequent
+    /// ownership probe still shows us as owner. The default (mutex/semaphore) returns
+    /// <see langword="null"/>, meaning "disambiguate via <see cref="ValidateOwnershipAsync"/>". A
+    /// derived handle whose renew-false is unambiguously a loss (e.g. reader-writer writer-preference
+    /// refusal) overrides this to return <see cref="LeaseMonitor.LeaseState.Lost"/> and skip the
+    /// probe entirely.
+    /// </summary>
+    protected virtual LeaseMonitor.LeaseState? ClassifyRenewFailure() => null;
+
     /// <summary>Increments the observable renewal counter. Called by derived handles after a manual renew.</summary>
     protected void IncrementRenewalCount()
     {
@@ -322,9 +332,16 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
 
             if (renewed)
             {
-                Interlocked.Increment(ref _renewalCount);
+                IncrementRenewalCount();
 
                 return LeaseMonitor.LeaseState.Renewed;
+            }
+
+            // A derived handle may treat renew-false as an unambiguous loss (e.g. reader-writer
+            // writer-preference refusal). In that case skip the ownership probe entirely.
+            if (ClassifyRenewFailure() is { } classified)
+            {
+                return classified;
             }
 
             // Disambiguate: a renew failure can be a genuine fence mismatch OR transient

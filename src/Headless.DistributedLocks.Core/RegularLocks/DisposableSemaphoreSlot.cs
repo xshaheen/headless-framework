@@ -71,4 +71,9 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     {
         return _provider.ReleaseAsync(Resource, LockId, CancellationToken.None);
     }
+
+    protected override void OnMonitorDisposeFailed(Exception exception)
+    {
+        Logger.LogDisposableLockMonitorDisposeFailed(exception, Resource, LockId);
+    }
 }

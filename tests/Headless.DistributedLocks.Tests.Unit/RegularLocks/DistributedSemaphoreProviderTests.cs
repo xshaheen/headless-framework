@@ -237,6 +237,22 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         (await provider.GetHolderCountAsync(resource, AbortToken)).Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_throw_argument_exception_when_time_until_expires_is_infinite()
+    {
+        // given — a semaphore slot is a ZSET member scored by a finite expiry; an infinite lease has
+        // no score to plant and would hold capacity forever, so it must be rejected up front.
+        var provider = _CreateProvider();
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+        var options = new DistributedLockAcquireOptions { TimeUntilExpires = Timeout.InfiniteTimeSpan };
+
+        // when
+        var act = async () => await semaphore.AcquireAsync(options, AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<ArgumentException>()).WithParameterName("acquireOptions");
+    }
+
     private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)
     {
         var counter = 1000L;

@@ -86,8 +86,23 @@ public sealed class HeadlessRedisScriptsLoader(
 
                     logger?.LogLoadingLuaScripts(endpoint);
 
+                    // Bound the bulk SCRIPT LOAD: it runs while _loadScriptsLock is held and the
+                    // StackExchange call does not honor a CancellationToken, so a single stalled load
+                    // would wedge the lock for every other caller. Mirror the on-demand path: a
+                    // TimeProvider-driven timeout CTS linked with the caller token (via .WaitAsync)
+                    // lets a stuck load fail fast and release the lock instead of wedging the lock
+                    // indefinitely at startup.
                     var loadTasks = missingDefinitions.Select(script => script.LoadAsync(server)).ToArray();
-                    var results = await Task.WhenAll(loadTasks).WithAggregatedExceptions().ConfigureAwait(false);
+                    LoadedLuaScript[] results;
+
+                    using (var timeoutCts = _timeProvider.CreateCancellationTokenSource(_ScriptLoadTimeout))
+                    using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                    {
+                        results = await Task.WhenAll(loadTasks)
+                            .WithAggregatedExceptions()
+                            .WaitAsync(loadCts.Token)
+                            .ConfigureAwait(false);
+                    }
 
                     for (var index = 0; index < missingDefinitions.Count; index++)
                     {

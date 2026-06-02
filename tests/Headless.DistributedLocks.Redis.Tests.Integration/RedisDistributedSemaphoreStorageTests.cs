@@ -238,6 +238,54 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
         keyTtl!.Value.Should().BeLessThanOrEqualTo(slotTtl * 2);
     }
 
+    [Fact]
+    public async Task should_exclude_expired_but_unpruned_slot_from_count_and_validate()
+    {
+        // given — plant a ZSET member directly with a past expiry score (an expired-but-unpruned
+        // slot). We do NOT call TryAcquireAsync, which would prune via ZREMRANGEBYSCORE. This proves
+        // the now-read-only Validate/Count scripts exclude a stale slot without mutating state.
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        const string lockId = "expired-lock-1";
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        var pastExpiryScore = nowMs - 60_000; // expired one minute ago
+        await db.SortedSetAddAsync(holdersKey, lockId, pastExpiryScore);
+
+        // when
+        var count = await fixture.SemaphoreStorage.GetCountAsync(resource, AbortToken);
+        var valid = await fixture.SemaphoreStorage.ValidateAsync(resource, lockId, AbortToken);
+
+        // then — the stale slot is excluded from both the live count and the ownership check.
+        count.Should().Be(0);
+        valid.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_acquire_with_thirty_day_ttl_beyond_int_overflow_boundary()
+    {
+        // given — 30 days in milliseconds exceeds int.MaxValue (~24.8 days), so the expiry score must
+        // be stored as a long, not an int. This guards the int→long score fix.
+        var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
+        var holdersKey = _GetHoldersKey(resource);
+        const string lockId = "long-ttl-lock";
+        var ttl = TimeSpan.FromDays(30);
+
+        // when
+        var result = await fixture.SemaphoreStorage.TryAcquireAsync(resource, lockId, 1, ttl, AbortToken);
+
+        // then — acquisition succeeds and the stored ZSET score is a large positive value beyond the
+        // int-overflow boundary (a wrapped int would be negative or near-now).
+        result.Acquired.Should().BeTrue();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        var score = await db.SortedSetScoreAsync(holdersKey, lockId);
+        score.Should().NotBeNull();
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        // The score (now + 30d in ms) must be well past int.MaxValue and clearly in the future.
+        score!.Value.Should().BeGreaterThan(int.MaxValue);
+        score!.Value.Should().BeGreaterThan(nowMs + TimeSpan.FromDays(29).TotalMilliseconds);
+    }
+
     private static string _GetHoldersKey(string resource)
     {
         return "{" + resource + "}:holders";

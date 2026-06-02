@@ -98,6 +98,28 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
     }
 
     [Fact]
+    public void should_register_provider_as_can_receive_lock_released_seam()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        using var provider = services.BuildServiceProvider();
+
+        // then — the provider is registered under the ICanReceiveLockReleased seam so the
+        // LockReleasedConsumer wakes semaphore waiters, and it is the same singleton instance.
+        var consumers = provider.GetServices<ICanReceiveLockReleased>().ToList();
+        consumers.Should().ContainSingle(c => c is DistributedSemaphoreProvider);
+        consumers
+            .OfType<DistributedSemaphoreProvider>()
+            .Single()
+            .Should()
+            .BeSameAs(provider.GetRequiredService<DistributedSemaphoreProvider>());
+    }
+
+    [Fact]
     public void should_fail_validation_on_start_when_options_are_invalid()
     {
         // given — set PollingCadenceFraction to an out-of-range value (validator: 0.1..0.5)
