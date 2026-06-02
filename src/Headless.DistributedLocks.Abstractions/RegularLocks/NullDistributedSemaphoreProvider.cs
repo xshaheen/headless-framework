@@ -47,6 +47,7 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _ValidateAcquireOptions(options);
 
             return Task.FromResult<IDistributedLock>(new NullSemaphoreSlot(Resource, timeProvider));
         }
@@ -57,8 +58,20 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            _ValidateAcquireOptions(options);
 
             return Task.FromResult<IDistributedLock?>(new NullSemaphoreSlot(Resource, timeProvider));
+        }
+
+        private static void _ValidateAcquireOptions(DistributedLockAcquireOptions? options)
+        {
+            if (options?.TimeUntilExpires == Timeout.InfiniteTimeSpan)
+            {
+                throw new ArgumentException(
+                    "Distributed semaphore acquires require a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                    nameof(options)
+                );
+            }
         }
     }
 
