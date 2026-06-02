@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
-namespace Headless.Messaging.Transport;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Defines the transport layer for sending messages to a message broker.

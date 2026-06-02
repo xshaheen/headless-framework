@@ -4,7 +4,7 @@ using System.Data;
 using System.Data.Common;
 using Headless.Messaging;
 using Headless.Messaging.Messages;
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

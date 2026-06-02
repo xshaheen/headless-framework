@@ -275,9 +275,7 @@ public static class RedisScripts
         """;
 
     /// <summary>Atomically releases a reader lock id from the reader HASH.</summary>
-    public const string ReleaseReadLock = """
-        return redis.call('hdel', @readerKey, @lockId)
-        """;
+    public const string ReleaseReadLock = "return redis.call('hdel', @readerKey, @lockId)";
 
     /// <summary>
     /// Atomically acquires a writer lock when there are no live readers and no other writer, or

@@ -11,7 +11,7 @@ using Headless.Primitives;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.

@@ -4,14 +4,14 @@ using System.Data;
 using System.Data.Common;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
-using Headless.Messaging.SqlServer.Diagnostics;
+using Headless.Messaging.Storage.SqlServer.Diagnostics;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 public sealed class SqlServerOutboxTransaction(
     IDispatcher dispatcher,

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.SqlServer;
+using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 
 namespace Tests;

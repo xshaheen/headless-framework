@@ -13,10 +13,11 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
+// ReSharper disable EntityFramework.ModelValidation.UnlimitedStringLength
 public sealed class HeadlessDbContextRuntimeExtensibilityTests
 {
     [Fact]
-    public void headless_db_context_runtime_initialize_should_be_idempotent()
+    public async Task headless_db_context_runtime_initialize_should_be_idempotent()
     {
         // given — a DbContext-backed runtime that has already been initialized through the DbContext
         // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
@@ -29,17 +30,17 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             o.AddHeadlessExtension();
         });
 
-        using var provider = services.BuildServiceProvider();
+        await using var provider = services.BuildServiceProvider();
         using var scope = provider.CreateScope();
-        using var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        await using var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
 
         // when — second Initialize() must not throw.
         var runtimeServices = scope.ServiceProvider.GetRequiredService<HeadlessDbContextServices>();
-        var runtime = new HeadlessDbContextRuntime(db, runtimeServices);
+        await using var runtime = new HeadlessDbContextRuntime(db, runtimeServices);
         runtime.Initialize();
 
         // then
-        var act = () => runtime.Initialize();
+        var act = runtime.Initialize;
         act.Should().NotThrow();
     }
 
@@ -417,7 +418,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     {
         public Guid Id { get; private init; }
 
-        public required string Name { get; set; }
+        public required string Name { get; init; }
 
         public IReadOnlyList<object> GetKeys() => [Id];
     }
@@ -426,7 +427,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     {
         public Guid Id { get; private init; }
 
-        public required string Name { get; set; }
+        public required string Name { get; init; }
 
         public override IReadOnlyList<object> GetKeys() => [Id];
     }

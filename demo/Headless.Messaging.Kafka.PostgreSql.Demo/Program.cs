@@ -1,6 +1,7 @@
 using Demo;
 using Demo.Controllers;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 

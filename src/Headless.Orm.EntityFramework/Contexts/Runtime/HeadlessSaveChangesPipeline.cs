@@ -148,7 +148,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
-    private static IReadOnlyList<EntityEntry> _SnapshotEntries(DbContext context)
+    private static EntityEntry[] _SnapshotEntries(DbContext context)
     {
         // Single allocation, single ChangeTracker traversal — feeds both _ProcessEntries and the
         // initial audit capture.

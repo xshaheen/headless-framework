@@ -157,6 +157,71 @@ public sealed class ForMessageRegistrationTests
     }
 
     [Fact]
+    public void should_build_default_scanned_consumer_as_bus_registration()
+    {
+        // given
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+
+        // when
+        var registration = builder.Build();
+
+        // then
+        registration.ConsumerType.Should().Be<OrderPlacedHandler>();
+        registration.IntentType.Should().Be(IntentType.Bus);
+        registration.IsAssemblyScan.Should().BeTrue();
+        registration.Concurrency.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_build_configured_scanned_consumer_registration()
+    {
+        // given
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+
+        // when
+        builder.OnQueue().Group("orders").Concurrency(4).HandlerId("handler-1");
+        var registration = builder.Build();
+
+        // then
+        registration.ConsumerType.Should().Be<OrderPlacedHandler>();
+        registration.IntentType.Should().Be(IntentType.Queue);
+        registration.Group.Should().Be("orders");
+        registration.Concurrency.Should().Be(4);
+        registration.HandlerId.Should().Be("handler-1");
+    }
+
+    [Fact]
+    public void should_reject_invalid_scanned_consumer_builder_values()
+    {
+        // given
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+
+        // then
+        builder
+            .Invoking(static x => x.Concurrency(0))
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*Concurrency must be greater than 0*");
+        builder.Invoking(static x => x.Group(" ")).Should().Throw<ArgumentException>();
+        builder.Invoking(static x => x.HandlerId(" ")).Should().Throw<ArgumentException>();
+        builder.Invoking(static x => x.WithCircuitBreaker(null!)).Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void should_mark_scanned_consumer_builder_as_skipped()
+    {
+        // given
+        var builder = new ScannedConsumerBuilder(typeof(OrderPlacedHandler));
+
+        // when
+        var returned = builder.Skip();
+
+        // then
+        returned.Should().BeSameAs(builder);
+        builder.IsSkipped.Should().BeTrue();
+    }
+
+    [Fact]
     public void should_merge_same_message_type_registrations()
     {
         // given
@@ -433,6 +498,281 @@ public sealed class ForMessageRegistrationTests
     }
 
     [Fact]
+    public void should_configure_scanned_consumer_as_queue_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue();
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var metadata = provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+
+        metadata.IntentType.Should().Be(IntentType.Queue);
+    }
+
+    [Fact]
+    public void should_call_scanned_consumer_callback_once_per_discovered_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+        var callbackCounts = new Dictionary<(Type ConsumerType, Type MessageType), int>();
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, _) =>
+                {
+                    var key = (ctx.ConsumerType, ctx.MessageType);
+                    callbackCounts[key] = callbackCounts.GetValueOrDefault(key) + 1;
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().NotBeEmpty();
+        callbackCounts
+            .Should()
+            .Contain(
+                new KeyValuePair<(Type ConsumerType, Type MessageType), int>(
+                    (typeof(OrderPlacedHandler), typeof(OrderPlaced)),
+                    1
+                )
+            );
+        callbackCounts
+            .Should()
+            .Contain(
+                new KeyValuePair<(Type ConsumerType, Type MessageType), int>(
+                    (typeof(OrderPlacedAnalyticsHandler), typeof(OrderPlaced)),
+                    1
+                )
+            );
+        callbackCounts
+            .Should()
+            .Contain(
+                new KeyValuePair<(Type ConsumerType, Type MessageType), int>(
+                    (typeof(OtherOrderPlacedHandler), typeof(OtherOrderPlaced)),
+                    1
+                )
+            );
+        callbackCounts.Values.Should().OnlyContain(count => count == 1);
+    }
+
+    [Fact]
+    public void should_configure_mixed_scanned_consumers_independently()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("orders");
+                    }
+
+                    if (ctx.ConsumerType == typeof(OrderPlacedAnalyticsHandler))
+                    {
+                        consumer.Group("analytics");
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        consumers
+            .Should()
+            .Contain(consumer =>
+                consumer.ConsumerType == typeof(OrderPlacedHandler)
+                && consumer.IntentType == IntentType.Queue
+                && consumer.Group == "orders"
+            );
+        consumers
+            .Should()
+            .Contain(consumer =>
+                consumer.ConsumerType == typeof(OrderPlacedAnalyticsHandler)
+                && consumer.IntentType == IntentType.Bus
+                && consumer.Group == "analytics"
+            );
+    }
+
+    [Fact]
+    public void should_skip_scanned_consumer_from_registry_and_di()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.Skip();
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        consumers.Should().NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+
+        provider.GetServices<IConsume<OrderPlaced>>().Should().NotContain(consumer => consumer is OrderPlacedHandler);
+
+        consumers.Should().Contain(consumer => consumer.ConsumerType == typeof(OrderPlacedAnalyticsHandler));
+        provider
+            .GetServices<IConsume<OrderPlaced>>()
+            .Should()
+            .Contain(consumer => consumer is OrderPlacedAnalyticsHandler);
+    }
+
+    [Fact]
+    public void should_skip_consumer_even_when_other_config_was_applied_before_skip()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("orders").Skip();
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+
+        provider.GetServices<IConsume<OrderPlaced>>().Should().NotContain(consumer => consumer is OrderPlacedHandler);
+    }
+
+    [Fact]
+    public void should_configure_scanned_consumer_handler_id_end_to_end()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.HandlerId("handler-1");
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
+            .HandlerId.Should()
+            .Be("handler-1");
+    }
+
+    [Fact]
+    public void should_keep_untouched_scanned_consumer_equivalent_to_no_arg_scan()
+    {
+        // given
+        var noArgServices = new ServiceCollection();
+        var callbackServices = new ServiceCollection();
+
+        // when
+        noArgServices.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>();
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+        callbackServices.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(static (_, _) => { });
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var noArgProvider = noArgServices.BuildServiceProvider();
+        using var callbackProvider = callbackServices.BuildServiceProvider();
+
+        // then
+        var noArg = noArgProvider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+        var callback = callbackProvider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+
+        callback.IntentType.Should().Be(IntentType.Bus);
+        callback.Concurrency.Should().Be(1);
+        callback.Should().BeEquivalentTo(noArg);
+    }
+
+    [Fact]
     public void should_not_scan_explicitly_registered_consumer_into_bus_lane()
     {
         // given
@@ -458,6 +798,235 @@ public sealed class ForMessageRegistrationTests
 
         registrations.Should().ContainSingle();
         registrations[0].IntentType.Should().Be(IntentType.Queue);
+    }
+
+    [Fact]
+    public void should_not_let_configured_scan_override_explicit_consumer_registration()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("ignored");
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var metadata = provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
+
+        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Group.Should().NotBe("ignored");
+    }
+
+    [Fact]
+    public void should_reject_invalid_scanned_consumer_callback_configuration()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                    (ctx, consumer) =>
+                    {
+                        if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                        {
+                            consumer.Concurrency(0);
+                        }
+                    }
+                )
+            );
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Concurrency must be greater than 0*");
+    }
+
+    [Fact]
+    public void should_apply_scanned_consumer_circuit_breaker_override()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+        circuitBreakers.TryGet($"{IntentType.Bus:D}:orders", out var options).Should().BeTrue();
+        options!.FailureThreshold.Should().Be(3);
+    }
+
+    [Fact]
+    public void should_apply_scanned_consumer_circuit_breaker_override_for_queue_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("orders").WithCircuitBreaker(options => options.FailureThreshold = 3);
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+        circuitBreakers.TryGet($"{IntentType.Queue:D}:orders", out var options).Should().BeTrue();
+        options!.FailureThreshold.Should().Be(3);
+    }
+
+    [Fact]
+    public void should_reject_competing_scanned_consumers_with_same_handler_identity()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                    (ctx, consumer) =>
+                    {
+                        if (
+                            ctx.ConsumerType == typeof(OrderPlacedHandler)
+                            || ctx.ConsumerType == typeof(OrderPlacedAnalyticsHandler)
+                        )
+                        {
+                            consumer.Group("orders").HandlerId("handler-1");
+                        }
+                    }
+                );
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
+    }
+
+    [Fact]
+    public void should_keep_configured_rescan_idempotent()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("orders").Concurrency(2).HandlerId("handler-1");
+                    }
+                }
+            );
+            setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                (ctx, consumer) =>
+                {
+                    if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                    {
+                        consumer.OnQueue().Group("orders").Concurrency(2).HandlerId("handler-1");
+                    }
+                }
+            );
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
+            .Should()
+            .ContainSingle();
+    }
+
+    [Fact]
+    public void should_reject_same_scanned_consumer_configured_differently_across_two_scans()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+            {
+                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                    (ctx, consumer) =>
+                    {
+                        if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                        {
+                            consumer.OnQueue().Group("orders").Concurrency(2);
+                        }
+                    }
+                );
+                setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
+                    (ctx, consumer) =>
+                    {
+                        if (ctx.ConsumerType == typeof(OrderPlacedHandler))
+                        {
+                            consumer.OnQueue().Group("orders").Concurrency(4);
+                        }
+                    }
+                );
+                setup.UseInMemory();
+                setup.UseInMemoryStorage();
+            });
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
     }
 
     private sealed record OrderPlaced;

@@ -48,7 +48,7 @@ internal sealed class SqlServerReadAuditLog<TContext>(
 
         var where = filters.Count == 0 ? string.Empty : $" WHERE {string.Join(" AND ", filters)}";
         var sql =
-            $"""SELECT TOP(@Limit) [UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY [CreatedAt] DESC, [Id] DESC;""";
+            $"SELECT TOP(@Limit) [UserId],[AccountId],[TenantId],[IpAddress],[UserAgent],[CorrelationId],[Action],[ChangeType],[EntityType],[EntityId],[OldValues],[NewValues],[ChangedFields],[Success],[ErrorCode],[CreatedAt] FROM {SqlServerAuditLogStorageInitializer.Qualified(storageOptions.Value)}{where} ORDER BY [CreatedAt] DESC, [Id] DESC;";
 
         var result = new List<AuditLogEntryData>();
         await using var connection = providerOptions.Value.CreateConnection();
@@ -107,7 +107,11 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         parameters.Add(_Param(name, value));
     }
 
-    private static async Task<string?> _GetStringAsync(SqlDataReader reader, int ordinal, CancellationToken cancellationToken) =>
+    private static async Task<string?> _GetStringAsync(
+        SqlDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    ) =>
         await reader.IsDBNullAsync(ordinal, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(ordinal);
 
     private async Task<T?> _DeserializeAsync<T>(SqlDataReader reader, int ordinal, CancellationToken cancellationToken)

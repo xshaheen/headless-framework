@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using FluentValidation.Results;
 using Headless.Abstractions;
 using Headless.Api.Abstractions;
@@ -83,7 +84,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
         var httpContext = new DefaultHttpContext();
-        var errors = new[] { new ErrorDescriptor("conflict_code", "conflict description") };
+        var errors = new[] { new ErrorDescriptor("conflict_code", @"conflict description") };
 
         // when
         var result = await handler.TryHandleAsync(
@@ -340,7 +341,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
         await using var aborted = _CreateAbortedContext();
         var httpContext = aborted.HttpContext;
-        var activity = new System.Diagnostics.Activity("TestActivity");
+        using var activity = new Activity("TestActivity");
         activity.Start();
         var activityFeature = Substitute.For<IHttpActivityFeature>();
         activityFeature.Activity.Returns(activity);

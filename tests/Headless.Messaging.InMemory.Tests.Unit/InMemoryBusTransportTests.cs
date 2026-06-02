@@ -9,15 +9,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class InMemoryBusTransportTests : TestBase
 {
     [Fact]
-    public void should_return_in_memory_broker_address()
+    public async Task should_return_in_memory_broker_address()
     {
         // given
         var queueLogger = Substitute.For<ILogger<MemoryQueue>>();
         var transportLogger = Substitute.For<ILogger<InMemoryBusTransport>>();
-        var transport = new InMemoryBusTransport(new MemoryQueue(queueLogger), transportLogger);
+        await using var transport = new InMemoryBusTransport(new MemoryQueue(queueLogger), transportLogger);
 
         // when
         var address = transport.BrokerAddress;

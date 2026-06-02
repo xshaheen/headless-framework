@@ -1,7 +1,7 @@
 using Dapper;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.SqlServer;
+using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -47,7 +47,7 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
         using var connection = new SqlConnection(fixture.ConnectionString);
         connection.Open();
 
-        var sql = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME FROM INFORMATION_SCHEMA.TABLES";
+        const string sql = "SELECT TABLE_SCHEMA + '.' + TABLE_NAME FROM INFORMATION_SCHEMA.TABLES";
         var tables = connection.Query<string>(sql).ToList();
 
         // Log what tables exist for debugging

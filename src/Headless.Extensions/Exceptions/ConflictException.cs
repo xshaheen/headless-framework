@@ -43,7 +43,7 @@ public sealed class ConflictException : Exception
 
         foreach (var error in errors)
         {
-            builder.Append($"{Environment.NewLine}-- {_BuildErrorMessage(error)}");
+            builder.Append(CultureInfo.InvariantCulture, $"{Environment.NewLine}-- {_BuildErrorMessage(error)}");
         }
 
         return builder.ToString();

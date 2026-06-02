@@ -3,7 +3,7 @@
 using System.Data;
 using System.Data.Common;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 #pragma warning disable CA2100, CA1068 // Wrapper keeps SQL params last, so timeout sits after cancellation.
 internal static class DbConnectionExtensions

@@ -16,14 +16,16 @@ public sealed record AlphaEvent(string Id);
 
 public sealed class AlphaConsumer : IConsume<AlphaEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<AlphaEvent> context, CancellationToken ct) => ValueTask.CompletedTask;
+    public ValueTask ConsumeAsync(ConsumeContext<AlphaEvent> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 public sealed record BetaEvent(string Id);
 
 public sealed class BetaConsumer : IConsume<BetaEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<BetaEvent> context, CancellationToken ct) => ValueTask.CompletedTask;
+    public ValueTask ConsumeAsync(ConsumeContext<BetaEvent> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 // ─── Fixture ─────────────────────────────────────────────────────────────────

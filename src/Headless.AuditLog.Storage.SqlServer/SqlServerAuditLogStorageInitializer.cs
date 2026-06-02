@@ -18,10 +18,8 @@ internal sealed class SqlServerAuditLogStorageInitializer(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection)
-        {
-            CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-        };
+        await using var command = new SqlCommand(_CreateScript(storageOptions.Value), connection);
+        command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -49,14 +47,14 @@ internal sealed class SqlServerAuditLogStorageInitializer(
             """;
 
         var createSchema = $"""
-                BEGIN TRY
-                    IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{options.Schema}')
-                        EXEC(N'CREATE SCHEMA [{options.Schema}]');
-                END TRY
-                BEGIN CATCH
-                    IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
-                END CATCH;
-              """;
+              BEGIN TRY
+                  IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = N'{options.Schema}')
+                      EXEC(N'CREATE SCHEMA [{options.Schema}]');
+              END TRY
+              BEGIN CATCH
+                  IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+              END CATCH;
+            """;
 
         var createTable = $"""
             BEGIN TRY
@@ -93,14 +91,32 @@ internal sealed class SqlServerAuditLogStorageInitializer(
         // own existence check so a previous partial-failure run that committed the table but missed
         // an index self-heals on the next start. This matches the PG initializer's per-statement
         // `CREATE INDEX IF NOT EXISTS` behavior.
-        var createIndexes = string.Join("\n", new[]
-        {
-            _IndexStatement("ix_audit_log_tenant_time", table, objectName, "[TenantId] ASC, [CreatedAt] ASC"),
-            _IndexStatement("ix_audit_log_tenant_action_time", table, objectName, "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC"),
-            _IndexStatement("ix_audit_log_tenant_entity_time", table, objectName, "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC"),
-            _IndexStatement("ix_audit_log_tenant_actor_time", table, objectName, "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC"),
-            _IndexStatement("ix_audit_log_correlation", table, objectName, "[CorrelationId] ASC"),
-        });
+        var createIndexes = string.Join(
+            "\n",
+            new[]
+            {
+                _IndexStatement("ix_audit_log_tenant_time", table, objectName, "[TenantId] ASC, [CreatedAt] ASC"),
+                _IndexStatement(
+                    "ix_audit_log_tenant_action_time",
+                    table,
+                    objectName,
+                    "[TenantId] ASC, [Action] ASC, [CreatedAt] ASC"
+                ),
+                _IndexStatement(
+                    "ix_audit_log_tenant_entity_time",
+                    table,
+                    objectName,
+                    "[TenantId] ASC, [EntityType] ASC, [EntityId] ASC, [CreatedAt] ASC"
+                ),
+                _IndexStatement(
+                    "ix_audit_log_tenant_actor_time",
+                    table,
+                    objectName,
+                    "[TenantId] ASC, [UserId] ASC, [CreatedAt] ASC"
+                ),
+                _IndexStatement("ix_audit_log_correlation", table, objectName, "[CorrelationId] ASC"),
+            }
+        );
 
         // Release the advisory lock on every path — success AND failure. Wrapping the DDL body in
         // an outer TRY/CATCH guarantees the release runs before the connection returns to the pool;

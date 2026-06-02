@@ -3,7 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Messaging;
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
