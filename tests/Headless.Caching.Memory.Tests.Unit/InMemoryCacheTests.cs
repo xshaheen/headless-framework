@@ -235,6 +235,8 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.LastFactoryError.Should().BeNull();
+        envelope.Tags.Should().BeNull();
     }
 
     [Fact]
@@ -322,17 +324,22 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.TryReplaceAsync("try-replace", "new", duration, AbortToken);
         await cache.UpsertAsync("try-replace-equal", "old", duration, AbortToken);
         await cache.TryReplaceIfEqualAsync("try-replace-equal", "old", "new", duration, AbortToken);
+        await cache.UpsertAllAsync(new Dictionary<string, string> { ["upsert-all"] = "value" }, duration, AbortToken);
         await cache.IncrementAsync("increment", 1L, duration, AbortToken);
         await cache.UpsertAsync("set-if-higher-refresh", 10L, duration, AbortToken);
         await cache.SetIfHigherAsync("set-if-higher-refresh", 5L, duration, AbortToken);
+        await cache.UpsertAsync("set-if-lower-refresh", 5L, duration, AbortToken);
+        await cache.SetIfLowerAsync("set-if-lower-refresh", 10L, duration, AbortToken);
         await cache.SetAddAsync("set-add", ["value"], duration, AbortToken);
 
         // then
         _AssertEnvelopeParity(cache, "try-insert", expectedExpiration);
         _AssertEnvelopeParity(cache, "try-replace", expectedExpiration);
         _AssertEnvelopeParity(cache, "try-replace-equal", expectedExpiration);
+        _AssertEnvelopeParity(cache, "upsert-all", expectedExpiration);
         _AssertEnvelopeParity(cache, "increment", expectedExpiration);
         _AssertEnvelopeParity(cache, "set-if-higher-refresh", expectedExpiration);
+        _AssertEnvelopeParity(cache, "set-if-lower-refresh", expectedExpiration);
         _AssertEnvelopeParity(cache, "set-add", expectedExpiration);
     }
 
