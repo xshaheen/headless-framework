@@ -192,14 +192,6 @@ public static partial class RegularLockLoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 18,
-        EventName = "LockReleasedConsumerMissing",
-        Level = LogLevel.Warning,
-        Message = "IOutboxBus is registered but the DistributedLockReleased consumer is not — call setup.UseDistributedLockReleaseWakeups() inside AddHeadlessMessaging(...). Push wake-ups for lock release are disabled; waiters will fall back to polling."
-    )]
-    public static partial void LogLockReleasedConsumerMissing(this ILogger logger);
-
-    [LoggerMessage(
         EventId = 19,
         EventName = "LockStorageRetry",
         Level = LogLevel.Warning,

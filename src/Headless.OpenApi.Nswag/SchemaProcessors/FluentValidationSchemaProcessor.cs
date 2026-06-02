@@ -25,7 +25,7 @@ public sealed class FluentValidationSchemaProcessor(
     IEnumerable<FluentValidationRule>? rules = null
 ) : ISchemaProcessor
 {
-    private static readonly ConditionalWeakTable<Type, CachedResult<MethodInfo>> _MethodCache = new();
+    private static readonly ConditionalWeakTable<Type, CachedResult<MethodInfo>> _MethodCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

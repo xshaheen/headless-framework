@@ -26,33 +26,23 @@ dotnet add package Headless.Caching.Redis
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
 
-// Option 1: Use connection string
-builder.Services.AddRedisCaching(options =>
+builder.Services.AddSingleton<IConnectionMultiplexer>(redis);
+
+builder.Services.AddRedisCache(options =>
 {
-    options.ConnectionString = "localhost:6379";
+    options.ConnectionMultiplexer = redis;
+    options.KeyPrefix = "myapp:";
 });
-
-// Option 2: Use existing IConnectionMultiplexer
-builder.Services.AddRedisCaching();
 ```
 
 ## Configuration
 
-### appsettings.json
-
-```json
-{
-  "Redis": {
-    "ConnectionString": "localhost:6379,password=secret,ssl=true"
-  }
-}
-```
-
 ### Options
 
 ```csharp
-options.ConnectionString = "localhost:6379";
+options.ConnectionMultiplexer = multiplexer;
 options.KeyPrefix = "myapp:";
 ```
 
@@ -82,4 +72,6 @@ This design ensures consumers never observe partial results from batch operation
 
 - Registers `IRemoteCache` as singleton
 - Registers `IRemoteCache<T>` as singleton
+- Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`
+- Registers a hosted `IInitializer` that warms Redis cache Lua scripts on host start
 - Uses existing `IConnectionMultiplexer` if registered, otherwise creates one

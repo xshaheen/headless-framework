@@ -39,7 +39,7 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
     };
 
-    private readonly ConditionalWeakTable<Type, string> _messageNameCache = new();
+    private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;
     private readonly ILongIdGenerator _idGenerator = idGenerator;
     private readonly TimeProvider _timeProvider = timeProvider;

@@ -2,9 +2,9 @@
 
 using Headless.DistributedLocks;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Tests.Fakes;
 
 namespace Tests;
@@ -12,7 +12,7 @@ namespace Tests;
 public sealed class SetupTests : TestBase
 {
     [Fact]
-    public void should_register_lock_provider_without_messaging_and_skip_lock_released_consumer()
+    public void should_auto_register_lock_released_consumer_even_without_messaging()
     {
         // given
         var services = new ServiceCollection();
@@ -25,32 +25,28 @@ public sealed class SetupTests : TestBase
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
         provider.GetService<IOutboxBus>().Should().BeNull();
-        // The LockReleasedConsumer's only job is to wake waiters on DistributedLockReleased outbox
-        // messages; without IOutboxBus no such messages ever flow, so the consumer is
-        // intentionally NOT registered in polling-only mode.
-        services
-            .Should()
-            .NotContain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
+        // Auto-registration is unconditional. The lock-release consumer descriptor is present even
+        // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
+        // so waiters fall back to polling.
+        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
     }
 
     [Fact]
-    public void should_register_lock_released_consumer_when_messaging_wakeups_are_enabled()
+    public void should_register_lock_released_consumer_when_added_before_messaging()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
-        // when
+        // when — AddDistributedLock BEFORE AddHeadlessMessaging so the registration is drained.
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddHeadlessMessaging(setup => setup.UseDistributedLockReleaseWakeups());
+        services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
 
-        // then
+        // then — the shared lock-release consumer is present in the consumer registry with the
+        // expected name, intent, and concurrency, with no explicit opt-in call.
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
-        provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
-
         var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
         metadata.ConsumerType.Should().Be<DistributedLockProvider.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
@@ -59,56 +55,38 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_warn_when_outbox_publisher_is_registered_without_release_wakeups()
+    public void should_share_one_lock_released_consumer_across_lock_and_semaphore()
     {
-        // given — messaging is available, but the caller did not opt into the lock-release
-        // consumer through setup.UseDistributedLockReleaseWakeups().
-        var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
+        // given
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
-
-        // when
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
+
+        // when — both the lock and semaphore providers register; they share one consumer via the
+        // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
+        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
 
-        // resolving the options instance triggers the IValidateOptions pipeline (the Headless
-        // option-validator helper wires ValidateOnStart, which calls .Value internally at host
-        // start; outside a Host we trigger validation explicitly).
-        _ = provider.GetRequiredService<DistributedLockOptions>();
-
-        // then — ContainSingle guards against a regression where the validator fires per named
-        // options instance (would inflate the warning to N x duplicate noise at startup).
-        capturedLogs.Should().ContainSingle(entry => entry.EventId.Id == 18 && entry.Level == LogLevel.Warning);
-
-        // The consumer was NOT registered (proves the warning is justified, not noise).
-        services
-            .Should()
-            .NotContain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
+        // then
+        services.Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>)).Should().Be(1);
+        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
     }
 
     [Fact]
-    public void should_not_warn_when_release_wakeups_are_enabled()
+    public void should_throw_when_added_after_messaging()
     {
-        // given — messaging is available and the lock-release consumer is explicitly registered.
-        var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
+        // given
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
-        services.AddSingleton(Substitute.For<IOutboxBus>());
+        services.AddLogging();
+        services.AddHeadlessMessaging(_ => { });
 
-        // when
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddHeadlessMessaging(setup => setup.UseDistributedLockReleaseWakeups());
-        using var provider = services.BuildServiceProvider();
-
-        _ = provider.GetRequiredService<DistributedLockOptions>();
-
-        // then — neither the publisher-absent (EventId 16) nor the consumer-missing (EventId 18)
-        // warning fires when messaging wake-ups are configured.
-        capturedLogs
-            .Should()
-            .NotContain(entry => entry.EventId.Id == 18)
-            .And.NotContain(entry => entry.EventId.Id == 16);
+        // when / then — the consumer registry was already drained, so a late auto-registration would
+        // be silently ignored. The seam fails fast instead. (Order-independent registration via
+        // runtime subscription is tracked in #390.)
+        var act = () => services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        act.Should().Throw<InvalidOperationException>();
     }
 
     [Fact]
@@ -122,7 +100,7 @@ public sealed class SetupTests : TestBase
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
 
-        // then — only one descriptor per service type (TryAdd* semantics).
+        // then — only one descriptor per service type (TryAdd* semantics) and a single consumer.
         services
             .Count(d => d.ServiceType == typeof(IDistributedLockProvider))
             .Should()
@@ -131,42 +109,9 @@ public sealed class SetupTests : TestBase
             .Count(d => d.ServiceType == typeof(DistributedLockProvider))
             .Should()
             .Be(1, "TryAddSingleton on the concrete DistributedLockProvider must be idempotent");
-    }
-
-    /// <summary>
-    /// In-memory <see cref="ILoggerProvider"/> capturing <see cref="LogLevel"/> + <see cref="EventId"/>
-    /// pairs. Mirrors the messaging tests' CapturingLoggerProvider pattern; assertions stay stable
-    /// against message-template changes by ignoring formatted strings.
-    /// </summary>
-    private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
-    {
-        public ILogger CreateLogger(string categoryName)
-        {
-            return new CapturingLogger(log);
-        }
-
-        public void Dispose() { }
-
-        private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter
-            )
-            {
-                lock (log)
-                {
-                    log.Add((logLevel, eventId));
-                }
-            }
-        }
+        services
+            .Count(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>))
+            .Should()
+            .Be(1, "the shared lock-release consumer must be registered exactly once");
     }
 }

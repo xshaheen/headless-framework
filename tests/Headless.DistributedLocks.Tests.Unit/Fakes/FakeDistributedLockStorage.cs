@@ -8,6 +8,7 @@ namespace Tests.Fakes;
 internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
 {
     private readonly ConcurrentDictionary<string, LockEntry> _locks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, long> _fencingTokens = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
 
     public FakeDistributedLockStorage(TimeProvider? timeProvider = null)
@@ -17,7 +18,7 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
 
     private DateTime _UtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
-    public ValueTask<bool> InsertAsync(
+    public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string lockId,
         TimeSpan? ttl = null,
@@ -28,7 +29,15 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
         _RemoveIfExpired(key);
         var entry = new LockEntry(lockId, ttl.HasValue ? _UtcNow().Add(ttl.Value) : null);
         var added = _locks.TryAdd(key, entry);
-        return ValueTask.FromResult(added);
+
+        if (!added)
+        {
+            return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
+        }
+
+        var fencingToken = _fencingTokens.AddOrUpdate(key, static _ => 1, static (_, current) => current + 1);
+
+        return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, fencingToken));
     }
 
     public ValueTask<bool> ReplaceIfEqualAsync(
@@ -141,7 +150,11 @@ internal sealed class FakeDistributedLockStorage : IDistributedLockStorage
     }
 
     // Test helpers
-    public void Clear() => _locks.Clear();
+    public void Clear()
+    {
+        _locks.Clear();
+        _fencingTokens.Clear();
+    }
 
     public void SetLock(string key, string lockId, TimeSpan? ttl = null)
     {

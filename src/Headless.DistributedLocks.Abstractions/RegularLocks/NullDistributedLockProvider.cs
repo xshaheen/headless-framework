@@ -110,6 +110,8 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
         public string LockId { get; } = Guid.NewGuid().ToString("N");
 
+        public long? FencingToken => null;
+
         public string Resource { get; } = resource;
 
         public int RenewalCount => _renewalCount;

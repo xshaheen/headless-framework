@@ -2,36 +2,12 @@
 
 using Headless.Abstractions;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks;
-
-[PublicAPI]
-public static class SetupDistributedLockMessaging
-{
-    extension(MessagingSetupBuilder setup)
-    {
-        /// <summary>
-        /// Registers the distributed-lock release consumer so lock waiters can wake up from messaging notifications.
-        /// </summary>
-        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
-        public MessagingSetupBuilder UseDistributedLockReleaseWakeups()
-        {
-            setup.ForMessage<DistributedLockReleased>(message =>
-                message
-                    .MessageName("headless.locks.released")
-                    .OnBus<DistributedLockProvider.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
-            );
-
-            return setup;
-        }
-    }
-}
 
 public static class AddDistributedLockExtensions
 {
@@ -137,19 +113,22 @@ public static class AddDistributedLockExtensions
             // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
             // decorator wrapped around IDistributedLockProvider does not break the lock-release
             // wake-up signal (the consumer always receives the real DistributedLockProvider).
-            services.TryAddSingleton<ICanReceiveLockReleased>(sp => sp.GetRequiredService<DistributedLockProvider>());
-
-            // Startup-time hook that warns when IOutboxBus is registered AFTER
-            // AddDistributedLock(...). The consumer registration block below only runs at
-            // registration time; a later AddMessages(...) call silently skips push wake-ups
-            // and the existing LogOutboxBusAbsent warning would NOT fire (outbox bus is
-            // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
+            // TryAddEnumerable keeps repeated AddDistributedLock(...) calls idempotent — the same
+            // implementation type is not added twice — and LockReleasedConsumer fans out over the
+            // collected IEnumerable<ICanReceiveLockReleased> so mutex and semaphore providers share
+            // one decoupled wake-up seam.
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<
-                    IValidateOptions<DistributedLockOptions>,
-                    DistributedLockMessagingValidator
-                >()
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLockProvider>(
+                    static sp => sp.GetRequiredService<DistributedLockProvider>()
+                )
             );
+
+            // Auto-register the shared lock-released consumer. Order-independent: the registration
+            // is drained into the messaging consumer registry by AddHeadlessMessaging regardless of
+            // whether messaging was added before or after AddDistributedLock(...), so there is no
+            // registration-order footgun and no opt-in step. When messaging is never added, the
+            // emitted descriptors are inert.
+            DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
 
             return services;
         }

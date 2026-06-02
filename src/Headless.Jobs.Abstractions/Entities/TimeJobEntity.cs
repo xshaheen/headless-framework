@@ -24,6 +24,6 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
 
     [JsonIgnore]
     public virtual TTicker? Parent { get; internal set; }
-    public virtual ICollection<TTicker> Children { get; set; } = new List<TTicker>();
+    public virtual ICollection<TTicker> Children { get; set; } = [];
     public virtual RunCondition? RunCondition { get; set; }
 }

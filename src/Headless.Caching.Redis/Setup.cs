@@ -5,6 +5,7 @@ using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Caching;
 
@@ -46,7 +47,15 @@ public static class SetupRedisCache
             services.TryAddSingleton<ISerializer>(sp => sp.GetRequiredService<IJsonSerializer>());
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
-            services.TryAddSingleton<HeadlessRedisScriptsLoader>();
+            services.TryAddKeyedSingleton(
+                RedisCacheServiceKeys.ScriptsLoader,
+                (sp, _) => new HeadlessRedisScriptsLoader(
+                    sp.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer,
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                )
+            );
+            services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
             services.TryAddSingleton<IRemoteCache, RedisCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
             services.TryAddSingleton(typeof(IRemoteCache<>), typeof(RemoteCache<>));

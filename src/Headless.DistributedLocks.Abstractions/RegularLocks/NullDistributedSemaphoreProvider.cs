@@ -1,0 +1,116 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
+
+/// <summary>
+/// No-op <see cref="IDistributedSemaphoreProvider"/> where every acquire succeeds immediately. This
+/// is opt-in: it is never registered automatically, and there is no fallback wiring when a real
+/// semaphore provider is absent. Register it explicitly (e.g. for tests or single-node scenarios
+/// that want a permissive semaphore) when this behavior is desired.
+/// </summary>
+[PublicAPI]
+public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) : IDistributedSemaphoreProvider
+{
+    public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
+
+    public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
+
+    public IDistributedSemaphore CreateSemaphore(string resource, int maxCount)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+        Argument.IsGreaterThanOrEqualTo(maxCount, 1);
+
+        return new NullDistributedSemaphore(resource, maxCount, timeProvider);
+    }
+
+    public Task<long> GetHolderCountAsync(string resource, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrWhiteSpace(resource);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(0L);
+    }
+
+    private sealed class NullDistributedSemaphore(string resource, int maxCount, TimeProvider timeProvider)
+        : IDistributedSemaphore
+    {
+        public string Resource { get; } = resource;
+
+        public int MaxCount { get; } = maxCount;
+
+        public Task<IDistributedLock> AcquireAsync(
+            DistributedLockAcquireOptions? options = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ValidateAcquireOptions(options);
+
+            return Task.FromResult<IDistributedLock>(new NullSemaphoreSlot(Resource, timeProvider));
+        }
+
+        public Task<IDistributedLock?> TryAcquireAsync(
+            DistributedLockAcquireOptions? options = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _ValidateAcquireOptions(options);
+
+            return Task.FromResult<IDistributedLock?>(new NullSemaphoreSlot(Resource, timeProvider));
+        }
+
+        private static void _ValidateAcquireOptions(DistributedLockAcquireOptions? options)
+        {
+            if (options?.TimeUntilExpires == Timeout.InfiniteTimeSpan)
+            {
+                throw new ArgumentException(
+                    "Distributed semaphore acquires require a finite timeUntilExpires; Timeout.InfiniteTimeSpan is not valid.",
+                    nameof(options)
+                );
+            }
+        }
+    }
+
+    private sealed class NullSemaphoreSlot(string resource, TimeProvider timeProvider) : IDistributedLock
+    {
+        private int _renewalCount;
+
+        public string LockId { get; } = Guid.NewGuid().ToString("N");
+
+        public long? FencingToken => null;
+
+        public string Resource { get; } = resource;
+
+        public int RenewalCount => Volatile.Read(ref _renewalCount);
+
+        public DateTimeOffset DateAcquired { get; } = timeProvider.GetUtcNow();
+
+        public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public CancellationToken HandleLostToken => CancellationToken.None;
+
+        public bool IsMonitored => false;
+
+        public Task ReleaseAsync()
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _renewalCount);
+
+            return Task.FromResult(true);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+}

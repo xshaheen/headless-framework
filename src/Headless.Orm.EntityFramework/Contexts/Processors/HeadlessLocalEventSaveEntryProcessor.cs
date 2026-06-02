@@ -11,10 +11,10 @@ namespace Headless.EntityFramework.Contexts.Processors;
 
 public sealed class HeadlessLocalEventSaveEntryProcessor : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _CreatedFactories = new();
-    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _UpdatedFactories = new();
-    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _DeletedFactories = new();
-    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _ChangedFactories = new();
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _CreatedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _UpdatedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _DeletedFactories = [];
+    private static readonly ConditionalWeakTable<Type, Func<object, ILocalMessage>> _ChangedFactories = [];
 
     private static readonly ConditionalWeakTable<
         Type,

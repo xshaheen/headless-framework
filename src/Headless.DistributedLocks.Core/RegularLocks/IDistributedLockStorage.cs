@@ -5,7 +5,7 @@ namespace Headless.DistributedLocks;
 
 public interface IDistributedLockStorage
 {
-    ValueTask<bool> InsertAsync(
+    ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
         string lockId,
         TimeSpan? ttl = null,

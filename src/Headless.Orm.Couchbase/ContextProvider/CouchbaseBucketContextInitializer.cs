@@ -40,7 +40,7 @@ public static class CouchbaseBucketContextInitializer
         ?? throw new InvalidOperationException("Could not find DocumentSet type.");
 
     private static readonly ConditionalWeakTable<Type, Action<CouchbaseBucketContext, string?>> _InitializeCache =
-        new();
+        [];
 
     private static readonly ConditionalWeakTable<
         Type,

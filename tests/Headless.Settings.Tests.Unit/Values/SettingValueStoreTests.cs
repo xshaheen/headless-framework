@@ -160,7 +160,7 @@ public sealed class SettingValueStoreTests : TestBase
         const string providerName = "TestProvider";
         const string? providerKey = null;
 
-        _repository.FindAllAsync(name, providerName, providerKey, AbortToken).Returns(new List<SettingValueRecord>());
+        _repository.FindAllAsync(name, providerName, providerKey, AbortToken).Returns([]);
 
         // when
         await _sut.DeleteAsync(name, providerName, providerKey, AbortToken);

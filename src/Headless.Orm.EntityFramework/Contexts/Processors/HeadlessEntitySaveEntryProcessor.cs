@@ -18,7 +18,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     ITenantWriteGuardBypass tenantWriteGuardBypass
 ) : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = new();
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = [];
 
     private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _ShouldStampGuidIdFactory =
         static type =>

@@ -108,6 +108,60 @@ public static class SetupMessaging
     }
 
     /// <summary>
+    /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/> directly on the
+    /// service collection, the service-collection twin of the <c>setup.ForMessage&lt;T&gt;(…)</c> builder callback.
+    /// </summary>
+    /// <remarks>
+    /// Use this from framework/library registration code (for example a package's <c>Add…</c> extension) that owns a
+    /// consumer and must register it without access to the <see cref="MessagingSetupBuilder"/> callback. When messaging
+    /// is never added, the emitted descriptors are inert. Application code should prefer the
+    /// <c>setup.ForMessage&lt;T&gt;(…)</c> callback.
+    /// <para>
+    /// Ordering: the emitted registration is drained into the consumer registry by
+    /// <see cref="AddHeadlessMessaging"/>, so this MUST be called before <see cref="AddHeadlessMessaging"/>. Calling it
+    /// afterwards throws (the registry is already built and would silently ignore the late registration). A fully
+    /// order-independent path (runtime subscription) is tracked in #390.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TMessage">The message type to register.</typeparam>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configure">The message registration callback.</param>
+    /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when called after <see cref="AddHeadlessMessaging"/> has already run.
+    /// </exception>
+    [PublicAPI]
+    public static IServiceCollection ForMessage<TMessage>(
+        this IServiceCollection services,
+        Action<IMessageBuilder<TMessage>> configure
+    )
+        where TMessage : class
+    {
+        Argument.IsNotNull(configure);
+
+        // AddHeadlessMessaging drains MessageRegistration singletons into the consumer registry once,
+        // synchronously, during its call. A registration added after that point is never seen, so the
+        // consumer would silently never receive messages. Fail fast instead of degrading silently.
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(ConsumerRegistry)))
+        {
+            throw new InvalidOperationException(
+                "IServiceCollection.ForMessage<"
+                    + typeof(TMessage).Name
+                    + ">(...) must be called before AddHeadlessMessaging(...). The consumer registry is populated during "
+                    + "AddHeadlessMessaging and does not pick up registrations added afterwards. Move this registration "
+                    + "(or the Add... call that performs it) before AddHeadlessMessaging."
+            );
+        }
+
+        var builder = new MessageBuilder<TMessage>(services);
+        configure(builder);
+        services.AddSingleton(builder.Build());
+
+        return services;
+    }
+
+    /// <summary>
     /// Registers and configures all messaging services, consumers, and transport infrastructure.
     /// </summary>
     /// <param name="services">The service collection.</param>

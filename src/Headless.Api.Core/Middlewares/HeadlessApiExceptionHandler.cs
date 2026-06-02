@@ -50,7 +50,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
     // Cached per concrete exception type to avoid re-walking the inheritance chain on every hit.
     // ConditionalWeakTable lets entries (and their owning AssemblyLoadContext) unload when the
     // exception type is no longer referenced elsewhere.
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateConcurrencyTypeCache = new();
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateConcurrencyTypeCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,
