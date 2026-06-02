@@ -2058,9 +2058,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
             LastFactoryError = prototype.LastFactoryError;
-            Tags = prototype.Tags is { Count: > 0 }
-                ? new HashSet<string>(prototype.Tags, StringComparer.Ordinal)
-                : null;
+            Tags = prototype.Tags;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }

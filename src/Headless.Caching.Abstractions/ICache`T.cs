@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
-
 namespace Headless.Caching;
 
 public interface ICache<T>
@@ -113,8 +111,6 @@ public class Cache<T>(ICache cache) : ICache<T>
         CancellationToken cancellationToken = default
     )
     {
-        Argument.IsNotNull(options);
-
         return cache.GetOrAddAsync(key, factory, options, cancellationToken);
     }
 

@@ -18,7 +18,7 @@ public sealed class InMemoryCacheTests : TestBase
         return new InMemoryCache(_timeProvider, options);
     }
 
-    private static object _GetEntry(InMemoryCache cache, string key)
+    private static CacheEntryEnvelope _GetEntryEnvelope(InMemoryCache cache, string key)
     {
         var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
         field.Should().NotBeNull();
@@ -32,7 +32,14 @@ public sealed class InMemoryCacheTests : TestBase
 
             if (itemKey == key)
             {
-                return type.GetProperty("Value")!.GetValue(item)!;
+                var entry = type.GetProperty("Value")!.GetValue(item)!;
+
+                return new CacheEntryEnvelope(
+                    _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt"),
+                    _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt"),
+                    _GetEntryProperty<object?>(entry, "LastFactoryError"),
+                    _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags")
+                );
             }
         }
 
@@ -48,6 +55,13 @@ public sealed class InMemoryCacheTests : TestBase
 
         return (T?)property!.GetValue(entry);
     }
+
+    private sealed record CacheEntryEnvelope(
+        DateTime? LogicalExpiresAt,
+        DateTime? PhysicalExpiresAt,
+        object? LastFactoryError,
+        IReadOnlySet<string>? Tags
+    );
 
     #region UpsertAsync
 
@@ -153,9 +167,9 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), duration, AbortToken);
 
         // then
-        var entry = _GetEntry(cache, key);
-        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().Be(now.Add(duration));
-        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().Be(now.Add(duration));
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
     }
 
     [Fact]
@@ -171,9 +185,9 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.UpsertAsync(key, "value", duration, AbortToken);
 
         // then
-        var entry = _GetEntry(cache, key);
-        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().Be(now.Add(duration));
-        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().Be(now.Add(duration));
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
     }
 
     [Fact]
@@ -187,9 +201,9 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        var entry = _GetEntry(cache, key);
-        _GetEntryProperty<object?>(entry, "LastFactoryError").Should().BeNull();
-        _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags").Should().BeNull();
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LastFactoryError.Should().BeNull();
+        envelope.Tags.Should().BeNull();
     }
 
     [Fact]
@@ -203,9 +217,9 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.UpsertAsync(key, "value", expiration: null, AbortToken);
 
         // then
-        var entry = _GetEntry(cache, key);
-        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().BeNull();
-        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().BeNull();
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().BeNull();
+        envelope.PhysicalExpiresAt.Should().BeNull();
     }
 
     #endregion

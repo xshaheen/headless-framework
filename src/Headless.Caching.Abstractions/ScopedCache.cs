@@ -49,7 +49,6 @@ public sealed class ScopedCache<T> : ICache<T>
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNull(options);
 
         return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
     }
