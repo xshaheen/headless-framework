@@ -161,7 +161,7 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
         await connection.ExecuteAsync(
             new CommandDefinition(
                 $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP SCHEMA IF EXISTS [{schema}]",
-                AbortToken
+                cancellationToken: AbortToken
             )
         );
     }
@@ -272,7 +272,10 @@ public sealed class SqlServerStorageInitializerTests(SqlServerTestFixture fixtur
 
         // cleanup
         await connection.ExecuteAsync(
-            $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP SCHEMA IF EXISTS [{schema}]"
+            new CommandDefinition(
+                $"DROP TABLE IF EXISTS [{schema}].Published; DROP TABLE IF EXISTS [{schema}].Received; DROP TYPE IF EXISTS [{schema}].[HeadlessMessagingIdList]; DROP SCHEMA IF EXISTS [{schema}]",
+                cancellationToken: AbortToken
+            )
         );
     }
 
