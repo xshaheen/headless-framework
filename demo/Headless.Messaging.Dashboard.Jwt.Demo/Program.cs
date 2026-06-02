@@ -60,9 +60,9 @@ builder.Services.AddHttpClient();
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.Options.RetryPolicy.MaxPersistedRetries = 0;
     setup.Options.RetryPolicy.MaxInlineRetries = 0;
-    setup.SubscribeFromAssembly(typeof(Program).Assembly);
     setup.UseInMemoryStorage();
     setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));

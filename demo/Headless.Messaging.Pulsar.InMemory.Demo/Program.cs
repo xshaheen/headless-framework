@@ -6,7 +6,7 @@ var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar:
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.SubscribeFromAssembly(typeof(Program).Assembly);
+    setup.ForMessagesFromAssembly(typeof(Program).Assembly);
     setup.UseInMemoryStorage();
     setup.UsePulsar(pulsarUri);
     setup.UseDashboard(d => d.WithNoAuth());

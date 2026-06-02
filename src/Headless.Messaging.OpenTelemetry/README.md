@@ -30,10 +30,9 @@ builder.Services.AddOpenTelemetry()
 
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

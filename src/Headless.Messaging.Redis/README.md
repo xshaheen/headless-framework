@@ -31,6 +31,7 @@ dotnet add package Headless.Messaging.Redis
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     // Queue delivery through Redis Streams.
@@ -38,8 +39,6 @@ builder.Services.AddHeadlessMessaging(options =>
 
     // Broadcast delivery through Redis Pub/Sub.
     options.UseRedisPubSub("localhost:6379");
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

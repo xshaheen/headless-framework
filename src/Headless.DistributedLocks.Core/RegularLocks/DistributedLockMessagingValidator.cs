@@ -9,12 +9,10 @@ using Microsoft.Extensions.Options;
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Startup-time hook that detects the registration-order footgun in <c>AddDistributedLock(...)</c>:
-/// the <see cref="DistributedLockProvider.LockReleasedConsumer"/> is only wired when an
-/// <see cref="IOutboxBus"/> registration exists at the moment <c>AddDistributedLock(...)</c>
-/// runs. If the caller registers messaging afterwards (<c>AddMessages(...)</c> later in
-/// <c>Program.cs</c>), the consumer is silently skipped and push-based release wake-ups degrade
-/// to polling without firing the existing <c>LogOutboxBusAbsent</c> warning (because
+/// Startup-time hook that detects when messaging is available but the caller did not opt into
+/// <see cref="DistributedLockProvider.LockReleasedConsumer"/> through
+/// <c>setup.UseDistributedLockReleaseWakeups()</c>. Push-based release wake-ups then degrade to
+/// polling without firing the existing <c>LogOutboxBusAbsent</c> warning (because
 /// <c>_outboxBus</c> is non-null at runtime).
 /// </summary>
 /// <remarks>
@@ -40,16 +38,12 @@ internal sealed class DistributedLockMessagingValidator(
             return ValidateOptionsResult.Success;
         }
 
-        var hasConsumer = false;
-
-        foreach (var metadata in serviceProvider.GetServices<ConsumerMetadata>())
-        {
-            if (metadata.ConsumerType == typeof(DistributedLockProvider.LockReleasedConsumer))
-            {
-                hasConsumer = true;
-                break;
-            }
-        }
+        var hasConsumer =
+            serviceProvider
+                .GetService<IConsumerRegistry>()
+                ?.GetAll()
+                .Any(static metadata => metadata.ConsumerType == typeof(DistributedLockProvider.LockReleasedConsumer))
+            == true;
 
         if (!hasConsumer)
         {

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.DistributedLocks;
@@ -23,6 +24,66 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class SetupMessaging
 {
+    extension(MessagingSetupBuilder setup)
+    {
+        /// <summary>
+        /// Registers message-level metadata and zero or more consumers for <typeparamref name="TMessage"/>.
+        /// </summary>
+        /// <typeparam name="TMessage">The message type to register.</typeparam>
+        /// <param name="configure">The message registration callback.</param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessage<TMessage>(Action<IMessageBuilder<TMessage>> configure)
+            where TMessage : class
+        {
+            Argument.IsNotNull(configure);
+
+            var builder = new MessageBuilder<TMessage>(setup.Services);
+            configure(builder);
+            setup.Services.AddSingleton(builder.Build());
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and registers them as bus consumers.
+        /// </summary>
+        /// <param name="assembly">The assembly to scan.</param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssembly(Assembly assembly)
+        {
+            Argument.IsNotNull(assembly);
+
+            foreach (var (consumerType, messageType) in _FindConsumers(assembly))
+            {
+                setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+
+                var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
+                setup.Services.TryAdd(
+                    new ServiceDescriptor(
+                        serviceType,
+                        sp => sp.GetRequiredService(consumerType),
+                        ServiceLifetime.Scoped
+                    )
+                );
+
+                setup.Services.AddSingleton(MessageRegistrationFactory.CreateScanned(messageType, consumerType));
+            }
+
+            return setup;
+        }
+
+        /// <summary>
+        /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/> implementations.
+        /// </summary>
+        /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>() =>
+            setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+    }
+
     /// <summary>
     /// Registers and configures all messaging services, consumers, and transport infrastructure.
     /// </summary>
@@ -32,8 +93,7 @@ public static class SetupMessaging
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
     /// <remarks>
     /// <para>
-    /// This method provides a unified API for configuring both messaging infrastructure (storage, transport, retry policies)
-    /// and message consumers that implement <see cref="IConsume{TMessage}"/>.
+    /// This method configures messaging infrastructure and message consumers.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>
@@ -50,17 +110,10 @@ public static class SetupMessaging
     ///         rabbit.Port = 5672;
     ///     });
     ///
-    ///     // Configure consumers
-    ///     setup.SubscribeFromAssembly(typeof(Program).Assembly);
-    ///
-    ///     // Or register specific consumers
-    ///     setup.Subscribe&lt;OrderPlacedHandler&gt;()
+    ///     setup.ForMessage&lt;OrderPlaced&gt;(message => message
     ///         .MessageName("orders.placed")
-    ///         .Group("order-service")
-    ///         .Concurrency(5);
-    ///
-    ///     // Map message types to message names
-    ///     setup.WithMessageNameMapping&lt;OrderPlaced&gt;("orders.placed");
+    ///         .OnBus&lt;OrderPlacedHandler&gt;(consumer => consumer.Group("order-service").Concurrency(5)));
+    ///     setup.ForMessagesFromAssemblyContaining&lt;Program&gt;();
     /// });
     /// </code>
     /// </para>
@@ -80,10 +133,22 @@ public static class SetupMessaging
 
         configure(setup);
 
-        // Discover consumers registered via AddBusConsumer/AddQueueConsumer.
-        _DiscoverConsumersFromDI(services, setup, registry);
+        _DiscoverMessageRegistrations(services, setup, registry);
 
         return _RegisterCoreMessagingServices(services, setup);
+    }
+
+    private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
+    {
+        return assembly
+            .GetTypes()
+            .Where(static t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
+            .SelectMany(static consumerType =>
+                consumerType
+                    .GetInterfaces()
+                    .Where(static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
+                    .Select(i => (ConsumerType: consumerType, MessageType: i.GetGenericArguments()[0]))
+            );
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(
@@ -217,59 +282,183 @@ public static class SetupMessaging
         }
     }
 
-    /// <summary>
-    /// Discovers and registers consumer metadata instances added via AddBusConsumer/AddQueueConsumer extension methods.
-    /// Also applies any per-consumer circuit breaker overrides carried on the metadata.
-    /// </summary>
-    private static void _DiscoverConsumersFromDI(
+    private static void _DiscoverMessageRegistrations(
         IServiceCollection services,
         MessagingSetupBuilder setup,
         ConsumerRegistry registry
     )
     {
-        // Find all ConsumerMetadata instances registered in the service collection
-        var metadataDescriptors = services
-            .Where(d => d.ServiceType == typeof(ConsumerMetadata) && d.Lifetime == ServiceLifetime.Singleton)
+        var registrations = services
+            .Where(static d => d.ServiceType == typeof(MessageRegistration) && d.Lifetime == ServiceLifetime.Singleton)
+            .Select(static d => d.ImplementationInstance)
+            .OfType<MessageRegistration>()
             .ToList();
 
-        foreach (var descriptor in metadataDescriptors)
+        if (registrations.Count == 0)
         {
-            if (descriptor.ImplementationInstance is not ConsumerMetadata metadata)
+            return;
+        }
+
+        var explicitPairs = registrations
+            .SelectMany(static registration =>
+                registration
+                    .Consumers.Where(static consumer => !consumer.IsAssemblyScan)
+                    .Select(consumer => (registration.MessageType, consumer.ConsumerType))
+            )
+            .ToHashSet();
+
+        var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
+
+        foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
+        {
+            var explicitMessageNames = group
+                .Select(static registration => registration.MessageName)
+                .Where(static messageName => messageName is not null)
+                // Message names match case-insensitively at dispatch (IConsumerServiceSelector), so
+                // case-variant explicit names for one type are the same name, not a conflict.
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (explicitMessageNames.Count > 1)
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Message type {group.Key.FullName ?? group.Key.Name} is already mapped to messageName '{explicitMessageNames[0]}'. "
+                        + $"Cannot map to '{explicitMessageNames[1]}'."
+                );
             }
 
-            var resolved = _ResolveDiscoveredMetadata(metadata, setup.Options);
-            registry.Register(resolved);
+            var explicitMessageName = explicitMessageNames.Count == 0 ? null : explicitMessageNames[0];
 
-            // Apply per-consumer circuit breaker overrides inline
-            if (resolved.CircuitBreakerOverride is not null && !string.IsNullOrWhiteSpace(resolved.Group))
+            if (explicitMessageName is not null)
             {
-                setup.CircuitBreakerRegistry.Register(
-                    CircuitBreakerGroupKeys.For(resolved),
-                    resolved.CircuitBreakerOverride
-                );
+                setup.Options.WithMessageNameMapping(group.Key, explicitMessageName);
+            }
+
+            foreach (var registration in group)
+            {
+                foreach (var consumer in registration.Consumers)
+                {
+                    if (
+                        consumer.IsAssemblyScan
+                        && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
+                    )
+                    {
+                        continue;
+                    }
+
+                    var resolved = setup.Options.CreateConsumerMetadata(
+                        consumer.ConsumerType,
+                        registration.MessageType,
+                        messageName: null,
+                        consumer.Group,
+                        consumer.Concurrency,
+                        consumer.HandlerId,
+                        consumer.IntentType
+                    );
+
+                    var key = new ConsumerRegistrationKey(
+                        resolved.MessageName,
+                        resolved.Group,
+                        resolved.IntentType,
+                        resolved.ConsumerType
+                    );
+
+                    var settings = new ConsumerRegistrationSettings(
+                        resolved.Concurrency,
+                        resolved.ResolvedHandlerId,
+                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride)
+                    );
+
+                    if (registeredKeys.TryGetValue(key, out var existing))
+                    {
+                        // R9a: re-registering the SAME consumer for the same (message name, group, intent)
+                        // is an idempotent merge only when the registration is genuinely identical. Diverging
+                        // concurrency / handler id / circuit-breaker overrides would otherwise be silently
+                        // dropped here, so fail fast and name the conflict instead.
+                        if (existing != settings)
+                        {
+                            throw new InvalidOperationException(
+                                $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
+                                    + $"more than once for message name '{resolved.MessageName}' "
+                                    + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                    + "Register the consumer once, or make every registration identical."
+                            );
+                        }
+
+                        continue;
+                    }
+
+                    registeredKeys.Add(key, settings);
+                    registry.Register(resolved);
+                    _ApplyCircuitBreakerOverride(setup, resolved, consumer);
+                }
             }
         }
     }
 
-    private static ConsumerMetadata _ResolveDiscoveredMetadata(ConsumerMetadata metadata, MessagingOptions options)
+    private static void _ApplyCircuitBreakerOverride(
+        MessagingSetupBuilder setup,
+        ConsumerMetadata resolved,
+        MessageConsumerRegistration consumer
+    )
     {
-        var resolved = options.CreateConsumerMetadata(
-            metadata.ConsumerType,
-            metadata.MessageType,
-            metadata.MessageName,
-            metadata.Group,
-            metadata.Concurrency,
-            metadata.HandlerId,
-            metadata.IntentType
-        );
-
-        // CreateConsumerMetadata normalizes messageName/group but doesn't carry over builder-only
-        // fields. If ConsumerMetadata gains new builder-set fields, copy them here too.
-        return resolved with
+        if (consumer.CircuitBreakerOverride is null || string.IsNullOrWhiteSpace(resolved.Group))
         {
-            CircuitBreakerOverride = metadata.CircuitBreakerOverride,
-        };
+            return;
+        }
+
+        setup.CircuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
+    }
+
+    private readonly record struct ConsumerRegistrationKey(
+        string MessageName,
+        string? Group,
+        IntentType IntentType,
+        Type ConsumerType
+    )
+    {
+        // Message names are matched case-insensitively at dispatch, so the dedup key must treat
+        // case-variant names as identical. Groups stay case-sensitive (Ordinal everywhere else).
+        public bool Equals(ConsumerRegistrationKey other) =>
+            IntentType == other.IntentType
+            && ConsumerType == other.ConsumerType
+            && string.Equals(MessageName, other.MessageName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(Group, other.Group, StringComparison.Ordinal);
+
+        public override int GetHashCode() =>
+            HashCode.Combine(
+                StringComparer.OrdinalIgnoreCase.GetHashCode(MessageName),
+                Group is null ? 0 : StringComparer.Ordinal.GetHashCode(Group),
+                IntentType,
+                ConsumerType
+            );
+    }
+
+    private readonly record struct ConsumerRegistrationSettings(
+        byte Concurrency,
+        string ResolvedHandlerId,
+        ConsumerCircuitBreakerSettings CircuitBreaker
+    );
+
+    private readonly record struct ConsumerCircuitBreakerSettings(
+        bool HasOverride,
+        bool Enabled,
+        int? FailureThreshold,
+        TimeSpan? OpenDuration,
+        Func<Exception, bool>? IsTransientException
+    )
+    {
+        public static ConsumerCircuitBreakerSettings From(ConsumerCircuitBreakerOptions? options)
+        {
+            return options is null
+                ? default
+                : new ConsumerCircuitBreakerSettings(
+                    HasOverride: true,
+                    options.Enabled,
+                    options.FailureThreshold,
+                    options.OpenDuration,
+                    options.IsTransientException
+                );
+        }
     }
 }

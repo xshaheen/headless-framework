@@ -140,10 +140,14 @@ public sealed class ConsumerRegistry : IConsumerRegistry
 
         if (group is null)
         {
-            return all.FirstOrDefault(m => m.MessageName == messageName);
+            return all.FirstOrDefault(m =>
+                string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
-        return all.FirstOrDefault(m => m.MessageName == messageName && m.Group == group);
+        return all.FirstOrDefault(m =>
+            string.Equals(m.MessageName, messageName, StringComparison.OrdinalIgnoreCase) && m.Group == group
+        );
     }
 
     /// <summary>
@@ -220,7 +224,8 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             if (
-                string.Equals(existing.MessageName, candidate.MessageName, StringComparison.Ordinal)
+                // Message names match case-insensitively at dispatch; groups stay case-sensitive.
+                string.Equals(existing.MessageName, candidate.MessageName, StringComparison.OrdinalIgnoreCase)
                 && string.Equals(existing.Group, candidate.Group, StringComparison.Ordinal)
                 && existing.IntentType == candidate.IntentType
             )

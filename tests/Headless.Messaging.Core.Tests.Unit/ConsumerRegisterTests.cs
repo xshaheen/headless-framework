@@ -267,9 +267,13 @@ public sealed class ConsumerRegisterTests : TestBase
         var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
 
         await using var provider = _CreateProvider(
-            configureMessaging: options =>
+            configureMessaging: setup =>
             {
-                options.Subscribe<BootstrapReadyConsumer>("ready-messageName").Group("ready-group").Concurrency(1);
+                setup.ForMessage<BootstrapReadyMessage>(message =>
+                    message
+                        .MessageName("ready-messageName")
+                        .OnBus<BootstrapReadyConsumer>(consumer => consumer.Group("ready-group").Concurrency(1))
+                );
             },
             configureServices: services =>
             {
@@ -349,12 +353,15 @@ public sealed class ConsumerRegisterTests : TestBase
             configureMessaging?.Invoke(setup);
         });
 
+        // Run service overrides AFTER AddHeadlessMessaging so test-supplied registrations (e.g. a fake
+        // IConsumerClientFactory) win last-writer-wins over the InMemory transport's defaults. Consumer
+        // registration belongs in configureMessaging via setup.ForMessage, which runs inside the callback.
+        configureServices?.Invoke(services);
+
         if (circuitBreakerStateManager is not null)
         {
             services.AddSingleton(circuitBreakerStateManager);
         }
-
-        configureServices?.Invoke(services);
 
         return services.BuildServiceProvider();
     }

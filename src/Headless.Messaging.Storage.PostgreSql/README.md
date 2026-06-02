@@ -26,6 +26,7 @@ dotnet add package Headless.Messaging.Storage.PostgreSql
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql(config =>
     {
         config.ConnectionString = "Host=localhost;Database=myapp;...";
@@ -33,8 +34,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

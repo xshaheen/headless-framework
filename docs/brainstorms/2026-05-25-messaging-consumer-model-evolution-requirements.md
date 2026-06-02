@@ -11,7 +11,7 @@ issues: [341, 344, 345]
 
 Resolve three gating design tickets that block downstream messaging clusters:
 
-- **#341 — Consumer-intent coupling.** Adopt topology-declared intent with a message-centric registration API. No message-type markers. `IConsume<T>` remains the single handler interface. Replace `AddBusConsumer` / `AddQueueConsumer` with `services.ForMessage<T>(x => ...)`.
+- **#341 — Consumer-intent coupling.** Adopt topology-declared intent with a message-centric registration API. No message-type markers. `IConsume<T>` remains the single handler interface. Replace `AddBusConsumer` / `AddQueueConsumer` with `setup.ForMessage<T>(x => ...)`.
 - **#344 — Cross-intent leakage.** Define two logical **intent lanes** (bus, queue). The framework declares per-lane topology from registrations; the **broker performs routing**. Cross-intent leakage is structurally prevented for framework-managed paths.
 - **#345 — Abstractions layout.** Move `PublishOptions` from `Messaging.Abstractions` → `Bus.Abstractions` for symmetry with `EnqueueOptions` in `Queue.Abstractions`. Extract a shared `ITransport` base in `Messaging.Abstractions`. `MessagePublishOptionsBase` stays in `Messaging.Abstractions` as the shared base.
 
@@ -33,7 +33,7 @@ This adjudicates several tradeoffs in the spec:
 - **Error messages assume framework familiarity.** The Kafka Bus error wording (§8) names broker primitives (consumer group, topic) and explains the gap directly; it does not hand-hold.
 - **Comparison sections (§4, §12, §13) are first-class spec content.** The primary user is actively benchmarking against alternatives; pretending the alternatives don't exist would be less useful than naming them honestly.
 
-Junior .NET devs writing their first consumer are a secondary audience served by the no-config one-liner registration (`services.ForMessage<T>(x => x.OnBus<C>())`), but they are not the audience the spec's defaults are tuned for.
+Junior .NET devs writing their first consumer are a secondary audience served by the no-config one-liner registration (`setup.ForMessage<T>(x => x.OnBus<C>())`), but they are not the audience the spec's defaults are tuned for.
 
 ### Terminology
 
@@ -72,7 +72,7 @@ Replace `services.AddBusConsumer<TConsumer, TMessage>(topic)` and `services.AddQ
 ### Shape
 
 ```csharp
-services.ForMessage<OrderPlaced>(x =>
+setup.ForMessage<OrderPlaced>(x =>
 {
     // Layer 2 — universal logical hints (see section 4)
     x.MessageName("orders.order-placed");
@@ -106,7 +106,7 @@ services.ForMessage<OrderPlaced>(x =>
 A minimal registration is still one line of useful content:
 
 ```csharp
-services.ForMessage<OrderPlaced>(x => x.OnBus<NotificationsConsumer>());
+setup.ForMessage<OrderPlaced>(x => x.OnBus<NotificationsConsumer>());
 ```
 
 Everything Layer 2 / Layer 3 is opt-in.
@@ -196,7 +196,7 @@ Per-message topology is organized into three explicit layers. Most users live in
 
 | Layer | Scope | What it gives you |
 |---|---|---|
-| **1. No-config defaults** | The whole spec works without any topology calls. | `services.ForMessage<T>(x => x.OnBus<C>())` — message name inferred from type, provider defaults applied. |
+| **1. No-config defaults** | The whole spec works without any topology calls. | `setup.ForMessage<T>(x => x.OnBus<C>())` — message name inferred from type, provider defaults applied. |
 | **2. Provider-neutral logical hints** | Universal knobs that map cleanly across transports. | `MessageName`, `PartitionBy`, `CorrelationFrom`. Each maps to a real broker primitive on most providers; behavior when a transport doesn't honor the hint is governed by `UnsupportedHintBehavior` (see below). |
 | **3. Provider-specific escape hatch** | Broker-shaped knobs that only make sense for one transport. | `x.UseRabbitMQ(...)`, `x.UseKafka(...)`, `x.UseAzureServiceBus(...)`, `b.UseRabbitMQ(...)`, `q.UseKafka(...)`. Shape lives in the transport package. |
 
@@ -307,7 +307,7 @@ The §1 guarantee — "cross-intent leakage is structurally prevented for framew
 
 **Inside (framework-managed, guarantee holds):**
 
-- `services.ForMessage<T>(x => ...)` registration.
+- `setup.ForMessage<T>(x => ...)` registration.
 - `IBus.PublishAsync(...)` and `IOutboxBus.PublishAsync(...)`.
 - `IQueue.EnqueueAsync(...)` and `IOutboxQueue.EnqueueAsync(...)`.
 - Consume-side dispatch from any provider package that ships under `Headless.Messaging.*`.
@@ -409,7 +409,7 @@ Kafka does not have a single native broadcast primitive in the same way RabbitMQ
 ### Valid example
 
 ```csharp
-services.ForMessage<OrderPlaced>(x =>
+setup.ForMessage<OrderPlaced>(x =>
 {
     x.MessageName("orders.order-placed");
 
@@ -424,7 +424,7 @@ services.ForMessage<OrderPlaced>(x =>
 ### Invalid example (fails at startup)
 
 ```csharp
-services.ForMessage<OrderPlaced>(x =>
+setup.ForMessage<OrderPlaced>(x =>
 {
     x.OnBus<NotificationsConsumer>(b =>
     {
@@ -503,7 +503,7 @@ Billing.OrderPlaced  -> order.placed
 
 #### Uniqueness scope (local vs broker-wide)
 
-Collision detection catches duplicates **within a single host process** — the framework can only see registrations made by code that imports `services.ForMessage<T>(...)`. Two unrelated services sharing the same broker can each register `order.placed` against incompatible payload types and the framework will accept both — the failure shows up as cross-service deserialization errors at runtime, not at startup.
+Collision detection catches duplicates **within a single host process** — the framework can only see registrations made by code that imports `setup.ForMessage<T>(...)`. Two unrelated services sharing the same broker can each register `order.placed` against incompatible payload types and the framework will accept both — the failure shows up as cross-service deserialization errors at runtime, not at startup.
 
 Cross-service / broker-wide message-name uniqueness is **not enforced by the framework in v1**. It is the operator's responsibility until the wire-compat sibling spec (§2 Non-Goals) defines a shared schema-registry contract that brokers and services can consult. Practical recommendation in the meantime: prefix message names with the owning bounded context (`sales.order.placed`, `billing.order.placed`) rather than relying on type-name inference, so cross-service collisions are caught by code review rather than production failures.
 

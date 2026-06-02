@@ -14,7 +14,7 @@ namespace Headless.Messaging;
 /// <param name="IntentType">The delivery intent used to subscribe this consumer.</param>
 /// <remarks>
 /// This record stores the configuration metadata for a consumer registered via
-/// <see cref="IMessagingBuilder.SubscribeFromAssembly"/> or <see cref="IMessagingBuilder.Subscribe{T}(string)"/>.
+/// <c>ForMessage&lt;TMessage&gt;(...)</c> or assembly scanning.
 /// </remarks>
 [PublicAPI]
 public sealed record ConsumerMetadata(
@@ -37,7 +37,7 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// Per-consumer circuit breaker overrides registered via
-    /// <c>AddBusConsumer().WithCircuitBreaker()</c>. Applied to the
+    /// <c>ForMessage&lt;TMessage&gt;(...).OnBus&lt;TConsumer&gt;(...)</c>. Applied to the
     /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }

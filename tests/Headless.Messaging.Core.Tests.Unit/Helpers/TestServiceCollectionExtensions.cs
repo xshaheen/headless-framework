@@ -14,7 +14,7 @@ public static class TestServiceCollectionExtensions
             services.AddLogging(x => x.AddTestLogging(testOutput));
             services.AddHeadlessMessaging(setup =>
             {
-                setup.SubscribeFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
+                setup.ForMessagesFromAssembly(typeof(TestServiceCollectionExtensions).Assembly);
                 setup.Options.DefaultGroupName = TestGroupName;
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();

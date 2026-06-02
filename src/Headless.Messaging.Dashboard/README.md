@@ -26,6 +26,7 @@ dotnet add package Headless.Messaging.Dashboard
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -33,8 +34,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         dashboard.WithBasicAuth("admin", "secret123");
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Access dashboard at: http://localhost:5000/messaging

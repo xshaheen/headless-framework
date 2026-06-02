@@ -35,6 +35,7 @@ dotnet add package Headless.Messaging.Aws
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseAws(sqs =>
@@ -42,8 +43,6 @@ builder.Services.AddHeadlessMessaging(options =>
         sqs.Region = RegionEndpoint.USEast1;
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

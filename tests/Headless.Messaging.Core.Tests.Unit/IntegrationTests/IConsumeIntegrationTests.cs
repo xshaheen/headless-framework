@@ -15,12 +15,15 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<OrderPlaced>(message =>
+                message
+                    .MessageName("orders.placed")
+                    .OnBus<OrderPlacedConsumer>(consumer => consumer.Group("order-service"))
+            );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed").Group("order-service");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -47,12 +50,13 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>()
+            );
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -87,13 +91,16 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<OrderPlaced>(message =>
+            {
+                message.MessageName("orders.placed");
+                message.OnBus<OrderPlacedConsumer>(consumer => consumer.Group("order-service"));
+                message.OnBus<OrderAnalyticsConsumer>(consumer => consumer.Group("analytics-service"));
+            });
             messaging.Options.DefaultGroupName = "default";
             messaging.Options.Version = "v1";
-            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed").Group("order-service");
-            messaging.Subscribe<OrderAnalyticsConsumer>().MessageName("orders.placed").Group("analytics-service");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -120,12 +127,11 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<OrderPlaced>("orders.placed");
-            messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 
         using var provider = services.BuildServiceProvider();
@@ -152,8 +158,8 @@ public sealed class IConsumeIntegrationTests
 
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessagesFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
             messaging.Options.Version = "v1";
-            messaging.SubscribeFromAssembly(typeof(IConsumeIntegrationTests).Assembly);
         });
 
         using var provider = services.BuildServiceProvider();
@@ -181,10 +187,9 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>());
         });
 
         using var provider = services.BuildServiceProvider();
@@ -204,12 +209,12 @@ public sealed class IConsumeIntegrationTests
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<OrderPlacedConsumer>().MessageName("orders.placed");
-
-            messaging.Subscribe<OrderCancelledConsumer>().MessageName("orders.cancelled");
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedConsumer>());
+            setup.ForMessage<OrderCancelled>(message =>
+                message.MessageName("orders.cancelled").OnBus<OrderCancelledConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
