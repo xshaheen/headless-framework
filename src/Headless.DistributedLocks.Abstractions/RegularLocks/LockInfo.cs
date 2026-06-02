@@ -17,6 +17,11 @@ public sealed record LockInfo
     /// A per-resource monotonic grant counter used by protected resources to reject stale writes,
     /// or null when the backend or inspection path cannot report a fencing token.
     /// </summary>
+    /// <remarks>
+    /// The inspection path (<c>GetLockInfoAsync</c> / <c>ListActiveLocksAsync</c>) reports null for
+    /// backends whose fence is stored separately (for example Redis); the live token is delivered on
+    /// the acquire handle's <see cref="IDistributedLock.FencingToken"/>.
+    /// </remarks>
     public long? FencingToken { get; init; }
 
     /// <summary>Remaining time until the lock expires, or null if no expiration.</summary>
