@@ -103,15 +103,3 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services) : IM
         return registration;
     }
 }
-
-internal static class MessageRegistrationFactory
-{
-    public static MessageRegistration CreateScanned(Type messageType, Type consumerType)
-    {
-        return new MessageRegistration(
-            messageType,
-            MessageName: null,
-            [new MessageConsumerRegistration(consumerType, IntentType.Bus, IsAssemblyScan: true, null, 1, null, null)]
-        );
-    }
-}

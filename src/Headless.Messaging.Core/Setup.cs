@@ -53,23 +53,30 @@ public static class SetupMessaging
         [PublicAPI]
         public MessagingSetupBuilder ForMessagesFromAssembly(Assembly assembly)
         {
-            Argument.IsNotNull(assembly);
+            _ScanAssembly(setup, assembly, configure: null);
 
-            foreach (var (consumerType, messageType) in _FindConsumers(assembly))
-            {
-                setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+            return setup;
+        }
 
-                var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
-                setup.Services.TryAdd(
-                    new ServiceDescriptor(
-                        serviceType,
-                        sp => sp.GetRequiredService(consumerType),
-                        ServiceLifetime.Scoped
-                    )
-                );
+        /// <summary>
+        /// Scans the specified assembly for closed <see cref="IConsume{TMessage}"/> implementations and lets
+        /// <paramref name="configure"/> shape each scanned consumer registration before it is registered.
+        /// </summary>
+        /// <param name="assembly">The assembly to scan.</param>
+        /// <param name="configure">
+        /// The per-consumer callback. The supplied <see cref="ScannedConsumerContext"/> exposes the discovered
+        /// consumer and message types; callers should handle a null <see cref="Type.Namespace"/> when inspecting them.
+        /// </param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssembly(
+            Assembly assembly,
+            Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
+        )
+        {
+            Argument.IsNotNull(configure);
 
-                setup.Services.AddSingleton(MessageRegistrationFactory.CreateScanned(messageType, consumerType));
-            }
+            _ScanAssembly(setup, assembly, configure);
 
             return setup;
         }
@@ -82,6 +89,21 @@ public static class SetupMessaging
         [PublicAPI]
         public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>() =>
             setup.ForMessagesFromAssembly(typeof(TMarker).Assembly);
+
+        /// <summary>
+        /// Scans the assembly containing <typeparamref name="TMarker"/> for closed <see cref="IConsume{TMessage}"/>
+        /// implementations and lets <paramref name="configure"/> shape each scanned consumer registration before it is registered.
+        /// </summary>
+        /// <typeparam name="TMarker">A marker type from the target assembly.</typeparam>
+        /// <param name="configure">
+        /// The per-consumer callback. The supplied <see cref="ScannedConsumerContext"/> exposes the discovered
+        /// consumer and message types; callers should handle a null <see cref="Type.Namespace"/> when inspecting them.
+        /// </param>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        [PublicAPI]
+        public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>(
+            Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
+        ) => setup.ForMessagesFromAssembly(typeof(TMarker).Assembly, configure);
     }
 
     /// <summary>
@@ -149,6 +171,35 @@ public static class SetupMessaging
                     .Where(static i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
                     .Select(i => (ConsumerType: consumerType, MessageType: i.GetGenericArguments()[0]))
             );
+    }
+
+    private static void _ScanAssembly(
+        MessagingSetupBuilder setup,
+        Assembly assembly,
+        Action<ScannedConsumerContext, IScannedConsumerBuilder>? configure
+    )
+    {
+        Argument.IsNotNull(assembly);
+
+        foreach (var (consumerType, messageType) in _FindConsumers(assembly))
+        {
+            var builder = new ScannedConsumerBuilder(consumerType);
+            configure?.Invoke(new ScannedConsumerContext(consumerType, messageType), builder);
+
+            if (builder.IsSkipped)
+            {
+                continue;
+            }
+
+            setup.Services.TryAdd(new ServiceDescriptor(consumerType, consumerType, ServiceLifetime.Scoped));
+
+            var serviceType = typeof(IConsume<>).MakeGenericType(messageType);
+            setup.Services.TryAdd(
+                new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
+            );
+
+            setup.Services.AddSingleton(new MessageRegistration(messageType, MessageName: null, [builder.Build()]));
+        }
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(

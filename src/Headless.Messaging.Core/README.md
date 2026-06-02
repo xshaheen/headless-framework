@@ -34,7 +34,18 @@ dotnet add package Headless.Messaging.Core
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.ForMessagesFromAssemblyContaining<Program>();
+    setup.ForMessagesFromAssemblyContaining<Program>((ctx, consumer) =>
+    {
+        if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
+        {
+            consumer.OnQueue().Group("imports").Concurrency(4);
+        }
+
+        if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
+        {
+            consumer.Skip();
+        }
+    });
 
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
@@ -87,7 +98,7 @@ public sealed class ImportService(IQueue queue)
 - `AddHeadlessMessaging(...)` is the primary DI entry point.
 - `setup.ForMessage<TMessage>(...)` is the primary registration API. `MessageName(...)` sets the publish and consume name for that message type; `OnBus<TConsumer>()` registers broadcast delivery and `OnQueue<TConsumer>()` registers point-to-point delivery.
 - `setup.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a publisher-only message-name mapping.
-- `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback.
+- `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register untouched scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback. Use the callback overloads to call `OnQueue()`, `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()` per discovered consumer; message-name overrides stay on explicit `ForMessage<TMessage>(...)` registrations.
 - message-name mappings are type-level. Re-registering the same message type merges consumers; mapping two different message types to the same resolved message name fails at startup.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.
 - persisted published and received rows store `IntentType`; retry pickup and dashboard projections preserve that value. Received-message identity is `(Version, MessageId, Group, IntentType)`, so bus and queue deliveries with the same logical message ID do not collapse into one row.

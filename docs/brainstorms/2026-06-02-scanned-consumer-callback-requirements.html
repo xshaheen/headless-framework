@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configurable assembly scanning — per-consumer callback for ForMessagesFromAssembly</title>
+<style>
+  :root {
+    --bg: #fcfcfd;
+    --surface: #f4f5f7;
+    --border: #e3e6ea;
+    --ink: #1c2430;
+    --ink-muted: #5b6573;
+    --ink-faint: #8a93a0;
+    --accent: #2563eb;
+    --accent-weak: #dbe6fe;
+    --ok: #15803d;
+    --warn: #b45309;
+    --danger: #b91c1c;
+
+    --text-sm: 13px;
+    --text-base: 15px;
+    --h3: 18px;
+    --h2: 22px;
+    --h1: 28px;
+
+    --radius-sm: 4px;
+    --radius: 8px;
+    --radius-lg: 12px;
+
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Cascadia Code", ui-monospace, "Roboto Mono", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: var(--text-base);
+    line-height: 1.65;
+  }
+
+  .page {
+    max-width: 900px;
+    margin-inline: auto;
+    padding: 3rem 1.5rem 4rem;
+  }
+
+  p, li { max-width: 72ch; }
+
+  h1, h2, h3 {
+    font-weight: 600;
+    color: var(--ink);
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  h1 { font-size: var(--h1); line-height: 1.2; }
+  h2 { font-size: var(--h2); line-height: 1.3; }
+  h3 { font-size: var(--h3); line-height: 1.35; }
+
+  section { margin-top: 2.25rem; }
+
+  section > h2 {
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 1rem;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 600;
+    color: var(--ink-faint);
+    margin-bottom: 0.35rem;
+  }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code, .mono {
+    font-family: var(--mono);
+    font-size: 0.92em;
+  }
+
+  p code, li code, td code, dd code {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.05em 0.35em;
+  }
+
+  strong { color: inherit; }
+
+  /* ---- header ---- */
+  header.doc-head { margin-bottom: 0.5rem; }
+
+  header.doc-head h1 { margin-bottom: 0.75rem; }
+
+  dl.meta {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 0.2rem 1rem;
+    margin: 1rem 0 0;
+    font-size: var(--text-sm);
+  }
+
+  dl.meta dt {
+    color: var(--ink-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 11px;
+    align-self: center;
+  }
+
+  dl.meta dd { margin: 0; color: var(--ink-muted); }
+  dl.meta dd .mono { color: var(--ink); }
+
+  /* ---- stats strip ---- */
+  .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+  }
+  .stat {
+    flex: 1 1 0;
+    min-width: 120px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.7rem 0.9rem;
+  }
+  .stat .num { font-size: 20px; font-weight: 600; color: var(--ink); }
+  .stat .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-faint); }
+
+  /* ---- decision / callout cards ---- */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    margin-bottom: 0.8rem;
+  }
+  .card h3 { margin-bottom: 0.3rem; }
+  .card p { margin: 0.3rem 0 0; color: var(--ink); }
+  .card p:first-of-type { max-width: none; }
+
+  .callout {
+    border-left: 3px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.7rem;
+  }
+  .callout.accent { border-left-color: var(--accent); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.danger { border-left-color: var(--danger); }
+  .callout.ok { border-left-color: var(--ok); }
+  .callout .tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    color: var(--ink-faint);
+  }
+  .callout p { margin: 0.25rem 0 0; }
+
+  /* ---- tables ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0 0;
+    font-size: var(--text-base);
+  }
+  thead th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--ink-faint);
+    font-weight: 600;
+    padding: 0.5rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody td {
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:nth-child(even) { background: var(--surface); }
+  td .rid, td .aeid, td .fid {
+    font-family: var(--mono);
+    font-size: 0.9em;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  td.covers { color: var(--ink-muted); font-size: var(--text-sm); white-space: nowrap; }
+
+  .group-head {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ink-muted);
+    font-weight: 600;
+    margin: 1.4rem 0 0.3rem;
+  }
+
+  /* ---- acceptance examples ---- */
+  .ae { margin-bottom: 0.7rem; }
+  .ae .aeid { color: var(--accent); font-family: var(--mono); font-size: 0.9em; }
+  .ae .covers { color: var(--ink-faint); font-size: var(--text-sm); font-weight: 600; }
+
+  /* ---- code block ---- */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  pre .c { color: var(--ink-faint); }
+  pre .k { color: var(--accent); }
+
+  /* ---- diagram ---- */
+  figure { margin: 1rem 0 0; }
+  figure svg { width: 100%; height: auto; display: block; }
+  figcaption { font-size: var(--text-sm); color: var(--ink-muted); margin-top: 0.5rem; }
+
+  ul.tight { margin: 0.3rem 0; padding-left: 1.2rem; }
+  ul.tight li { margin: 0.2rem 0; }
+
+  footer.composition-signal {
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    font-size: var(--text-sm);
+    color: var(--ink-muted);
+  }
+  footer.composition-signal code { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="doc-head">
+    <div class="eyebrow">Brainstorm · Requirements</div>
+    <h1>Configurable assembly scanning: per-consumer callback for <code>ForMessagesFromAssembly</code></h1>
+    <dl class="meta">
+      <dt>Date</dt><dd><time datetime="2026-06-02">2026-06-02</time></dd>
+      <dt>Topic</dt><dd><span class="mono">scanned-consumer-callback</span></dd>
+      <dt>Module</dt><dd><span class="mono">Headless.Messaging.Core</span></dd>
+      <dt>Source issue</dt><dd><a href="https://github.com/xshaheen/headless-framework/issues/367">#367</a> · follow-up to <a href="https://github.com/xshaheen/headless-framework/issues/362">#362</a></dd>
+    </dl>
+    <div class="stats">
+      <div class="stat"><div class="num">12</div><div class="lbl">Requirements</div></div>
+      <div class="stat"><div class="num">5</div><div class="lbl">Key decisions</div></div>
+      <div class="stat"><div class="num">6</div><div class="lbl">Acceptance examples</div></div>
+      <div class="stat"><div class="num">0</div><div class="lbl">Blocking questions</div></div>
+    </div>
+  </header>
+
+  <section id="summary">
+    <h2>Summary</h2>
+    <p>Add a second overload of <code>ForMessagesFromAssembly</code> (and its <code>…Containing&lt;TMarker&gt;</code> sibling) that runs a caller-supplied callback once per discovered <code>IConsume&lt;TMessage&gt;</code>. The callback can route a consumer to the queue lane, set concurrency / group / handler-id / circuit-breaker, or skip it — replacing today's behaviour where every scanned consumer silently registers as a Bus consumer at concurrency 1. The existing no-arg overload and all current callers stay byte-for-byte unchanged.</p>
+  </section>
+
+  <section id="problem-frame">
+    <h2>Problem Frame</h2>
+    <p>Assembly scanning is the ergonomic on-ramp for registering many consumers at once, but it is currently a one-shape door. <code>MessageRegistrationFactory.CreateScanned</code> hardcodes <code>IntentType.Bus</code> and concurrency <code>1</code> for every discovered consumer. A consumer authored for the queue lane — point-to-point work distribution, higher concurrency — that happens to live in a scanned assembly registers as a broadcast Bus consumer with no signal to the developer. The only escape today is to abandon scanning for that consumer and hand-register it with explicit <code>ForMessage&lt;T&gt;</code>, which defeats the purpose of scanning an assembly that legitimately mixes both lanes.</p>
+    <p>The cost lands at runtime, not compile time: the consumer is wired, starts on the wrong lane, and the misconfiguration surfaces as "messages aren't being load-balanced the way I expected" rather than a build error. There is no per-consumer seam in the scan path to set intent, concurrency, group, handler-id, or a circuit-breaker override, even though the underlying registration record already carries every one of those fields.</p>
+  </section>
+
+  <section id="key-decisions">
+    <h2>Key Decisions</h2>
+
+    <div class="card">
+      <h3>Imperative callback, not declarative attributes</h3>
+      <p>Configuration is supplied as <code>Action&lt;ScannedConsumerContext, IScannedConsumerBuilder&gt;</code>, not as attributes on consumer classes. Attributes would couple consumer types to Headless-owned attribute types, which cuts directly against the framework's unopinionated / zero-lock-in identity, and they cannot configure consumers the caller does not own. The callback strictly subsumes the attribute approach: a caller who wants attribute-driven config can read their <em>own</em> attributes inside the callback via <code>ctx.ConsumerType.GetCustomAttribute&lt;…&gt;()</code>. Declarative attributes were considered and rejected on this basis.</p>
+    </div>
+
+    <div class="card">
+      <h3>Scanning stays name-inference-only — no <code>MessageName</code> on the scanned builder</h3>
+      <p>The scanned builder deliberately omits a <code>MessageName(string)</code> method. The conceptual split is: scanning <em>infers</em> message identity; explicit <code>ForMessage&lt;T&gt;</code> <em>asserts</em> it. A per-consumer name override inside a scan callback is the moment the caller has stopped scanning and started hand-registering — and explicit registration already wins via precedence, so the escape hatch exists without adding surface. This also sidesteps the cross-type name-collision sweep interaction the issue flagged, since the callback cannot introduce a new message name during scanning.</p>
+    </div>
+
+    <div class="card">
+      <h3><code>Skip()</code> is fully exclusionary — suppresses DI registration too</h3>
+      <p>Today the scan path registers DI descriptors (<code>consumerType</code> and <code>IConsume&lt;T&gt;</code>) for <em>every</em> discovered consumer before building its registration. For <code>Skip()</code> to mean "excluded entirely," the new overload must invoke the callback <em>first</em> and, when a consumer is skipped, register neither its <code>MessageRegistration</code> nor its DI descriptors. A skipped consumer is not resolvable through the scan path at all.</p>
+    </div>
+
+    <div class="card">
+      <h3>No assembly-wide blanket <code>Group</code> default</h3>
+      <p>Group stays inferred per consumer. A blanket group applied across distinct message types produces competing consumers (a shared group across different messages is a load-balancing footgun), so no assembly-level <code>Group</code> default is offered — even per-consumer, group is normally left untouched and documented as such.</p>
+    </div>
+
+    <div class="card">
+      <h3>Scan-vs-explicit precedence unchanged; callback configures the scanned registration only</h3>
+      <p>An explicit <code>ForMessage&lt;T&gt;</code> registration for the same <code>(consumer, message)</code> pair still wins. The callback shapes the <em>scanned</em> registration; discovery's two-pass name resolution, idempotent merge, and dedup are untouched. Discovery (<code>_DiscoverMessageRegistrations</code>) remains the single registration path — only the values <code>CreateScanned</code> produces change from hardcoded Bus/1 to resolved intent/group/concurrency/handler-id/circuit-breaker.</p>
+    </div>
+  </section>
+
+  <section id="pipeline">
+    <h2>Registration Pipeline</h2>
+    <p>Where the callback sits in the existing scan-to-registry path. The callback is the only new step; everything downstream of it is unchanged.</p>
+    <figure>
+      <svg viewBox="0 0 860 230" role="img" aria-label="Per-consumer registration pipeline: scan finds each consumer, the callback runs, a skipped consumer is excluded entirely, otherwise a configured scanned registration flows through unchanged discovery into the registry.">
+        <defs>
+          <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+            <path d="M0,0 L9,4.5 L0,9 Z" fill="#5b6573"/>
+          </marker>
+        </defs>
+        <style>
+          .box { fill: #f4f5f7; stroke: #e3e6ea; stroke-width: 1.5; }
+          .box-accent { fill: #dbe6fe; stroke: #2563eb; stroke-width: 1.5; }
+          .box-danger { fill: #f4f5f7; stroke: #b91c1c; stroke-width: 1.5; stroke-dasharray: 4 3; }
+          .lbl { font: 600 12px var(--sans, sans-serif); fill: #1c2430; }
+          .lbl-sm { font: 11px var(--sans, sans-serif); fill: #5b6573; }
+          .edge { stroke: #5b6573; stroke-width: 1.5; fill: none; }
+          .edge-lbl { font: 600 10.5px var(--sans, sans-serif); fill: #5b6573; paint-order: stroke fill; stroke: #fcfcfd; stroke-width: 3px; }
+          .dia { fill: #fcfcfd; stroke: #5b6573; stroke-width: 1.5; }
+        </style>
+
+        <!-- row 1 -->
+        <rect class="box" x="10" y="20" width="130" height="48" rx="8"/>
+        <text class="lbl" x="75" y="40" text-anchor="middle">Scan assembly</text>
+        <text class="lbl-sm" x="75" y="56" text-anchor="middle">each IConsume&lt;T&gt;</text>
+
+        <rect class="box-accent" x="190" y="20" width="150" height="48" rx="8"/>
+        <text class="lbl" x="265" y="40" text-anchor="middle">callback(ctx,</text>
+        <text class="lbl" x="265" y="56" text-anchor="middle">builder)</text>
+
+        <polygon class="dia" points="470,44 525,20 580,44 525,68"/>
+        <text class="lbl" x="525" y="48" text-anchor="middle">Skip()?</text>
+
+        <rect class="box-danger" x="660" y="20" width="190" height="48" rx="8"/>
+        <text class="lbl" x="755" y="40" text-anchor="middle">Excluded entirely</text>
+        <text class="lbl-sm" x="755" y="56" text-anchor="middle">no DI, no registration</text>
+
+        <!-- row 1 edges -->
+        <line class="edge" x1="140" y1="44" x2="186" y2="44" marker-end="url(#arrow)"/>
+        <line class="edge" x1="340" y1="44" x2="466" y2="44" marker-end="url(#arrow)"/>
+        <line class="edge" x1="580" y1="44" x2="656" y2="44" marker-end="url(#arrow)"/>
+        <text class="edge-lbl" x="618" y="38" text-anchor="middle">yes</text>
+
+        <!-- drop from diamond to row 2 -->
+        <path class="edge" d="M525,68 L525,110 L75,110 L75,142" marker-end="url(#arrow)"/>
+        <text class="edge-lbl" x="540" y="92" text-anchor="start">no</text>
+
+        <!-- row 2 -->
+        <rect class="box-accent" x="10" y="142" width="200" height="58" rx="8"/>
+        <text class="lbl" x="110" y="164" text-anchor="middle">Scanned registration</text>
+        <text class="lbl-sm" x="110" y="182" text-anchor="middle">intent · group · concurrency</text>
+        <text class="lbl-sm" x="110" y="195" text-anchor="middle">handlerId · circuit-breaker</text>
+
+        <rect class="box" x="290" y="142" width="220" height="58" rx="8"/>
+        <text class="lbl" x="400" y="164" text-anchor="middle">Discovery (unchanged)</text>
+        <text class="lbl-sm" x="400" y="182" text-anchor="middle">explicit wins · two-pass names</text>
+        <text class="lbl-sm" x="400" y="195" text-anchor="middle">idempotent merge · dedup</text>
+
+        <rect class="box" x="590" y="142" width="160" height="58" rx="8"/>
+        <text class="lbl" x="670" y="174" text-anchor="middle">ConsumerRegistry</text>
+
+        <line class="edge" x1="210" y1="171" x2="286" y2="171" marker-end="url(#arrow)"/>
+        <line class="edge" x1="510" y1="171" x2="586" y2="171" marker-end="url(#arrow)"/>
+      </svg>
+      <figcaption>The callback (accent boxes) is the sole new element. <code>Skip()</code> short-circuits both DI and registration; an unskipped consumer produces a fully-configured scanned registration that flows through the existing discovery pipeline, where an explicit <code>ForMessage&lt;T&gt;</code> for the same pair still wins.</figcaption>
+    </figure>
+  </section>
+
+  <section id="requirements">
+    <h2>Requirements</h2>
+
+    <div class="group-head">API surface</div>
+    <table>
+      <thead><tr><th>ID</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td><span class="rid" id="r1">R1.</span></td><td>Add overload <code>ForMessagesFromAssembly(Assembly assembly, Action&lt;ScannedConsumerContext, IScannedConsumerBuilder&gt; configure)</code>.</td></tr>
+        <tr><td><span class="rid" id="r2">R2.</span></td><td>Add overload <code>ForMessagesFromAssemblyContaining&lt;TMarker&gt;(Action&lt;ScannedConsumerContext, IScannedConsumerBuilder&gt; configure)</code>, delegating to R1 with the marker's assembly.</td></tr>
+        <tr><td><span class="rid" id="r3">R3.</span></td><td>Introduce <code>ScannedConsumerContext</code> as a read-only record struct exposing <code>ConsumerType</code> and <code>MessageType</code>. It carries no mutating surface — it is the read-only "who is this consumer" half passed to the callback.</td></tr>
+        <tr><td><span class="rid" id="r4">R4.</span></td><td>Introduce <code>IScannedConsumerBuilder</code> (<code>[PublicAPI]</code>) exposing <code>OnBus()</code> (default), <code>OnQueue()</code>, <code>Group(string)</code>, <code>Concurrency(byte)</code>, <code>HandlerId(string)</code>, <code>WithCircuitBreaker(Action&lt;ConsumerCircuitBreakerOptions&gt;)</code>, and <code>Skip()</code>. It deliberately has <strong>no</strong> <code>MessageName</code> method.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="group-head">Behaviour &amp; defaults</div>
+    <table>
+      <thead><tr><th>ID</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td><span class="rid" id="r5">R5.</span></td><td>The callback runs exactly once per discovered closed <code>IConsume&lt;TMessage&gt;</code> implementation in the scanned assembly.</td></tr>
+        <tr><td><span class="rid" id="r6">R6.</span></td><td>A consumer the callback does not touch registers as <code>Bus</code> / concurrency <code>1</code> — bit-for-bit identical to today's no-arg overload. This is the regression guard the no-arg path relies on.</td></tr>
+        <tr><td><span class="rid" id="r7">R7.</span></td><td><code>Skip()</code> excludes the discovered consumer entirely: neither its <code>MessageRegistration</code> nor its DI descriptors are registered through the scan path. The callback must therefore run before DI descriptor registration.</td></tr>
+        <tr><td><span class="rid" id="r8">R8.</span></td><td>Validation matches the explicit consumer builder: <code>Concurrency(0)</code> is rejected, and empty / whitespace <code>Group</code> and <code>HandlerId</code> are rejected, using the same <code>Argument.*</code> guard semantics so the two builders fail identically.</td></tr>
+        <tr><td><span class="rid" id="r9">R9.</span></td><td><code>HandlerId</code> is the caller's responsibility. If the callback produces a duplicate identity within the same <code>(messageName, group, intent)</code>, the existing competing-identity guard throws at startup — fail-fast is the intended outcome, not a new check.</td></tr>
+      </tbody>
+    </table>
+
+    <div class="group-head">Discovery integration</div>
+    <table>
+      <thead><tr><th>ID</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td><span class="rid" id="r10">R10.</span></td><td>Scan-vs-explicit precedence is unchanged: an explicit <code>ForMessage&lt;T&gt;</code> registration for the same <code>(consumer, message)</code> pair wins; the callback shapes only the scanned registration that fills gaps.</td></tr>
+        <tr><td><span class="rid" id="r11">R11.</span></td><td><code>_DiscoverMessageRegistrations</code> stays the single registration path. Only the resolved fields produced for a scanned consumer change (intent / group / concurrency / handler-id / circuit-breaker instead of hardcoded Bus/1). Two-pass name resolution, idempotent merge, and dedup are untouched.</td></tr>
+        <tr><td><span class="rid" id="r12">R12.</span></td><td>The existing no-arg <code>ForMessagesFromAssembly(Assembly)</code> overload and all current callers are unaffected by this change.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="acceptance-examples">
+    <h2>Acceptance Examples</h2>
+
+    <div class="ae">
+      <p><span class="aeid" id="ae1">AE1.</span> <span class="covers">Covers R4, R5.</span> A scanned consumer whose callback calls <code>OnQueue()</code> registers on the queue lane and is started by the registrar on the queue lane (not Bus).</p>
+    </div>
+    <div class="ae">
+      <p><span class="aeid" id="ae2">AE2.</span> <span class="covers">Covers R5, R6.</span> A single scan call over an assembly mixing lanes: consumers the callback flips with <code>OnQueue()</code> land on the queue lane; consumers it leaves untouched land on Bus — both resolved correctly from one <code>ForMessagesFromAssembly</code> invocation.</p>
+    </div>
+    <div class="ae">
+      <p><span class="aeid" id="ae3">AE3.</span> <span class="covers">Covers R7.</span> A consumer whose callback calls <code>Skip()</code> is absent from the registry <em>and</em> not resolvable from DI through the scan path.</p>
+    </div>
+    <div class="ae">
+      <p><span class="aeid" id="ae4">AE4.</span> <span class="covers">Covers R6.</span> A consumer the callback never touches resolves to <code>Bus</code> / concurrency <code>1</code> — identical to the no-arg overload's output for the same assembly.</p>
+    </div>
+    <div class="ae">
+      <p><span class="aeid" id="ae5">AE5.</span> <span class="covers">Covers R10.</span> When the same <code>(consumer, message)</code> pair is registered explicitly via <code>ForMessage&lt;T&gt;</code> <em>and</em> appears in a configured scan, the explicit registration wins; the scanned configuration (e.g. an <code>OnQueue()</code> call) does not override it.</p>
+    </div>
+    <div class="ae">
+      <p><span class="aeid" id="ae6">AE6.</span> <span class="covers">Covers R8.</span> <code>Concurrency(0)</code> throws; empty / whitespace <code>Group</code> and <code>HandlerId</code> throw — with the same exception type and behaviour as the explicit builder.</p>
+    </div>
+  </section>
+
+  <section id="scope-boundaries">
+    <h2>Scope Boundaries</h2>
+
+    <div class="callout warn">
+      <div class="tag">Outside this feature's identity</div>
+      <p><strong>Declarative attribute-based configuration.</strong> Considered and rejected — couples consumer classes to Headless attributes (lock-in) and cannot configure consumers the caller does not own. The callback subsumes it via <code>ctx.ConsumerType.GetCustomAttribute&lt;…&gt;()</code>.</p>
+    </div>
+    <div class="callout warn">
+      <div class="tag">Outside this feature's identity</div>
+      <p><strong>Assembly-wide blanket <code>Group</code> default.</strong> A shared group across distinct message types creates competing consumers. No assembly-level group default is offered; group stays inferred per consumer.</p>
+    </div>
+    <div class="callout accent">
+      <div class="tag">Deferred — escape hatch already exists</div>
+      <p><strong><code>MessageName</code> override on the scanned builder.</strong> Excluded by decision. Custom message names route through explicit <code>ForMessage&lt;T&gt;</code>, which wins via precedence. Revisit only if a concrete need for per-scan renaming emerges.</p>
+    </div>
+    <div class="callout accent">
+      <div class="tag">Deferred</div>
+      <p><strong>Predicate / filter overloads beyond the callback</strong> (e.g. a separate type-filter parameter). The callback already supports broad-scan-then-prune via <code>Skip()</code>; a dedicated filter overload is not needed for the stated use case.</p>
+    </div>
+  </section>
+
+  <section id="assumptions">
+    <h2>Dependencies &amp; Assumptions</h2>
+    <ul class="tight">
+      <li><strong>Builds on <a href="https://github.com/xshaheen/headless-framework/pull/362">#362</a></strong> (the <code>ForMessage</code> registration API). The underlying <code>MessageConsumerRegistration</code> record already carries every field the callback resolves — no new storage shape is required.</li>
+      <li><strong>OnQueue-on-explicit no-op is accepted, not warned.</strong> If a callback flips <code>OnQueue()</code> on a pair also registered explicitly, the scanned registration is dropped by precedence (R10) and the call silently has no effect. This is consistent with the documented precedence model; it is documented as expected behaviour, not surfaced as a startup warning.</li>
+      <li><strong><code>ctx.MessageType.Namespace</code> can be null</strong> for types in the global namespace. Callback authors using namespace-based routing must use the null-safe access pattern; this is called out in the doc/XML comments for the overload.</li>
+      <li><strong>Callback invocation order is not guaranteed.</strong> Discovery order follows <code>assembly.GetTypes()</code>, which has no stable ordering contract. The callback must be order-independent; this is a documentation note, not an enforced constraint.</li>
+    </ul>
+  </section>
+
+  <section id="outstanding-questions">
+    <h2>Outstanding Questions</h2>
+    <div class="callout ok">
+      <div class="tag">None blocking planning</div>
+      <p>No open product decisions remain. The <code>MessageName</code> include/exclude fork is resolved (exclude). The one item deferred to planning is purely mechanical: the exact reshaping of the scan loop so the callback runs before DI descriptor registration (R7) — an implementation-ordering detail, not a product question.</p>
+    </div>
+  </section>
+
+  <section id="sources">
+    <h2>Sources &amp; References</h2>
+    <ul class="tight">
+      <li><a href="https://github.com/xshaheen/headless-framework/issues/367">Issue #367</a> — Configurable assembly scanning (this brainstorm's source).</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/pull/362">PR #362</a> — <code>ForMessage</code> registration API (the feature this extends).</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Messaging.Core/Setup.cs">src/Headless.Messaging.Core/Setup.cs</a> — <code>ForMessagesFromAssembly</code> overloads (L54), <code>_FindConsumers</code> (L141), <code>_DiscoverMessageRegistrations</code> discovery pass.</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Messaging.Core/Registration/MessageBuilder.cs">src/Headless.Messaging.Core/Registration/MessageBuilder.cs</a> — <code>MessageRegistrationFactory.CreateScanned</code> (L107), the hardcoded Bus/1 path to be replaced.</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Messaging.Core/Registration/ConsumerBuilders.cs">src/Headless.Messaging.Core/Registration/ConsumerBuilders.cs</a> — explicit <code>IConsumerBuilderBase</code> surface the scanned builder mirrors for validation parity (R8).</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Messaging.Core/Registration/MessageRegistration.cs">src/Headless.Messaging.Core/Registration/MessageRegistration.cs</a> — <code>MessageConsumerRegistration</code> record (carries intent / group / concurrency / handlerId / circuit-breaker).</li>
+      <li><a href="https://github.com/xshaheen/headless-framework/blob/main/src/Headless.Messaging.Core/ConsumerRegistry.cs">src/Headless.Messaging.Core/ConsumerRegistry.cs</a> — competing-identity guard (R9).</li>
+    </ul>
+  </section>
+
+  <footer class="composition-signal">
+    Composed 2026-06-02T04:01Z by dev-brainstorm from <code><a href="https://github.com/xshaheen/headless-framework/issues/367">issue #367</a></code>.
+  </footer>
+
+</div>
+</body>
+</html>

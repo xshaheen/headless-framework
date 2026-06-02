@@ -62,36 +62,25 @@ internal abstract class ConsumerBuilderBase<TConsumer, TBuilder>(MessageConsumer
 {
     public TBuilder Group(string group)
     {
-        Argument.IsNotNullOrWhiteSpace(group);
-
-        registration.Group = group;
+        registration.SetGroup(group);
         return _Self;
     }
 
     public TBuilder Concurrency(byte maxConcurrent)
     {
-        Argument.IsPositive(maxConcurrent, "Concurrency must be greater than 0");
-
-        registration.Concurrency = maxConcurrent;
+        registration.SetConcurrency(maxConcurrent);
         return _Self;
     }
 
     public TBuilder HandlerId(string handlerId)
     {
-        Argument.IsNotNullOrWhiteSpace(handlerId);
-
-        registration.HandlerId = handlerId;
+        registration.SetHandlerId(handlerId);
         return _Self;
     }
 
     public TBuilder WithCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
     {
-        Argument.IsNotNull(configure);
-
-        var options = new ConsumerCircuitBreakerOptions();
-        configure(options);
-        registration.CircuitBreakerOverride = options;
-
+        registration.SetCircuitBreaker(configure);
         return _Self;
     }
 
@@ -106,6 +95,8 @@ internal sealed class MessageConsumerRegistrationBuilder(
     bool isAssemblyScan = false
 )
 {
+    public IntentType IntentType { get; set; } = intentType;
+
     public string? Group { get; set; }
 
     public byte Concurrency { get; set; } = 1;
@@ -114,11 +105,41 @@ internal sealed class MessageConsumerRegistrationBuilder(
 
     public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; set; }
 
+    public void SetGroup(string group)
+    {
+        Argument.IsNotNullOrWhiteSpace(group);
+
+        Group = group;
+    }
+
+    public void SetConcurrency(byte maxConcurrent)
+    {
+        Argument.IsPositive(maxConcurrent, "Concurrency must be greater than 0");
+
+        Concurrency = maxConcurrent;
+    }
+
+    public void SetHandlerId(string handlerId)
+    {
+        Argument.IsNotNullOrWhiteSpace(handlerId);
+
+        HandlerId = handlerId;
+    }
+
+    public void SetCircuitBreaker(Action<ConsumerCircuitBreakerOptions> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        var options = new ConsumerCircuitBreakerOptions();
+        configure(options);
+        CircuitBreakerOverride = options;
+    }
+
     public MessageConsumerRegistration Build()
     {
         return new MessageConsumerRegistration(
             consumerType,
-            intentType,
+            IntentType,
             isAssemblyScan,
             Group,
             Concurrency,
