@@ -19,7 +19,7 @@ internal static class DistributedLockConsumerRegistration
     /// <remarks>
     /// Ordering constraint: because the consumer registry is built during <c>AddHeadlessMessaging</c>,
     /// <c>AddDistributedLock</c> / <c>AddDistributedSemaphore</c> must run before it. The seam throws
-    /// if called afterwards. An order-independent path (runtime subscription) is tracked as follow-up.
+    /// if called afterwards. An order-independent path (runtime subscription) is tracked in #390.
     /// </remarks>
     public static void TryAddLockReleasedConsumer(IServiceCollection services)
     {

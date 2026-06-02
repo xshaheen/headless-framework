@@ -120,7 +120,7 @@ public static class SetupMessaging
     /// Ordering: the emitted registration is drained into the consumer registry by
     /// <see cref="AddHeadlessMessaging"/>, so this MUST be called before <see cref="AddHeadlessMessaging"/>. Calling it
     /// afterwards throws (the registry is already built and would silently ignore the late registration). A fully
-    /// order-independent path (runtime subscription) is tracked as follow-up work.
+    /// order-independent path (runtime subscription) is tracked in #390.
     /// </para>
     /// </remarks>
     /// <typeparam name="TMessage">The message type to register.</typeparam>

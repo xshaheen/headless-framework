@@ -84,7 +84,7 @@ public sealed class SetupTests : TestBase
 
         // when / then — the consumer registry was already drained, so a late auto-registration would
         // be silently ignored. The seam fails fast instead. (Order-independent registration via
-        // runtime subscription is tracked as follow-up work.)
+        // runtime subscription is tracked in #390.)
         var act = () => services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
         act.Should().Throw<InvalidOperationException>();
     }
