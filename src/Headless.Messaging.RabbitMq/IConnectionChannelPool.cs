@@ -71,24 +71,21 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         );
     }
 
-    async Task<IChannel> IConnectionChannelPool.Rent()
-    {
-        return await ((IConnectionChannelPool)this).Rent(CancellationToken.None).ConfigureAwait(false);
-    }
+    Task<IChannel> IConnectionChannelPool.Rent() => ((IConnectionChannelPool)this).Rent(CancellationToken.None);
 
     // Acquires a pool slot from _poolSemaphore on the way in; the matching release happens in
-    // IConnectionChannelPool.Return. The public Rent overloads below deliberately do NOT touch the
-    // semaphore — they exist for internal channel creation. Renting through the interface (which is
-    // what RabbitMqTransport does) must go through this acquire so that every Rent is balanced by a
-    // single Return release; otherwise Return over-releases and throws SemaphoreFullException once the
-    // initial slot count is exceeded.
+    // IConnectionChannelPool.Return. The private _CreateChannelAsync helper below deliberately does NOT
+    // touch the semaphore — it exists only for internal channel creation. Renting through the interface
+    // (which is what RabbitMqTransport does) must go through this acquire so that every Rent is balanced
+    // by a single Return release; otherwise Return over-releases and throws SemaphoreFullException once
+    // the initial slot count is exceeded.
     async Task<IChannel> IConnectionChannelPool.Rent(CancellationToken cancellationToken)
     {
         await _poolSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
-            return await Rent(cancellationToken).ConfigureAwait(false);
+            return await _CreateChannelAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -197,9 +194,7 @@ public sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable,
         return () => factory.CreateConnectionAsync();
     }
 
-    public Task<IChannel> Rent() => Rent(CancellationToken.None);
-
-    public async Task<IChannel> Rent(CancellationToken cancellationToken)
+    private async Task<IChannel> _CreateChannelAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
