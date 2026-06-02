@@ -52,7 +52,7 @@ public sealed class SetupTests : TestBase
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
 
         var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
-        metadata.ConsumerType.Should().Be(typeof(DistributedLockProvider.LockReleasedConsumer));
+        metadata.ConsumerType.Should().Be<DistributedLockProvider.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
         metadata.IntentType.Should().Be(IntentType.Bus);
         metadata.Concurrency.Should().Be(1);
@@ -65,7 +65,7 @@ public sealed class SetupTests : TestBase
         // consumer through setup.UseDistributedLockReleaseWakeups().
         var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
@@ -93,7 +93,7 @@ public sealed class SetupTests : TestBase
         // given — messaging is available and the lock-release consumer is explicitly registered.
         var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
         // when
@@ -138,16 +138,16 @@ public sealed class SetupTests : TestBase
     /// pairs. Mirrors the messaging tests' CapturingLoggerProvider pattern; assertions stay stable
     /// against message-template changes by ignoring formatted strings.
     /// </summary>
-    private sealed class _CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
     {
         public ILogger CreateLogger(string categoryName)
         {
-            return new _CapturingLogger(log);
+            return new CapturingLogger(log);
         }
 
         public void Dispose() { }
 
-        private sealed class _CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
+        private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => null;

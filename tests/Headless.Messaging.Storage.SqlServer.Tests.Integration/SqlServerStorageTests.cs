@@ -5,7 +5,7 @@ using Headless.Abstractions;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.SqlServer;
+using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

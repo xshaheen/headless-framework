@@ -1,7 +1,7 @@
 using System.Data;
 using Dapper;
 using Headless.Messaging;
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 

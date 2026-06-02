@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
+using Headless.Features.Seeders;
 using Headless.Hosting.Initialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Headless.Features.Seeders;
 
 namespace Tests;
 
@@ -17,7 +17,8 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
     {
         // given — port 1 is reserved and won't accept connections; short timeout to fail fast.
         // Password is a placeholder; we never reach the auth handshake because the TCP connect fails first.
-        const string unreachable = "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
+        const string unreachable =
+            "Server=127.0.0.1,1;Database=missing;User Id=sa;Password=placeholder-never-used;Connect Timeout=2;TrustServerCertificate=true";
         using var host = _CreateHost(unreachable);
 
         // when / then — wrapped in HostFailedToStartException by the host pipeline; inner is SqlException
@@ -27,7 +28,8 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             .ThrowAsync<Exception>()
             .Where(e => e is SqlException || e.InnerException is SqlException);
 
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not FeaturesInitializationBackgroundService);
         initializer.IsInitialized.Should().BeFalse();
 
@@ -44,7 +46,10 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         // designed to be idempotent via OBJECT_ID checks + duplicate-error suppression.
         await _DropSchemaAsync("features_sql_concurrent");
         const int hostCount = 5;
-        var hosts = Enumerable.Range(0, hostCount).Select(_ => _CreateHost(fixture.ConnectionString, "features_sql_concurrent")).ToArray();
+        var hosts = Enumerable
+            .Range(0, hostCount)
+            .Select(_ => _CreateHost(fixture.ConnectionString, "features_sql_concurrent"))
+            .ToArray();
 
         try
         {
@@ -55,9 +60,14 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             // then — all initializers report ready, exactly one of each table exists, and the
             // full 6-index complement is present (regression guard: a CATCH that swallows a real
             // CREATE INDEX failure would otherwise pass the table-count assertion silently).
-            hosts.Select(h => h.Services.GetRequiredService<IEnumerable<IInitializer>>()
-                    .Single(x => x is not FeaturesInitializationBackgroundService).IsInitialized)
-                .Should().AllSatisfy(initialized => initialized.Should().BeTrue());
+            hosts
+                .Select(h =>
+                    h.Services.GetRequiredService<IEnumerable<IInitializer>>()
+                        .Single(x => x is not FeaturesInitializationBackgroundService)
+                        .IsInitialized
+                )
+                .Should()
+                .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("features_sql_concurrent", "FeatureValues")).Should().Be(1);
             (await _CountTablesAsync("features_sql_concurrent", "FeatureDefinitions")).Should().Be(1);
             (await _CountTablesAsync("features_sql_concurrent", "FeatureGroupDefinitions")).Should().Be(1);
@@ -117,7 +127,10 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 
     private async Task<int> _CountIndexesAsync(string schema)
@@ -138,6 +151,9 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         );
         command.Parameters.AddWithValue("@schema", schema);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken), System.Globalization.CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(TestContext.Current.CancellationToken),
+            CultureInfo.InvariantCulture
+        );
     }
 }

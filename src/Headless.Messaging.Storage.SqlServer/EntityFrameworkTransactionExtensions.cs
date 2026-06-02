@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
 /// Provides Entity Framework-specific transaction helpers for SQL Server.

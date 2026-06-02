@@ -24,7 +24,7 @@ public sealed class BusTests : TestBase
     public async Task should_resolve_topic_from_mapping()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -58,7 +58,7 @@ public sealed class BusTests : TestBase
     public async Task should_resolve_topic_from_default_convention_when_no_mapping_exists()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions();
         var publisher = _CreateBus(testTransport, options);
 
@@ -74,7 +74,7 @@ public sealed class BusTests : TestBase
     public async Task should_allow_null_payload()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -91,7 +91,7 @@ public sealed class BusTests : TestBase
     public async Task should_apply_topic_prefix()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions
         {
             MessageNamePrefix = "myapp",
@@ -112,7 +112,7 @@ public sealed class BusTests : TestBase
     public async Task should_throw_publisher_sent_failed_exception_on_transport_failure()
     {
         // given
-        var testTransport = new TestTransport { ShouldFail = true };
+        await using var testTransport = new TestTransport { ShouldFail = true };
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -128,10 +128,11 @@ public sealed class BusTests : TestBase
     public async Task should_throw_when_transport_throws_exception()
     {
         // given
-        var testTransport = new TestTransport
+        await using var testTransport = new TestTransport
         {
             ExceptionToThrow = new InvalidOperationException("Transport unavailable"),
         };
+
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -147,7 +148,7 @@ public sealed class BusTests : TestBase
     public async Task should_generate_standard_headers()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -169,7 +170,7 @@ public sealed class BusTests : TestBase
     public async Task should_use_publish_options_overrides_for_message_metadata()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -196,7 +197,7 @@ public sealed class BusTests : TestBase
     public async Task should_allow_maximum_supported_message_id_length()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -244,7 +245,7 @@ public sealed class BusTests : TestBase
     public async Task should_allow_explicit_topic_from_publish_options()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
@@ -262,7 +263,7 @@ public sealed class BusTests : TestBase
     public async Task should_throw_when_reserved_headers_are_supplied_as_custom_headers()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -286,7 +287,7 @@ public sealed class BusTests : TestBase
     public async Task should_stamp_tenant_id_header_when_typed_property_is_set_and_raw_header_is_absent()
     {
         // given (case a: typed-only)
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -304,7 +305,7 @@ public sealed class BusTests : TestBase
     public async Task should_emit_tenant_id_header_when_typed_property_and_raw_header_agree()
     {
         // given (case c: both set, equal)
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -326,7 +327,7 @@ public sealed class BusTests : TestBase
     public async Task should_reject_publish_when_raw_tenant_id_header_is_set_without_typed_property()
     {
         // given (case b: raw-only — the typed property must be the source of truth)
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -349,7 +350,7 @@ public sealed class BusTests : TestBase
     public async Task should_reject_publish_when_typed_property_and_raw_header_disagree()
     {
         // given (case d: both set, disagree)
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -371,7 +372,7 @@ public sealed class BusTests : TestBase
     public async Task should_omit_tenant_id_header_when_typed_property_is_null()
     {
         // given (case: neither set)
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -388,7 +389,7 @@ public sealed class BusTests : TestBase
     public async Task should_treat_whitespace_raw_tenant_id_header_as_unset()
     {
         // given: whitespace raw header with no typed property — symmetric with consume-side leniency
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -427,7 +428,7 @@ public sealed class BusTests : TestBase
     public async Task should_reject_oversized_typed_tenant_id()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -451,7 +452,7 @@ public sealed class BusTests : TestBase
     public async Task should_allow_maximum_supported_tenant_id_length()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -470,7 +471,7 @@ public sealed class BusTests : TestBase
     public async Task should_serialize_message_content()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -489,7 +490,7 @@ public sealed class BusTests : TestBase
     public async Task should_respect_cancellation_token()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -510,7 +511,7 @@ public sealed class BusTests : TestBase
     public async Task should_call_transport_exactly_once()
     {
         // given
-        var testTransport = new TestTransport();
+        await using var testTransport = new TestTransport();
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
@@ -607,7 +608,7 @@ public sealed class BusTests : TestBase
         );
     }
 
-    private static IBus _CreateBus(
+    private static Bus _CreateBus(
         IBusTransport transport,
         MessagingOptions options,
         ICurrentTenant? currentTenant = null
@@ -615,6 +616,7 @@ public sealed class BusTests : TestBase
     {
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
+
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
@@ -653,7 +655,7 @@ public sealed class BusTests : TestBase
 
             if (ShouldFail)
             {
-                return Task.FromResult(OperateResult.Failed(new Exception("Transport failure")));
+                return Task.FromResult(OperateResult.Failed(new InvalidOperationException("Transport failure")));
             }
 
             _sentMessages.Add(message);

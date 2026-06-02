@@ -9,7 +9,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
@@ -29,7 +29,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -47,7 +47,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();
@@ -73,7 +73,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var originalValue = Faker.Lorem.Sentence();
         var wrongExpected = Faker.Lorem.Sentence();
@@ -100,7 +100,7 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
     {
         // given
         await FlushAsync();
-        var cache = CreateCache();
+        using var cache = CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var expected = Faker.Lorem.Sentence();
         var newValue = Faker.Lorem.Sentence();

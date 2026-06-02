@@ -6,7 +6,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of <see cref="IStorageInitializer"/> for database schema setup.

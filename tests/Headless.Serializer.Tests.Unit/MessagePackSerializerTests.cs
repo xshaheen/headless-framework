@@ -313,7 +313,9 @@ public sealed class MessagePackSerializerTests
         memoryStream.Position = 0;
 
         // when
+#pragma warning disable CA2263 // Prefer generic
         var result = _serializer.Deserialize(memoryStream, typeof(Person));
+#pragma warning restore CA2263
 
         // then
         result.Should().NotBeNull();

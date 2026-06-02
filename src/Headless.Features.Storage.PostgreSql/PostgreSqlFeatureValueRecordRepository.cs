@@ -26,7 +26,16 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var sql =
             $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE "Name"=@Name AND "ProviderName" IS NOT DISTINCT FROM @ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey ORDER BY "Id" LIMIT 1;""";
 
-        return await _ReadValuesAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey)).ConfigureAwait(false) is [var row, ..]
+        return
+            await _ReadValuesAsync(
+                    sql,
+                    cancellationToken,
+                    _Param("Name", name),
+                    _Param("ProviderName", providerName),
+                    _Param("ProviderKey", providerKey)
+                )
+                .ConfigureAwait(false)
+                is [var row, ..]
             ? row
             : null;
     }
@@ -38,7 +47,12 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         CancellationToken cancellationToken = default
     )
     {
-        var filters = new List<string> { @"""Name""=@Name" };
+        var filters = new List<string>
+        {
+            """
+                "Name"=@Name
+                """,
+        };
         var parameters = new List<NpgsqlParameter> { _Param("Name", name) };
 
         if (providerName is not null)
@@ -68,7 +82,12 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var sql =
             $"""SELECT "Id","Name","Value","ProviderName","ProviderKey" FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE "ProviderName"=@ProviderName AND "ProviderKey" IS NOT DISTINCT FROM @ProviderKey;""";
 
-        return _ReadValuesAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
+        return _ReadValuesAsync(
+            sql,
+            cancellationToken,
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey)
+        );
     }
 
     public async Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
@@ -94,7 +113,8 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var sql =
             $"""UPDATE {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET "Value"=@Value WHERE "Id"=@Id;""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value)).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value))
+            .ConfigureAwait(false);
         await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
@@ -111,7 +131,8 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var sql =
             $"""DELETE FROM {PostgreSqlFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE "Id" = ANY(@Ids);""";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", features.Select(x => x.Id).ToArray())).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Ids", features.Select(x => x.Id).ToArray()))
+            .ConfigureAwait(false);
 
         foreach (var feature in features)
         {
@@ -128,11 +149,11 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         var result = new List<FeatureValueRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
+
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -151,14 +172,16 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
         return result;
     }
 
-    private async Task _ExecuteAsync(string sql, CancellationToken cancellationToken, params NpgsqlParameter[] parameters)
+    private async Task _ExecuteAsync(
+        string sql,
+        CancellationToken cancellationToken,
+        params NpgsqlParameter[] parameters
+    )
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -171,7 +194,9 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
 
         if (publisher is not null)
         {
-            await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken).ConfigureAwait(false);
+            await publisher
+                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

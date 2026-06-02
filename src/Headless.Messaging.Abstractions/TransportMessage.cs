@@ -4,7 +4,7 @@ using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Headless.Checks;
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents a message in transit between the message broker and application.

@@ -204,16 +204,22 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
     // and falls back to opening its own connection — none of these abstract members ever execute.
     private sealed class NonSqlConnectionStub : DbConnection
     {
-        [System.Diagnostics.CodeAnalysis.AllowNull]
+        [AllowNull]
         public override string ConnectionString { get; set; } = string.Empty;
         public override string Database => string.Empty;
         public override string DataSource => string.Empty;
         public override string ServerVersion => string.Empty;
         public override System.Data.ConnectionState State => System.Data.ConnectionState.Closed;
+
         public override void ChangeDatabase(string databaseName) => throw new NotSupportedException();
+
         public override void Close() { }
+
         public override void Open() => throw new NotSupportedException();
-        protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il) => throw new NotSupportedException();
+
+        protected override DbTransaction BeginDbTransaction(System.Data.IsolationLevel il) =>
+            throw new NotSupportedException();
+
         protected override DbCommand CreateDbCommand() => throw new NotSupportedException();
     }
 
@@ -224,7 +230,9 @@ public sealed class SqlServerAuditLogAtomicityTests(SqlServerAuditLogFixture fix
     {
         public override System.Data.IsolationLevel IsolationLevel => System.Data.IsolationLevel.Unspecified;
         protected override DbConnection? DbConnection { get; } = connection;
+
         public override void Commit() => throw new NotSupportedException();
+
         public override void Rollback() => throw new NotSupportedException();
     }
 }

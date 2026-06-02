@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Messaging;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-namespace Microsoft.EntityFrameworkCore.Storage;
+namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed class SqlServerEntityFrameworkDbTransaction : IDbContextTransaction, IInfrastructure<DbTransaction>
 {

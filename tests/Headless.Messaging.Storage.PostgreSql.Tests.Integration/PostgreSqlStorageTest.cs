@@ -1,7 +1,7 @@
 using Dapper;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 

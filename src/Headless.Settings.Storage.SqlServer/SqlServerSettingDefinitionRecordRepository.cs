@@ -18,15 +18,13 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
     public async Task<List<SettingDefinitionRecord>> GetListAsync(CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""SELECT [Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties] FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)};""";
+            $"SELECT [Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties] FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)};";
 
         var result = new List<SettingDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -67,12 +65,14 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
 
         foreach (var record in addedRecords)
         {
-            await _ExecuteAsync(connection, (SqlTransaction)transaction, _InsertSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteAsync(connection, (SqlTransaction)transaction, _InsertSql(), record, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         foreach (var record in changedRecords)
         {
-            await _ExecuteAsync(connection, (SqlTransaction)transaction, _UpdateSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteAsync(connection, (SqlTransaction)transaction, _UpdateSql(), record, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         foreach (var record in deletedRecords)
@@ -96,10 +96,8 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@Name", record.Name);
         command.Parameters.AddWithValue("@DisplayName", record.DisplayName);
@@ -109,18 +107,21 @@ internal sealed class SqlServerSettingDefinitionRecordRepository(
         command.Parameters.AddWithValue("@IsVisibleToClients", record.IsVisibleToClients);
         command.Parameters.AddWithValue("@IsInherited", record.IsInherited);
         command.Parameters.AddWithValue("@IsEncrypted", record.IsEncrypted);
-        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
+        command.Parameters.AddWithValue(
+            "@ExtraProperties",
+            serializer.SerializeToString(record.ExtraProperties) ?? "{}"
+        );
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private string _InsertSql() =>
-        $"""INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ([Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);""";
+        $"INSERT INTO {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} ([Id],[Name],[DisplayName],[Description],[DefaultValue],[Providers],[IsVisibleToClients],[IsInherited],[IsEncrypted],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@Description,@DefaultValue,@Providers,@IsVisibleToClients,@IsInherited,@IsEncrypted,@ExtraProperties);";
 
     private string _UpdateSql() =>
-        $"""UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[Description]=@Description,[DefaultValue]=@DefaultValue,[Providers]=@Providers,[IsVisibleToClients]=@IsVisibleToClients,[IsInherited]=@IsInherited,[IsEncrypted]=@IsEncrypted,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;""";
+        $"UPDATE {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[Description]=@Description,[DefaultValue]=@DefaultValue,[Providers]=@Providers,[IsVisibleToClients]=@IsVisibleToClients,[IsInherited]=@IsInherited,[IsEncrypted]=@IsEncrypted,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
 
     private string _DeleteSql() =>
-        $"""DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE [Id]=@Id;""";
+        $"DELETE FROM {SqlServerSettingsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.SettingDefinitionsTableName)} WHERE [Id]=@Id;";
 
     private ExtraProperties _DeserializeExtraProperties(string json) =>
         serializer.Deserialize<ExtraProperties>(json) ?? [];

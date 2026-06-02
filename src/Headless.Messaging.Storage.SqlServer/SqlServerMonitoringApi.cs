@@ -12,7 +12,7 @@ using Headless.Primitives;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
 /// SQL Server implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.

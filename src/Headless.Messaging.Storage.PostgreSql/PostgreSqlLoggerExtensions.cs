@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 internal static partial class PostgreSqlLoggerExtensions
 {

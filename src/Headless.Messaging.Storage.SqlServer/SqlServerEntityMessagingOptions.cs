@@ -3,7 +3,7 @@
 using System.Text.RegularExpressions;
 using Headless.Checks;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 public partial class SqlServerEntityFrameworkMessagingOptions
 {

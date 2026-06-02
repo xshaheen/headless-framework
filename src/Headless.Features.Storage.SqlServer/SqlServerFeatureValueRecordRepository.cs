@@ -25,9 +25,18 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT TOP(1) [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Name]=@Name AND (([ProviderName] IS NULL AND @ProviderName IS NULL) OR [ProviderName]=@ProviderName) AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];""";
+            $"SELECT TOP(1) [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Name]=@Name AND (([ProviderName] IS NULL AND @ProviderName IS NULL) OR [ProviderName]=@ProviderName) AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey) ORDER BY [Id];";
 
-        return await _ReadValuesAsync(sql, cancellationToken, _Param("Name", name), _Param("ProviderName", providerName), _Param("ProviderKey", providerKey)).ConfigureAwait(false) is [var row, ..]
+        return
+            await _ReadValuesAsync(
+                    sql,
+                    cancellationToken,
+                    _Param("Name", name),
+                    _Param("ProviderName", providerName),
+                    _Param("ProviderKey", providerKey)
+                )
+                .ConfigureAwait(false)
+                is [var row, ..]
             ? row
             : null;
     }
@@ -55,7 +64,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         }
 
         var sql =
-            $"""SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE {string.Join(" AND ", filters)};""";
+            $"SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE {string.Join(" AND ", filters)};";
 
         return _ReadValuesAsync(sql, cancellationToken, parameters.ToArray());
     }
@@ -67,15 +76,20 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     )
     {
         var sql =
-            $"""SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);""";
+            $"SELECT [Id],[Name],[Value],[ProviderName],[ProviderKey] FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [ProviderName]=@ProviderName AND (([ProviderKey] IS NULL AND @ProviderKey IS NULL) OR [ProviderKey]=@ProviderKey);";
 
-        return _ReadValuesAsync(sql, cancellationToken, _Param("ProviderName", providerName), _Param("ProviderKey", providerKey));
+        return _ReadValuesAsync(
+            sql,
+            cancellationToken,
+            _Param("ProviderName", providerName),
+            _Param("ProviderKey", providerKey)
+        );
     }
 
     public Task InsertAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey);""";
+            $"INSERT INTO {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} ([Id],[Name],[Value],[ProviderName],[ProviderKey]) VALUES (@Id,@Name,@Value,@ProviderName,@ProviderKey);";
 
         return _InsertAsync(
             sql,
@@ -97,9 +111,10 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     public async Task UpdateAsync(FeatureValueRecord feature, CancellationToken cancellationToken = default)
     {
         var sql =
-            $"""UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET [Value]=@Value WHERE [Id]=@Id;""";
+            $"UPDATE {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} SET [Value]=@Value WHERE [Id]=@Id;";
 
-        await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value)).ConfigureAwait(false);
+        await _ExecuteAsync(sql, cancellationToken, _Param("Id", feature.Id), _Param("Value", feature.Value))
+            .ConfigureAwait(false);
         await _PublishAsync(feature, cancellationToken).ConfigureAwait(false);
     }
 
@@ -118,7 +133,7 @@ internal sealed class SqlServerFeatureValueRecordRepository(
             var idParameters = chunk.Select((_, index) => $"@Id{index}").ToArray();
             var parameters = chunk.Select((feature, index) => _Param($"Id{index}", feature.Id)).ToArray();
             var sql =
-                $"""DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});""";
+                $"DELETE FROM {SqlServerFeaturesStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.FeatureValuesTableName)} WHERE [Id] IN ({string.Join(",", idParameters)});";
 
             await _ExecuteAsync(sql, cancellationToken, parameters).ConfigureAwait(false);
         }
@@ -138,10 +153,8 @@ internal sealed class SqlServerFeatureValueRecordRepository(
         var result = new List<FeatureValueRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
@@ -165,10 +178,8 @@ internal sealed class SqlServerFeatureValueRecordRepository(
     {
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddRange(parameters);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -181,7 +192,9 @@ internal sealed class SqlServerFeatureValueRecordRepository(
 
         if (publisher is not null)
         {
-            await publisher.PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken).ConfigureAwait(false);
+            await publisher
+                .PublishAsync(new EntityChangedEventData<FeatureValueRecord>(feature), cancellationToken)
+                .ConfigureAwait(false);
         }
     }
 

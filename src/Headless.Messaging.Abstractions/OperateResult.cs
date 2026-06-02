@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents the result of a message operation (publish or consume), including success/failure status and optional error details.

@@ -3,7 +3,7 @@
 using Dapper;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.SqlServer;
+using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;

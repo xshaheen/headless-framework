@@ -160,7 +160,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
             [Headers.MessageId] = "test-id",
             [Headers.MessageName] = "shared-messageName",
         };
-        var message = new Headless.Messaging.Messages.TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
+        var message = new TransportMessage(headers, ReadOnlyMemory<byte>.Empty);
         _queue.SendBus(message);
 
         await Task.Delay(100, AbortToken);

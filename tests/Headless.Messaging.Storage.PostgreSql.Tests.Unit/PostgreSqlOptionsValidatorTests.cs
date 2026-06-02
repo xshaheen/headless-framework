@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Npgsql;
 
