@@ -835,8 +835,7 @@ public sealed class DistributedLockProvider(
     }
 
     internal sealed class LockReleasedConsumer(
-        IEnumerable<DistributedLockProvider> lockProviders,
-        IEnumerable<DistributedSemaphoreProvider> semaphoreProviders,
+        IEnumerable<ICanReceiveLockReleased> receivers,
         ILogger<LockReleasedConsumer> logger
     )
         : IConsume<DistributedLockReleased>
@@ -853,14 +852,13 @@ public sealed class DistributedLockProvider(
 
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
-            foreach (var receiver in lockProviders)
+            // Fan the released signal out to every provider that can wake waiters (mutex,
+            // semaphore, reader-writer). Both DistributedLockProvider and
+            // DistributedSemaphoreProvider are registered under ICanReceiveLockReleased via
+            // TryAddEnumerable so this seam stays decoupled from the concrete provider types.
+            foreach (var receiver in receivers)
             {
-                ((ICanReceiveLockReleased)receiver).OnLockReleased(context.Message);
-            }
-
-            foreach (var receiver in semaphoreProviders)
-            {
-                ((ICanReceiveLockReleased)receiver).OnLockReleased(context.Message);
+                receiver.OnLockReleased(context.Message);
             }
 
             return ValueTask.CompletedTask;

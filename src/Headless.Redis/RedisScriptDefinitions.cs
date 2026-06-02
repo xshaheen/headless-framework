@@ -63,11 +63,13 @@ public sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
 
     private TryExtendSemaphoreScriptDefinition()
         : base(
+            // No ZREMRANGEBYSCORE prune: extend is XX-gated, so it only mutates a member that
+            // already exists. Pruning expired members here would be an extra write with no bearing
+            // on the extending holder's own slot (whose score is simply updated). Expired-slot
+            // reclamation is the acquire script's job, where it is correctness-critical.
             """
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
-
-            redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
 
             local expiryMs = nowMs + tonumber(@expires)
             local changed = redis.call('zadd', @holdersKey, 'XX', 'CH', expiryMs, @lockId)
@@ -85,7 +87,10 @@ public sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
         ) { }
 }
 
-/// <summary>Prunes expired semaphore slots and checks whether a holder is still live.</summary>
+/// <summary>
+/// Read-only check of whether a holder is still live (its slot's expiry score has not passed).
+/// Does NOT prune expired slots — validation must not mutate state on a hot per-iteration path.
+/// </summary>
 public sealed class ValidateSemaphoreScriptDefinition : RedisScriptDefinition
 {
     public static ValidateSemaphoreScriptDefinition Instance { get; } = new();
@@ -96,8 +101,8 @@ public sealed class ValidateSemaphoreScriptDefinition : RedisScriptDefinition
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
-            redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
-            if redis.call('zscore', @holdersKey, @lockId) ~= false then
+            local score = redis.call('zscore', @holdersKey, @lockId)
+            if score ~= false and tonumber(score) > nowMs then
               return 1
             end
             return 0
@@ -118,7 +123,11 @@ public sealed class ReleaseSemaphoreScriptDefinition : RedisScriptDefinition
         ) { }
 }
 
-/// <summary>Prunes expired semaphore slots and returns the live holder count.</summary>
+/// <summary>
+/// Read-only live holder count. Does NOT prune expired slots — it counts members whose expiry
+/// score is still in the future via ZCOUNT, so a stale (expired-but-unpruned) slot is excluded from
+/// the result without a write. Expired-slot reclamation is the acquire script's job.
+/// </summary>
 public sealed class GetSemaphoreCountScriptDefinition : RedisScriptDefinition
 {
     public static GetSemaphoreCountScriptDefinition Instance { get; } = new();
@@ -129,8 +138,7 @@ public sealed class GetSemaphoreCountScriptDefinition : RedisScriptDefinition
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
-            redis.call('zremrangebyscore', @holdersKey, '-inf', nowMs)
-            return redis.call('zcard', @holdersKey)
+            return redis.call('zcount', @holdersKey, '(' .. nowMs, '+inf')
             """
         ) { }
 }

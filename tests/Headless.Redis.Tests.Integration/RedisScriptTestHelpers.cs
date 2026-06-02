@@ -27,7 +27,7 @@ internal static class RedisScriptTestHelpers
                     value = (RedisValue?)newValue ?? RedisValue.Null,
                     expected = (RedisValue)(expectedValue ?? string.Empty),
                     expires = newTtl.HasValue
-                        ? (RedisValue)(int)newTtl.Value.TotalMilliseconds
+                        ? (RedisValue)(long)newTtl.Value.TotalMilliseconds
                         : RedisValue.EmptyString,
                 }
             )
@@ -70,7 +70,7 @@ internal static class RedisScriptTestHelpers
                 {
                     key,
                     value = (RedisValue)value,
-                    expires = (int)ttl.TotalMilliseconds,
+                    expires = (long)ttl.TotalMilliseconds,
                 }
             )
             .ConfigureAwait(false);
@@ -94,7 +94,7 @@ internal static class RedisScriptTestHelpers
                 {
                     key,
                     value = value.ToString(CultureInfo.InvariantCulture),
-                    expires = (int)ttl.TotalMilliseconds,
+                    expires = (long)ttl.TotalMilliseconds,
                 }
             )
             .ConfigureAwait(false);
@@ -164,7 +164,7 @@ internal static class RedisScriptTestHelpers
                 {
                     key,
                     value = value.ToString(null, CultureInfo.InvariantCulture),
-                    expires = ttl.HasValue ? (RedisValue)(int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString,
+                    expires = ttl.HasValue ? (RedisValue)(long)ttl.Value.TotalMilliseconds : RedisValue.EmptyString,
                 }
             )
             .ConfigureAwait(false);

@@ -115,6 +115,16 @@ public static class AddDistributedLockExtensions
             // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
             // decorator wrapped around IDistributedLockProvider does not break the lock-release
             // wake-up signal (the consumer always receives the real DistributedLockProvider).
+            // TryAddEnumerable keeps repeated AddDistributedLock(...) calls idempotent — the same
+            // implementation type is not added twice — and LockReleasedConsumer fans out over the
+            // collected IEnumerable<ICanReceiveLockReleased> so mutex and semaphore providers share
+            // one decoupled wake-up seam.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLockProvider>(
+                    static sp => sp.GetRequiredService<DistributedLockProvider>()
+                )
+            );
+
             // Startup-time hook that warns when IOutboxBus is registered AFTER
             // AddDistributedLock(...). The consumer registration block below only runs at
             // registration time; a later AddMessages(...) call silently skips push wake-ups

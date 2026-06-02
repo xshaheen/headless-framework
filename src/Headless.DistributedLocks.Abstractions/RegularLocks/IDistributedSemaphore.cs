@@ -20,6 +20,12 @@ public interface IDistributedSemaphore
     /// Acquires a semaphore slot and throws <see cref="LockAcquisitionTimeoutException"/> when
     /// no slot becomes available before the acquire timeout.
     /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+    /// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/> but
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
+    /// (monitoring requires a finite lease).
+    /// </exception>
     Task<IDistributedLock> AcquireAsync(
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default

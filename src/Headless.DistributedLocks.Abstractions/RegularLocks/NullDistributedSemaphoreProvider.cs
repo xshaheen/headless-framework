@@ -6,8 +6,10 @@ using Headless.Checks;
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Fallback <see cref="IDistributedSemaphoreProvider"/> registered when no real semaphore provider
-/// is wired. Every acquire succeeds immediately.
+/// No-op <see cref="IDistributedSemaphoreProvider"/> where every acquire succeeds immediately. This
+/// is opt-in: it is never registered automatically, and there is no fallback wiring when a real
+/// semaphore provider is absent. Register it explicitly (e.g. for tests or single-node scenarios
+/// that want a permissive semaphore) when this behavior is desired.
 /// </summary>
 [PublicAPI]
 public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) : IDistributedSemaphoreProvider

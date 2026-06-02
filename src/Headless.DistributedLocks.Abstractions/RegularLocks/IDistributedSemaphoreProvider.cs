@@ -7,8 +7,19 @@ namespace Headless.DistributedLocks;
 [PublicAPI]
 public interface IDistributedSemaphoreProvider
 {
+    /// <summary>
+    /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
+    /// is not specified. Implementations refresh the lease in storage at this cadence when
+    /// <see cref="LockMonitoringMode.AutoExtend"/> is enabled.
+    /// </summary>
     TimeSpan DefaultTimeUntilExpires { get; }
 
+    /// <summary>
+    /// Default upper bound applied to acquire attempts when
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is not specified. After the timeout
+    /// elapses, the acquire returns <see langword="null"/> (try variants) or throws
+    /// <see cref="LockAcquisitionTimeoutException"/> (acquire variants).
+    /// </summary>
     TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>Creates a semaphore for <paramref name="resource"/> with a fixed maximum holder count.</summary>

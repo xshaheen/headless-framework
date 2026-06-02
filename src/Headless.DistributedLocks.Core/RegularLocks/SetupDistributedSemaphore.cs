@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.DistributedLocks;
 
 [PublicAPI]
-public static class AddDistributedSemaphoreExtensions
+public static class SetupDistributedSemaphore
 {
     extension(IServiceCollection services)
     {
@@ -63,6 +63,15 @@ public static class AddDistributedSemaphoreExtensions
             services.TryAddSingleton<IDistributedSemaphoreProvider>(sp =>
                 sp.GetRequiredService<DistributedSemaphoreProvider>()
             );
+
+            // Register under ICanReceiveLockReleased so LockReleasedConsumer wakes semaphore waiters
+            // alongside mutex waiters. TryAddEnumerable keeps repeated registrations idempotent.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedSemaphoreProvider>(
+                    static sp => sp.GetRequiredService<DistributedSemaphoreProvider>()
+                )
+            );
+
             DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
 
             return services;

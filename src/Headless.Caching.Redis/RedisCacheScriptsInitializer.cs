@@ -10,7 +10,7 @@ internal sealed class RedisCacheScriptsInitializer(
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
 ) : HostedInitializer
 {
-    private readonly List<RedisScriptDefinition> _definitions =
+    private static readonly IReadOnlyList<RedisScriptDefinition> _Definitions =
     [
         IncrementWithExpireScriptDefinition.Instance,
         RemoveIfEqualScriptDefinition.Instance,
@@ -21,6 +21,6 @@ internal sealed class RedisCacheScriptsInitializer(
 
     public override async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        await scriptsLoader.LoadAsync(_definitions, cancellationToken).ConfigureAwait(false);
+        await scriptsLoader.LoadAsync(_Definitions, cancellationToken).ConfigureAwait(false);
     }
 }

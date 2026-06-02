@@ -17,7 +17,15 @@ public sealed class HeadlessRedisScriptsLoader(
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly AsyncLock _loadScriptsLock = new();
-    private bool _eventsSubscribed;
+
+    // 0 = not subscribed, 1 = subscribed. Flipped via Interlocked so the subscribe path and Dispose
+    // never race a non-atomic check-then-act (subscribe ran under _loadScriptsLock, Dispose does not).
+    private int _eventsSubscribed;
+
+    // Bounds a single SCRIPT LOAD round-trip so a stalled load cannot wedge _loadScriptsLock
+    // indefinitely (the load runs while the lock is held and previously ignored the caller's CT).
+    private static readonly TimeSpan _ScriptLoadTimeout = TimeSpan.FromSeconds(30);
+
     private ScriptsLoadState _state = new(1, new Dictionary<Type, LoadedRedisScript>());
 
     public async ValueTask LoadAsync(
@@ -171,10 +179,11 @@ public sealed class HeadlessRedisScriptsLoader(
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_eventsSubscribed)
+        // Atomically claim the unsubscribe so a concurrent _SubscribeConnectionRestored cannot leave
+        // a handler attached past Dispose (or unhook twice). Only the winner detaches the handler.
+        if (Interlocked.Exchange(ref _eventsSubscribed, 0) == 1)
         {
             multiplexer.ConnectionRestored -= _OnConnectionRestored;
-            _eventsSubscribed = false;
         }
     }
 
@@ -231,7 +240,19 @@ public sealed class HeadlessRedisScriptsLoader(
 
                     logger?.LogLoadingLuaScripts(endpoint);
 
-                    loadedScript = await scriptDefinition.LoadAsync(server).ConfigureAwait(false);
+                    // Bound the SCRIPT LOAD: it runs while _loadScriptsLock is held and the StackExchange
+                    // call does not honor a CancellationToken, so a stalled load would wedge the lock for
+                    // every other caller. A TimeProvider-driven timeout CTS linked with the caller token
+                    // (via .WaitAsync) lets a stuck load fail fast and release the lock instead.
+                    using (var timeoutCts = _timeProvider.CreateCancellationTokenSource(_ScriptLoadTimeout))
+                    using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                    {
+                        loadedScript = await scriptDefinition
+                            .LoadAsync(server)
+                            .WaitAsync(loadCts.Token)
+                            .ConfigureAwait(false);
+                    }
+
                     loadedEndpointCount++;
                 }
 
@@ -318,10 +339,11 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private void _SubscribeConnectionRestored()
     {
-        if (!_eventsSubscribed)
+        // Only the caller that flips 0 -> 1 attaches the handler, so a concurrent subscribe cannot
+        // double-register and Dispose's Interlocked.Exchange observes a consistent flag.
+        if (Interlocked.CompareExchange(ref _eventsSubscribed, 1, 0) == 0)
         {
             multiplexer.ConnectionRestored += _OnConnectionRestored;
-            _eventsSubscribed = true;
         }
     }
 

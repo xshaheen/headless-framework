@@ -12,7 +12,7 @@ using Polly;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class DistributedSemaphoreProvider(
+internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions options,
@@ -75,6 +75,21 @@ public sealed class DistributedSemaphoreProvider(
         Argument.IsGreaterThanOrEqualTo(maxCount, 1);
         acquireOptions ??= new DistributedLockAcquireOptions();
         DistributedLockCoreHelpers.ValidateAcquireTimeout(acquireOptions.AcquireTimeout);
+
+        // A semaphore slot is a ZSET member scored by its finite expiry timestamp; an infinite
+        // lease has no score to plant. Unlike a mutex (single SET key that can omit PX), the slot
+        // count is reclaimed only by pruning expired scores, so a non-expiring slot would hold
+        // capacity forever. Reject Timeout.InfiniteTimeSpan up front regardless of monitoring mode
+        // rather than letting NormalizeTimeUntilExpires silently cap it at the default.
+        if (acquireOptions.TimeUntilExpires == Timeout.InfiniteTimeSpan)
+        {
+            throw new ArgumentException(
+                "Distributed semaphore acquires require a finite timeUntilExpires; "
+                    + "Timeout.InfiniteTimeSpan is not valid because a slot is stored with a finite expiry score.",
+                nameof(acquireOptions)
+            );
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
