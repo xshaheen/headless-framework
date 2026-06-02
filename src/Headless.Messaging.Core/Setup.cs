@@ -71,9 +71,10 @@ public static class SetupMessaging
         [PublicAPI]
         public MessagingSetupBuilder ForMessagesFromAssembly(
             Assembly assembly,
-            Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
+            [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
         )
         {
+            Argument.IsNotNull(assembly);
             Argument.IsNotNull(configure);
 
             _ScanAssembly(setup, assembly, configure);
@@ -102,7 +103,7 @@ public static class SetupMessaging
         /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
         [PublicAPI]
         public MessagingSetupBuilder ForMessagesFromAssemblyContaining<TMarker>(
-            Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
+            [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder> configure
         ) => setup.ForMessagesFromAssembly(typeof(TMarker).Assembly, configure);
     }
 
@@ -176,7 +177,7 @@ public static class SetupMessaging
     private static void _ScanAssembly(
         MessagingSetupBuilder setup,
         Assembly assembly,
-        Action<ScannedConsumerContext, IScannedConsumerBuilder>? configure
+        [InstantHandle] Action<ScannedConsumerContext, IScannedConsumerBuilder>? configure
     )
     {
         Argument.IsNotNull(assembly);

@@ -97,13 +97,13 @@ internal sealed class MessageConsumerRegistrationBuilder(
 {
     public IntentType IntentType { get; set; } = intentType;
 
-    public string? Group { get; set; }
+    public string? Group { get; private set; }
 
-    public byte Concurrency { get; set; } = 1;
+    public byte Concurrency { get; private set; } = 1;
 
-    public string? HandlerId { get; set; }
+    public string? HandlerId { get; private set; }
 
-    public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; set; }
+    public ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; private set; }
 
     public void SetGroup(string group)
     {

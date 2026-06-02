@@ -9,7 +9,7 @@ namespace Headless.Messaging;
 /// Describes a consumer discovered by assembly scanning before it is registered.
 /// </summary>
 [PublicAPI]
-public readonly record struct ScannedConsumerContext
+public sealed record ScannedConsumerContext
 {
     public ScannedConsumerContext(Type consumerType, Type messageType)
     {
