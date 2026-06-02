@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Reflection;
 using Headless.Checks;
 using Headless.Threading;
@@ -2041,7 +2042,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
             LastFactoryError = lastFactoryError;
-            Tags = tags is { Count: > 0 } ? new HashSet<string>(tags, StringComparer.Ordinal) : null;
+            Tags = tags is { Count: > 0 } ? tags.ToFrozenSet(StringComparer.Ordinal) : null;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }

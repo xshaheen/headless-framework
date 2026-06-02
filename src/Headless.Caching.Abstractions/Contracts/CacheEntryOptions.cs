@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+#pragma warning disable CA2225 // Intentional: the implicit TimeSpan conversion is the compatibility shorthand; no extra public factory.
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
@@ -18,9 +19,5 @@ public sealed class CacheEntryOptions
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>
-    public static CacheEntryOptions FromTimeSpan(TimeSpan duration) => new() { Duration = duration };
-
-    /// <summary>Creates cache entry options from a cache duration.</summary>
-    /// <param name="duration">The cache entry duration.</param>
-    public static implicit operator CacheEntryOptions(TimeSpan duration) => FromTimeSpan(duration);
+    public static implicit operator CacheEntryOptions(TimeSpan duration) => new() { Duration = duration };
 }

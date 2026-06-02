@@ -107,7 +107,7 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 
 ## Design Notes
 
-`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so existing duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration.
+`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
 
 ## Installation
 
@@ -134,7 +134,7 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
             .GetOrAddAsync(key, token => repository.GetAsync(id, token), TimeSpan.FromMinutes(10), ct)
             .ConfigureAwait(false);
 
-        return cached.Value;
+        return cached.HasValue ? cached.Value : null;
     }
 
     public async Task<Product?> GetProductWithOptionsAsync(int id, CancellationToken ct)
@@ -149,7 +149,7 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
             )
             .ConfigureAwait(false);
 
-        return cached.Value;
+        return cached.HasValue ? cached.Value : null;
     }
 }
 ```
@@ -347,8 +347,8 @@ dotnet add package Headless.Caching.Hybrid
 ```csharp
 services.AddInMemoryCache(isDefault: false);
 services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
-services.AddHybridCache(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHybridCache(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 ```
 
 ### Using the Cache
@@ -365,12 +365,14 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(string id, CancellationToken ct)
     {
-        return (await cache.GetOrAddAsync(
+        var cached = await cache.GetOrAddAsync(
             $"product:{id}",
             token => repository.GetByIdAsync(id, token),
             TimeSpan.FromHours(1),
             ct
-        )).Value;
+        );
+
+        return cached.HasValue ? cached.Value : null;
     }
 }
 ```

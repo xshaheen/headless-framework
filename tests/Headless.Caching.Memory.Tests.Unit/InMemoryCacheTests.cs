@@ -20,10 +20,7 @@ public sealed class InMemoryCacheTests : TestBase
 
     private static CacheEntryEnvelope _GetEntryEnvelope(InMemoryCache cache, string key)
     {
-        var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
-        field.Should().NotBeNull();
-
-        var memory = (IEnumerable)field!.GetValue(cache)!;
+        var memory = (IEnumerable)_GetMemory(cache);
 
         foreach (var item in memory)
         {
@@ -46,6 +43,65 @@ public sealed class InMemoryCacheTests : TestBase
         throw new InvalidOperationException($"Cache entry '{key}' was not found.");
     }
 
+    private static void _ReplaceEntryEnvelope(
+        InMemoryCache cache,
+        string key,
+        object? value,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt
+    )
+    {
+        var memory = _GetMemory(cache);
+        var entryType = typeof(InMemoryCache).GetNestedType("CacheEntry", BindingFlags.NonPublic);
+        entryType.Should().NotBeNull();
+
+        var lastFactoryErrorType = typeof(InMemoryCache).GetNestedType("LastFactoryError", BindingFlags.NonPublic);
+        lastFactoryErrorType.Should().NotBeNull();
+
+        var constructor = entryType!.GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            binder: null,
+            [
+                typeof(object),
+                typeof(DateTime?),
+                typeof(DateTime?),
+                typeof(TimeProvider),
+                typeof(bool),
+                typeof(bool),
+                typeof(long),
+                lastFactoryErrorType!,
+                typeof(IReadOnlySet<string>),
+            ],
+            modifiers: null
+        );
+        constructor.Should().NotBeNull();
+
+        var entry = constructor!.Invoke(
+            [
+                value,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                typeof(InMemoryCache)
+                    .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .GetValue(cache),
+                false,
+                true,
+                0L,
+                null,
+                null,
+            ]
+        );
+        memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
+    }
+
+    private static object _GetMemory(InMemoryCache cache)
+    {
+        var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull();
+
+        return field!.GetValue(cache)!;
+    }
+
     private static T? _GetEntryProperty<T>(object entry, string propertyName)
     {
         var property = entry
@@ -54,6 +110,15 @@ public sealed class InMemoryCacheTests : TestBase
         property.Should().NotBeNull();
 
         return (T?)property!.GetValue(entry);
+    }
+
+    private static void _AssertEnvelopeParity(InMemoryCache cache, string key, DateTime expectedExpiration)
+    {
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().Be(expectedExpiration);
+        envelope.PhysicalExpiresAt.Should().Be(expectedExpiration);
+        envelope.LastFactoryError.Should().BeNull();
+        envelope.Tags.Should().BeNull();
     }
 
     private sealed record CacheEntryEnvelope(
@@ -220,6 +285,55 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().BeNull();
         envelope.PhysicalExpiresAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_use_physical_expiration_for_reads_and_logical_expiration_for_expiration_query()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _ReplaceEntryEnvelope(cache, key, "value", logicalExpiresAt: now.AddMinutes(-1), physicalExpiresAt: now.AddMinutes(5));
+
+        // when
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        // then
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().Be("value");
+        exists.Should().BeTrue();
+        expiration.Should().BeLessThan(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public async Task should_store_logical_and_physical_expiration_for_representative_write_entries()
+    {
+        // given
+        using var cache = _CreateCache();
+        var duration = TimeSpan.FromMinutes(5);
+        var expectedExpiration = _timeProvider.GetUtcNow().UtcDateTime.Add(duration);
+
+        // when
+        await cache.TryInsertAsync("try-insert", "value", duration, AbortToken);
+        await cache.UpsertAsync("try-replace", "old", duration, AbortToken);
+        await cache.TryReplaceAsync("try-replace", "new", duration, AbortToken);
+        await cache.UpsertAsync("try-replace-equal", "old", duration, AbortToken);
+        await cache.TryReplaceIfEqualAsync("try-replace-equal", "old", "new", duration, AbortToken);
+        await cache.IncrementAsync("increment", 1L, duration, AbortToken);
+        await cache.UpsertAsync("set-if-higher-refresh", 10L, duration, AbortToken);
+        await cache.SetIfHigherAsync("set-if-higher-refresh", 5L, duration, AbortToken);
+        await cache.SetAddAsync("set-add", ["value"], duration, AbortToken);
+
+        // then
+        _AssertEnvelopeParity(cache, "try-insert", expectedExpiration);
+        _AssertEnvelopeParity(cache, "try-replace", expectedExpiration);
+        _AssertEnvelopeParity(cache, "try-replace-equal", expectedExpiration);
+        _AssertEnvelopeParity(cache, "increment", expectedExpiration);
+        _AssertEnvelopeParity(cache, "set-if-higher-refresh", expectedExpiration);
+        _AssertEnvelopeParity(cache, "set-add", expectedExpiration);
     }
 
     #endregion

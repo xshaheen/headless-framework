@@ -42,12 +42,14 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(string id, CancellationToken ct)
     {
-        return (await cache.GetOrAddAsync(
+        var cached = await cache.GetOrAddAsync(
             $"product:{id}",
             token => repository.GetByIdAsync(id, token),
             TimeSpan.FromHours(1),
             ct
-        )).Value;
+        );
+
+        return cached.HasValue ? cached.Value : null;
     }
 }
 ```
