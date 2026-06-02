@@ -45,10 +45,8 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -70,10 +68,8 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -93,7 +89,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         // lock keyed on the schema (two tables share the schema, so a per-table key would still
         // race on CREATE SCHEMA). Auto-released on COMMIT/ROLLBACK; no explicit release needed.
         var lockResource = $"headless_settings_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -133,7 +129,7 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
         var definitionsTable = _Qualified(options.Schema, options.SettingDefinitionsTableName);
 
         var lockResource = $"headless_settings_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -144,9 +140,15 @@ internal sealed partial class PostgreSqlSettingsStorageInitializer(
             """;
     }
 
-    internal static string Qualified(SettingsStorageOptions options, string tableName) => _Qualified(options.Schema, tableName);
+    internal static string Qualified(SettingsStorageOptions options, string tableName) =>
+        _Qualified(options.Schema, tableName);
 
-    private static string _Qualified(string schema, string tableName) => $@"""{schema}"".""{tableName}""";
+    private static string _Qualified(string schema, string tableName)
+    {
+        return $"""
+            "{schema}"."{tableName}"
+            """;
+    }
 
     [LoggerMessage(
         EventId = 1,

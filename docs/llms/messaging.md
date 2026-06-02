@@ -294,7 +294,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.
 - **Add `Messaging.Testing`** in test projects for integration testing with awaitable assertions. Use `AddMessagingTestHarness()` to decorate an existing host's DI container (WebApplicationFactory, IHost), or `MessagingTestHarness.CreateAsync()` for standalone harness.
 - **Add `Messaging.Dashboard`** when monitoring UI is needed; it defaults to no authentication — configure `WithBasicAuth`, `WithApiKey`, or `WithHostAuthentication` for production.
-- **Messages are type-safe**: Define message types as classes/records. Register consumers implementing `IConsume<TMessage>`. Use `SubscribeFromAssemblyContaining<TMarker>()` or `SubscribeFromAssembly(assembly)` for automatic registration.
+- **Messages are type-safe**: Define message types as classes/records. Register explicit consumers implementing `IConsume<TMessage>` with `setup.ForMessage<TMessage>(...)`. Use `setup.ForMessagesFromAssemblyContaining<TMarker>()` or `setup.ForMessagesFromAssembly(assembly)` inside `AddHeadlessMessaging(...)` for assembly scanning. Use the scan callback overloads to set per-consumer queue/bus intent, group, concurrency, handler id, circuit-breaker override, or `Skip()`; keep message-name overrides on explicit `ForMessage<TMessage>(...)` registrations.
 - **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers.
 - **Choose publisher by intent**: Use `IBus` / `IOutboxBus` for broadcast publish/subscribe and `IQueue` / `IOutboxQueue` for point-to-point work queues.
 - **Choose durability separately**: `IBus` and `IQueue` send directly to the broker; `IOutboxBus` and `IOutboxQueue` persist first and drain later with at-least-once semantics.
@@ -303,7 +303,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Do NOT use raw transport client libraries** (e.g., `RabbitMQ.Client`, `Confluent.Kafka`) directly -- always use the `Headless.Messaging` abstraction layer.
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
-- **Message-name mapping**: Map message types to logical message names via `options.WithMessageNameMapping<TMessage>("message.name")` or conventions.
+- **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
@@ -624,9 +624,28 @@ dotnet add package Headless.Messaging.Core
 // Register messaging with storage and transport
 builder.Services.AddHeadlessMessaging(setup =>
 {
+    setup.ForMessagesFromAssemblyContaining<Program>((ctx, consumer) =>
+    {
+        if (ctx.ConsumerType.Name.EndsWith("Worker", StringComparison.Ordinal))
+        {
+            consumer.OnQueue().Group("imports").Concurrency(4);
+        }
+
+        if (ctx.ConsumerType.Namespace?.Contains(".Experimental.", StringComparison.Ordinal) == true)
+        {
+            consumer.Skip();
+        }
+    });
+
     // Core configuration (value-typed options live under setup.Options)
     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     setup.Options.RetryPolicy.MaxPersistedRetries = 50;
+    setup.UseConventions(c =>
+    {
+        c.UseKebabCaseMessageNames();
+        c.UseApplicationId("ordering-api");
+        c.UseVersion("v1");
+    });
 
     // Add storage (required)
     setup.UsePostgreSql("connection_string");
@@ -637,9 +656,6 @@ builder.Services.AddHeadlessMessaging(setup =>
         rmq.HostName = "localhost";
         rmq.Port = 5672;
     });
-
-    // Register consumers
-    setup.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Publish broadcast messages with outbox (reliable delivery)
@@ -1107,17 +1123,19 @@ builder.Services.AddHeadlessMessaging(setup =>
 ### Per-Consumer Override
 
 ```csharp
-setup.Subscribe<PaymentHandler>()
-    .MessageName("payments.process")
-    .WithCircuitBreaker(cb =>
-    {
-        cb.FailureThreshold = 3;                    // more sensitive
-        cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
-    });
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.ForMessage<PaymentProcessed>(message =>
+        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 3;                    // more sensitive
+            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+        })));
 
-// Disable circuit breaker for a best-effort consumer
-setup.Subscribe<MetricsHandler>()
-    .WithCircuitBreaker(cb => cb.Enabled = false);
+    // Disable circuit breaker for a best-effort consumer
+    setup.ForMessage<MetricsUpdated>(message =>
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+});
 ```
 
 ### Custom Exception Predicate
@@ -1222,6 +1240,7 @@ dotnet add package Headless.Messaging.Dashboard
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -1229,8 +1248,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         dashboard.WithBasicAuth("admin", "password");
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 
 // Access dashboard at: http://localhost:5000/messaging
@@ -1339,6 +1356,7 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -1349,8 +1367,6 @@ builder.Services.AddHeadlessMessaging(options =>
         k8s.Namespace = "production";
         k8s.ServiceName = "messaging-service";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1410,10 +1426,9 @@ builder.Services.AddOpenTelemetry()
 
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1545,6 +1560,7 @@ dotnet add package Headless.Messaging.Aws
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseAws(sqs =>
@@ -1552,8 +1568,6 @@ builder.Services.AddHeadlessMessaging(options =>
         sqs.Region = RegionEndpoint.USEast1;
         sqs.Credentials = new BasicAWSCredentials("key", "secret");
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1611,6 +1625,7 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>
@@ -1618,8 +1633,6 @@ builder.Services.AddHeadlessMessaging(options =>
         asb.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
         asb.TopicPath = "myapp";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1723,14 +1736,13 @@ dotnet add package Headless.Messaging.Kafka
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseKafka(kafka =>
     {
         kafka.Servers = "localhost:9092";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1834,14 +1846,13 @@ dotnet add package Headless.Messaging.Nats
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseNats(nats =>
     {
         nats.Servers = "nats://localhost:4222";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1914,14 +1925,13 @@ dotnet add package Headless.Messaging.Pulsar
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UsePulsar(pulsar =>
     {
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -1977,6 +1987,7 @@ dotnet add package Headless.Messaging.RabbitMQ
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMQ(rmq =>
@@ -1987,8 +1998,6 @@ builder.Services.AddHeadlessMessaging(options =>
         rmq.Password = "secure_password"; // Required - cannot use 'guest'
         rmq.VirtualHost = "/";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2094,6 +2103,7 @@ dotnet add package Headless.Messaging.Redis
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     // Queue delivery through Redis Streams.
@@ -2101,8 +2111,6 @@ builder.Services.AddHeadlessMessaging(options =>
 
     // Broadcast delivery through Redis Pub/Sub.
     options.UseRedisPubSub("localhost:6379");
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2172,10 +2180,9 @@ dotnet add package Headless.Messaging.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseInMemory();
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2219,6 +2226,7 @@ dotnet add package Headless.Messaging.Storage.PostgreSql
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql(config =>
     {
         config.ConnectionString = "Host=localhost;Database=myapp;...";
@@ -2226,8 +2234,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2286,6 +2292,7 @@ dotnet add package Headless.Messaging.Storage.SqlServer
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer(config =>
     {
         config.ConnectionString = "Server=localhost;Database=myapp;...";
@@ -2293,8 +2300,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2353,10 +2358,9 @@ dotnet add package Headless.Messaging.InMemoryStorage
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseRabbitMQ(config);
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 
@@ -2405,9 +2409,10 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
+        options.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
         options.UseInMemory();
         options.UseInMemoryStorage();
-        options.Subscribe<OrderCreatedConsumer>("orders.created");
     });
 });
 
@@ -2443,9 +2448,10 @@ var recorded = await harness.WaitForConsumed<OrderCreated>(TimeSpan.FromSeconds(
 // With WebApplication (no factory)
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessage<OrderCreated>(message =>
+        message.MessageName("orders.created").OnBus<OrderCreatedConsumer>());
     options.UseInMemory();
     options.UseInMemoryStorage();
-    options.Subscribe<OrderCreatedConsumer>("orders.created");
 });
 
 // Add the test harness AFTER AddHeadlessMessaging
@@ -2493,7 +2499,11 @@ Lightweight consumer double that captures messages without custom handling logic
 
 ```csharp
 services.AddSingleton<TestConsumer<OrderCreated>>();
-options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
+services.AddHeadlessMessaging(options =>
+{
+    options.ForMessage<OrderCreated>(message =>
+        message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>());
+});
 
 // After publishing...
 var consumer = harness.GetTestConsumer<OrderCreated>();

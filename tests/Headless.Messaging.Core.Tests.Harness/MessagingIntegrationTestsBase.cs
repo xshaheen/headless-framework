@@ -113,10 +113,17 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             ConfigureMessaging(setup);
 
             // Register test consumer
-            setup.Subscribe<TestSubscriber>("test-message").Group("test-group").Concurrency(1);
-
+            setup.ForMessage<TestMessage>(message =>
+                message
+                    .MessageName("test-message")
+                    .OnBus<TestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
+            );
             // Register failing consumer for exception tests
-            setup.Subscribe<FailingTestSubscriber>("failing-message").Group("test-group").Concurrency(1);
+            setup.ForMessage<FailingTestMessage>(message =>
+                message
+                    .MessageName("failing-message")
+                    .OnBus<FailingTestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
+            );
         });
 
         // Register test helpers as singletons (same instance used throughout tests)

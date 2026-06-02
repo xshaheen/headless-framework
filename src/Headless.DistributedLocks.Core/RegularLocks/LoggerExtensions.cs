@@ -192,14 +192,6 @@ public static partial class RegularLockLoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 18,
-        EventName = "LockReleasedConsumerMissing",
-        Level = LogLevel.Warning,
-        Message = "IOutboxBus is registered but the DistributedLockReleased consumer is not — AddDistributedLock(...) was called before AddMessages(...). Push wake-ups for lock release are silently disabled; waiters will fall back to polling. Reorder registration so messaging is added first, or re-register AddDistributedLock after AddMessages."
-    )]
-    public static partial void LogLockReleasedConsumerMissing(this ILogger logger);
-
-    [LoggerMessage(
         EventId = 19,
         EventName = "LockStorageRetry",
         Level = LogLevel.Warning,
@@ -248,12 +240,4 @@ public static partial class RegularLockLoggerExtensions
         string lockId,
         TimeSpan timeout
     );
-
-    [LoggerMessage(
-        EventId = 24,
-        EventName = "LockReleasedConsumerConflict",
-        Level = LogLevel.Warning,
-        Message = "IOutboxBus is registered, but an existing IConsume<DistributedLockReleased> registration prevented the built-in lock-release wake-up consumer from being registered. Push wake-ups for locks and semaphores are disabled; waiters will fall back to polling. Remove the competing consumer registration or register the Headless lock-release consumer explicitly."
-    )]
-    public static partial void LogLockReleasedConsumerConflict(this ILogger logger);
 }

@@ -2,47 +2,36 @@
 
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 internal static class DistributedLockConsumerRegistration
 {
+    /// <summary>
+    /// Auto-registers the single lock-released consumer shared by the mutex and semaphore providers
+    /// (both fan out from it via <see cref="ICanReceiveLockReleased"/>). Uses the service-collection
+    /// <c>ForMessage</c> seam, whose registration is drained into the consumer registry by
+    /// <c>AddHeadlessMessaging</c>. Idempotent across repeated <c>AddDistributedLock</c> /
+    /// <c>AddDistributedSemaphore</c> calls: once the consumer's <see cref="IConsume{TMessage}"/>
+    /// descriptor is present, subsequent calls are no-ops.
+    /// </summary>
+    /// <remarks>
+    /// Ordering constraint: because the consumer registry is built during <c>AddHeadlessMessaging</c>,
+    /// <c>AddDistributedLock</c> / <c>AddDistributedSemaphore</c> must run before it. The seam throws
+    /// if called afterwards. An order-independent path (runtime subscription) is tracked as follow-up.
+    /// </remarks>
     public static void TryAddLockReleasedConsumer(IServiceCollection services)
     {
-        if (!services.Any(d => d.ServiceType == typeof(IOutboxBus)))
+        if (services.Any(static d => d.ServiceType == typeof(IConsume<DistributedLockReleased>)))
         {
             return;
         }
 
-        if (_HasBuiltInConsumerMetadata(services))
-        {
-            return;
-        }
-
-        if (services.Any(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>)))
-        {
-            services.TryAddSingleton<DistributedLockReleasedConsumerConflict>();
-
-            return;
-        }
-
-        services
-            .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                "headless.locks.released"
-            )
-            .Concurrency(1);
-    }
-
-    private static bool _HasBuiltInConsumerMetadata(IServiceCollection services)
-    {
-        return services.Any(d =>
-            d.ServiceType == typeof(ConsumerMetadata)
-            && d.ImplementationInstance is ConsumerMetadata metadata
-            && metadata.ConsumerType == typeof(DistributedLockProvider.LockReleasedConsumer)
+        services.ForMessage<DistributedLockReleased>(message =>
+            message
+                .MessageName("headless.locks.released")
+                .OnBus<DistributedLockProvider.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
         );
     }
 }
-
-internal sealed class DistributedLockReleasedConsumerConflict;

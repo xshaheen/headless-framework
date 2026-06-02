@@ -11,8 +11,7 @@ builder.Services.AddLogging(l => l.AddConsole());
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.Subscribe<SampleSubscriber>().MessageName("messaging.sample.tests");
-
+    setup.ForMessage<SampleMessage>(message => message.MessageName("messaging.sample.tests").OnBus<SampleSubscriber>());
     setup.UseInMemoryStorage();
     setup.UseAzureServiceBus(asb =>
     {

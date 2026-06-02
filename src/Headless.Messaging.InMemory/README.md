@@ -37,10 +37,9 @@ dotnet add package Headless.Messaging.InMemory
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseInMemoryStorage();
     options.UseInMemory();
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

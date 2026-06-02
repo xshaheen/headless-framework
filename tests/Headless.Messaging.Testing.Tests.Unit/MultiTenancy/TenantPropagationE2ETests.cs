@@ -23,7 +23,7 @@ public sealed record TenantOrderEvent(string OrderId);
 public sealed class TenantCapturingConsumer(ICurrentTenant currentTenant, TenantCapture capture)
     : IConsume<TenantOrderEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken cancellationToken)
     {
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
         return ValueTask.CompletedTask;
@@ -39,9 +39,15 @@ public sealed record TenantOrderUpstream(string OrderId);
 /// </summary>
 public sealed class ChainedRepublishConsumer(IBus publisher) : IConsume<TenantOrderUpstream>
 {
-    public async ValueTask ConsumeAsync(ConsumeContext<TenantOrderUpstream> context, CancellationToken ct)
+    public async ValueTask ConsumeAsync(
+        ConsumeContext<TenantOrderUpstream> context,
+        CancellationToken cancellationToken
+    )
     {
-        await publisher.PublishAsync(new TenantOrderEvent($"chained-{context.Message.OrderId}"), cancellationToken: ct);
+        await publisher.PublishAsync(
+            new TenantOrderEvent($"chained-{context.Message.OrderId}"),
+            cancellationToken: cancellationToken
+        );
     }
 }
 
@@ -51,7 +57,7 @@ public sealed class FlakyTenantConsumer(ICurrentTenant currentTenant, TenantCapt
 {
     private readonly ConcurrentDictionary<string, int> _attempts = new(StringComparer.Ordinal);
 
-    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<TenantOrderEvent> context, CancellationToken cancellationToken)
     {
         var attempt = _attempts.AddOrUpdate(context.Message.OrderId, 1, (_, prev) => prev + 1);
         capture.Record(context.Message.OrderId, context.TenantId, currentTenant.Id);
@@ -99,6 +105,14 @@ public sealed class TenantPropagationE2ETests : TestBase
         Action<MessagingSetupBuilder> configureMessaging
     )
     {
+        return _CreateHarnessAsync(capture, (_, setup) => configureMessaging(setup));
+    }
+
+    private static Task<MessagingTestHarness> _CreateHarnessAsync(
+        TenantCapture capture,
+        Action<IServiceCollection, MessagingSetupBuilder> configureMessaging
+    )
+    {
         return MessagingTestHarness.CreateAsync(services =>
         {
             // Real ICurrentTenant + AsyncLocal accessor — required for ambient propagation
@@ -113,7 +127,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                configureMessaging(setup);
+                configureMessaging(services, setup);
             });
             messagingBuilder.AddTenantPropagationServices();
         });
@@ -128,7 +142,10 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options => options.Subscribe<TenantCapturingConsumer>("tenant-orders")
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
 
@@ -158,9 +175,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options => options.Subscribe<TenantCapturingConsumer>("tenant-orders")
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                )
         );
-
         // when — no ambient tenant; publish without explicit options
         await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-SYS"), cancellationToken: AbortToken);
         await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
@@ -180,7 +199,10 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options => options.Subscribe<TenantCapturingConsumer>("tenant-orders")
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
 
@@ -211,7 +233,10 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options => options.Subscribe<FlakyTenantConsumer>("tenant-orders")
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<FlakyTenantConsumer>()
+                )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
 
@@ -257,9 +282,11 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            setup =>
+            (services, setup) =>
             {
-                setup.Subscribe<TenantCapturingConsumer>("tenant-orders");
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                );
                 // Allow parallel subscriber execution to actually exercise concurrent dispatch
                 setup.Options.EnableSubscriberParallelExecute = true;
             }
@@ -318,10 +345,14 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options =>
+            (_, setup) =>
             {
-                options.Subscribe<ChainedRepublishConsumer>("upstream-orders");
-                options.Subscribe<TenantCapturingConsumer>("tenant-orders");
+                setup.ForMessage<TenantOrderUpstream>(message =>
+                    message.MessageName("upstream-orders").OnBus<ChainedRepublishConsumer>()
+                );
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                );
             }
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
@@ -353,7 +384,10 @@ public sealed class TenantPropagationE2ETests : TestBase
         var capture = new TenantCapture();
         await using var harness = await _CreateHarnessAsync(
             capture,
-            options => options.Subscribe<TenantCapturingConsumer>("tenant-orders")
+            (_, setup) =>
+                setup.ForMessage<TenantOrderEvent>(message =>
+                    message.MessageName("tenant-orders").OnBus<TenantCapturingConsumer>()
+                )
         );
         var currentTenant = harness.ServiceProvider.GetRequiredService<ICurrentTenant>();
         var outbox = harness.ServiceProvider.GetRequiredService<IOutboxBus>();

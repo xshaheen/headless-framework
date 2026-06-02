@@ -59,7 +59,7 @@ dotnet_diagnostic.xUnit1046.severity = suggestion
 
 # CA2100: Review SQL queries for security vulnerabilities
 # Test fixtures use parameterized cleanup SQL; no user input involved
-dotnet_diagnostic.CA2100.severity = suggestion
+dotnet_diagnostic.CA2100.severity = none
 
 # REFL009/REFL016/REFL017: Reflection member analysis
 # Tests verify reflection behavior on internal/dynamic members

@@ -143,8 +143,7 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
         );
 
         // A context whose Request.Path is empty
-        var context = new DefaultHttpContext();
-        context.Request.Path = PathString.Empty;
+        var context = new DefaultHttpContext { Request = { Path = PathString.Empty } };
 
         // then
         func(context).Should().BeFalse();
@@ -203,10 +202,8 @@ public sealed class HeadlessServiceDefaultsOpenTelemetryOptionsTests
     // Helpers
     // -------------------------------------------------------------------------
 
-    private static HttpContext _CreateContext(string path)
+    private static DefaultHttpContext _CreateContext(string path)
     {
-        var context = new DefaultHttpContext();
-        context.Request.Path = path;
-        return context;
+        return new DefaultHttpContext { Request = { Path = path } };
     }
 }

@@ -8,7 +8,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.SqlServer;
+using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -271,7 +271,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken);
+        var retryMessages = (await _storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then
         retryMessages.Should().NotBeNull();
@@ -298,7 +298,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
 
         // when
-        var retryMessages = await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken);
+        var retryMessages = (await _storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
 
         // then
         retryMessages.Should().NotBeNull();

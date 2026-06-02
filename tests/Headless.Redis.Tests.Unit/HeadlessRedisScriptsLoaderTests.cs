@@ -388,7 +388,12 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
     private static byte[] _CreateScriptHash(string source)
     {
+        // CA5350: SHA1 is mandatory here, not a security choice — Redis identifies cached scripts by
+        // the SHA1 of their source (SCRIPT LOAD / EVALSHA). This recomputes that exact digest to
+        // assert the loader's hashing behavior; it is not used to protect any secret or integrity.
+#pragma warning disable CA5350
         return SHA1.HashData(Encoding.UTF8.GetBytes(source));
+#pragma warning restore CA5350
     }
 
     private sealed class CustomReturnOneScriptDefinition : RedisScriptDefinition

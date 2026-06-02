@@ -14,39 +14,15 @@ public sealed class MessagingBuilderTests
     private static string _CircuitKey(IntentType intentType, string group) => $"{intentType:D}:{group}";
 
     [Fact]
-    public void should_register_consumers_via_scan()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumers = registry.GetAll();
-        consumers.Should().NotBeEmpty();
-        consumers.Should().Contain(c => c.ConsumerType == typeof(TestOrderConsumer));
-        consumers.Should().Contain(c => c.ConsumerType == typeof(TestPaymentConsumer));
-    }
-
-    [Fact]
     public void should_use_message_type_name_as_default_topic()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
-        });
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message => message.OnBus<TestOrderConsumer>())
+        );
 
         using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<ConsumerRegistry>();
@@ -57,108 +33,17 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void should_register_consumer_explicitly_with_fluent_api()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>(consumer =>
-                consumer.MessageName("orders.placed").Group("order-service").Concurrency(5)
-            );
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumers = registry.GetAll();
-        consumers.Should().HaveCount(1);
-
-        var consumer = consumers[0];
-        consumer.ConsumerType.Should().Be<TestOrderConsumer>();
-        consumer.MessageName.Should().Be("orders.placed");
-        consumer.Group.Should().Be("order-service");
-        consumer.Concurrency.Should().Be(5);
-    }
-
-    [Fact]
-    public void should_use_topic_mapping_for_scanned_consumers()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
-        orderConsumer.MessageName.Should().Be("orders.placed");
-    }
-
-    [Fact]
-    public void should_apply_message_name_prefix_after_mapping_for_scanned_consumers()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Options.MessageNamePrefix = "billing";
-            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
-        orderConsumer.MessageName.Should().Be("billing.orders.placed");
-    }
-
-    [Fact]
-    public void should_override_topic_mapping_with_explicit_topic()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-            messaging.Subscribe<TestOrderConsumer>().MessageName("custom.orders");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumer = registry.GetAll()[0];
-        consumer.MessageName.Should().Be("custom.orders");
-    }
-
-    [Fact]
     public void should_register_consumer_in_di_as_scoped()
     {
         // given
         var services = new ServiceCollection();
 
         // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
-        });
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            )
+        );
 
         using var provider = services.BuildServiceProvider();
 
@@ -167,52 +52,6 @@ public sealed class MessagingBuilderTests
         var consumer = scope.ServiceProvider.GetService<IConsume<TestOrderMessage>>();
         consumer.Should().NotBeNull();
         consumer.Should().BeOfType<TestOrderConsumer>();
-    }
-
-    [Fact]
-    public void should_support_multiple_consumers_for_same_message_type()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Group("order-service");
-
-            messaging.Subscribe<AnotherOrderConsumer>().MessageName("orders.placed").Group("analytics-service");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumers = registry.GetAll();
-        consumers.Should().HaveCount(2);
-        consumers.Should().Contain(c => c.ConsumerType == typeof(TestOrderConsumer) && c.Group == "order-service");
-        consumers
-            .Should()
-            .Contain(c => c.ConsumerType == typeof(AnotherOrderConsumer) && c.Group == "analytics-service");
-    }
-
-    [Fact]
-    public void should_reject_duplicate_topic_and_group_for_different_consumers()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Group("billing");
-                messaging.Subscribe<AnotherOrderConsumer>().MessageName("orders.placed").Group("billing");
-            });
-
-        // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*Duplicate consumer registration detected for messageName/group identity*");
     }
 
     [Fact]
@@ -234,85 +73,10 @@ public sealed class MessagingBuilderTests
         // then
         provider.GetRequiredService<IRuntimeSubscriber>().Should().NotBeNull();
         provider.GetRequiredService<IBootstrapper>().Should().NotBeNull();
-        // Intent-split surface — both direct and outbox-backed publishers resolve under the
-        // split contracts.
         provider.GetRequiredService<IBus>().Should().NotBeNull();
         provider.GetRequiredService<IQueue>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxQueue>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_allow_addconsumer_registrations_to_share_topic_when_convention_groups_differ()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
-        services.AddBusConsumer<AnotherOrderConsumer, TestOrderMessage>("orders.placed");
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.UseInMemory();
-                messaging.UseInMemoryStorage();
-                messaging.UseConventions(conventions =>
-                {
-                    conventions.UseApplicationId("billing");
-                    conventions.UseVersion("v1");
-                });
-            });
-
-        // then
-        act.Should().NotThrow();
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-        var consumers = registry.GetAll().Where(c => c.MessageName == "orders.placed").ToList();
-
-        consumers.Should().HaveCount(2);
-        consumers.Select(c => c.Group).Should().OnlyHaveUniqueItems();
-    }
-
-    [Fact]
-    public void should_apply_topic_name_prefix_to_addconsumer_registrations()
-    {
-        // given
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddBusConsumer<TestOrderConsumer, TestOrderMessage>("orders.placed");
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.UseInMemory();
-            messaging.UseInMemoryStorage();
-            messaging.Options.MessageNamePrefix = "billing";
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        registry.GetAll().Single().MessageName.Should().Be("billing.orders.placed");
-    }
-
-    [Fact]
-    public void should_throw_when_consumer_does_not_implement_consume()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.Subscribe<InvalidConsumer>().MessageName("test");
-            });
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*does not implement IConsume<T>*");
     }
 
     [Fact]
@@ -352,174 +116,6 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void should_default_concurrency_to_one()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumer = registry.GetAll()[0];
-        consumer.Concurrency.Should().Be(1);
-    }
-
-    [Fact]
-    public void should_throw_when_concurrency_is_zero()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-        {
-            return services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed").Concurrency(0);
-            });
-        };
-
-        // then
-        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Concurrency must be greater than 0*");
-    }
-
-    [Fact]
-    public void should_support_multi_message_handlers()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.SubscribeFromAssembly(typeof(MessagingBuilderTests).Assembly);
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var multiHandlers = registry.GetAll().Where(c => c.ConsumerType == typeof(MultiMessageConsumer)).ToList();
-
-        multiHandlers.Should().HaveCount(2);
-        multiHandlers.Should().Contain(c => c.MessageType == typeof(TestOrderMessage));
-        multiHandlers.Should().Contain(c => c.MessageType == typeof(TestPaymentMessage));
-    }
-
-    [Fact]
-    public void should_reject_explicit_registration_for_multi_message_consumer()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.Subscribe<MultiMessageConsumer>();
-            });
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*implements multiple IConsume<T> interfaces*");
-    }
-
-    [Fact]
-    public void should_reject_explicit_registration_with_topic_for_multi_message_consumer()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.Subscribe<MultiMessageConsumer>("orders.placed");
-            });
-
-        // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*implements multiple IConsume<T> interfaces*");
-    }
-
-    [Fact]
-    public void should_chain_fluent_methods()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-                messaging.Subscribe<TestOrderConsumer>(consumer =>
-                    consumer.MessageName("orders.test").Group("test-group").Concurrency(3)
-                );
-                messaging.Subscribe<TestPaymentConsumer>(consumer => consumer.MessageName("payments.received"));
-            });
-
-        // then
-        act.Should().NotThrow();
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-        var consumers = registry.GetAll();
-        consumers.Should().HaveCount(2);
-    }
-
-    [Fact]
-    public void should_implicitly_create_topic_mapping_when_using_consumer_with_topic()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>("orders.placed");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumer = registry.GetAll()[0];
-        consumer.MessageName.Should().Be("orders.placed");
-        consumer.ConsumerType.Should().Be<TestOrderConsumer>();
-    }
-
-    [Fact]
-    public void should_eliminate_need_for_separate_topic_mapping_call()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            // Old way (still supported):
-            // messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
-            // messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-
-            // New way - single call, implicit mapping:
-            messaging.Subscribe<TestOrderConsumer>("orders.placed");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumer = registry.GetAll()[0];
-        consumer.MessageName.Should().Be("orders.placed");
-    }
-
-    [Fact]
     public void should_use_explicit_default_group_name_when_configured()
     {
         // given
@@ -528,8 +124,10 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            );
             messaging.Options.DefaultGroupName = "shared-group";
-            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -548,13 +146,15 @@ public sealed class MessagingBuilderTests
         // when
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<TestOrderMessage>(message =>
+                message.MessageName("orders.placed").OnBus<TestOrderConsumer>()
+            );
             messaging.Options.GroupNamePrefix = "tenant-a";
             messaging.UseConventions(conventions =>
             {
                 conventions.UseApplicationId("orders");
                 conventions.UseVersion("v1");
             });
-            messaging.Subscribe<TestOrderConsumer>().MessageName("orders.placed");
         });
 
         using var provider = services.BuildServiceProvider();
@@ -564,76 +164,6 @@ public sealed class MessagingBuilderTests
         var handlerId = MessagingConventions.GetDefaultHandlerId(typeof(TestOrderConsumer), typeof(TestOrderMessage));
         var conventions = new MessagingConventions().UseApplicationId("orders").UseVersion("v1");
         registry.GetAll().Single().Group.Should().Be($"tenant-a.{conventions.GetGroupName(handlerId)}");
-    }
-
-    [Fact]
-    public void should_allow_chaining_with_implicit_topic_mapping()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging.Subscribe<TestOrderConsumer>("orders.placed").Concurrency(5).Group("order-service");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
-
-        // then
-        var consumer = registry.GetAll()[0];
-        consumer.MessageName.Should().Be("orders.placed");
-        consumer.Concurrency.Should().Be(5);
-        consumer.Group.Should().Be("order-service");
-    }
-
-    [Fact]
-    public void with_circuit_breaker_before_group_uses_final_group_name()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when — circuit breaker BEFORE group
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging
-                .Subscribe<TestOrderConsumer>()
-                .MessageName("orders.placed")
-                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
-                .Group("my-group");
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-
-        // then — override is registered against the final group name
-        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
-        opts!.FailureThreshold.Should().Be(3);
-    }
-
-    [Fact]
-    public void with_circuit_breaker_after_group_uses_final_group_name()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when — circuit breaker AFTER group
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging
-                .Subscribe<TestOrderConsumer>()
-                .MessageName("orders.placed")
-                .Group("my-group")
-                .WithCircuitBreaker(cb => cb.FailureThreshold = 5);
-        });
-
-        using var provider = services.BuildServiceProvider();
-        var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
-
-        // then
-        cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "my-group"), out var opts).Should().BeTrue();
-        opts!.FailureThreshold.Should().Be(5);
     }
 
     [Fact]
@@ -666,36 +196,35 @@ public sealed class MessagingBuilderTests
     }
 
     [Fact]
-    public void with_circuit_breaker_before_group_does_not_leave_stale_registration()
+    public void with_circuit_breaker_uses_final_group_name()
     {
         // given
         var services = new ServiceCollection();
 
-        // when — circuit breaker set, then group changes the group name
-        services.AddHeadlessMessaging(messaging =>
-        {
-            messaging
-                .Subscribe<TestOrderConsumer>()
-                .MessageName("orders.placed")
-                .WithCircuitBreaker(cb => cb.FailureThreshold = 3)
-                .Group("final-group");
-        });
+        // when
+        services.AddHeadlessMessaging(static setup =>
+            setup.ForMessage<TestOrderMessage>(message =>
+                message
+                    .MessageName("orders.placed")
+                    .OnBus<TestOrderConsumer>(consumer =>
+                        consumer.WithCircuitBreaker(cb => cb.FailureThreshold = 3).Group("final-group")
+                    )
+            )
+        );
 
         using var provider = services.BuildServiceProvider();
         var cbRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
 
-        // then — no stale default-group entry, only the final one
+        // then
         cbRegistry.TryGet(_CircuitKey(IntentType.Bus, "final-group"), out var opts).Should().BeTrue();
         opts!.FailureThreshold.Should().Be(3);
     }
 }
 
-// Test message types
 public sealed record TestOrderMessage(string OrderId, decimal Amount);
 
 public sealed record TestPaymentMessage(string PaymentId, decimal Amount);
 
-// Test consumer implementations
 public sealed class TestOrderConsumer : IConsume<TestOrderMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<TestOrderMessage> context, CancellationToken cancellationToken)
@@ -731,10 +260,4 @@ public sealed class MultiMessageConsumer : IConsume<TestOrderMessage>, IConsume<
     {
         return ValueTask.CompletedTask;
     }
-}
-
-// ReSharper disable once ClassNeverInstantiated.Global
-public sealed class InvalidConsumer
-{
-    // Does not implement IConsume<T>
 }

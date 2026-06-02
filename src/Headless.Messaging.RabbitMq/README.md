@@ -25,6 +25,7 @@ dotnet add package Headless.Messaging.RabbitMQ
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseRabbitMQ(rmq =>
@@ -35,8 +36,6 @@ builder.Services.AddHeadlessMessaging(options =>
         rmq.Password = "secure_password"; // Required - cannot use 'guest'
         rmq.VirtualHost = "/";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

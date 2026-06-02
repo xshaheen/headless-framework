@@ -15,13 +15,15 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 - `IDistributedReaderWriterLockStorage` defines read/write acquire, extend, release, and validation operations.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddDistributedLock(...)` overloads wire storage, options, time provider, ID generator, and optional release consumers.
+- `AddDistributedLock(...)` overloads wire storage, options, time provider, and ID generator.
+- `setup.UseDistributedLockReleaseWakeups()` registers the optional `DistributedLockReleased` consumer from `AddHeadlessMessaging(...)`.
 - `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
 - `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
 
 ## Design Notes
 
 - `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
+- When messaging is present, call `setup.UseDistributedLockReleaseWakeups()` inside `AddHeadlessMessaging(...)` so release messages wake lock waiters instead of waiting for polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
@@ -44,6 +46,12 @@ builder.Services.AddDistributedLock(
         options.MaxResourceNameLength = 512;
     }
 );
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseDistributedLockReleaseWakeups();
+    // setup.Use... storage and transport providers
+});
 
 ```
 
@@ -88,4 +96,4 @@ await using var lease = await lockProvider.AcquireAsync(
 - Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
 - Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
-- Registers a `DistributedLockReleased` consumer only when an `IOutboxBus` registration exists.
+- Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.

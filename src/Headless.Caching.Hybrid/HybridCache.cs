@@ -29,7 +29,7 @@ namespace Headless.Caching;
 [PublicAPI]
 public sealed class HybridCache(
     IInMemoryCache l1Cache,
-    IDistributedCache l2Cache,
+    IRemoteCache l2Cache,
     IBus publisher,
     HybridCacheOptions options,
     ILogger<HybridCache>? logger = null

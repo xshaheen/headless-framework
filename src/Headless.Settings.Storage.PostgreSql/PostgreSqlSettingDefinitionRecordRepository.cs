@@ -23,10 +23,8 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
         var result = new List<SettingDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new NpgsqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -77,10 +75,8 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
 
         foreach (var record in deletedRecords)
         {
-            await using var command = new NpgsqlCommand(_DeleteSql(), connection, transaction)
-            {
-                CommandTimeout = _CommandTimeout(),
-            };
+            await using var command = new NpgsqlCommand(_DeleteSql(), connection, transaction);
+            command.CommandTimeout = _CommandTimeout();
             command.Parameters.AddWithValue("Id", record.Id);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -96,10 +92,8 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new NpgsqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddWithValue("Id", record.Id);
         command.Parameters.AddWithValue("Name", record.Name);
         command.Parameters.AddWithValue("DisplayName", record.DisplayName);
@@ -109,7 +103,10 @@ internal sealed class PostgreSqlSettingDefinitionRecordRepository(
         command.Parameters.AddWithValue("IsVisibleToClients", record.IsVisibleToClients);
         command.Parameters.AddWithValue("IsInherited", record.IsInherited);
         command.Parameters.AddWithValue("IsEncrypted", record.IsEncrypted);
-        command.Parameters.AddWithValue("ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
+        command.Parameters.AddWithValue(
+            "ExtraProperties",
+            serializer.SerializeToString(record.ExtraProperties) ?? "{}"
+        );
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 

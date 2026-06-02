@@ -6,11 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks;
 
-[PublicAPI]
 public static class AddDistributedLockExtensions
 {
     extension(IServiceCollection services)
@@ -125,22 +123,11 @@ public static class AddDistributedLockExtensions
                 )
             );
 
-            // Startup-time hook that warns when IOutboxBus is registered AFTER
-            // AddDistributedLock(...). The consumer registration block below only runs at
-            // registration time; a later AddMessages(...) call silently skips push wake-ups
-            // and the existing LogOutboxBusAbsent warning would NOT fire (outbox bus is
-            // non-null at runtime). See DistributedLockMessagingValidator for the rationale.
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<
-                    IValidateOptions<DistributedLockOptions>,
-                    DistributedLockMessagingValidator
-                >()
-            );
-
-            // Only register the lock-released consumer when an IOutboxBus is available; the
-            // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
-            // which themselves only get published via the outbox path. Without IOutboxBus no
-            // such messages ever flow, so the consumer registration is dead weight.
+            // Auto-register the shared lock-released consumer. Order-independent: the registration
+            // is drained into the messaging consumer registry by AddHeadlessMessaging regardless of
+            // whether messaging was added before or after AddDistributedLock(...), so there is no
+            // registration-order footgun and no opt-in step. When messaging is never added, the
+            // emitted descriptors are inert.
             DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
 
             return services;

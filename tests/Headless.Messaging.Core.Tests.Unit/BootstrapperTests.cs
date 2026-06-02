@@ -14,7 +14,7 @@ public sealed class BootstrapperTests : TestBase
     [Fact]
     public async Task should_report_started_only_after_bootstrap_completes()
     {
-        var blocker = new BlockingProcessingServer();
+        await using var blocker = new BlockingProcessingServer();
         await using var provider = _CreateProvider(beforeMessaging: blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 
@@ -32,7 +32,7 @@ public sealed class BootstrapperTests : TestBase
     [Fact]
     public async Task should_allow_non_owner_callers_to_cancel_wait_without_canceling_shared_bootstrap()
     {
-        var blocker = new BlockingProcessingServer();
+        await using var blocker = new BlockingProcessingServer();
         await using var provider = _CreateProvider(beforeMessaging: blocker);
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
 

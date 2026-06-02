@@ -36,10 +36,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("direct-test-messageName").OnBus<DirectTestConsumer>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("direct-test-messageName");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("direct-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -77,10 +78,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("direct-test-messageName").OnBus<DirectTestConsumer>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("direct-test-messageName");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("direct-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -111,10 +113,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("custom-messageName-name").OnBus<DirectTestConsumer>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("custom-messageName-name");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("custom-messageName-name");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -144,11 +147,14 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+            {
+                message.MessageName("multi-group-test");
+                message.OnBus<DirectTestConsumer>(consumer => consumer.Group("direct.primary"));
+                message.OnBus<DirectAnalyticsConsumer>(consumer => consumer.Group("direct.analytics"));
+            });
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("multi-group-test");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("multi-group-test").Group("direct.primary");
-            messaging.Subscribe<DirectAnalyticsConsumer>().MessageName("multi-group-test").Group("direct.analytics");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -180,11 +186,12 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("prefixed-test").OnBus<DirectTestConsumer>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
             messaging.Options.MessageNamePrefix = "myapp";
-            messaging.WithMessageNameMapping<DirectTestMessage>("prefixed-test");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("prefixed-test");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -213,10 +220,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("header-test-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("header-test-messageName");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("header-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -259,10 +267,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("tenant-test-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("tenant-test-messageName");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("tenant-test-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -299,10 +308,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("tenant-unset-messageName").OnBus<DirectTestConsumerWithHeaders>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("tenant-unset-messageName");
-            messaging.Subscribe<DirectTestConsumerWithHeaders>().MessageName("tenant-unset-messageName");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });
@@ -337,10 +347,11 @@ public sealed class IBusIntegrationTests : TestBase
         services.AddLogging(x => x.AddProvider(LoggerProvider));
         services.AddHeadlessMessaging(messaging =>
         {
+            messaging.ForMessage<DirectTestMessage>(message =>
+                message.MessageName("sequential-test").OnBus<DirectTestConsumer>()
+            );
             messaging.Options.DefaultGroupName = "test-group";
             messaging.Options.Version = "v1";
-            messaging.WithMessageNameMapping<DirectTestMessage>("sequential-test");
-            messaging.Subscribe<DirectTestConsumer>().MessageName("sequential-test");
             messaging.UseInMemory();
             messaging.UseInMemoryStorage();
         });

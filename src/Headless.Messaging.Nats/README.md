@@ -20,14 +20,13 @@ dotnet add package Headless.Messaging.Nats
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UseNats(nats =>
     {
         nats.Servers = "nats://localhost:4222";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

@@ -26,6 +26,7 @@ dotnet add package Headless.Messaging.Storage.SqlServer
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer(config =>
     {
         config.ConnectionString = "Server=localhost;Database=myapp;...";
@@ -33,8 +34,6 @@ builder.Services.AddHeadlessMessaging(options =>
     });
 
     options.UseRabbitMQ(rmq => { /* ... */ });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

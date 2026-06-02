@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
@@ -63,88 +62,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <inheritdoc />
-    public IMessagingBuilder SubscribeFromAssembly(Assembly assembly)
-    {
-        Argument.IsNotNull(assembly);
-
-        var consumerTypesWithInterfaces = assembly
-            .GetTypes()
-            .Where(t => t.IsClass && !t.IsAbstract && !t.IsGenericTypeDefinition)
-            .Select(t =>
-            {
-                var interfaces = t.GetInterfaces();
-                var consumeInterfaces = interfaces
-                    .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-                    .ToList();
-
-                return new { Type = t, ConsumeInterfaces = consumeInterfaces };
-            })
-            .Where(x => x.ConsumeInterfaces.Count > 0)
-            .ToList();
-
-        foreach (var consumer in consumerTypesWithInterfaces)
-        {
-            foreach (var consumeInterface in consumer.ConsumeInterfaces)
-            {
-                var messageType = consumeInterface.GetGenericArguments()[0];
-                RegisterConsumer(consumer.Type, messageType, messageName: null, group: null, concurrency: 1);
-            }
-        }
-
-        return this;
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder SubscribeFromAssemblyContaining<TMarker>() =>
-        SubscribeFromAssembly(typeof(TMarker).Assembly);
-
-    /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>()
-        where TConsumer : class
-    {
-        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, messageName: null, group: null, concurrency: 1);
-
-        return new ConsumerBuilder<TConsumer>(
-            Options,
-            Registry,
-            CircuitBreakerRegistry,
-            metadata,
-            autoRegistered: true
-        );
-    }
-
-    /// <inheritdoc />
-    public IConsumerBuilder<TConsumer> Subscribe<TConsumer>(string messageName)
-        where TConsumer : class
-    {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-
-        var messageType = _ResolveExplicitMessageType(typeof(TConsumer));
-        Options.WithMessageNameMapping(messageType, messageName);
-        var metadata = RegisterConsumer(typeof(TConsumer), messageType, messageName, group: null, concurrency: 1);
-
-        return new ConsumerBuilder<TConsumer>(
-            Options,
-            Registry,
-            CircuitBreakerRegistry,
-            metadata,
-            messageName,
-            autoRegistered: true
-        );
-    }
-
-    /// <inheritdoc />
-    public IMessagingBuilder Subscribe<TConsumer>(Action<IConsumerBuilder<TConsumer>> configure)
-        where TConsumer : class
-    {
-        Argument.IsNotNull(configure);
-
-        configure(Subscribe<TConsumer>());
-        return this;
-    }
-
-    /// <inheritdoc />
     public IMessagingBuilder WithMessageNameMapping<TMessage>(string messageName)
         where TMessage : class
     {
@@ -164,6 +81,17 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         return this;
     }
 
+    /// <summary>
+    /// Registers a single consumer directly into the consumer registry at setup time and wires its
+    /// DI descriptors.
+    /// </summary>
+    /// <remarks>
+    /// Internal setup-time registration seam. Unlike the public <c>ForMessage&lt;T&gt;</c> surface,
+    /// this does not validate <paramref name="messageName"/>, so it can register wildcard
+    /// subscriptions (e.g. <c>"orders.*"</c>) that selector/runtime scenarios and their tests rely
+    /// on. Kept internal deliberately — it is not dead code and must not be promoted to the public API.
+    /// </remarks>
+    [UsedImplicitly]
     internal ConsumerMetadata RegisterConsumer(
         Type consumerType,
         Type messageType,
@@ -191,23 +119,5 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         );
 
         return metadata;
-    }
-
-    private static Type _ResolveExplicitMessageType(Type consumerType)
-    {
-        var consumeInterfaces = consumerType
-            .GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsume<>))
-            .ToList();
-
-        return consumeInterfaces.Count switch
-        {
-            0 => throw new InvalidOperationException($"{consumerType.Name} does not implement IConsume<T>"),
-            > 1 => throw new InvalidOperationException(
-                $"{consumerType.Name} implements multiple IConsume<T> interfaces. "
-                    + "Use SubscribeFromAssembly(...) for multi-message consumers."
-            ),
-            _ => consumeInterfaces[0].GetGenericArguments()[0],
-        };
     }
 }

@@ -16,14 +16,16 @@ public sealed record AlphaEvent(string Id);
 
 public sealed class AlphaConsumer : IConsume<AlphaEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<AlphaEvent> context, CancellationToken ct) => ValueTask.CompletedTask;
+    public ValueTask ConsumeAsync(ConsumeContext<AlphaEvent> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 public sealed record BetaEvent(string Id);
 
 public sealed class BetaConsumer : IConsume<BetaEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<BetaEvent> context, CancellationToken ct) => ValueTask.CompletedTask;
+    public ValueTask ConsumeAsync(ConsumeContext<BetaEvent> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
 }
 
 // ─── Fixture ─────────────────────────────────────────────────────────────────
@@ -40,8 +42,10 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Subscribe<AlphaConsumer>("alpha-messageName");
-                setup.Subscribe<BetaConsumer>("beta-messageName");
+                setup.ForMessage<AlphaEvent>(message =>
+                    message.MessageName("alpha-messageName").OnBus<AlphaConsumer>()
+                );
+                setup.ForMessage<BetaEvent>(message => message.MessageName("beta-messageName").OnBus<BetaConsumer>());
             });
         });
     }

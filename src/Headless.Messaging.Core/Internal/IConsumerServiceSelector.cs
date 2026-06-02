@@ -182,7 +182,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
     private static IEnumerable<ConsumerExecutorDescriptor> _FindConsumersFromControllerTypes()
     {
         // Controller-based consumers are no longer supported with IConsume<T> pattern
-        // Use IMessagingBuilder.SubscribeFromAssembly() or Consumer<T>() instead
+        // Use setup.ForMessage<TMessage>(...) instead.
         return [];
     }
 

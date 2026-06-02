@@ -212,7 +212,7 @@ public sealed class MessagingOptions
     /// <summary>
     /// Gets the global circuit breaker configuration that applies to all consumer groups.
     /// Individual consumers may override specific properties via
-    /// <see cref="IConsumerBuilder{TConsumer}.WithCircuitBreaker"/>.
+    /// <see cref="IConsumerBuilderBase{TConsumer, TBuilder}.WithCircuitBreaker"/>.
     /// </summary>
     public CircuitBreakerOptions CircuitBreaker { get; } = new();
 
@@ -328,7 +328,7 @@ public sealed class MessagingOptions
 
         if (
             MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
-            && existingMessageName != messageName
+            && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
         )
         {
             throw new InvalidOperationException(

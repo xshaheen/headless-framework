@@ -7,14 +7,15 @@ using Headless.Messaging.Transactions;
 
 namespace Tests.Transactions;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class OutboxTransactionExtensionsTests
 {
     [Fact]
     public void begin_outbox_transaction_should_open_closed_connection_assign_transaction_and_copy_auto_commit()
     {
         // given
-        var connection = new RecordingDbConnection();
-        var transaction = new RecordingOutboxTransaction();
+        using var connection = new RecordingDbConnection();
+        using var transaction = new RecordingOutboxTransaction();
 
         // when
         var result = connection.BeginOutboxTransaction(IsolationLevel.Serializable, transaction, autoCommit: true);
@@ -31,8 +32,8 @@ public sealed class OutboxTransactionExtensionsTests
     public async Task begin_outbox_transaction_async_should_use_async_open_and_begin_transaction_paths()
     {
         // given
-        var connection = new RecordingDbConnection();
-        var transaction = new RecordingOutboxTransaction();
+        await using var connection = new RecordingDbConnection();
+        await using var transaction = new RecordingOutboxTransaction();
 
         // when
         var result = await connection.BeginOutboxTransactionAsync(
@@ -56,8 +57,8 @@ public sealed class OutboxTransactionExtensionsTests
     {
         // given
         var failure = new InvalidOperationException("open failed");
-        var connection = new RecordingDbConnection { OpenAsyncException = failure };
-        var transaction = new RecordingOutboxTransaction();
+        await using var connection = new RecordingDbConnection { OpenAsyncException = failure };
+        await using var transaction = new RecordingOutboxTransaction();
 
         // when
         var act = async () =>

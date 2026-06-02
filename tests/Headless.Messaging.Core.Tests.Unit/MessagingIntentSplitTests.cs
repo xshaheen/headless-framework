@@ -31,26 +31,32 @@ public sealed class MessagingIntentSplitTests : TestBase
     }
 
     [Fact]
-    public void add_bus_consumer_should_stamp_bus_intent()
+    public void for_message_on_bus_should_stamp_bus_intent()
     {
         var services = new ServiceCollection();
 
-        services.AddBusConsumer<TestBusConsumer, TestMessage>("events.orders");
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<TestMessage>(message => message.MessageName("events.orders").OnBus<TestBusConsumer>());
+        });
 
-        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerMetadata>();
+        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         metadata.IntentType.Should().Be(IntentType.Bus);
         metadata.MessageName.Should().Be("events.orders");
     }
 
     [Fact]
-    public void add_queue_consumer_should_stamp_queue_intent()
+    public void for_message_on_queue_should_stamp_queue_intent()
     {
         var services = new ServiceCollection();
 
-        services.AddQueueConsumer<TestQueueConsumer, TestMessage>("jobs.orders");
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<TestMessage>(message => message.MessageName("jobs.orders").OnQueue<TestQueueConsumer>());
+        });
 
-        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerMetadata>();
+        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         metadata.IntentType.Should().Be(IntentType.Queue);
         metadata.MessageName.Should().Be("jobs.orders");
@@ -139,7 +145,7 @@ public sealed class MessagingIntentSplitTests : TestBase
 
         // Register only the high-level markers; no IBusTransport and no ITransport so the legacy
         // adapter cannot kick in either. The bootstrapper must surface the per-intent friendly
-        // message naming AddBusConsumer<...>.
+        // message naming ForMessage<...>.
         services.AddSingleton(new MessagingMarkerService("Messaging"));
         services.AddSingleton(new MessageQueueMarkerService("TestTransport"));
         services.AddSingleton(new MessageStorageMarkerService("TestStorage"));

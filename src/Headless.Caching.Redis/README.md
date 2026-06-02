@@ -8,8 +8,8 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Key Features
 
-- Full `IDistributedCache` implementation using StackExchange.Redis
-- Supports strongly-typed `IDistributedCache<T>` pattern
+- Full `IRemoteCache` implementation using StackExchange.Redis
+- Supports strongly-typed `IRemoteCache<T>` pattern
 - Prefix-based key management
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower)
 - Set/list operations with pagination
@@ -70,7 +70,8 @@ This design ensures consumers never observe partial results from batch operation
 
 ## Side Effects
 
-- Registers `IDistributedCache` as singleton
-- Registers `IDistributedCache<T>` as singleton
+- Registers `IRemoteCache` as singleton
+- Registers `IRemoteCache<T>` as singleton
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to `RedisCacheOptions.ConnectionMultiplexer`
 - Registers a hosted `IInitializer` that warms Redis cache Lua scripts on host start
+- Uses existing `IConnectionMultiplexer` if registered, otherwise creates one

@@ -244,8 +244,8 @@ public record ConsumeContext
     /// <remarks>
     /// <para>
     /// The intent is registration-derived, not envelope-derived: the framework stamps this value
-    /// from the consumer registration (<c>AddBusConsumer&lt;T,H&gt;()</c> vs
-    /// <c>AddQueueConsumer&lt;T,H&gt;()</c>) that delivered the message. No on-wire header carries
+    /// from the consumer registration (<c>OnBus&lt;TConsumer&gt;()</c> vs
+    /// <c>OnQueue&lt;TConsumer&gt;()</c>) that delivered the message. No on-wire header carries
     /// intent; the receiving runtime knows the dispatch path because it owns it.
     /// </para>
     /// <para>

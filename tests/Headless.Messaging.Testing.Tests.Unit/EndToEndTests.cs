@@ -19,8 +19,10 @@ public sealed record OrderCreatedEvent(string OrderId, decimal Amount);
 
 public sealed class OrderCreatedConsumer : IConsume<OrderCreatedEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
-        ValueTask.CompletedTask;
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
+    {
+        return ValueTask.CompletedTask;
+    }
 }
 
 public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
@@ -29,7 +31,7 @@ public sealed class FailingConsumer : IConsume<OrderCreatedEvent>
     // The classifier (RetryExceptionClassifier.IsPermanent) now unwraps SubscriberExecutionFailedException
     // and treats InvalidOperationException as permanent — using TimeoutException keeps the failure
     // retryable so the exhaustion budget governs the terminal transition (and OnExhausted fires).
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct) =>
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken) =>
         throw new TimeoutException("Test failure");
 }
 
@@ -40,7 +42,7 @@ public interface INotificationService
 
 public sealed class NotifyingConsumer(INotificationService notifier) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
         notifier.Notify(context.Message.OrderId);
         return ValueTask.CompletedTask;
@@ -58,7 +60,7 @@ public sealed class IntentRecorder
 
 public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
         recorder.Record(context.IntentType);
         return ValueTask.CompletedTask;
@@ -67,7 +69,7 @@ public sealed class BusIntentConsumer(IntentRecorder recorder) : IConsume<OrderC
 
 public sealed class QueueIntentConsumer(IntentRecorder recorder) : IConsume<OrderCreatedEvent>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken ct)
+    public ValueTask ConsumeAsync(ConsumeContext<OrderCreatedEvent> context, CancellationToken cancellationToken)
     {
         recorder.Record(context.IntentType);
         return ValueTask.CompletedTask;
@@ -80,13 +82,20 @@ public sealed class EndToEndTests : TestBase
 {
     private static Task<MessagingTestHarness> _CreateHarnessAsync(Action<MessagingSetupBuilder>? configure = null)
     {
+        return _CreateHarnessAsync((_, setup) => configure?.Invoke(setup));
+    }
+
+    private static Task<MessagingTestHarness> _CreateHarnessAsync(
+        Action<IServiceCollection, MessagingSetupBuilder> configure
+    )
+    {
         return MessagingTestHarness.CreateAsync(services =>
         {
             services.AddHeadlessMessaging(setup =>
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                configure?.Invoke(setup);
+                configure(services, setup);
             });
         });
     }
@@ -97,10 +106,14 @@ public sealed class EndToEndTests : TestBase
     public async Task Publish_and_consume_flow_works_end_to_end()
     {
         // given
-        await using var harness = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<OrderCreatedConsumer>("order-created");
-        });
+        await using var harness = await _CreateHarnessAsync(
+            (_, setup) =>
+            {
+                setup.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
+                );
+            }
+        );
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-001", 99.99m), cancellationToken: AbortToken);
@@ -123,10 +136,14 @@ public sealed class EndToEndTests : TestBase
     public async Task Faulted_observation_captures_exception()
     {
         // given
-        await using var harness = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<FailingConsumer>("order-created");
-        });
+        await using var harness = await _CreateHarnessAsync(
+            (_, setup) =>
+            {
+                setup.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<FailingConsumer>()
+                );
+            }
+        );
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-002", 50m), cancellationToken: AbortToken);
@@ -153,7 +170,9 @@ public sealed class EndToEndTests : TestBase
             {
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                options.Subscribe<TestConsumer<OrderCreatedEvent>>("order-created");
+                options.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<TestConsumer<OrderCreatedEvent>>()
+                );
             });
         });
 
@@ -201,15 +220,23 @@ public sealed class EndToEndTests : TestBase
     public async Task Two_harness_instances_do_not_cross_contaminate()
     {
         // given
-        await using var harness1 = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<OrderCreatedConsumer>("order-created");
-        });
+        await using var harness1 = await _CreateHarnessAsync(
+            (_, setup) =>
+            {
+                setup.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
+                );
+            }
+        );
 
-        await using var harness2 = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<OrderCreatedConsumer>("order-created");
-        });
+        await using var harness2 = await _CreateHarnessAsync(
+            (_, setup) =>
+            {
+                setup.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
+                );
+            }
+        );
 
         // when — publish only in harness1
         await harness1.Publisher.PublishAsync(new OrderCreatedEvent("H1-ORD", 10m), cancellationToken: AbortToken);
@@ -236,7 +263,9 @@ public sealed class EndToEndTests : TestBase
             {
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                options.Subscribe<NotifyingConsumer>("order-created");
+                options.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<NotifyingConsumer>()
+                );
             });
         });
 
@@ -255,10 +284,15 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(services =>
         {
             services.AddSingleton<IntentRecorder>();
-            services.AddBusConsumer<BusIntentConsumer, OrderCreatedEvent>("order-created").Group("bus-workers");
-            services.AddQueueConsumer<QueueIntentConsumer, OrderCreatedEvent>("order-created").Group("queue-workers");
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreatedEvent>(message =>
+                {
+                    message
+                        .MessageName("order-created")
+                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("bus-workers"));
+                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("queue-workers"));
+                });
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -325,12 +359,15 @@ public sealed class EndToEndTests : TestBase
         await using var harness = await MessagingTestHarness.CreateAsync(services =>
         {
             services.AddSingleton<IntentRecorder>();
-            services.AddBusConsumer<BusIntentConsumer, OrderCreatedEvent>("outbox-order-created").Group("outbox-bus");
-            services
-                .AddQueueConsumer<QueueIntentConsumer, OrderCreatedEvent>("outbox-order-created")
-                .Group("outbox-queue");
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreatedEvent>(message =>
+                {
+                    message
+                        .MessageName("outbox-order-created")
+                        .OnBus<BusIntentConsumer>(consumer => consumer.Group("outbox-bus"));
+                    message.OnQueue<QueueIntentConsumer>(consumer => consumer.Group("outbox-queue"));
+                });
                 options.UseInMemory();
                 options.UseInMemoryStorage();
             });
@@ -461,7 +498,9 @@ public sealed class EndToEndTests : TestBase
         {
             options.UseInMemory();
             options.UseInMemoryStorage();
-            options.Subscribe<OrderCreatedConsumer>("order-created");
+            options.ForMessage<OrderCreatedEvent>(message =>
+                message.MessageName("order-created").OnBus<OrderCreatedConsumer>()
+            );
         });
 
         // Register the test harness via extension method (hosted mode)
@@ -494,19 +533,22 @@ public sealed class EndToEndTests : TestBase
         // given — single-attempt budget so failure becomes terminal immediately
         var userCallbackFired = 0;
 
-        await using var harness = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<FailingConsumer>("order-created");
-
-            options.Options.RetryPolicy.MaxInlineRetries = 0;
-            options.Options.RetryPolicy.MaxPersistedRetries = 0;
-            options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
-            options.Options.RetryPolicy.OnExhausted = (_, _) =>
+        await using var harness = await _CreateHarnessAsync(
+            (services, options) =>
             {
-                Interlocked.Increment(ref userCallbackFired);
-                return Task.CompletedTask;
-            };
-        });
+                options.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<FailingConsumer>()
+                );
+                options.Options.RetryPolicy.MaxInlineRetries = 0;
+                options.Options.RetryPolicy.MaxPersistedRetries = 0;
+                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.OnExhausted = (_, _) =>
+                {
+                    Interlocked.Increment(ref userCallbackFired);
+                    return Task.CompletedTask;
+                };
+            }
+        );
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), cancellationToken: AbortToken);
@@ -535,20 +577,23 @@ public sealed class EndToEndTests : TestBase
         // given — user callback hangs; observation must still be visible
         using var hangGate = new ManualResetEventSlim(initialState: false);
 
-        await using var harness = await _CreateHarnessAsync(options =>
-        {
-            options.Subscribe<FailingConsumer>("order-created");
-
-            options.Options.RetryPolicy.MaxInlineRetries = 0;
-            options.Options.RetryPolicy.MaxPersistedRetries = 0;
-            options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
-            options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
-            options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
+        await using var harness = await _CreateHarnessAsync(
+            (services, options) =>
             {
-                // Park the callback until the test releases it (or the timeout fires).
-                await Task.Run(() => hangGate.Wait(ct), ct);
-            };
-        });
+                options.ForMessage<OrderCreatedEvent>(message =>
+                    message.MessageName("order-created").OnBus<FailingConsumer>()
+                );
+                options.Options.RetryPolicy.MaxInlineRetries = 0;
+                options.Options.RetryPolicy.MaxPersistedRetries = 0;
+                options.Options.RetryPolicy.BackoffStrategy = new FixedIntervalBackoffStrategy(TimeSpan.Zero);
+                options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
+                options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
+                {
+                    // Park the callback until the test releases it (or the timeout fires).
+                    await Task.Run(() => hangGate.Wait(ct), ct);
+                };
+            }
+        );
 
         try
         {
