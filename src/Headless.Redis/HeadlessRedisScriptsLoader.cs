@@ -158,12 +158,8 @@ public sealed class HeadlessRedisScriptsLoader(
         {
             var state = Volatile.Read(ref _state);
 
-            if (!state.IsLoaded)
-            {
-                return;
-            }
-
-            var resetState = new ScriptsLoadState(state.Version + 1, new Dictionary<Type, LoadedRedisScript>());
+            var resetVersion = state.IsLoaded ? state.Version + 1 : state.Version + 2;
+            var resetState = new ScriptsLoadState(resetVersion, new Dictionary<Type, LoadedRedisScript>());
 
             if (ReferenceEquals(Interlocked.CompareExchange(ref _state, resetState, state), state))
             {

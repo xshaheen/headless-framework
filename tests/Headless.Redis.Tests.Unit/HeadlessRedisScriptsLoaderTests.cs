@@ -286,6 +286,63 @@ public sealed class HeadlessRedisScriptsLoaderTests
     }
 
     [Fact]
+    public async Task should_not_lose_reset_when_reset_happens_while_reloading_after_previous_reset()
+    {
+        // given
+        var script = CustomReturnOneScriptDefinition.Instance;
+        var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
+        var db = Substitute.For<IDatabase>();
+        var secondScriptLoadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSecondScriptLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var scriptLoadCount = 0;
+
+        server.ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var source = callInfo.ArgAt<string>(0);
+
+                if (
+                    source.Contains("return 1", StringComparison.Ordinal)
+                    && Interlocked.Increment(ref scriptLoadCount) == 2
+                )
+                {
+                    secondScriptLoadStarted.SetResult();
+
+                    return releaseSecondScriptLoad.Task.ContinueWith(
+                        _ => _CreateScriptHash(source),
+                        TestContext.Current.CancellationToken,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default
+                    );
+                }
+
+                return Task.FromResult(_CreateScriptHash(source));
+            });
+
+        db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
+            .Returns(Task.FromResult(RedisResult.Create(1)));
+
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+        _ = await sut.EvaluateAsync(db, script, parameters: null);
+        sut.ResetScripts();
+
+        // when
+        var reloadTask = sut.EvaluateAsync(db, script, parameters: null);
+        await secondScriptLoadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        sut.ResetScripts();
+        releaseSecondScriptLoad.SetResult();
+
+        _ = await reloadTask;
+
+        // then
+        await server.Received(3).ScriptLoadAsync(
+            Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
+            Arg.Any<CommandFlags>()
+        );
+    }
+
+    [Fact]
     public async Task should_reject_multiple_script_definition_instances_for_same_concrete_type()
     {
         // given
