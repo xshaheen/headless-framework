@@ -20,24 +20,25 @@ Provides the full permission management implementation including hierarchical gr
 
 ```bash
 dotnet add package Headless.Permissions.Core
+dotnet add package Headless.Permissions.Storage.EntityFramework # or PostgreSql / SqlServer
 ```
 
 ## Quick Start
+
+`AddHeadlessPermissions(...)` registers the management core automatically, so a storage
+provider is all you need. Register the required services (`TimeProvider`, `ICache`,
+`IDistributedLock`, `IGuidGenerator`) first, then call `AddHeadlessPermissions`.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
 // Requires: TimeProvider, ICache, IDistributedLock, IGuidGenerator
-builder.Services.AddPermissionsManagementCore(options =>
-{
-    options.CacheKeyPrefix = "permissions:";
-});
 
 // Register permission definition providers
 builder.Services.AddPermissionDefinitionProvider<OrderPermissionProvider>();
 
-// Add storage (e.g., Entity Framework)
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>();
+// Add management core + storage in one call (Entity Framework shown)
+builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<AppDbContext>());
 ```
 
 ### Authorization Requirement
@@ -87,12 +88,23 @@ var result = await permissionManager.GetAsync("Orders.View", currentUser);
 
 ### Options
 
+Tune the management options through `setup.ConfigureManagement(...)` inside the
+`AddHeadlessPermissions` block, next to `ConfigureStorage`:
+
 ```csharp
-services.AddPermissionsManagementCore(options =>
+services.AddHeadlessPermissions(setup =>
 {
-    options.CacheKeyPrefix = "permissions:";
+    setup.ConfigureManagement(options =>
+    {
+        options.CrossApplicationsCommonLockKey = "permissions:common_update_lock";
+    });
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
+
+The `(options, IServiceProvider)` overload is available when configuration needs resolved
+services. `services.Configure<PermissionManagementOptions>(...)` also works and composes with
+the auto-registration regardless of order.
 
 ## Dependencies
 

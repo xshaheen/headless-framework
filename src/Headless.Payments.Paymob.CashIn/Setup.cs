@@ -10,7 +10,7 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
-public static class PaymobCashInSetup
+public static class SetupPaymobCashIn
 {
     internal const string HttpClientName = "Headless:PaymobCashIn";
 

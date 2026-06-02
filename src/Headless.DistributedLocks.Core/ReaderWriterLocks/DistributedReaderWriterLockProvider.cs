@@ -13,7 +13,7 @@ namespace Headless.DistributedLocks;
 public sealed class DistributedReaderWriterLockProvider(
     IDistributedReaderWriterLockStorage storage,
     IOutboxBus? outboxBus,
-    DistributedLockOptions options,
+    DistributedLockOptions lockOptions,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedReaderWriterLockProvider> logger
@@ -23,15 +23,12 @@ public sealed class DistributedReaderWriterLockProvider(
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly ScopedDistributedReaderWriterLockStorage _storage = new(storage, options.KeyPrefix);
-    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(
-        outboxBus,
-        logger
-    );
+    private readonly ScopedDistributedReaderWriterLockStorage _storage = new(storage, lockOptions.KeyPrefix);
+    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
-    private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
-    private readonly TimeSpan _writerWaitingMarkerTtl = options.WriterWaitingMarkerTtl;
-    private readonly TimeSpan _disposeTimeout = options.DisposeTimeout;
+    private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
+    private readonly TimeSpan _writerWaitingMarkerTtl = lockOptions.WriterWaitingMarkerTtl;
+    private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running release pipeline shared with the mutex provider. Release is a terminal state
     // write — if the caller's CT fires mid-retry we still want to clean up, so the release path
@@ -136,19 +133,11 @@ public sealed class DistributedReaderWriterLockProvider(
         {
             // Read renew also clamps null/infinite to the default — see _TryAcquireStorageAsync
             // for rationale.
-            ReaderWriterLockMode.Read => _storage.TryExtendReadAsync(
-                    resource,
-                    lockId,
-                    timeUntilExpires ?? DefaultTimeUntilExpires,
-                    cancellationToken
-                )
+            ReaderWriterLockMode.Read => _storage
+                .TryExtendReadAsync(resource, lockId, timeUntilExpires ?? DefaultTimeUntilExpires, cancellationToken)
                 .AsTask(),
-            ReaderWriterLockMode.Write => _storage.TryExtendWriteAsync(
-                    resource,
-                    lockId,
-                    timeUntilExpires,
-                    cancellationToken
-                )
+            ReaderWriterLockMode.Write => _storage
+                .TryExtendWriteAsync(resource, lockId, timeUntilExpires, cancellationToken)
                 .AsTask(),
             _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
         };
@@ -221,7 +210,10 @@ public sealed class DistributedReaderWriterLockProvider(
 
         try
         {
-            await releaseTask.AsTask().WaitAsync(_disposeTimeout, timeProvider, CancellationToken.None).ConfigureAwait(false);
+            await releaseTask
+                .AsTask()
+                .WaitAsync(_disposeTimeout, timeProvider, CancellationToken.None)
+                .ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
@@ -321,13 +313,7 @@ public sealed class DistributedReaderWriterLockProvider(
 
                 try
                 {
-                    gotLock = await _TryAcquireStorageAsync(
-                            mode,
-                            resource,
-                            lockId,
-                            timeUntilExpires,
-                            attemptToken
-                        )
+                    gotLock = await _TryAcquireStorageAsync(mode, resource, lockId, timeUntilExpires, attemptToken)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
@@ -562,7 +548,7 @@ public sealed class DistributedReaderWriterLockProvider(
             this,
             releaseOnDispose,
             autoExtend,
-            options,
+            lockOptions,
             timeProvider,
             _DeregisterMonitor,
             logger
@@ -638,8 +624,7 @@ public sealed class DistributedReaderWriterLockProvider(
         {
             ReaderWriterLockMode.Read => "read",
             ReaderWriterLockMode.Write => "write",
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown reader-writer lock mode."),
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, @"Unknown reader-writer lock mode."),
         };
     }
-
 }

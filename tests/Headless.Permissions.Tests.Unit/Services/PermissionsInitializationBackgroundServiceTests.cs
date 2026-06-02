@@ -9,6 +9,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
+// ReSharper disable AccessToDisposedClosure
+
 namespace Tests.Services;
 
 public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
@@ -29,10 +31,10 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     #region IInitializer Contract
 
     [Fact]
-    public async Task should_report_not_initialized_before_start()
+    public void should_report_not_initialized_before_start()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new PermissionManagementOptions
             {
                 SaveStaticPermissionsToDatabase = true,
@@ -48,7 +50,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
     public async Task should_report_initialized_when_options_disabled()
     {
         // given
-        var sut = _CreateSut(
+        using var sut = _CreateSut(
             new PermissionManagementOptions
             {
                 SaveStaticPermissionsToDatabase = false,
@@ -82,7 +84,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -105,7 +107,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 
         _store.SaveAsync(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -132,7 +134,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
             .GetGroupsAsync(Arg.Any<CancellationToken>())
             .Returns<IReadOnlyList<PermissionGroupDefinition>>(_ => throw exception);
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(CancellationToken.None);
@@ -164,7 +166,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 await Task.Delay(Timeout.Infinite, callInfo.Arg<CancellationToken>());
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
@@ -190,7 +192,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
             IsDynamicPermissionStoreEnabled = false,
         };
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -226,7 +228,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 return Task.CompletedTask;
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -259,7 +261,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 return Task.FromResult<IReadOnlyList<PermissionGroupDefinition>>([]);
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(AbortToken);
@@ -396,7 +398,7 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 }
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when - start with a cancellable token
         await sut.StartAsync(cts.Token);
@@ -465,11 +467,11 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
                 throw new InvalidOperationException("Pre-cache failed");
             });
 
-        var sut = _CreateSut(options);
+        using var sut = _CreateSut(options);
 
         // when
         await sut.StartAsync(CancellationToken.None);
-        await getGroupsCalled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await getGroupsCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         await _store.Received(1).GetGroupsAsync(Arg.Any<CancellationToken>());

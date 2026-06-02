@@ -170,7 +170,7 @@ public sealed class TenantResolutionMiddlewareTests : TestBase
     public async Task should_not_emit_ordering_warning_for_correctly_ordered_anonymous_request()
     {
         TenantResolutionMiddleware.ResetOrderingWarningForTesting();
-        var loggerProvider = new CapturingLoggerProvider();
+        using var loggerProvider = new CapturingLoggerProvider();
         await using var app = await _CreateAppAsync(loggerProvider: loggerProvider);
         using var client = HttpTenancyTestHarness.CreateClient(app);
 

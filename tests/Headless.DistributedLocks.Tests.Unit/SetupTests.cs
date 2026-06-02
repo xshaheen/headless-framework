@@ -34,7 +34,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_register_lock_released_consumer_when_messaging_is_present()
+    public void should_register_lock_released_consumer_when_messaging_wakeups_are_enabled()
     {
         // given
         var services = new ServiceCollection();
@@ -43,29 +43,33 @@ public sealed class SetupTests : TestBase
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddHeadlessMessaging(setup => setup.UseDistributedLockReleaseWakeups());
         using var provider = services.BuildServiceProvider();
 
         // then
         provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
         provider.GetRequiredService<IOutboxBus>().Should().NotBeNull();
         services.Should().Contain(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>));
-        services.Should().Contain(descriptor => descriptor.ServiceType == typeof(ConsumerMetadata));
+
+        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        metadata.ConsumerType.Should().Be<DistributedLockProvider.LockReleasedConsumer>();
+        metadata.MessageName.Should().Be("headless.locks.released");
+        metadata.IntentType.Should().Be(IntentType.Bus);
+        metadata.Concurrency.Should().Be(1);
     }
 
     [Fact]
-    public void should_warn_when_outbox_publisher_is_registered_after_add_distributed_lock()
+    public void should_warn_when_outbox_publisher_is_registered_without_release_wakeups()
     {
-        // given — call AddDistributedLock BEFORE AddSingleton<IOutboxBus>, mirroring the
-        // real-world footgun: the registration-time consumer-registration block in Setup.cs sees
-        // no publisher and silently skips the consumer; AddMessages(...) later in Program.cs is
-        // too late.
+        // given — messaging is available, but the caller did not opt into the lock-release
+        // consumer through setup.UseDistributedLockReleaseWakeups().
         var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddSingleton(Substitute.For<IOutboxBus>()); // too late
+        services.AddSingleton(Substitute.For<IOutboxBus>());
         using var provider = services.BuildServiceProvider();
 
         // resolving the options instance triggers the IValidateOptions pipeline (the Headless
@@ -84,22 +88,23 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_not_warn_when_messaging_is_registered_before_add_distributed_lock()
+    public void should_not_warn_when_release_wakeups_are_enabled()
     {
-        // given — correct order: messaging first.
+        // given — messaging is available and the lock-release consumer is explicitly registered.
         var capturedLogs = new List<(LogLevel Level, EventId EventId)>();
         var services = new ServiceCollection();
-        services.AddLogging(b => b.AddProvider(new _CapturingLoggerProvider(capturedLogs)));
+        services.AddLogging(b => b.AddProvider(new CapturingLoggerProvider(capturedLogs)));
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
         // when
         services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddHeadlessMessaging(setup => setup.UseDistributedLockReleaseWakeups());
         using var provider = services.BuildServiceProvider();
 
         _ = provider.GetRequiredService<DistributedLockOptions>();
 
         // then — neither the publisher-absent (EventId 16) nor the consumer-missing (EventId 18)
-        // warning fires when the registration order is correct.
+        // warning fires when messaging wake-ups are configured.
         capturedLogs
             .Should()
             .NotContain(entry => entry.EventId.Id == 18)
@@ -133,16 +138,16 @@ public sealed class SetupTests : TestBase
     /// pairs. Mirrors the messaging tests' CapturingLoggerProvider pattern; assertions stay stable
     /// against message-template changes by ignoring formatted strings.
     /// </summary>
-    private sealed class _CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, EventId EventId)> log) : ILoggerProvider
     {
         public ILogger CreateLogger(string categoryName)
         {
-            return new _CapturingLogger(log);
+            return new CapturingLogger(log);
         }
 
         public void Dispose() { }
 
-        private sealed class _CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
+        private sealed class CapturingLogger(List<(LogLevel Level, EventId EventId)> log) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => null;

@@ -7,7 +7,7 @@ namespace Headless.Messaging.CircuitBreaker;
 
 /// <summary>
 /// Stores per-consumer-group circuit breaker overrides registered via
-/// <c>IConsumerBuilder&lt;T&gt;.WithCircuitBreaker()</c>.
+/// <c>IConsumerBuilderBase&lt;T&gt;.WithCircuitBreaker()</c>.
 /// </summary>
 /// <remarks>
 /// This registry is an internal singleton. Both the consumer builder (at startup) and the
@@ -40,7 +40,7 @@ internal sealed class ConsumerCircuitBreakerRegistry
                 $"Circuit breaker already registered for group '{groupName}'. "
                     + "Each consumer group can only have one circuit breaker override. "
                     + "Check that you haven't configured the same group via both "
-                    + "Subscribe<T>().WithCircuitBreaker() and AddBusConsumer<T,M>().WithCircuitBreaker()."
+                    + "ForMessage<T>().OnBus<TConsumer>()/OnQueue<TConsumer>() registrations."
             );
         }
     }

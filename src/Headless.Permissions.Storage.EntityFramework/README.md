@@ -1,19 +1,24 @@
 # Headless.Permissions.Storage.EntityFramework
 
-Entity Framework Core storage implementation for permission management.
+Entity Framework Core storage for permissions management.
 
 ## Problem Solved
 
-Provides persistent storage for permission definitions and grants using Entity Framework Core, enabling database-backed permission management with full CRUD support.
+Provides EF Core repository implementations for permission grants, permission definitions, and permission group definitions using the consumer's own `DbContext`.
 
 ## Key Features
 
-- `IPermissionsDbContext` - DbContext interface for permissions
-- `PermissionsDbContext` - Ready-to-use DbContext
-- `PermissionsStorageOptions` - Schema and table-name configuration
-- EF repositories for definitions and grants
-- Model builder extensions for custom DbContext integration
-- Pooled DbContext factory support
+- `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())` storage registration
+- `modelBuilder.AddHeadlessPermissions(options)` entity mapping for shared contexts
+- `EfPermissionGrantRepository` for permission grants
+- `EfPermissionDefinitionRecordRepository` for permission definitions
+- `PermissionsStorageOptions` for schema and table-name configuration
+
+## Design Notes
+
+The package no longer ships a dedicated permissions DbContext or permissions-specific DbContext interface. Consumers register `AddDbContextFactory<TContext>()`, map the Headless entities in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties.
+
+Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`. Writes commit through a fresh context owned by the repository.
 
 ## Installation
 
@@ -23,81 +28,44 @@ dotnet add package Headless.Permissions.Storage.EntityFramework
 
 ## Quick Start
 
-### Using Built-in DbContext
+`AddHeadlessPermissions(...)` registers the permissions management core automatically.
+Register the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, and
+`IGuidGenerator`.
 
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Services.AddPermissionsManagementDbContextStorage(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("Permissions"))
-);
-```
-
-### Custom Schema / Table Names
-
-```csharp
-builder.Services.AddPermissionsManagementDbContextStorage(
-    options => options.UseNpgsql(builder.Configuration.GetConnectionString("Permissions")),
-    storage =>
-    {
-        storage.Schema = "app_permissions";
-        storage.PermissionGrantsTableName = "PermissionGrants";
-        storage.PermissionDefinitionsTableName = "PermissionDefinitions";
-        storage.PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions";
-    }
-);
-```
-
-### Using Custom DbContext
-
-```csharp
-public class AppDbContext(DbContextOptions<AppDbContext> options)
-    : DbContext(options), IPermissionsDbContext
+public sealed class AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<PermissionsStorageOptions> permissionsStorage
+) : DbContext(options)
 {
-    public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
-    public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
-    public DbSet<PermissionGrantRecord> PermissionGrants => Set<PermissionGrantRecord>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddPermissionsConfiguration(this);
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.AddHeadlessPermissions(permissionsStorage.Value);
     }
 }
 
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage =>
+builder.Services.AddDbContextFactory<AppDbContext>(options =>
+    options.UseNpgsql(connectionString)
+);
+
+builder.Services.AddHeadlessPermissions(setup =>
 {
-    storage.Schema = "app_permissions";
+    setup.ConfigureStorage(storage => storage.Schema = "app_permissions");
+    setup.UseEntityFramework<AppDbContext>();
 });
 ```
 
 ## Configuration
 
-`PermissionsStorageOptions` defaults preserve the original physical layout:
+`PermissionsStorageOptions` defaults:
 
 - `Schema = "permissions"`
 - `PermissionGrantsTableName = "PermissionGrants"`
 - `PermissionDefinitionsTableName = "PermissionDefinitions"`
 - `PermissionGroupDefinitionsTableName = "PermissionGroupDefinitions"`
 
-The storage registration validates these values on startup; schema and table names must be non-empty (whitespace-only values are rejected).
-
-### Custom DbContext + custom schema: per-DbContext EF model cache
-
-The dedicated `PermissionsDbContext` registration (`AddPermissionsManagementDbContextStorage(o => ...)`) wires a custom `IModelCacheKeyFactory` that mixes the storage options into the EF compiled-model cache key. The shared-context overload `AddPermissionsManagementDbContextStorage<TContext>` does not — your `DbContextOptionsBuilder` belongs to the host app. Apply the same replacement yourself so the EF model cache picks up your storage options:
-
-```csharp
-builder.Services.AddDbContextFactory<AppDbContext>(options =>
-{
-    options.UseNpgsql(connectionString);
-    options.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
-});
-builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage =>
-{
-    storage.Schema = "app_permissions";
-});
-```
-
-`PermissionsStorageModelCacheKeyFactory` is exported as `public sealed` for this purpose. A single process that registers a single storage configuration on its shared `DbContext` can omit the replacement; add it whenever the same `TContext` type is configured with different storage options at different points in the process lifetime (for example, integration test fixtures that re-bind the options between classes).
+The registration validates these values on startup. The startup gate also inspects the EF model before hosted services start and fails with an actionable message if any permissions entity is missing.
 
 ## Dependencies
 
@@ -110,3 +78,4 @@ builder.Services.AddPermissionsManagementDbContextStorage<AppDbContext>(storage 
 - Registers `IPermissionDefinitionRecordRepository` as singleton
 - Registers `IPermissionGrantRepository` as singleton
 - Registers validated `PermissionsStorageOptions`
+- Registers an `IHostedLifecycleService` startup gate for missing entity mappings

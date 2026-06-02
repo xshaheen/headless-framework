@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -11,6 +12,27 @@ using Microsoft.Extensions.Options;
 namespace Headless.DistributedLocks;
 
 [PublicAPI]
+public static class SetupDistributedLockMessaging
+{
+    extension(MessagingSetupBuilder setup)
+    {
+        /// <summary>
+        /// Registers the distributed-lock release consumer so lock waiters can wake up from messaging notifications.
+        /// </summary>
+        /// <returns>The current <see cref="MessagingSetupBuilder"/> instance.</returns>
+        public MessagingSetupBuilder UseDistributedLockReleaseWakeups()
+        {
+            setup.ForMessage<DistributedLockReleased>(message =>
+                message
+                    .MessageName("headless.locks.released")
+                    .OnBus<DistributedLockProvider.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
+            );
+
+            return setup;
+        }
+    }
+}
+
 public static class AddDistributedLockExtensions
 {
     extension(IServiceCollection services)
@@ -128,19 +150,6 @@ public static class AddDistributedLockExtensions
                     DistributedLockMessagingValidator
                 >()
             );
-
-            // Only register the lock-released consumer when an IOutboxBus is available; the
-            // consumer's only job is to wake waiters when DistributedLockReleased messages arrive,
-            // which themselves only get published via the outbox path. Without IOutboxBus no
-            // such messages ever flow, so the consumer registration is dead weight.
-            if (services.Any(d => d.ServiceType == typeof(IOutboxBus)))
-            {
-                services
-                    .AddBusConsumer<DistributedLockProvider.LockReleasedConsumer, DistributedLockReleased>(
-                        "headless.locks.released"
-                    )
-                    .Concurrency(1);
-            }
 
             return services;
         }

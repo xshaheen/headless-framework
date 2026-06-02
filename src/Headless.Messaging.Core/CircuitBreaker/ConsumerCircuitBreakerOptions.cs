@@ -9,6 +9,7 @@ namespace Headless.Messaging.CircuitBreaker;
 /// falls back to the global <see cref="CircuitBreakerOptions"/> configured in
 /// <c>MessagingOptions.CircuitBreaker</c>.
 /// </summary>
+[PublicAPI]
 public sealed class ConsumerCircuitBreakerOptions
 {
     /// <summary>

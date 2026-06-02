@@ -27,7 +27,7 @@ public sealed class VodafoneSmsSender(
         Argument.IsNotEmpty(request.Destinations);
         Argument.IsNotEmpty(request.Text);
 
-        var httpClient = httpClientFactory.CreateClient(VodafoneSetup.HttpClientName);
+        var httpClient = httpClientFactory.CreateClient(SetupVodafone.HttpClientName);
         using var requestMessage = new HttpRequestMessage(HttpMethod.Post, _uri);
         requestMessage.Content = new StringContent(_BuildPayload(request), Encoding.UTF8, "application/xml");
 

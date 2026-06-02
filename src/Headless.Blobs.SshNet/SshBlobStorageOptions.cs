@@ -33,7 +33,7 @@ public sealed class SshBlobStorageOptions
     /// Allow none-authentication fallback. When false (default), throws if no password or private key is provided.
     /// Set to true only if intentionally using passwordless authentication.
     /// </summary>
-    public bool AllowNoneAuthentication { get; set; } = false;
+    public bool AllowNoneAuthentication { get; set; }
 }
 
 internal sealed class SshBlobStorageOptionsValidator : AbstractValidator<SshBlobStorageOptions>

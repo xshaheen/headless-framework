@@ -27,6 +27,7 @@ dotnet add package Headless.Messaging.Dashboard.K8s
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
     options.UseRabbitMQ(config);
 
@@ -39,8 +40,6 @@ builder.Services.AddHeadlessMessaging(options =>
     {
         k8s.ShowOnlyExplicitVisibleNodes = true;
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

@@ -322,7 +322,41 @@ internal sealed class Bootstrapper(
             );
         }
 
+        _CheckMessageNameCollisions();
         _CheckIntentTransportSupport();
+    }
+
+    private void _CheckMessageNameCollisions()
+    {
+        var registry = serviceProvider.GetService<IConsumerRegistry>();
+        var consumers = registry?.GetAll() ?? [];
+        var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var consumer in consumers)
+        {
+            _TrackMessageName(nameToTypes, consumer.MessageName, consumer.MessageType);
+        }
+
+        foreach (var mapping in options.Value.MessageNameMappings)
+        {
+            _TrackMessageName(nameToTypes, options.Value.ApplyMessageNamePrefix(mapping.Value), mapping.Key);
+        }
+
+        var collision = nameToTypes.FirstOrDefault(static pair => pair.Value.Count > 1);
+
+        if (collision.Value is null)
+        {
+            return;
+        }
+
+        var typeNames = collision
+            .Value.Select(static type => type.FullName ?? type.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        throw new InvalidOperationException(
+            $"Message name '{collision.Key}' is mapped to multiple message types: {string.Join(", ", typeNames)}."
+        );
     }
 
     private void _CheckIntentTransportSupport()
@@ -386,6 +420,21 @@ internal sealed class Bootstrapper(
     private static bool _HasService<TService>(IServiceCollection? services)
     {
         return services?.Any(static descriptor => descriptor.ServiceType == typeof(TService)) == true;
+    }
+
+    private static void _TrackMessageName(
+        Dictionary<string, HashSet<Type>> nameToTypes,
+        string messageName,
+        Type messageType
+    )
+    {
+        if (!nameToTypes.TryGetValue(messageName, out var types))
+        {
+            types = [];
+            nameToTypes[messageName] = types;
+        }
+
+        types.Add(messageType);
     }
 
     public override void Dispose()

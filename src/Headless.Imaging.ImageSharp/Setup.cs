@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Imaging.ImageSharp;
 
-public static class ImageSharpSetup
+public static class SetupImageSharp
 {
     public static AddImagingBuilder AddImageSharpContributors(this AddImagingBuilder builder, IConfiguration config)
     {

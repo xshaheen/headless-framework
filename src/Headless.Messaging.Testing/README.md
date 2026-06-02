@@ -29,9 +29,11 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 {
     services.AddHeadlessMessaging(options =>
     {
+        options.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").OnBus<OrderCreatedConsumer>(consumer => consumer.Group("order-svc"))
+        );
         options.UseInMemory();
         options.UseInMemoryStorage();
-        options.Subscribe<OrderCreatedConsumer>("orders.created").Group("order-svc");
     });
 });
 
@@ -91,9 +93,11 @@ await using var harness = await MessagingTestHarness.CreateAsync(services =>
 
     services.AddHeadlessMessaging(options =>
     {
+        options.ForMessage<OrderCreated>(message =>
+            message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>()
+        );
         options.UseInMemory();
         options.UseInMemoryStorage();
-        options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
     });
 });
 
@@ -127,9 +131,11 @@ public sealed class OrderMessagingTests : TestBase
         {
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreated>(message =>
+                    message.MessageName("orders.created").OnBus<OrderCreatedConsumer>()
+                );
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                options.Subscribe<OrderCreatedConsumer>("orders.created");
             });
         });
 
@@ -158,9 +164,11 @@ public sealed class OrderHarnessFixture : IAsyncLifetime
             services.AddSingleton<TestConsumer<OrderCreated>>();
             services.AddHeadlessMessaging(options =>
             {
+                options.ForMessage<OrderCreated>(message =>
+                    message.MessageName("orders.created").OnBus<TestConsumer<OrderCreated>>()
+                );
                 options.UseInMemory();
                 options.UseInMemoryStorage();
-                options.Subscribe<TestConsumer<OrderCreated>>("orders.created");
             });
         });
     }
@@ -240,9 +248,11 @@ public sealed class OrderApiTests : TestBase
 
         builder.Services.AddHeadlessMessaging(options =>
         {
+            options.ForMessage<OrderCreated>(message =>
+                message.MessageName("orders.created").OnBus<OrderCreatedConsumer>()
+            );
             options.UseInMemory();
             options.UseInMemoryStorage();
-            options.Subscribe<OrderCreatedConsumer>("orders.created");
         });
 
         // Add the test harness AFTER AddHeadlessMessaging

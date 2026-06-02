@@ -1,0 +1,122 @@
+using Headless.Abstractions;
+using Headless.Caching;
+using Headless.DistributedLocks;
+using Headless.DistributedLocks.Redis;
+using Headless.Domain;
+using Headless.Messaging;
+using Headless.Permissions;
+using Headless.Redis;
+using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
+
+namespace Tests.TestSetup;
+
+[Collection<PermissionsTestFixture>]
+public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : TestBase
+{
+    public PermissionsTestFixture Fixture { get; } = fixture;
+
+    protected IHost CreateHost(Action<IHostApplicationBuilder>? configure = null)
+    {
+        var builder = CreateHostBuilder();
+        configure?.Invoke(builder);
+
+        return builder.Build();
+    }
+
+    protected HostApplicationBuilder CreateHostBuilder()
+    {
+        var builder = Host.CreateApplicationBuilder();
+        ConfigurePermissionsServices(builder);
+
+        return builder;
+    }
+
+    protected void ConfigurePermissionsServices(IHostApplicationBuilder builder)
+    {
+        var services = builder.Services;
+
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
+        services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
+        services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
+        services.AddSingleton(Substitute.For<ICurrentUser>());
+        services.AddSingleton(Substitute.For<ICurrentTenant>());
+        services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
+        services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
+        services.AddSingleton(Substitute.For<IBus>());
+        services.AddServiceProviderLocalMessagePublisher();
+
+        // Messages
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+        // Cache
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
+        // Lock Storage
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
+        services.AddSingleton<HeadlessRedisScriptsLoader>();
+        // Resource Lock
+        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
+
+        services.AddDbContextFactory<PermissionsTestDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+
+        services.AddHeadlessPermissions(setup =>
+        {
+            setup.ConfigureStorage(ConfigurePermissionsStorage);
+            setup.UseEntityFramework<PermissionsTestDbContext>();
+        });
+    }
+
+    protected virtual void ConfigurePermissionsStorage(PermissionsStorageOptions options) { }
+
+    protected sealed class PermissionsTestDbContext(
+        DbContextOptions<PermissionsTestDbContext> options,
+        IOptions<PermissionsStorageOptions> storageOptions
+    ) : DbContext(options)
+    {
+        internal PermissionsStorageOptions StorageOptions => storageOptions.Value;
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.ReplaceService<IModelCacheKeyFactory, PermissionsStorageModelCacheKeyFactory>();
+        }
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessPermissions(storageOptions.Value);
+        }
+    }
+
+    private sealed class PermissionsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+        {
+            if (context is not PermissionsTestDbContext permissionsContext)
+            {
+                return (context.GetType(), designTime);
+            }
+
+            var options = permissionsContext.StorageOptions;
+
+            return (
+                context.GetType(),
+                options.Schema,
+                options.PermissionGrantsTableName,
+                options.PermissionDefinitionsTableName,
+                options.PermissionGroupDefinitionsTableName,
+                designTime
+            );
+        }
+    }
+}

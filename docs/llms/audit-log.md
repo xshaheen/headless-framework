@@ -1,6 +1,6 @@
 ---
 domain: Audit Log
-packages: AuditLog.Abstractions, AuditLog.EntityFramework
+packages: AuditLog.Abstractions, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
 ---
 
 # Audit Log
@@ -9,32 +9,48 @@ packages: AuditLog.Abstractions, AuditLog.EntityFramework
 - [Quick Orientation](#quick-orientation)
 - [Agent Instructions](#agent-instructions)
 - [Headless.AuditLog.Abstractions](#headlessauditlogabstractions)
-- [Headless.AuditLog.EntityFramework](#headlessauditlogentityframework)
+- [Headless.AuditLog.Storage.EntityFramework](#headlessauditlogstorageentityframework)
+- [Headless.AuditLog.Storage.PostgreSql](#headlessauditlogstoragepostgresql)
+- [Headless.AuditLog.Storage.SqlServer](#headlessauditlogstoragesqlserver)
 
 > Property-level audit logging for entity mutations and explicit business events (PII reveals, cross-tenant access, etc.). EF Core implementation persists audit rows atomically with the originating `SaveChanges`.
 
 ## Quick Orientation
 
-Two packages:
+Storage choices:
 
 - `Headless.AuditLog.Abstractions` — contracts (`IAuditTracked`, `[AuditSensitive]`, `[AuditIgnore]`, `IAuditLog<TContext>`, `IReadAuditLog<TContext>`, `IAuditLogStore`, `AuditLogOptions`).
-- `Headless.AuditLog.EntityFramework` — EF Core change capture, persistent storage, and explicit event logging tied to a specific `DbContext`.
+- `Headless.AuditLog.Storage.EntityFramework` — EF Core change capture, persistent storage, and explicit event logging tied to a specific `DbContext`; audit rows commit atomically with `SaveChanges`.
+- `Headless.AuditLog.Storage.PostgreSql` — raw PostgreSQL audit table initialized at host startup.
+- `Headless.AuditLog.Storage.SqlServer` — raw SQL Server audit table initialized at host startup.
 
 Typical setup:
 
 ```csharp
-services.AddHeadlessAuditLog(o =>
+services.AddHeadlessAuditLog(setup =>
 {
-    o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
+    setup.ConfigureOptions(o =>
+    {
+        o.SensitiveDataStrategy = SensitiveDataStrategy.Redact;
+    });
+    setup.ConfigureStorage(options => options.JsonColumnType = AuditLogJsonColumnType.Jsonb);
+    setup.UseEntityFramework<AppDbContext>();
 });
-services.AddHeadlessAuditLogEntity<AppDbContext>();
 ```
 
 ```csharp
+public AppDbContext(
+    DbContextOptions<AppDbContext> options,
+    IOptions<AuditLogStorageOptions> auditLogStorage)
+    : base(options)
+{
+    _auditLogStorage = auditLogStorage;
+}
+
 protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
-    modelBuilder.ConfigureAuditLog();
+    modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
 }
 ```
 
@@ -70,8 +86,9 @@ Query audit entries through `IReadAuditLog<TContext>` rather than touching the `
 - Mark auditable entities with `IAuditTracked`. To audit every entity by default, set `AuditByDefault = true` on `AuditLogOptions` and use `[AuditIgnore]` to opt out.
 - Mark PII/secret fields with `[AuditSensitive]`. Choose the global strategy via `AuditLogOptions.SensitiveDataStrategy`: `Redact` (default), `Exclude`, or `Transform`. When using `Transform`, set `SensitiveValueTransformer` to a pure synchronous function; options validation fails otherwise.
 - Use `[AuditIgnore]` on properties (or whole entities) that should not be captured.
-- Register the pipeline with `services.AddHeadlessAuditLog(...)` first, then `services.AddHeadlessAuditLogEntity<TContext>()` for each `DbContext` you audit. `AddHeadlessAuditLogEntity` requires `AddHeadlessDbContext<T>` for the same context.
-- Call `modelBuilder.ConfigureAuditLog()` inside the `DbContext`'s `OnModelCreating`. Pass `jsonColumnType: "jsonb"` on PostgreSQL for native JSONB storage of `OldValues` / `NewValues` / `ChangedFields`.
+- Register audit log with one `services.AddHeadlessAuditLog(setup => ...)` call when configuring storage. Put global audit options in `setup.ConfigureOptions(...)` and configure exactly one storage provider with `setup.Use...`.
+- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register `IDbContextFactory<TContext>` for read-back, and call `modelBuilder.AddHeadlessAuditLog(auditLogStorageOptions)` inside `OnModelCreating`.
+- For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`; the provider creates the audit table at host startup and writes audit rows over its own connection.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type-arg.
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
 - Soft-delete and suspend transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` / `entity.suspended` / `entity.unsuspended` actions instead of `entity.updated`.
@@ -139,7 +156,7 @@ None. Abstractions package.
 
 ---
 
-# Headless.AuditLog.EntityFramework
+# Headless.AuditLog.Storage.EntityFramework
 
 EF Core implementation of the audit log subsystem: change capture, persistent storage, and explicit event logging.
 
@@ -154,29 +171,35 @@ Wires the audit log pipeline into EF Core's ChangeTracker so entity mutations ar
 - `EfAuditLog<TContext>` — implements `IAuditLog<TContext>` for explicit event logging.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` for filtered read-back.
 - `AuditLogEntry` — single-table entity with JSON columns for `OldValues`, `NewValues`, and `ChangedFields`.
-- `ConfigureAuditLog()` — `ModelBuilder` extension; supports custom table name, schema, and JSON column type.
+- `AddHeadlessAuditLog()` — `ModelBuilder` extension; uses `AuditLogStorageOptions` for table name, schema, and JSON column type.
 - Soft-delete and suspend detection — emits `entity.soft_deleted` / `entity.restored` / `entity.suspended` / `entity.unsuspended` actions on `IsDeleted` / `IsSuspended` transitions.
 - Zero overhead when `AuditLogOptions.IsEnabled` is `false`.
 
 ## Installation
 
 ```bash
-dotnet add package Headless.AuditLog.EntityFramework
+dotnet add package Headless.AuditLog.Storage.EntityFramework
 ```
 
 ## Configuration
 
-### PostgreSQL JSON columns
+### EntityFramework setup
 
 ```csharp
-modelBuilder.ConfigureAuditLog(jsonColumnType: "jsonb");
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options =>
+    {
+        options.TableName = "audit_entries";
+        options.Schema = "audit";
+        options.JsonColumnType = AuditLogJsonColumnType.Jsonb;
+        options.CreatedAtColumnType = "timestamp with time zone"; // optional explicit override
+    });
+    setup.UseEntityFramework<AppDbContext>();
+});
 ```
 
-### Custom table and schema
-
-```csharp
-modelBuilder.ConfigureAuditLog(tableName: "audit_entries", schema: "audit");
-```
+`AuditLogJsonColumnType` is an allowlist enum (`Jsonb`, `Json`, `NvarcharMax`) so the column-type string cannot be used to inject SQL identifiers. `CreatedAtColumnType` is a free string override for the timestamp column; the provider defaults are `timestamp with time zone` on PostgreSQL and `datetime2` on SQL Server when unset.
 
 ### Sensitive data strategies
 
@@ -216,4 +239,70 @@ builder.HasKey(e => e.Id); // Override for SQLite
 - Registers `IAuditChangeCapture` as scoped (`EfAuditChangeCapture`).
 - Registers `IAuditLogStore` as scoped (`EfAuditLogStore`).
 - Registers `IAuditLog<TContext>` as scoped (`EfAuditLog<TContext>`).
-- Registers `IReadAuditLog<TContext>` as scoped (`EfReadAuditLog<TContext>`).
+- Registers `IReadAuditLog<TContext>` as singleton (`EfReadAuditLog<TContext>`).
+
+---
+
+# Headless.AuditLog.Storage.PostgreSql
+
+Raw PostgreSQL storage provider for audit rows.
+
+## Installation
+
+```bash
+dotnet add package Headless.AuditLog.Storage.PostgreSql
+```
+
+## Setup
+
+```csharp
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options =>
+    {
+        options.Schema = "audit";
+        options.TableName = "audit_log";
+    });
+    setup.UsePostgreSql(connectionString);
+});
+```
+
+## Notes
+
+- Creates the configured audit table at host startup. Set `AuditLogStorageOptions.InitializeOnStartup = false` (via `setup.ConfigureStorage(o => o.InitializeOnStartup = false)`) to skip this startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+- Uses `jsonb` for `OldValues`, `NewValues`, and `ChangedFields` by default.
+- Registers `IAuditLogStore`, `IAuditLog<TContext>`, and `IReadAuditLog<TContext>` backed by raw PostgreSQL.
+- Writes use the provider connection directly; they do not enlist in an app EF transaction.
+
+---
+
+# Headless.AuditLog.Storage.SqlServer
+
+Raw SQL Server storage provider for audit rows.
+
+## Installation
+
+```bash
+dotnet add package Headless.AuditLog.Storage.SqlServer
+```
+
+## Setup
+
+```csharp
+services.AddHeadlessAuditLog(setup =>
+{
+    setup.ConfigureStorage(options =>
+    {
+        options.Schema = "audit";
+        options.TableName = "audit_log";
+    });
+    setup.UseSqlServer(connectionString);
+});
+```
+
+## Notes
+
+- Creates the configured audit table at host startup. Set `AuditLogStorageOptions.InitializeOnStartup = false` (via `setup.ConfigureStorage(o => o.InitializeOnStartup = false)`) to skip this startup DDL when the schema is provisioned out-of-band (a migrations job or DBA). The initializer becomes a no-op but still reports `IsInitialized = true`, so dependents awaiting `WaitForInitializationAsync` do not block. Defaults to `true`.
+- Uses `nvarchar(max)` for `OldValues`, `NewValues`, and `ChangedFields` by default.
+- Registers `IAuditLogStore`, `IAuditLog<TContext>`, and `IReadAuditLog<TContext>` backed by raw SQL Server.
+- Writes use the provider connection directly; they do not enlist in an app EF transaction.

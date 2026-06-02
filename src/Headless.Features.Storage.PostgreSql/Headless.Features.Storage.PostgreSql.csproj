@@ -1,0 +1,14 @@
+﻿<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.Features.PostgreSql</RootNamespace>
+    <NoWarn>$(NoWarn);CA2100</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
+    <ProjectReference Include="..\Headless.Features.Core\Headless.Features.Core.csproj" />
+  </ItemGroup>
+</Project>

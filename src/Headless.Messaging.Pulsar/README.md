@@ -25,14 +25,13 @@ dotnet add package Headless.Messaging.Pulsar
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
     options.UsePulsar(pulsar =>
     {
         pulsar.ServiceUrl = "pulsar://localhost:6650";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

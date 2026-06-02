@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 
 namespace Tests;

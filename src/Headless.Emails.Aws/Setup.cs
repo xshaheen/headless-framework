@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails.Aws;
 
 [PublicAPI]
-public static class AwsSesSetup
+public static class SetupAwsSes
 {
     /// <summary>
     /// AWSOptions usage:

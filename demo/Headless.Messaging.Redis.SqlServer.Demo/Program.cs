@@ -1,5 +1,6 @@
 using Demo.Controllers;
 using Headless.Messaging.Dashboard;
+using Headless.Messaging.Storage.SqlServer;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,11 +10,9 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddQueueConsumer<PersonConsumer, Person>("test-message");
-
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.WithMessageNameMapping<Person>("test-message");
+    setup.ForMessage<Person>(message => message.MessageName("test-message").OnQueue<PersonConsumer>());
 
     setup.UseRedis(redis =>
     {

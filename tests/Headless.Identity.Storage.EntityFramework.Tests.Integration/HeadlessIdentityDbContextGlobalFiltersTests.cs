@@ -86,6 +86,35 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
     }
 
     [Fact]
+    public void add_headless_identity_db_context_should_register_headless_db_context_services()
+    {
+        // given — HeadlessIdentityDbContext's constructor depends on HeadlessDbContextServices
+        // (scoped). The Identity setup must wire this through SetupEntityFramework so consumers
+        // who only call AddHeadlessDbContext (Identity overload) get a constructible context.
+        // Regression guard: before this fix, Identity setup called bare AddDbContext only and
+        // tests passed only because the test fixture wired HeadlessDbContextServices separately.
+        var services = new ServiceCollection();
+        services.AddHeadlessDbContext<
+            TestIdentityDbContext,
+            TestUser,
+            TestRole,
+            string,
+            IdentityUserClaim<string>,
+            IdentityUserRole<string>,
+            IdentityUserLogin<string>,
+            IdentityRoleClaim<string>,
+            IdentityUserToken<string>,
+            IdentityUserPasskey<string>
+        >(_ => { });
+
+        // then — HeadlessDbContextServices must be in the descriptor list
+        var hasHeadlessServices = services.Any(d =>
+            d.ServiceType == typeof(HeadlessDbContextServices)
+        );
+        hasHeadlessServices.Should().BeTrue("Identity setup must wire HeadlessDbContextServices via AddHeadlessDbContextServices");
+    }
+
+    [Fact]
     public async Task headless_identity_db_context_should_include_passkey_entity_by_default()
     {
         // given

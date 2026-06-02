@@ -147,7 +147,9 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
-- `Headless.AuditLog.EntityFramework` — EF Core persistence for audit log.
+- `Headless.AuditLog.Storage.EntityFramework` — EF Core persistence for audit log.
+- `Headless.AuditLog.Storage.PostgreSql` — PostgreSQL raw audit log storage.
+- `Headless.AuditLog.Storage.SqlServer` — SQL Server raw audit log storage.
 
 ### Blob Storage
 - `Headless.Blobs.Abstractions` — `IBlobStorage` interface.
@@ -174,6 +176,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Features.Abstractions` — Feature flag interface.
 - `Headless.Features.Core` — Feature management with caching and value providers.
 - `Headless.Features.Storage.EntityFramework` — EF Core storage.
+- `Headless.Features.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Features.Storage.SqlServer` — SQL Server raw storage.
 
 ### Identity
 - `Headless.Identity.Storage.EntityFramework` — ASP.NET Core Identity EF Core storage with framework extensions.
@@ -206,8 +210,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Messaging.Pulsar` — Apache Pulsar transport.
 - `Headless.Messaging.Redis` — Redis Streams queue transport and Redis Pub/Sub bus transport.
 - `Headless.Messaging.InMemory` — In-memory transport (dev/testing).
-- `Headless.Messaging.PostgreSql` — PostgreSQL durable storage.
-- `Headless.Messaging.SqlServer` — SQL Server durable storage.
+- `Headless.Messaging.Storage.PostgreSql` — PostgreSQL durable storage.
+- `Headless.Messaging.Storage.SqlServer` — SQL Server durable storage.
 - `Headless.Messaging.InMemoryStorage` — Ephemeral storage (dev/testing).
 
 ### OpenAPI
@@ -228,6 +232,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Permissions.Abstractions` — Permission management interface.
 - `Headless.Permissions.Core` — Permission management with caching, providers, authorization.
 - `Headless.Permissions.Storage.EntityFramework` — EF Core storage.
+- `Headless.Permissions.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Permissions.Storage.SqlServer` — SQL Server raw storage.
 
 ### Push Notifications
 - `Headless.PushNotifications.Abstractions` — Push notification interface.
@@ -248,6 +254,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Settings.Abstractions` — Dynamic settings interface.
 - `Headless.Settings.Core` — Hierarchical value provider implementation.
 - `Headless.Settings.Storage.EntityFramework` — EF Core storage.
+- `Headless.Settings.Storage.PostgreSql` — PostgreSQL raw storage.
+- `Headless.Settings.Storage.SqlServer` — SQL Server raw storage.
 
 ### SMS
 - `Headless.Sms.Abstractions` — SMS sending interface.

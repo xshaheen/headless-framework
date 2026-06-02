@@ -25,6 +25,7 @@ dotnet add package Headless.Messaging.AzureServiceBus
 ```csharp
 builder.Services.AddHeadlessMessaging(options =>
 {
+    options.ForMessagesFromAssemblyContaining<Program>();
     options.UseSqlServer("connection_string");
 
     options.UseAzureServiceBus(asb =>
@@ -32,8 +33,6 @@ builder.Services.AddHeadlessMessaging(options =>
         asb.ConnectionString = "Endpoint=sb://namespace.servicebus.windows.net/;...";
         asb.TopicPath = "myapp";
     });
-
-    options.SubscribeFromAssemblyContaining<Program>();
 });
 ```
 

@@ -102,20 +102,39 @@ public abstract class HeadlessIdentityDbContext<
 
     public override void Dispose()
     {
-        var disposeTask = _runtime.DisposeAsync();
-        if (!disposeTask.IsCompletedSuccessfully)
+        // try/finally guarantees base.Dispose runs even if runtime disposal throws — without it
+        // a runtime teardown failure would leak the underlying DbConnection (never returned to the
+        // pool). Mirrors the iter2 fix in HeadlessDbContext.Dispose; the runtime currently returns
+        // ValueTask.CompletedTask synchronously so the throw path is unreachable today, but the
+        // structural guarantee matters as soon as the runtime gains real teardown work.
+        try
         {
-            disposeTask.AsTask().GetAwaiter().GetResult();
+            var disposeTask = _runtime.DisposeAsync();
+            if (!disposeTask.IsCompletedSuccessfully)
+            {
+                disposeTask.AsTask().GetAwaiter().GetResult();
+            }
+            base.Dispose();
         }
-        base.Dispose();
-        GC.SuppressFinalize(this);
+        finally
+        {
+            GC.SuppressFinalize(this);
+        }
     }
 
     public override async ValueTask DisposeAsync()
     {
-        await _runtime.DisposeAsync().ConfigureAwait(false);
-        await base.DisposeAsync().ConfigureAwait(false);
-        GC.SuppressFinalize(this);
+        // Same exception-preserving guarantee as Dispose — if _runtime.DisposeAsync throws, the
+        // base async-disposal still runs so the underlying DbConnection releases cleanly.
+        try
+        {
+            await _runtime.DisposeAsync().ConfigureAwait(false);
+            await base.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            GC.SuppressFinalize(this);
+        }
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)

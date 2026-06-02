@@ -18,9 +18,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -45,9 +47,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -73,9 +77,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -106,9 +112,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -146,9 +154,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -192,9 +202,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<CancellableConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<CancellableConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -221,9 +233,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -249,9 +263,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<ResponseHeaderConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<ResponseHeaderConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -280,9 +296,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -311,9 +329,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -341,9 +361,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();
@@ -372,9 +394,11 @@ public sealed class SubscribeInvokerTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessMessaging(messaging =>
+        services.AddHeadlessMessaging(setup =>
         {
-            messaging.Subscribe<InvokerTestConsumer>().MessageName("test.messageName");
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<InvokerTestConsumer>()
+            );
         });
 
         using var provider = services.BuildServiceProvider();

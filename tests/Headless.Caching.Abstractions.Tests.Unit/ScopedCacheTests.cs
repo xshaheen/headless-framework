@@ -14,7 +14,9 @@ public sealed class ScopedCacheTests : TestBase
 
     private ScopedCache<string> _CreateSut()
     {
+#pragma warning disable CA2000 // Dispose objects before losing scope
         var cache = new InMemoryCache(_timeProvider, new InMemoryCacheOptions());
+#pragma warning restore CA2000
         return new ScopedCache<string>(cache, () => _currentScope);
     }
 

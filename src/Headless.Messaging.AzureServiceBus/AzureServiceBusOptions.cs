@@ -43,7 +43,7 @@ public class AzureServiceBusOptions
     /// Whether Service Bus sessions are enabled. If enabled, all messages must contain a
     /// <see cref="AzureServiceBusHeaders.SessionId" /> header. Defaults to false.
     /// </summary>
-    public bool EnableSessions { get; set; } = false;
+    public bool EnableSessions { get; set; }
 
     /// <summary>
     /// The name of the topic relative to the service namespace base address.
@@ -89,7 +89,7 @@ public class AzureServiceBusOptions
     /// completed processing.
     /// If the message handler triggers an exception, the message will not be automatically completed.
     /// </summary>
-    public bool AutoCompleteMessages { get; set; } = false;
+    public bool AutoCompleteMessages { get; set; }
 
     /// <summary>
     /// Adds additional correlation properties to all correlation filters.

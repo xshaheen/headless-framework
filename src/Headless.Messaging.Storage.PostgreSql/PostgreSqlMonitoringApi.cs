@@ -1,0 +1,507 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
+using Headless.Messaging.Persistence;
+using Headless.Messaging.Serialization;
+using Headless.Primitives;
+using Microsoft.Extensions.Options;
+using Npgsql;
+
+namespace Headless.Messaging.Storage.PostgreSql;
+
+/// <summary>
+/// PostgreSQL implementation of <see cref="IMonitoringApi"/> for querying message statistics and history.
+/// Provides dashboard data including message counts, status breakdowns, and hourly metrics.
+/// </summary>
+public sealed class PostgreSqlMonitoringApi(
+    IOptions<PostgreSqlOptions> options,
+    IOptions<MessagingOptions> messagingOptions,
+    IStorageInitializer initializer,
+    ISerializer serializer,
+    TimeProvider timeProvider
+) : IMonitoringApi
+{
+    private readonly PostgreSqlOptions _options = Argument.IsNotNull(options.Value);
+    private readonly MessagingOptions _messagingOptions = messagingOptions.Value;
+    private readonly string _publishedTable = initializer.GetPublishedTableName();
+    private readonly string _receivedTable = initializer.GetReceivedTableName();
+
+    public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessageAsync(_publishedTable, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_publishedTable, storageIds, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
+        long id,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessageAsync(_receivedTable, id, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return await _GetMessagesAsync(_receivedTable, storageIds, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<StatisticsView> GetStatisticsAsync(CancellationToken cancellationToken = default)
+    {
+        var sql = $"""
+            SELECT
+            (
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Succeeded'
+            ) AS "PublishedSucceeded",
+            (
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Succeeded'
+            ) AS "ReceivedSucceeded",
+            (
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Failed'
+            ) AS "PublishedFailed",
+            (
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "StatusName" = 'Failed'
+            ) AS "ReceivedFailed",
+            (
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "StatusName" = 'Delayed'
+            ) AS "PublishedDelayed",
+            (
+                SELECT COUNT("Id") FROM {_publishedTable} WHERE "NextRetryAt" IS NOT NULL
+            ) AS "PublishedPendingRetry",
+            (
+                SELECT COUNT("Id") FROM {_receivedTable} WHERE "NextRetryAt" IS NOT NULL
+            ) AS "ReceivedPendingRetry";
+            """;
+
+        await using var connection = _options.CreateConnection();
+
+        var statistics = await connection
+            .ExecuteReaderAsync(
+                sql,
+                static async (reader, cancellationToken) =>
+                {
+                    var statisticsDto = new StatisticsView();
+
+                    while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        statisticsDto.PublishedSucceeded = reader.GetInt64(0);
+                        statisticsDto.ReceivedSucceeded = reader.GetInt64(1);
+                        statisticsDto.PublishedFailed = reader.GetInt64(2);
+                        statisticsDto.ReceivedFailed = reader.GetInt64(3);
+                        statisticsDto.PublishedDelayed = reader.GetInt64(4);
+                        statisticsDto.PublishedPendingRetry = reader.GetInt64(5);
+                        statisticsDto.ReceivedPendingRetry = reader.GetInt64(6);
+                    }
+
+                    return statisticsDto;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return statistics;
+    }
+
+    public async ValueTask<IndexPage<MessageView>> GetMessagesAsync(
+        MessageQuery query,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = query.MessageType == MessageType.Publish ? _publishedTable : _receivedTable;
+        var selectColumns =
+            query.MessageType == MessageType.Publish
+                ? @"""Id"",""MessageId"",""Version"",""Name"",CAST(NULL AS VARCHAR(200)) AS ""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil"""
+                : @"""Id"",""MessageId"",""Version"",""Name"",""Group"",""Content"",""IntentType"",""Retries"",""Added"",""ExpiresAt"",""StatusName"",""NextRetryAt"",""LockedUntil""";
+        var where = string.Empty;
+
+        if (!string.IsNullOrEmpty(query.StatusName))
+        {
+            where += " AND \"StatusName\" = @StatusName";
+        }
+
+        if (!string.IsNullOrEmpty(query.Name))
+        {
+            where += " AND \"Name\" = @Name";
+        }
+
+        if (!string.IsNullOrEmpty(query.Group))
+        {
+            where += " AND \"Group\" = @Group";
+        }
+
+        if (!string.IsNullOrEmpty(query.Content))
+        {
+            where += " AND \"Content\" ILike @Content";
+        }
+
+        if (query.IntentType is { })
+        {
+            where += " AND \"IntentType\" = @IntentType";
+        }
+
+        // Keep the total count in a separate query: COUNT(*) OVER() returns no count row when OFFSET/LIMIT yields
+        // an empty later page, which breaks pagination metadata even though matching rows still exist.
+        var countQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE 1=1 {where}";
+
+        var sqlQuery =
+            $"SELECT {selectColumns} FROM {tableName} WHERE 1=1 {where} ORDER BY \"Added\" DESC OFFSET @Offset LIMIT @Limit";
+
+        await using var connection = _options.CreateConnection();
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@StatusName", query.StatusName ?? string.Empty),
+            new NpgsqlParameter("@Group", query.Group ?? string.Empty),
+            new NpgsqlParameter("@Name", query.Name ?? string.Empty),
+            new NpgsqlParameter("@Content", $"%{query.Content}%"),
+            new NpgsqlParameter("@IntentType", (short?)query.IntentType ?? 0),
+            new NpgsqlParameter("@Offset", query.CurrentPage * query.PageSize),
+            new NpgsqlParameter("@Limit", query.PageSize),
+        ];
+
+        var totalCount = await connection
+            .ExecuteScalarAsync(
+                countQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (totalCount == 0)
+        {
+            return new([], query.CurrentPage, query.PageSize, 0);
+        }
+
+        var items = await connection
+            .ExecuteReaderAsync(
+                sqlQuery,
+                async (reader, token) =>
+                {
+                    var messages = new List<MessageView>();
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        var index = 0;
+                        messages.Add(
+                            new MessageView
+                            {
+                                StorageId = reader.GetInt64(index++),
+                                MessageId = reader.GetString(index++),
+                                Version = reader.GetString(index++),
+                                Name = reader.GetString(index++),
+                                Group = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
+                                Content = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(index - 1),
+                                IntentType = (IntentType)reader.GetInt16(index++),
+                                Retries = reader.GetInt32(index++),
+                                Added = reader.GetDateTime(index++),
+                                ExpiresAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                                StatusName = reader.GetString(index++),
+                                NextRetryAt = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                                LockedUntil = await reader.IsDBNullAsync(index++, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(index - 1),
+                            }
+                        );
+                    }
+                    return messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return new(items, query.CurrentPage, query.PageSize, (int)Math.Min(totalCount, int.MaxValue));
+    }
+
+    public ValueTask<long> PublishedFailedCount(CancellationToken cancellationToken = default)
+    {
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Failed), cancellationToken);
+    }
+
+    public ValueTask<long> PublishedSucceededCount(CancellationToken cancellationToken = default)
+    {
+        return _GetNumberOfMessage(_publishedTable, nameof(StatusName.Succeeded), cancellationToken);
+    }
+
+    public ValueTask<long> ReceivedFailedCount(CancellationToken cancellationToken = default)
+    {
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Failed), cancellationToken);
+    }
+
+    public ValueTask<long> ReceivedSucceededCount(CancellationToken cancellationToken = default)
+    {
+        return _GetNumberOfMessage(_receivedTable, nameof(StatusName.Succeeded), cancellationToken);
+    }
+
+    public async ValueTask<Dictionary<DateTime, int>> HourlySucceededJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
+
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Succeeded), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async ValueTask<Dictionary<DateTime, int>> HourlyFailedJobs(
+        MessageType type,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var tableName = type == MessageType.Publish ? _publishedTable : _receivedTable;
+        return await _GetHourlyTimelineStats(tableName, nameof(StatusName.Failed), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<long> _GetNumberOfMessage(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sqlQuery = $"SELECT COUNT(\"Id\") FROM {tableName} WHERE \"StatusName\" = @State";
+
+        await using var connection = _options.CreateConnection();
+
+        object[] sqlParams = [new NpgsqlParameter("@State", statusName)];
+
+        return await connection
+            .ExecuteScalarAsync(
+                sqlQuery,
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private Task<Dictionary<DateTime, int>> _GetHourlyTimelineStats(
+        string tableName,
+        string statusName,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var dates = new List<DateTime>();
+        for (var i = 0; i < 24; i++)
+        {
+            dates.Add(now.AddHours(-i));
+        }
+
+        var keyMaps = dates.ToDictionary(
+            x => x.ToString("yyyy-MM-dd-HH", CultureInfo.InvariantCulture),
+            x => x,
+            StringComparer.Ordinal
+        );
+
+        return _GetTimelineStats(tableName, statusName, keyMaps, dates[^1], now, cancellationToken);
+    }
+
+    private async Task<Dictionary<DateTime, int>> _GetTimelineStats(
+        string tableName,
+        string statusName,
+        Dictionary<string, DateTime> keyMaps,
+        DateTime minAdded,
+        DateTime maxAdded,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var sqlQuery = $"""
+            WITH Aggr AS (
+                SELECT to_char("Added",'yyyy-MM-dd-HH') AS "Key",
+                COUNT("Id") AS "Count"
+                FROM {tableName}
+                    WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" <= @MaxAdded
+                GROUP BY to_char("Added", 'yyyy-MM-dd-HH')
+            )
+            SELECT "Key","Count" from Aggr;
+            """;
+
+        object[] sqlParams =
+        [
+            new NpgsqlParameter("@StatusName", statusName),
+            new NpgsqlParameter("@MinAdded", minAdded),
+            new NpgsqlParameter("@MaxAdded", maxAdded),
+        ];
+
+        await using var connection = _options.CreateConnection();
+
+        var valuesMap = await connection
+            .ExecuteReaderAsync(
+                sqlQuery,
+                static async (reader, token) =>
+                {
+                    var dictionary = new Dictionary<string, int>(StringComparer.Ordinal);
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        dictionary.Add(reader.GetString(0), (int)reader.GetInt64(1));
+                    }
+
+                    return dictionary;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: sqlParams,
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var result = new Dictionary<DateTime, int>();
+
+        foreach (var (key, dateTime) in keyMaps)
+        {
+            var value = valuesMap.GetValueOrDefault(key, 0);
+            result.Add(dateTime, value);
+        }
+
+        return result;
+    }
+
+    private async Task<IReadOnlyList<MediumMessage>> _GetMessagesAsync(
+        string tableName,
+        IReadOnlyList<long> storageIds,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (storageIds.Count == 0)
+        {
+            return [];
+        }
+
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
+
+        var sql =
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id"" = ANY(@Ids)";
+
+        await using var connection = _options.CreateConnection();
+
+        return await connection
+            .ExecuteReaderAsync(
+                sql,
+                async (reader, token) =>
+                {
+                    var messages = new List<MediumMessage>();
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        messages.Add(
+                            new MediumMessage
+                            {
+                                StorageId = reader.GetInt64(0),
+                                Origin = serializer.Deserialize(reader.GetString(1))!,
+                                Content = reader.GetString(1),
+                                IntentType = (IntentType)reader.GetInt16(2),
+                                Added = reader.GetDateTime(3),
+                                ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(4),
+                                Retries = reader.GetInt32(5),
+                                ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetString(6),
+                                NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(7),
+                                LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                                    ? null
+                                    : reader.GetDateTime(8),
+                            }
+                        );
+                    }
+
+                    return (IReadOnlyList<MediumMessage>)messages;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Ids", storageIds.ToArray())],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<MediumMessage?> _GetMessageAsync(
+        string tableName,
+        long id,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var exceptionInfoSql = string.Equals(tableName, _receivedTable, StringComparison.Ordinal)
+            ? @"""ExceptionInfo"""
+            : "NULL AS \"ExceptionInfo\"";
+        var sql =
+            $@"SELECT ""Id"" AS ""StorageId"", ""Content"", ""IntentType"", ""Added"", ""ExpiresAt"", ""Retries"", {exceptionInfoSql}, ""NextRetryAt"", ""LockedUntil"" FROM {tableName} WHERE ""Id""=@Id";
+
+        await using var connection = _options.CreateConnection();
+
+        var mediumMessage = await connection
+            .ExecuteReaderAsync(
+                sql,
+                async (reader, token) =>
+                {
+                    MediumMessage? message = null;
+
+                    while (await reader.ReadAsync(token).ConfigureAwait(false))
+                    {
+                        message = new MediumMessage
+                        {
+                            StorageId = reader.GetInt64(0),
+                            Origin = serializer.Deserialize(reader.GetString(1))!,
+                            Content = reader.GetString(1),
+                            IntentType = (IntentType)reader.GetInt16(2),
+                            Added = reader.GetDateTime(3),
+                            ExpiresAt = await reader.IsDBNullAsync(4, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(4),
+                            Retries = reader.GetInt32(5),
+                            ExceptionInfo = await reader.IsDBNullAsync(6, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetString(6),
+                            NextRetryAt = await reader.IsDBNullAsync(7, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(7),
+                            LockedUntil = await reader.IsDBNullAsync(8, token).ConfigureAwait(false)
+                                ? null
+                                : reader.GetDateTime(8),
+                        };
+                    }
+
+                    return message;
+                },
+                commandTimeout: _messagingOptions.CommandTimeout,
+                sqlParams: [new NpgsqlParameter("@Id", id)],
+                cancellationToken: cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return mediumMessage;
+    }
+}
