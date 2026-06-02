@@ -13,7 +13,7 @@ tags: ["keyed-di", "distributed-lock", "messaging", "service-isolation", "dotnet
 `Setup.cs` registered the NoOp fallback as an unkeyed singleton:
 
 ```csharp
-services.TryAddSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>();
+services.TryAddSingleton<IDistributedLockProvider, NullDistributedLockProvider>();
 ```
 
 `TryAdd*` loses when a prior registration already exists — but it also loses when the *consumer app* registers its own `IDistributedLockProvider` for a completely unrelated purpose (e.g., a Redis lock provider for its own business logic). That app-level provider silently shadows messaging's fallback. The Bootstrapper's `_WarnIfNoOpProvider` resolved the unkeyed service, so it saw the app's real provider, suppressed EventId 77, and messaging's retry processor ran with no mutual exclusion and no warning.
@@ -28,13 +28,13 @@ Register framework-internal service instances under a named key rather than as u
 
 ```csharp
 // Setup.cs — falls back to NoOp; yields to any AddKeyedSingleton call with the same key
-services.TryAddKeyedSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>(MessagingKeys.LockProvider);
+services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(MessagingKeys.LockProvider);
 ```
 
-**Real provider** — use `AddKeyedSingleton` (non-Try) so last-wins resolution replaces the NoOp:
+**Real provider** — `UseDistributedLock` explicitly removes the keyed fallback, then registers the real provider under the same key (an explicit remove-then-add, not DI registration-order last-wins):
 
 ```csharp
-// MessagingBuilder.UseDistributedLock — replaces the NoOp via last-wins keyed resolution
+// MessagingBuilder.UseDistributedLock — _RemoveExistingMessagingLockProvider() first, then add
 Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
 Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
 ```
@@ -84,7 +84,7 @@ Not needed for interfaces that are framework-specific and have no plausible app-
 
 ```csharp
 // Setup.cs
-services.TryAddSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>();
+services.TryAddSingleton<IDistributedLockProvider, NullDistributedLockProvider>();
 
 // App registers its own provider for unrelated use:
 services.AddSingleton<IDistributedLockProvider, RedisDistributedLockProvider>();
@@ -96,7 +96,7 @@ services.AddSingleton<IDistributedLockProvider, RedisDistributedLockProvider>();
 
 ```csharp
 // Setup.cs — NoOp under messaging's private key
-services.TryAddKeyedSingleton<IDistributedLockProvider, NoOpDistributedLockProvider>(
+services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(
     MessagingKeys.LockProvider
 );
 
@@ -117,5 +117,7 @@ services.AddHeadlessMessaging(setup =>
     setup.UseInMemory();
     setup.UseInMemoryStorage();
     setup.UseConventions(c => { ... });
-}).UseDistributedLock(myRedisLockProvider); // replaces NoOp; sets UseStorageLock = true
+}).UseDistributedLock(myRedisLockProvider); // replaces the keyed fallback; sets UseStorageLock = true
 ```
+
+**Additional instances of this pattern.** The Redis script loader applies the same isolation: `Headless.Caching.Redis` and `Headless.DistributedLocks.Redis` each register their own `HeadlessRedisScriptsLoader` under a package-private key (`RedisCacheServiceKeys.ScriptsLoader`, `RedisDistributedLockServiceKeys.ScriptsLoader`) and resolve it via `[FromKeyedServices]`. Without the key, the two packages' `TryAddSingleton` registrations collide on the first-wins rule, leaving the losing package's Redis cluster with no scripts loaded — the same silent-shadowing failure mode this pattern prevents.

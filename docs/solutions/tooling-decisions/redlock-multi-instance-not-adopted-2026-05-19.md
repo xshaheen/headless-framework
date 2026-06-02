@@ -77,7 +77,7 @@ When a consumer says "I need stronger locks," 9 times out of 10 the real require
 - **Atomicity with data mutation** — use a database-coupled lock (Postgres advisory locks in the same transaction, or row-level locks). Headless does not currently ship this, but it's the right primitive when this requirement appears.
 - **Fencing against zombie holders** — emit a monotonically increasing token from the lock acquisition and have the protected resource reject stale tokens. This requires resource cooperation, not a stronger lock algorithm.
 
-A single-Redis lock with TTL + auto-extension (Headless Phase 2 work) + careful idempotency handles the vast majority of real distributed-coordination needs.
+A single-Redis lock with TTL + auto-extension (shipped in `Headless.DistributedLocks` — mutex, reader-writer lock, and N-holder semaphore each carry the lease lifecycle plus monotonic fencing tokens) + careful idempotency handles the vast majority of real distributed-coordination needs.
 
 ## When to Apply
 
