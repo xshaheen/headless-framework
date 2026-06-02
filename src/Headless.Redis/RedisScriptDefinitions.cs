@@ -51,6 +51,8 @@ public sealed class TryAcquireSemaphoreWithFenceScriptDefinition : RedisScriptDe
               redis.call('pexpire', @holdersKey, safetyTtl)
             end
 
+            -- @fenceKey is intentionally persistent (no TTL/PEXPIRE): the monotonic fence counter
+            -- must outlive every holder so tokens never reset. Do not add an expiry here.
             return {1, redis.call('incr', @fenceKey)}
             """
         ) { }
@@ -67,6 +69,12 @@ public sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
             // already exists. Pruning expired members here would be an extra write with no bearing
             // on the extending holder's own slot (whose score is simply updated). Expired-slot
             // reclamation is the acquire script's job, where it is correctness-critical.
+            //
+            // Soft expiry: XX matches any existing member, including one whose score has already
+            // lapsed but has not yet been pruned by a competing acquire. Such a holder reclaims its
+            // own slot on extend rather than losing it — standard lease-renewal semantics, and
+            // capacity-safe because script atomicity orders this extend against any acquire that
+            // would prune-then-take the slot. "Expired" is therefore soft until an acquire prunes.
             """
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
