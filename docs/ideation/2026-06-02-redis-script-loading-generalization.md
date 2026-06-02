@@ -18,6 +18,7 @@ External grounding:
 
 - Redis eval scripts are client-side application assets; Redis says script cache is volatile and apps must be ready to reload after restart, failover, or `SCRIPT FLUSH`. Source: https://redis.io/docs/latest/develop/programmability/eval-intro/
 - Redis explicitly warns against dynamically generating many script variants; scripts should be generic and parameterized. Source: https://redis.io/docs/latest/develop/programmability/eval-intro/
+- Redis treats normal `EVAL` / `EVALSHA` as write-capable commands; read-only scripts need `EVAL_RO` / `EVALSHA_RO` or a no-writes declaration to run safely on replicas. Source: https://redis.io/docs/latest/develop/programmability/
 - StackExchange.Redis already provides `LuaScript` and `LoadedLuaScript`; `LuaScript` can auto-cache on first evaluation, while `LoadedLuaScript` gives explicit load/eval control. Source: https://stackexchange.github.io/StackExchange.Redis/Scripting.html
 - Redis Functions are a future alternative for named, persisted server-side logic, but they change operational ownership because functions live in Redis rather than remaining ephemeral client assets. Source: https://redis.io/docs/latest/develop/programmability/functions-intro/
 
@@ -167,6 +168,35 @@ Basis: direct: setup methods already register `HeadlessRedisScriptsLoader`. Reas
 
 Status: maybe later. It adds hosted-service lifecycle behavior to packages whose current Redis operations work lazily. Use only if first-operation latency matters.
 
+### 13. Explicit read/write execution mode on definitions
+
+Add execution-mode metadata to `RedisScriptDefinition`:
+
+```csharp
+public virtual RedisScriptMode Mode => RedisScriptMode.Write;
+```
+
+Current cache, mutex, semaphore, and reader-writer scripts stay write-mode. Future read-only scripts can opt into read-only evaluation and replica routing intentionally rather than inheriting the write-script path.
+
+Basis: external: Redis says normal `EVAL` / `EVALSHA` are not read-only and recommends read-only script commands for replica-safe script execution. Direct: this branch already has `RedisCacheOptions.ReadMode`, while script execution currently has no equivalent mode concept.
+
+Status: survivor, rank 7, after the current definition-first runtime stabilizes.
+
+### 14. Script-loader reliability matrix
+
+Add focused coverage for the loader itself, separate from feature behavior:
+
+- loading only requested definitions
+- skipping disconnected/replica endpoints
+- recovering from `NOSCRIPT` via `NoScriptCache`
+- resetting cached handles on `ConnectionRestored`
+- isolating script preload/reset scope between keyed Redis services
+- exercising `SCRIPT FLUSH` in integration tests when Docker is available
+
+Basis: direct: the current branch already adds loader recovery tests and a `RedisScriptLoaderIsolationTests` integration file. Reasoned: because Redis script cache is per server and volatile, loader tests should prove lifecycle semantics directly instead of relying on cache/lock behavior to incidentally cover them.
+
+Status: survivor, rank 8, as the validation layer for the chosen runtime shape.
+
 ## Ranked Survivors
 
 ### 1. Definition-first on-demand runtime
@@ -192,6 +222,14 @@ Only introduce `IRedisScriptExecutor` if it materially improves DI/testing. Do n
 ### 6. Definition metadata and validation
 
 Once definitions are classes, add metadata only where it enforces real invariants: expected Redis key parameters, read/write mode, maybe feature owner. Use tests/analyzers to prevent scripts from hiding key names in ARGV or generated strings.
+
+### 7. Read/write mode as a future replica-safety seam
+
+Keep every current definition write-mode, but make the mode explicit before adding any read-only script surface. This prevents future replica-read features from accidentally running write-capable scripts through read routing, and it gives `RedisCacheOptions.ReadMode` a script-side counterpart if script-based reads ever appear.
+
+### 8. Loader reliability tests as the guardrail
+
+The loader is now a shared runtime primitive. Before more provider packages depend on it, the test suite should lock down requested-definition loading, `NOSCRIPT` recovery, reconnect reset, endpoint filtering, and keyed-service isolation.
 
 ## Recommended Direction
 
@@ -251,3 +289,5 @@ Avoid a global public `All`. If an internal `All` remains, it should exist only 
 3. Should cache/lock convenience methods in `HeadlessRedisScriptsLoader` be removed now while the project is still greenfield?
 4. Is endpoint-aware cache worth doing in the same change, or should the first pass keep definition-type caching and add endpoint state later?
 5. Should `Headless.Caching.Redis` stop using selector delegates immediately and move to definition evaluation?
+6. Should read-only mode be metadata only for now, or should the executor expose a separate read-only evaluation method?
+7. Which failover behavior deserves integration coverage in this branch: `SCRIPT FLUSH`, forced reconnect, or full Sentinel/cluster promotion?
