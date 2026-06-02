@@ -5,7 +5,7 @@ namespace Headless.Caching;
 
 public static class CacheConstants
 {
-    public const string DistributedCacheProvider = "distributed";
+    public const string RemoteCacheProvider = "remote";
     public const string MemoryCacheProvider = "memory";
     public const string HybridCacheProvider = "hybrid";
 }

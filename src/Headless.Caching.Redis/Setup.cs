@@ -47,22 +47,22 @@ public static class SetupRedisCache
 
             services.AddSingletonOptionValue<RedisCacheOptions>();
             services.TryAddSingleton<HeadlessRedisScriptsLoader>();
-            services.TryAddSingleton<IDistributedCache, RedisCache>();
+            services.TryAddSingleton<IRemoteCache, RedisCache>();
             services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
-            services.TryAddSingleton(typeof(IDistributedCache<>), typeof(DistributedCache<>));
+            services.TryAddSingleton(typeof(IRemoteCache<>), typeof(RemoteCache<>));
 
             if (!isDefault)
             {
                 services.AddKeyedSingleton<ICache>(
-                    CacheConstants.DistributedCacheProvider,
-                    provider => provider.GetRequiredService<IDistributedCache>()
+                    CacheConstants.RemoteCacheProvider,
+                    provider => provider.GetRequiredService<IRemoteCache>()
                 );
             }
             else
             {
-                services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IDistributedCache>());
+                services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IRemoteCache>());
                 services.AddKeyedSingleton(
-                    CacheConstants.DistributedCacheProvider,
+                    CacheConstants.RemoteCacheProvider,
                     x => x.GetRequiredService<ICache>()
                 );
             }
