@@ -18,6 +18,11 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 - `IDistributedCache` - Marker interface for distributed implementations
 - `ICache<T>` - Strongly-typed cache wrapper
 - `CacheValue<T>` - Cache result with HasValue semantics
+- `CacheEntryOptions` - Factory-backed entry options. Only `Duration` is active today; future cache resilience knobs grow on this type.
+
+## Design Notes
+
+`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so existing duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration.
 
 ## Installation
 
@@ -25,24 +30,41 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 dotnet add package Headless.Caching.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
-public sealed class ProductService(ICache cache)
+public sealed record Product(int Id, string Name);
+
+public interface IProductRepository
+{
+    ValueTask<Product?> GetAsync(int id, CancellationToken cancellationToken);
+}
+
+public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(int id, CancellationToken ct)
     {
         var key = $"product:{id}";
-        var cached = await cache.GetAsync<Product>(key, ct).ConfigureAwait(false);
+        var cached = await cache
+            .GetOrAddAsync(key, token => repository.GetAsync(id, token), TimeSpan.FromMinutes(10), ct)
+            .ConfigureAwait(false);
 
-        if (cached.HasValue)
-            return cached.Value;
+        return cached.Value;
+    }
 
-        var product = await _repository.GetAsync(id, ct).ConfigureAwait(false);
-        if (product is not null)
-            await cache.UpsertAsync(key, product, TimeSpan.FromMinutes(10), ct).ConfigureAwait(false);
+    public async Task<Product?> GetProductWithOptionsAsync(int id, CancellationToken ct)
+    {
+        var key = $"product:{id}";
+        var cached = await cache
+            .GetOrAddAsync(
+                key,
+                token => repository.GetAsync(id, token),
+                new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) },
+                ct
+            )
+            .ConfigureAwait(false);
 
-        return product;
+        return cached.Value;
     }
 }
 ```

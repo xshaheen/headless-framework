@@ -31,13 +31,20 @@ services.AddHybridCache(options =>
 ### Using the Cache
 
 ```csharp
-public class ProductService(ICache cache)
+public sealed record Product(string Id, string Name);
+
+public interface IProductRepository
+{
+    ValueTask<Product?> GetByIdAsync(string id, CancellationToken cancellationToken);
+}
+
+public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(string id, CancellationToken ct)
     {
         return (await cache.GetOrAddAsync(
             $"product:{id}",
-            async token => await _repository.GetByIdAsync(id, token),
+            token => repository.GetByIdAsync(id, token),
             TimeSpan.FromHours(1),
             ct
         )).Value;
