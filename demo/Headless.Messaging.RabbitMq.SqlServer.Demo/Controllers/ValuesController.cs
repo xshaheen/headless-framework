@@ -2,7 +2,6 @@ using System.Data.Common;
 using Dapper;
 using Demo.Messages;
 using Headless.Messaging;
-using Headless.Messaging.SqlServer;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
