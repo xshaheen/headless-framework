@@ -12,13 +12,13 @@ public interface ICache
     /// <typeparam name="T">The type of the cached value.</typeparam>
     /// <param name="key">The cache key.</param>
     /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
-    /// <param name="expiration">Expiration time for the cached value.</param>
+    /// <param name="options">Cache entry options for the cached value.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
     ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
-        TimeSpan expiration,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     );
 

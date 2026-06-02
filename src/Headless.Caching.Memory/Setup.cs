@@ -83,9 +83,9 @@ public static class SetupInMemoryCache
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,
-            TimeSpan expiration,
+            CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => inMemoryCache.GetOrAddAsync(key, factory, expiration, cancellationToken);
+        ) => inMemoryCache.GetOrAddAsync(key, factory, options, cancellationToken);
 
         public ValueTask<bool> UpsertAsync<T>(
             string key,

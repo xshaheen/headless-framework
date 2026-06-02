@@ -44,12 +44,14 @@ public sealed class ScopedCache<T> : ICache<T>
     public ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
-        TimeSpan expiration,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        return _cache.GetOrAddAsync(_ScopeKey(key), factory, expiration, cancellationToken);
+        Argument.IsNotNull(options);
+
+        return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
     }
 
     #region Update

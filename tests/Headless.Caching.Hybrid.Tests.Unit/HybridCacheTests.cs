@@ -555,7 +555,7 @@ public sealed class HybridCacheTests : TestBase
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,
-            TimeSpan expiration,
+            CacheEntryOptions options,
             CancellationToken ct = default
         ) => throw new InvalidOperationException("L2 write failed");
 
@@ -889,9 +889,9 @@ public sealed class HybridCacheTests : TestBase
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,
-            TimeSpan expiration,
+            CacheEntryOptions options,
             CancellationToken cancellationToken = default
-        ) => cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
+        ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
 
         public ValueTask<bool> UpsertAsync<T>(
             string key,
