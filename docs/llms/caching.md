@@ -66,7 +66,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 
 ## Agent Instructions
 
-- Use `ICache` from `Headless.Caching.Abstractions` — NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. The framework has its own `IDistributedCache` marker interface that extends `ICache`.
+- Use `ICache` from `Headless.Caching.Abstractions` — NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. Use `IRemoteCache` only when a remote/L2 implementation is required.
 - Use `Caching.Memory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCaching()`) for production multi-instance deployments.
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value` — cache misses return `HasValue = false`, not null.
@@ -96,7 +96,7 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
     - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
     - Set operations (SetAdd, SetRemove, GetSet)
 - `IInMemoryCache` - Marker interface for in-memory implementations
-- `IDistributedCache` - Marker interface for distributed implementations
+- `IRemoteCache` - Marker interface for remote implementations
 - `ICache<T>` - Strongly-typed cache wrapper
 - `CacheValue<T>` - Cache result with HasValue semantics
 
@@ -154,7 +154,7 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 - Can serve as default `ICache` or alongside distributed cache
 - Supports strongly-typed `ICache<T>` pattern
 - Automatic memory management with configurable limits (MaxItems + LRU eviction)
-- Can act as `IDistributedCache` adapter for single-instance scenarios
+- Can act as `IRemoteCache` adapter for single-instance scenarios
 - Optional value cloning for isolation
 
 ## Installation
@@ -201,7 +201,7 @@ options.KeyPrefix = "myapp:";   // Optional key prefix
 
 - Registers `IInMemoryCache` as singleton
 - Registers `ICache` as singleton (if isDefault: true)
-- Registers `IDistributedCache` adapter (if isDefault: true)
+- Registers `IRemoteCache` adapter (if isDefault: true)
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons
 
 ---
@@ -216,8 +216,8 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Key Features
 
-- Full `IDistributedCache` implementation using StackExchange.Redis
-- Supports strongly-typed `IDistributedCache<T>` pattern
+- Full `IRemoteCache` implementation using StackExchange.Redis
+- Supports strongly-typed `IRemoteCache<T>` pattern
 - Prefix-based key management
 - Atomic operations (increment, compare-and-swap, SetIfHigher/Lower)
 - Set/list operations with pagination
@@ -288,8 +288,8 @@ This design ensures consumers never observe partial results from batch operation
 
 ## Side Effects
 
-- Registers `IDistributedCache` as singleton
-- Registers `IDistributedCache<T>` as singleton
+- Registers `IRemoteCache` as singleton
+- Registers `IRemoteCache<T>` as singleton
 - Uses existing `IConnectionMultiplexer` if registered, otherwise creates one
 
 ---

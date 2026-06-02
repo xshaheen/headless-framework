@@ -36,7 +36,7 @@ public sealed class RedisCache(
     RedisCacheOptions options,
     HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null
-) : IDistributedCache, IDisposable
+) : IRemoteCache, IDisposable
 {
     /// <summary>
     /// Sentinel value used to distinguish null from missing keys in Redis.

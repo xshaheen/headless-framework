@@ -15,7 +15,7 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
   - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
   - Set operations (SetAdd, SetRemove, GetSet)
 - `IInMemoryCache` - Marker interface for in-memory implementations
-- `IDistributedCache` - Marker interface for distributed implementations
+- `IRemoteCache` - Marker interface for remote implementations
 - `ICache<T>` - Strongly-typed cache wrapper
 - `CacheValue<T>` - Cache result with HasValue semantics
 
