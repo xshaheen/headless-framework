@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using Headless.Redis;
 using StackExchange.Redis;
 
@@ -221,6 +223,85 @@ public sealed class HeadlessRedisScriptsLoaderTests
         await db.Received(2).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
     }
 
+    [Fact]
+    public async Task should_not_lose_reset_when_reset_happens_while_loading_missing_script()
+    {
+        // given
+        var script = CustomReturnOneScriptDefinition.Instance;
+        var otherScript = CustomReturnTwoScriptDefinition.Instance;
+        var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
+        var db = Substitute.For<IDatabase>();
+        var firstOtherScriptLoadStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirstOtherScriptLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var otherScriptLoadCount = 0;
+
+        server.ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
+            .Returns(callInfo =>
+            {
+                var source = callInfo.ArgAt<string>(0);
+
+                if (
+                    source.Contains("return 2", StringComparison.Ordinal)
+                    && Interlocked.Increment(ref otherScriptLoadCount) == 1
+                )
+                {
+                    firstOtherScriptLoadStarted.SetResult();
+
+                    return releaseFirstOtherScriptLoad.Task.ContinueWith(
+                        _ => _CreateScriptHash(source),
+                        TestContext.Current.CancellationToken,
+                        TaskContinuationOptions.ExecuteSynchronously,
+                        TaskScheduler.Default
+                    );
+                }
+
+                return Task.FromResult(_CreateScriptHash(source));
+            });
+
+        db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
+            .Returns(Task.FromResult(RedisResult.Create(1)));
+
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+        _ = await sut.EvaluateAsync(db, script, parameters: null);
+
+        // when
+        var loadOtherScriptTask = sut.EvaluateAsync(db, otherScript, parameters: null);
+        await firstOtherScriptLoadStarted.Task.WaitAsync(TestContext.Current.CancellationToken);
+
+        sut.ResetScripts();
+        releaseFirstOtherScriptLoad.SetResult();
+
+        _ = await loadOtherScriptTask;
+        _ = await sut.EvaluateAsync(db, script, parameters: null);
+
+        // then
+        await server.Received(2).ScriptLoadAsync(
+            Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
+            Arg.Any<CommandFlags>()
+        );
+        await server.Received(2).ScriptLoadAsync(
+            Arg.Is<string>(source => source.Contains("return 2", StringComparison.Ordinal)),
+            Arg.Any<CommandFlags>()
+        );
+    }
+
+    [Fact]
+    public async Task should_reject_multiple_script_definition_instances_for_same_concrete_type()
+    {
+        // given
+        var script = new VariantScriptDefinition("return 1");
+        var sameTypeOtherScript = new VariantScriptDefinition("return 2");
+        var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+
+        // when
+        var act = () => sut.LoadAsync([script, sameTypeOtherScript]).AsTask();
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*multiple instances*");
+        await server.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+    }
+
     private static (IConnectionMultiplexer Multiplexer, IServer Server) _CreateMultiplexerWithServer(
         bool isConnected,
         bool isReplica
@@ -248,6 +329,11 @@ public sealed class HeadlessRedisScriptsLoaderTests
         return server;
     }
 
+    private static byte[] _CreateScriptHash(string source)
+    {
+        return SHA1.HashData(Encoding.UTF8.GetBytes(source));
+    }
+
     private sealed class CustomReturnOneScriptDefinition : RedisScriptDefinition
     {
         public static CustomReturnOneScriptDefinition Instance { get; } = new();
@@ -263,4 +349,6 @@ public sealed class HeadlessRedisScriptsLoaderTests
         private CustomReturnTwoScriptDefinition()
             : base("return 2") { }
     }
+
+    private sealed class VariantScriptDefinition(string source) : RedisScriptDefinition(source);
 }

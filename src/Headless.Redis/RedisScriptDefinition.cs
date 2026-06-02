@@ -5,7 +5,14 @@ using StackExchange.Redis;
 
 namespace Headless.Redis;
 
-/// <summary>Named Lua script descriptor used by <see cref="HeadlessRedisScriptsLoader"/>.</summary>
+/// <summary>
+/// Named immutable Lua script descriptor used by <see cref="HeadlessRedisScriptsLoader"/>.
+/// </summary>
+/// <remarks>
+/// Each concrete definition type must be represented by a single shared instance. The loader caches
+/// scripts by concrete type and rejects multiple instances of the same type to avoid ambiguous script
+/// source or parameter contracts.
+/// </remarks>
 public abstract class RedisScriptDefinition
 {
     private readonly LuaScript _script;

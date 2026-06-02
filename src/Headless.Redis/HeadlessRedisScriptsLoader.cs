@@ -17,9 +17,8 @@ public sealed class HeadlessRedisScriptsLoader(
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly AsyncLock _loadScriptsLock = new();
-    private int _version = 1; // Odd = not loaded, Even = at least one script loaded
     private bool _eventsSubscribed;
-    private Dictionary<Type, LoadedLuaScript> _loadedScripts = [];
+    private ScriptsLoadState _state = new(1, new Dictionary<Type, LoadedRedisScript>());
 
     public async ValueTask LoadAsync(
         IEnumerable<RedisScriptDefinition> scriptDefinitions,
@@ -34,70 +33,83 @@ public sealed class HeadlessRedisScriptsLoader(
             return;
         }
 
-        if ((Volatile.Read(ref _version) & 1) == 0 && _ContainsAll(definitions))
+        var state = Volatile.Read(ref _state);
+
+        if (state.IsLoaded && _ContainsAll(definitions, state))
         {
             return;
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var timestamp = _timeProvider.GetTimestamp();
-
-        using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        while (true)
         {
-            if ((_version & 1) == 0 && _ContainsAll(definitions))
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var timestamp = _timeProvider.GetTimestamp();
+
+            using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
-                return;
-            }
+                state = Volatile.Read(ref _state);
 
-            definitions = _GetMissingDefinitions(definitions);
+                if (state.IsLoaded && _ContainsAll(definitions, state))
+                {
+                    return;
+                }
 
-            if (definitions.Count is 0)
-            {
-                return;
-            }
+                var missingDefinitions = _GetMissingDefinitions(definitions, state);
 
-            logger?.LogPreparingLuaScript();
+                if (missingDefinitions.Count is 0)
+                {
+                    return;
+                }
 
-            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(Volatile.Read(ref _loadedScripts));
-            var loadedEndpointCount = 0;
+                logger?.LogPreparingLuaScript();
 
-            foreach (var endpoint in multiplexer.GetEndPoints())
-            {
-                var server = multiplexer.GetServer(endpoint);
+                var loadedScripts = new Dictionary<Type, LoadedRedisScript>(state.LoadedScripts);
+                var loadedEndpointCount = 0;
 
-                if (server.IsReplica || !server.IsConnected)
+                foreach (var endpoint in multiplexer.GetEndPoints())
+                {
+                    var server = multiplexer.GetServer(endpoint);
+
+                    if (server.IsReplica || !server.IsConnected)
+                    {
+                        continue;
+                    }
+
+                    logger?.LogLoadingLuaScripts(endpoint);
+
+                    var loadTasks = missingDefinitions.Select(script => script.LoadAsync(server)).ToArray();
+                    var results = await Task.WhenAll(loadTasks).WithAggregatedExceptions().ConfigureAwait(false);
+
+                    for (var index = 0; index < missingDefinitions.Count; index++)
+                    {
+                        var definition = missingDefinitions[index];
+                        loadedScripts[definition.GetType()] = new LoadedRedisScript(definition, results[index]);
+                    }
+
+                    loadedEndpointCount++;
+                }
+
+                if (loadedEndpointCount == 0)
+                {
+                    throw new RedisConnectionException(
+                        ConnectionFailureType.UnableToConnect,
+                        "No writable Redis endpoints were available for Lua script loading."
+                    );
+                }
+
+                if (!_TryPublishLoadedScripts(state, loadedScripts))
                 {
                     continue;
                 }
 
-                logger?.LogLoadingLuaScripts(endpoint);
+                _SubscribeConnectionRestored();
 
-                var loadTasks = definitions.Select(script => script.LoadAsync(server)).ToArray();
-                var results = await Task.WhenAll(loadTasks).WithAggregatedExceptions().ConfigureAwait(false);
+                var elapsed = _timeProvider.GetElapsedTime(timestamp);
+                logger?.LogScriptsLoadedSuccessfully(elapsed);
 
-                for (var index = 0; index < definitions.Count; index++)
-                {
-                    loadedScripts[definitions[index].GetType()] = results[index];
-                }
-
-                loadedEndpointCount++;
+                return;
             }
-
-            if (loadedEndpointCount == 0)
-            {
-                throw new RedisConnectionException(
-                    ConnectionFailureType.UnableToConnect,
-                    "No writable Redis endpoints were available for Lua script loading."
-                );
-            }
-
-            Volatile.Write(ref _loadedScripts, loadedScripts);
-            _MarkLoaded();
-            _SubscribeConnectionRestored();
-
-            var elapsed = _timeProvider.GetElapsedTime(timestamp);
-            logger?.LogScriptsLoadedSuccessfully(elapsed);
         }
     }
 
@@ -117,7 +129,7 @@ public sealed class HeadlessRedisScriptsLoader(
         cancellationToken.ThrowIfCancellationRequested();
 
         var script = await _GetOrLoadScriptAsync(scriptDefinition, cancellationToken).ConfigureAwait(false);
-        var versionAtStart = Volatile.Read(ref _version);
+        var versionAtStart = Volatile.Read(ref _state).Version;
 
         try
         {
@@ -142,11 +154,21 @@ public sealed class HeadlessRedisScriptsLoader(
     /// <summary>Resets the scripts loaded state, forcing a reload on next operation.</summary>
     public void ResetScripts()
     {
-        var version = Volatile.Read(ref _version);
-
-        if ((version & 1) == 0 && Interlocked.CompareExchange(ref _version, version + 1, version) == version)
+        while (true)
         {
-            Volatile.Write(ref _loadedScripts, []);
+            var state = Volatile.Read(ref _state);
+
+            if (!state.IsLoaded)
+            {
+                return;
+            }
+
+            var resetState = new ScriptsLoadState(state.Version + 1, new Dictionary<Type, LoadedRedisScript>());
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, resetState, state), state))
+            {
+                return;
+            }
         }
     }
 
@@ -177,97 +199,125 @@ public sealed class HeadlessRedisScriptsLoader(
         CancellationToken cancellationToken
     )
     {
-        if ((Volatile.Read(ref _version) & 1) == 0 && _GetLoadedScript(scriptDefinition) is { } current)
+        var state = Volatile.Read(ref _state);
+
+        if (state.IsLoaded && _GetLoadedScript(scriptDefinition, state) is { } current)
         {
             return current;
         }
 
-        using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
+        while (true)
         {
-            if ((_version & 1) == 0 && _GetLoadedScript(scriptDefinition) is { } currentAfterLock)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using (await _loadScriptsLock.LockAsync(cancellationToken).ConfigureAwait(false))
             {
-                return currentAfterLock;
-            }
+                state = Volatile.Read(ref _state);
 
-            logger?.LogPreparingLuaScript();
+                if (state.IsLoaded && _GetLoadedScript(scriptDefinition, state) is { } currentAfterLock)
+                {
+                    return currentAfterLock;
+                }
 
-            LoadedLuaScript? loadedScript = null;
-            var loadedEndpointCount = 0;
+                logger?.LogPreparingLuaScript();
 
-            foreach (var endpoint in multiplexer.GetEndPoints())
-            {
-                var server = multiplexer.GetServer(endpoint);
+                LoadedLuaScript? loadedScript = null;
+                var loadedEndpointCount = 0;
 
-                if (server.IsReplica || !server.IsConnected)
+                foreach (var endpoint in multiplexer.GetEndPoints())
+                {
+                    var server = multiplexer.GetServer(endpoint);
+
+                    if (server.IsReplica || !server.IsConnected)
+                    {
+                        continue;
+                    }
+
+                    logger?.LogLoadingLuaScripts(endpoint);
+
+                    loadedScript = await scriptDefinition.LoadAsync(server).ConfigureAwait(false);
+                    loadedEndpointCount++;
+                }
+
+                if (loadedEndpointCount == 0 || loadedScript is null)
+                {
+                    throw new RedisConnectionException(
+                        ConnectionFailureType.UnableToConnect,
+                        "No writable Redis endpoints were available for Lua script loading."
+                    );
+                }
+
+                var loadedScripts = new Dictionary<Type, LoadedRedisScript>(state.LoadedScripts)
+                {
+                    [scriptDefinition.GetType()] = new LoadedRedisScript(scriptDefinition, loadedScript),
+                };
+
+                if (!_TryPublishLoadedScripts(state, loadedScripts))
                 {
                     continue;
                 }
 
-                logger?.LogLoadingLuaScripts(endpoint);
+                _SubscribeConnectionRestored();
 
-                loadedScript = await scriptDefinition.LoadAsync(server).ConfigureAwait(false);
-                loadedEndpointCount++;
+                return loadedScript;
             }
-
-            if (loadedEndpointCount == 0 || loadedScript is null)
-            {
-                throw new RedisConnectionException(
-                    ConnectionFailureType.UnableToConnect,
-                    "No writable Redis endpoints were available for Lua script loading."
-                );
-            }
-
-            var loadedScripts = new Dictionary<Type, LoadedLuaScript>(Volatile.Read(ref _loadedScripts))
-            {
-                [scriptDefinition.GetType()] = loadedScript,
-            };
-
-            Volatile.Write(ref _loadedScripts, loadedScripts);
-            _MarkLoaded();
-            _SubscribeConnectionRestored();
-
-            return loadedScript;
         }
     }
 
-    private LoadedLuaScript? _GetLoadedScript(RedisScriptDefinition scriptDefinition)
+    private static LoadedLuaScript? _GetLoadedScript(RedisScriptDefinition scriptDefinition, ScriptsLoadState state)
     {
-        return Volatile.Read(ref _loadedScripts).GetValueOrDefault(scriptDefinition.GetType());
+        if (!state.LoadedScripts.TryGetValue(scriptDefinition.GetType(), out var loadedScript))
+        {
+            return null;
+        }
+
+        _EnsureSameDefinitionInstance(scriptDefinition, loadedScript.Definition);
+
+        return loadedScript.Script;
     }
 
-    private bool _ContainsAll(IReadOnlyList<RedisScriptDefinition> scriptDefinitions)
+    private static bool _ContainsAll(IReadOnlyList<RedisScriptDefinition> scriptDefinitions, ScriptsLoadState state)
     {
-        var loadedScripts = Volatile.Read(ref _loadedScripts);
-
-        return scriptDefinitions.All(scriptDefinition => loadedScripts.ContainsKey(scriptDefinition.GetType()));
+        return scriptDefinitions.All(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is not null);
     }
 
-    private IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(IReadOnlyList<RedisScriptDefinition> definitions)
+    private static IReadOnlyList<RedisScriptDefinition> _GetMissingDefinitions(
+        IReadOnlyList<RedisScriptDefinition> definitions,
+        ScriptsLoadState state
+    )
     {
-        var loadedScripts = Volatile.Read(ref _loadedScripts);
-
-        return definitions.Where(scriptDefinition => !loadedScripts.ContainsKey(scriptDefinition.GetType())).ToArray();
+        return definitions.Where(scriptDefinition => _GetLoadedScript(scriptDefinition, state) is null).ToArray();
     }
 
     private void _ResetScripts(int expectedVersion)
     {
-        if (
-            (expectedVersion & 1) == 0
-            && Interlocked.CompareExchange(ref _version, expectedVersion + 1, expectedVersion) == expectedVersion
-        )
+        while (true)
         {
-            Volatile.Write(ref _loadedScripts, []);
+            var state = Volatile.Read(ref _state);
+
+            if (state.Version != expectedVersion || !state.IsLoaded)
+            {
+                return;
+            }
+
+            var resetState = new ScriptsLoadState(state.Version + 1, new Dictionary<Type, LoadedRedisScript>());
+
+            if (ReferenceEquals(Interlocked.CompareExchange(ref _state, resetState, state), state))
+            {
+                return;
+            }
         }
     }
 
-    private void _MarkLoaded()
+    private bool _TryPublishLoadedScripts(
+        ScriptsLoadState expectedState,
+        Dictionary<Type, LoadedRedisScript> loadedScripts
+    )
     {
-        var version = Volatile.Read(ref _version);
+        var loadedVersion = expectedState.IsLoaded ? expectedState.Version : expectedState.Version + 1;
+        var loadedState = new ScriptsLoadState(loadedVersion, loadedScripts);
 
-        if ((version & 1) != 0)
-        {
-            Volatile.Write(ref _version, version + 1);
-        }
+        return ReferenceEquals(Interlocked.CompareExchange(ref _state, loadedState, expectedState), expectedState);
     }
 
     private void _SubscribeConnectionRestored()
@@ -284,18 +334,45 @@ public sealed class HeadlessRedisScriptsLoader(
     )
     {
         var definitions = new List<RedisScriptDefinition>();
-        var types = new HashSet<Type>();
+        var definitionsByType = new Dictionary<Type, RedisScriptDefinition>();
 
         foreach (var scriptDefinition in scriptDefinitions)
         {
             Argument.IsNotNull(scriptDefinition);
 
-            if (types.Add(scriptDefinition.GetType()))
+            var definitionType = scriptDefinition.GetType();
+
+            if (definitionsByType.TryGetValue(definitionType, out var existingDefinition))
             {
-                definitions.Add(scriptDefinition);
+                _EnsureSameDefinitionInstance(scriptDefinition, existingDefinition);
+                continue;
             }
+
+            definitionsByType.Add(definitionType, scriptDefinition);
+            definitions.Add(scriptDefinition);
         }
 
         return definitions;
     }
+
+    private static void _EnsureSameDefinitionInstance(
+        RedisScriptDefinition scriptDefinition,
+        RedisScriptDefinition existingDefinition
+    )
+    {
+        if (!ReferenceEquals(scriptDefinition, existingDefinition))
+        {
+            throw new InvalidOperationException(
+                $"Redis script definition type '{scriptDefinition.GetType().FullName}' was provided by multiple instances. "
+                    + "Redis script definitions must be immutable singleton instances per concrete type."
+            );
+        }
+    }
+
+    private sealed record ScriptsLoadState(int Version, IReadOnlyDictionary<Type, LoadedRedisScript> LoadedScripts)
+    {
+        public bool IsLoaded => (Version & 1) == 0;
+    }
+
+    private sealed record LoadedRedisScript(RedisScriptDefinition Definition, LoadedLuaScript Script);
 }

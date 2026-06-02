@@ -670,6 +670,8 @@ Provides Redis helper extensions plus definition-first Lua script loading/execut
 
 `Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
 
+Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
+
 ## Installation
 
 ```bash
