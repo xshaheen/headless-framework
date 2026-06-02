@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections;
+using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
@@ -14,6 +16,37 @@ public sealed class InMemoryCacheTests : TestBase
     {
         options ??= new InMemoryCacheOptions();
         return new InMemoryCache(_timeProvider, options);
+    }
+
+    private static object _GetEntry(InMemoryCache cache, string key)
+    {
+        var field = typeof(InMemoryCache).GetField("_memory", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull();
+
+        var memory = (IEnumerable)field!.GetValue(cache)!;
+
+        foreach (var item in memory)
+        {
+            var type = item.GetType();
+            var itemKey = (string)type.GetProperty("Key")!.GetValue(item)!;
+
+            if (itemKey == key)
+            {
+                return type.GetProperty("Value")!.GetValue(item)!;
+            }
+        }
+
+        throw new InvalidOperationException($"Cache entry '{key}' was not found.");
+    }
+
+    private static T? _GetEntryProperty<T>(object entry, string propertyName)
+    {
+        var property = entry
+            .GetType()
+            .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+        property.Should().NotBeNull();
+
+        return (T?)property!.GetValue(entry);
     }
 
     #region UpsertAsync
@@ -101,6 +134,78 @@ public sealed class InMemoryCacheTests : TestBase
         var cached = await cache.GetAsync<int>(key, AbortToken);
         cached.HasValue.Should().BeTrue();
         cached.Value.Should().Be(42);
+    }
+
+    #endregion
+
+    #region CacheEntry Envelope
+
+    [Fact]
+    public async Task should_store_logical_and_physical_expiration_for_factory_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // when
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), duration, AbortToken);
+
+        // then
+        var entry = _GetEntry(cache, key);
+        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().Be(now.Add(duration));
+        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().Be(now.Add(duration));
+    }
+
+    [Fact]
+    public async Task should_store_logical_and_physical_expiration_for_upsert_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        // when
+        await cache.UpsertAsync(key, "value", duration, AbortToken);
+
+        // then
+        var entry = _GetEntry(cache, key);
+        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().Be(now.Add(duration));
+        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().Be(now.Add(duration));
+    }
+
+    [Fact]
+    public async Task should_store_empty_reserved_envelope_slots_for_new_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        var entry = _GetEntry(cache, key);
+        _GetEntryProperty<object?>(entry, "LastFactoryError").Should().BeNull();
+        _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags").Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_store_null_logical_and_physical_expiration_for_eternal_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+
+        // when
+        await cache.UpsertAsync(key, "value", expiration: null, AbortToken);
+
+        // then
+        var entry = _GetEntry(cache, key);
+        _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt").Should().BeNull();
+        _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt").Should().BeNull();
     }
 
     #endregion

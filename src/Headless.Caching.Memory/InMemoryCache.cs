@@ -1021,7 +1021,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, committed.ExpiresAt);
+            _TrackUpdate(key, committed.PhysicalExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1102,7 +1102,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 Interlocked.Add(ref _currentMemorySize, sizeDelta);
             }
 
-            _TrackUpdate(key, committed.ExpiresAt);
+            _TrackUpdate(key, committed.PhysicalExpiresAt);
 
             await _StartMaintenanceAsync().ConfigureAwait(false);
 
@@ -1234,12 +1234,14 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
 
-        if (!existingEntry.ExpiresAt.HasValue || existingEntry.ExpiresAt.Value == DateTime.MaxValue)
+        if (!existingEntry.LogicalExpiresAt.HasValue || existingEntry.LogicalExpiresAt.Value == DateTime.MaxValue)
         {
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
 
-        return new ValueTask<TimeSpan?>(existingEntry.ExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime));
+        return new ValueTask<TimeSpan?>(
+            existingEntry.LogicalExpiresAt.Value.Subtract(_timeProvider.GetUtcNow().UtcDateTime)
+        );
     }
 
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
@@ -1684,7 +1686,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         if (wasUpdated)
         {
-            _TrackUpdate(key, entry.ExpiresAt);
+            _TrackUpdate(key, entry.PhysicalExpiresAt);
         }
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
@@ -1894,7 +1896,10 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
                     if (key is not null && _memory.TryGetValue(key, out var entry))
                     {
-                        if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value.Ticks <= expiresAtTicks)
+                        if (
+                            entry.PhysicalExpiresAt.HasValue
+                            && entry.PhysicalExpiresAt.Value.Ticks <= expiresAtTicks
+                        )
                         {
                             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                             {
@@ -1962,9 +1967,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     /// <list type="number">
     /// <item>
     /// <b>Consistency for concurrent readers.</b> A reader that loads a <see cref="CacheEntry"/> reference
-    /// from <see cref="_memory"/> sees a stable snapshot of <see cref="PeekValue"/>, <see cref="ExpiresAt"/>,
+    /// from <see cref="_memory"/> sees a stable snapshot of <see cref="PeekValue"/>, expiration metadata,
     /// and <see cref="Size"/>. With mutable setters a reader could observe a new <c>Value</c> together with
-    /// the old <c>ExpiresAt</c> (or vice versa) — a torn read even under <c>Volatile</c>/<c>Interlocked</c>.
+    /// the old expiration metadata (or vice versa) — a torn read even under <c>Volatile</c>/<c>Interlocked</c>.
     /// </item>
     /// <item>
     /// <b>Safe composition with <see cref="ConcurrentDictionary{TKey, TValue}.AddOrUpdate(TKey, Func{TKey, TValue}, Func{TKey, TValue, TValue})"/>.</b>
@@ -2004,6 +2009,27 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             bool shouldThrowOnSerializationError = true,
             long size = 0
         )
+            : this(
+                value,
+                logicalExpiresAt: expiresAt,
+                physicalExpiresAt: expiresAt,
+                timeProvider,
+                shouldClone,
+                shouldThrowOnSerializationError,
+                size
+            ) { }
+
+        private CacheEntry(
+            object? value,
+            DateTime? logicalExpiresAt,
+            DateTime? physicalExpiresAt,
+            TimeProvider timeProvider,
+            bool shouldClone,
+            bool shouldThrowOnSerializationError = true,
+            long size = 0,
+            LastFactoryError? lastFactoryError = null,
+            IReadOnlySet<string>? tags = null
+        )
         {
             _timeProvider = timeProvider;
             _shouldClone = shouldClone && _TypeRequiresCloning(value?.GetType());
@@ -2012,30 +2038,45 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
             var utcNow = _timeProvider.GetUtcNow();
             _lastAccessTicks = utcNow.Ticks;
-            ExpiresAt = expiresAt;
+            LogicalExpiresAt = logicalExpiresAt;
+            PhysicalExpiresAt = physicalExpiresAt;
+            LastFactoryError = lastFactoryError;
+            Tags = tags is { Count: > 0 } ? new HashSet<string>(tags, StringComparer.Ordinal) : null;
             Size = size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
 
         /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
         /// value without re-cloning.</summary>
-        private CacheEntry(CacheEntry prototype, DateTime? expiresAt)
+        private CacheEntry(CacheEntry prototype, DateTime? logicalExpiresAt, DateTime? physicalExpiresAt)
         {
             _timeProvider = prototype._timeProvider;
             _shouldClone = prototype._shouldClone;
             _shouldThrowOnSerializationError = prototype._shouldThrowOnSerializationError;
             _cacheValue = prototype._cacheValue;
             _lastAccessTicks = _timeProvider.GetUtcNow().Ticks;
-            ExpiresAt = expiresAt;
+            LogicalExpiresAt = logicalExpiresAt;
+            PhysicalExpiresAt = physicalExpiresAt;
+            LastFactoryError = prototype.LastFactoryError;
+            Tags = prototype.Tags is { Count: > 0 }
+                ? new HashSet<string>(prototype.Tags, StringComparer.Ordinal)
+                : null;
             Size = prototype.Size;
             InstanceNumber = Interlocked.Increment(ref _instanceCount);
         }
 
         internal long InstanceNumber { get; }
 
-        internal DateTime? ExpiresAt { get; }
+        internal DateTime? LogicalExpiresAt { get; }
 
-        internal bool IsExpired => ExpiresAt.HasValue && ExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+        internal DateTime? PhysicalExpiresAt { get; }
+
+        internal LastFactoryError? LastFactoryError { get; }
+
+        internal IReadOnlySet<string>? Tags { get; }
+
+        internal bool IsExpired =>
+            PhysicalExpiresAt.HasValue && PhysicalExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 
@@ -2056,7 +2097,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
-        internal CacheEntry WithExpiration(DateTime? expiresAt) => new(this, expiresAt);
+        internal CacheEntry WithExpiration(DateTime? expiresAt) =>
+            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt);
 
         public T? GetValue<T>()
         {
@@ -2150,6 +2192,8 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             }
         }
     }
+
+    private sealed record LastFactoryError(Exception Error, DateTimeOffset DateCreated);
 
     private DateTime? _ExpireAndGetMaxExpiration<T>(IDictionary<T, DateTime?> dictionary)
         where T : notnull
