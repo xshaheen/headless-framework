@@ -126,7 +126,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     return Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom"));
                 }
 
-                return Task.FromResult(new ConsumerExecutedResult(null, Guid.NewGuid().ToString(), null, null));
+                return Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null));
             });
 
         var executor = _CreateExecutor(
@@ -184,7 +184,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     return Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom"));
                 }
 
-                return Task.FromResult(new ConsumerExecutedResult(null, Guid.NewGuid().ToString(), null, null));
+                return Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null));
             });
 
         var executor = _CreateExecutor(
@@ -521,7 +521,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
                     return Task.FromException<ConsumerExecutedResult>(new TimeoutException("boom"));
                 }
 
-                return Task.FromResult(new ConsumerExecutedResult(null, Guid.NewGuid().ToString(), null, null));
+                return Task.FromResult(new ConsumerExecutedResult(null, null, Guid.NewGuid().ToString(), null, null));
             });
 
         var executor = _CreateExecutor(invoker, storage, options);

@@ -472,7 +472,12 @@ internal sealed class SubscribeExecutor(
                     .GetRequiredService<IOutboxBus>()
                     .PublishAsync(
                         ret.Result,
-                        new PublishOptions { MessageName = ret.CallbackName, Headers = ret.CallbackHeader },
+                        new PublishOptions
+                        {
+                            MessageName = ret.CallbackName,
+                            Headers = ret.CallbackHeader,
+                            MessageType = ret.ResultType,
+                        },
                         cancellationToken
                     )
                     .ConfigureAwait(false);

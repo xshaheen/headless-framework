@@ -40,6 +40,10 @@ public record ConsumeContext
         internal init => _cancellationToken = value;
     }
 
+    internal object? Response { get; private set; }
+
+    internal Type? ResponseType { get; private set; }
+
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
@@ -51,6 +55,22 @@ public record ConsumeContext
         }
 
         _cancellationToken = cancellationToken;
+    }
+
+    /// <summary>
+    /// Captures a typed response payload to publish to the current message callback.
+    /// </summary>
+    /// <typeparam name="TResponse">The response contract type to stamp on the callback message.</typeparam>
+    /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
+    public void SetResponse<TResponse>(TResponse value)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+        }
+
+        Response = value;
+        ResponseType = typeof(TResponse);
     }
 
     internal void MarkCompleted()

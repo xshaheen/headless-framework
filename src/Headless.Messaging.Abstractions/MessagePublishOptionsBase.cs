@@ -66,6 +66,8 @@ public abstract record MessagePublishOptionsBase
     /// </summary>
     public string? CallbackName { get; init; }
 
+    internal Type? MessageType { get; init; }
+
     /// <summary>
     /// Gets the explicit multi-tenancy identifier for this message.
     /// </summary>

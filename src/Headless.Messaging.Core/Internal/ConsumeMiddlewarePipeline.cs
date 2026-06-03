@@ -116,8 +116,20 @@ internal sealed class ConsumeMiddlewarePipeline(
         var callbackName = context.MediumMessage.Origin.GetCallbackName();
         var callbackHeaders = consumeHeaders.ResponseHeader;
         return string.IsNullOrEmpty(callbackName)
-            ? new ConsumerExecutedResult(null, context.MediumMessage.Origin.GetId(), null, callbackHeaders)
-            : new ConsumerExecutedResult(null, context.MediumMessage.Origin.GetId(), callbackName, callbackHeaders);
+            ? new ConsumerExecutedResult(
+                consumeContext.Response,
+                consumeContext.ResponseType,
+                context.MediumMessage.Origin.GetId(),
+                null,
+                callbackHeaders
+            )
+            : new ConsumerExecutedResult(
+                consumeContext.Response,
+                consumeContext.ResponseType,
+                context.MediumMessage.Origin.GetId(),
+                callbackName,
+                callbackHeaders
+            );
     }
 
     private async ValueTask _InvokeAsync(
