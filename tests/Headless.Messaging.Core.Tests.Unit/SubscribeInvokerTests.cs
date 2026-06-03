@@ -484,6 +484,68 @@ public sealed class SubscribeInvokerTests : TestBase
     }
 
     [Fact]
+    public async Task should_capture_next_callback_name_set_by_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<NextCallbackConsumer>()
+            );
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("callback"),
+            "test.messageName",
+            callbackName: "callbacks.messageName"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage, NextCallbackConsumer>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var result = await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        result.NextCallbackName.Should().Be("chain-final");
+    }
+
+    [Fact]
+    public async Task should_leave_next_callback_name_empty_when_consumer_does_not_set_it()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<ResponseBodyConsumer>()
+            );
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("callback"),
+            "test.messageName",
+            callbackName: "callbacks.messageName"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage, ResponseBodyConsumer>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var result = await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        result.NextCallbackName.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_use_sent_time_header_for_consume_context_timestamp()
     {
         // given
@@ -801,6 +863,15 @@ public sealed class RemoveCallbackConsumer : IConsume<InvokerTestMessage>
     {
         context.Headers.RemoveCallback();
         context.SetResponse(new InvokerResponse("accepted"));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class NextCallbackConsumer : IConsume<InvokerTestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    {
+        context.SetNextCallback("chain-final");
         return ValueTask.CompletedTask;
     }
 }

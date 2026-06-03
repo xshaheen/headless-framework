@@ -76,6 +76,73 @@ public sealed class ConsumeContextTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    [Fact]
+    public void should_store_next_callback_name()
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        context.SetNextCallback("chain-final");
+
+        // then
+        context.NextCallbackName.Should().Be("chain-final");
+    }
+
+    [Fact]
+    public void should_leave_next_callback_name_empty_when_not_set()
+    {
+        // given
+        var context = _CreateContext();
+
+        // then
+        context.NextCallbackName.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_keep_last_next_callback_name_when_set_multiple_times()
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        context.SetNextCallback("chain-first");
+        context.SetNextCallback("chain-final");
+
+        // then
+        context.NextCallbackName.Should().Be("chain-final");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void should_throw_when_next_callback_name_is_null_empty_or_whitespace(string? callbackName)
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        var act = () => context.SetNextCallback(callbackName!);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_throw_when_setting_next_callback_after_completion()
+    {
+        // given
+        var context = _CreateContext();
+        context.MarkCompleted();
+
+        // when
+        var act = () => context.SetNextCallback("too-late");
+
+        // then
+        act.Should().Throw<InvalidOperationException>();
+    }
+
     private static ConsumeContext _CreateContext() =>
         new()
         {

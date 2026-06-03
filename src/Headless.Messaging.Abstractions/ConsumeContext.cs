@@ -53,7 +53,7 @@ public record ConsumeContext
     {
         if (_isCompleted)
         {
-            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
         _cancellationToken = cancellationToken;
@@ -75,7 +75,7 @@ public record ConsumeContext
     {
         if (_isCompleted)
         {
-            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
         Response = value;
@@ -97,7 +97,7 @@ public record ConsumeContext
     {
         if (_isCompleted)
         {
-            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
         NextCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
