@@ -34,8 +34,9 @@ public sealed class PostgresDistributedLockOptions
     /// <see cref="DataSource"/> is injected — configure keepalive on that data source yourself.
     /// </summary>
     /// <remarks>
-    /// This is an interim safeguard. An application-level connection monitor that actively probes the
-    /// holding connection is a planned follow-up and will remove the dependency on keepalive timing.
+    /// Keepalive is complementary to the active connection monitor (which probes the holding connection
+    /// with a bounded-timeout server-side query): keepalive makes <c>StateChange</c> surface a dead socket
+    /// faster, while the monitor is the authoritative active death check.
     /// </remarks>
     public TimeSpan KeepAlive { get; set; } = TimeSpan.FromSeconds(30);
 }

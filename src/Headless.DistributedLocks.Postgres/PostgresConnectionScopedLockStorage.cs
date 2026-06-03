@@ -1,28 +1,55 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Data;
 using System.Runtime.ExceptionServices;
+using Headless.DistributedLocks;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
 #pragma warning disable CA2100 // Advisory SQL text is selected from fixed code paths; lock keys and resources use parameters.
+
+/// <summary>
+/// Connection-scoped advisory-lock storage that drives acquisition through the multiplexing engine
+/// (<see cref="OptimisticConnectionMultiplexingDbDistributedLock"/>). The engine decides share-vs-dedicate per
+/// acquisition and, on a dedicated connection, attaches a <see cref="ConnectionMonitor"/> whose active probe backs the
+/// handle's connection-lost token. This adapter keeps the observability queries (<c>pg_locks</c> counts/listing) on the
+/// owned <see cref="NpgsqlDataSource"/> directly, and bridges the engine handle's
+/// <see cref="IDistributedLock.HandleLostToken"/> onto <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// </summary>
 internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
 {
     private readonly PostgresDistributedLockOptions _options;
+    private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
     private readonly bool _ownsDataSource;
     private readonly NpgsqlDataSource _dataSource;
+    private readonly string _connectionString;
     private readonly int _commandTimeoutSeconds;
+    private readonly TimeSpan _keepaliveCadence;
+    private readonly MultiplexedConnectionLockPool _multiplexedConnectionLockPool;
 
-    public PostgresConnectionScopedLockStorage(IOptions<PostgresDistributedLockOptions> options)
+    public PostgresConnectionScopedLockStorage(
+        IOptions<PostgresDistributedLockOptions> options,
+        TimeProvider timeProvider
+    )
     {
         _options = options.Value;
+        _timeProvider = timeProvider;
         _dataSource = PostgresDataSourceFactory.CreateDataSource(_options);
         _ownsDataSource = _options.DataSource is null;
+        _connectionString = _dataSource.ConnectionString;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
+
+        // The ConnectionMonitor's keepalive probe is complementary to TCP keepalive (configured on the data source):
+        // a positive interval keeps an idle holder's connection warm so a provider idle-timeout cannot silently drop
+        // it. Zero leaves keepalive to the monitoring/StateChange paths only.
+        _keepaliveCadence = _options.KeepAlive > TimeSpan.Zero ? _options.KeepAlive : Timeout.InfiniteTimeSpan;
+
+        // The factory ignores the engine's per-acquire connection-string argument: every acquisition for this storage
+        // uses the one owned data source (which already carries the resolved connection string used as the pool key).
+        _multiplexedConnectionLockPool = new MultiplexedConnectionLockPool(_CreateConnection);
     }
 
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
@@ -32,31 +59,46 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         CancellationToken cancellationToken = default
     )
     {
-        NpgsqlConnection? connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var key = _CreateKey(resource);
+        var name = _options.KeyPrefix + resource;
+        var strategy = isShared ? PostgresAdvisoryLock.SharedLock : PostgresAdvisoryLock.ExclusiveLock;
+
+        var engine = new OptimisticConnectionMultiplexingDbDistributedLock(
+            name,
+            _connectionString,
+            _multiplexedConnectionLockPool,
+            _keepaliveCadence
+        );
+
+        // A zero timeout maps to a single non-blocking try (pg_try_advisory_lock): the provider owns the wait/retry
+        // loop, so the engine must never block here.
+        var engineHandle = await engine
+            .TryAcquireAsync(TimeSpan.Zero, strategy, contextHandle: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (engineHandle is null)
+        {
+            return null;
+        }
+
         var ownershipTransferred = false;
 
         try
         {
-            var acquired = await _TryAcquireAsync(connection, key, isShared, _commandTimeoutSeconds, cancellationToken).ConfigureAwait(false);
+            // Read the engine handle's lost token now so the ConnectionMonitor registers its monitoring handle (and
+            // starts the active probe) at acquire time rather than lazily on first consumer read.
+            var connectionLostToken = engineHandle.HandleLostToken;
 
-            if (!acquired)
-            {
-                return null;
-            }
-
-            var held = new HeldLock(resource, lockId, key, isShared, connection);
-            connection.StateChange += held.OnStateChanged;
+            var held = new HeldLock(resource, lockId, engineHandle);
             _heldByLockId[lockId] = held;
             ownershipTransferred = true;
 
-            return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, held.ConnectionLostToken);
+            return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, connectionLostToken);
         }
         finally
         {
             if (!ownershipTransferred)
             {
-                await connection.DisposeAsync().ConfigureAwait(false);
+                await engineHandle.DisposeAsync().ConfigureAwait(false);
             }
         }
     }
@@ -73,20 +115,10 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             return;
         }
 
-        try
-        {
-            if (held.Connection.FullState.HasFlag(ConnectionState.Open))
-            {
-                // Releasing the advisory lock and emitting the wake-up NOTIFY must not be abandoned on
-                // caller cancellation; otherwise waiters wait a full polling interval until pool reset.
-                await _ReleaseAsync(held.Connection, held.Key, held.IsShared, _commandTimeoutSeconds, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            await held.DisposeAsync().ConfigureAwait(false);
-        }
+        // Disposing the engine handle releases the advisory lock and the monitoring registration, then returns the
+        // connection to the multiplexing pool (or tears it down on the dedicated path). This must not be abandoned on
+        // caller cancellation, so the engine release path uses its own non-cancellable unlock internally.
+        await held.DisposeAsync().ConfigureAwait(false);
     }
 
     public async ValueTask<bool> IsLockedAsync(
@@ -216,38 +248,16 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         throw new AggregateException(teardownErrors);
     }
 
+    private DatabaseConnection _CreateConnection(string connectionString)
+    {
+        // connectionString is the engine's pool key; the storage always opens against its owned data source so an
+        // injected DataSource (with its configuration and pooling) is honored.
+        return new PostgresDatabaseConnection(_dataSource, _timeProvider, _commandTimeoutSeconds);
+    }
+
     private PostgresAdvisoryLockKey _CreateKey(string resource)
     {
         return PostgresAdvisoryLockKey.FromString(_options.KeyPrefix + resource, allowHashing: true);
-    }
-
-    private static async ValueTask<bool> _TryAcquireAsync(
-        NpgsqlConnection connection,
-        PostgresAdvisoryLockKey key,
-        bool isShared,
-        int commandTimeoutSeconds,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandTimeout = commandTimeoutSeconds;
-        command.CommandText = $"SELECT pg_catalog.pg_try_advisory_lock{(isShared ? "_shared" : "")}({AddKeyParameters(command, key)})";
-
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
-    }
-
-    private static async ValueTask _ReleaseAsync(
-        NpgsqlConnection connection,
-        PostgresAdvisoryLockKey key,
-        bool isShared,
-        int commandTimeoutSeconds,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandTimeout = commandTimeoutSeconds;
-        command.CommandText = $"SELECT pg_catalog.pg_advisory_unlock{(isShared ? "_shared" : "")}({AddKeyParameters(command, key)})";
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
     internal static string AddKeyParameters(NpgsqlCommand command, PostgresAdvisoryLockKey key)
@@ -282,48 +292,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return "l.classid = @classId AND l.objid = @objId AND l.objsubid = @objSubId";
     }
 
-    private sealed class HeldLock(
-        string resource,
-        string lockId,
-        PostgresAdvisoryLockKey key,
-        bool isShared,
-        NpgsqlConnection connection
-    ) : IAsyncDisposable
+    /// <summary>
+    /// A single held lock: owns the engine handle (which owns the connection lifecycle, the advisory unlock, and the
+    /// connection-monitoring registration). Disposal is idempotent and delegates entirely to the engine handle.
+    /// </summary>
+    private sealed class HeldLock(string resource, string lockId, IDistributedLock engineHandle) : IAsyncDisposable
     {
-        private readonly CancellationTokenSource _lostTokenSource = new();
         private int _disposed;
 
         public string Resource { get; } = resource;
+
         public string LockId { get; } = lockId;
-        public PostgresAdvisoryLockKey Key { get; } = key;
-        public bool IsShared { get; } = isShared;
-        public NpgsqlConnection Connection { get; } = connection;
-        public CancellationToken ConnectionLostToken => _lostTokenSource.Token;
-
-        public void OnStateChanged(object sender, StateChangeEventArgs args)
-        {
-            if (args.CurrentState is ConnectionState.Open)
-            {
-                return;
-            }
-
-            // StateChange fires synchronously on Npgsql's thread and can race disposal: unsubscribe
-            // alone cannot abort a handler already in flight. Skip if already disposed and still guard
-            // Cancel(), since the disposed flag may be set between the check and the call.
-            if (Volatile.Read(ref _disposed) != 0)
-            {
-                return;
-            }
-
-            try
-            {
-                _lostTokenSource.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-                // Disposal won the race after the guard above; the lost token no longer has consumers.
-            }
-        }
 
         public async ValueTask DisposeAsync()
         {
@@ -332,12 +311,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
                 return;
             }
 
-            // Unsubscribe on every teardown path so closing the connection below cannot fire
-            // OnStateChanged into an already-disposed CTS. Dispose the connection before the CTS
-            // for the same reason (the synchronous StateChange would otherwise hit a dead source).
-            Connection.StateChange -= OnStateChanged;
-            await Connection.DisposeAsync().ConfigureAwait(false);
-            _lostTokenSource.Dispose();
+            await engineHandle.DisposeAsync().ConfigureAwait(false);
         }
     }
 }

@@ -10,11 +10,11 @@ namespace Headless.DistributedLocks.Postgres;
 /// connection string does not already specify one.
 /// </summary>
 /// <remarks>
-/// Connection-scoped locks surface a silently-dropped idle holder through Npgsql's <c>StateChange</c>
-/// event, which only fires promptly when keepalive probes are enabled. An injected
+/// Keepalive is complementary to the active connection monitor: TCP keepalive makes Npgsql's
+/// <c>StateChange</c> event surface a silently-dropped idle holder faster, while the monitor's
+/// bounded-timeout server-side probe is the authoritative active check. An injected
 /// <see cref="PostgresDistributedLockOptions.DataSource"/> is the consumer's own object and is never
-/// rebuilt here. An application-level connection monitor is a planned follow-up that will remove this
-/// dependency on keepalive timing.
+/// rebuilt here.
 /// </remarks>
 internal static class PostgresDataSourceFactory
 {
