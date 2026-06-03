@@ -111,4 +111,40 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         // then
         result.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_replace_if_equal_when_expected_is_null_and_stored_frame_is_null()
+    {
+        // given
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync<string?>(key, null, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync<string?>(key, null, "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        cached.Value.Should().Be("value");
+    }
+
+    [Fact]
+    public async Task should_not_replace_if_equal_when_expected_is_null_and_stored_frame_is_not_null()
+    {
+        // given
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.TryReplaceIfEqualAsync<string?>(key, null, "new-value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // then
+        result.Should().BeFalse();
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+        cached.Value.Should().Be("value");
+    }
 }

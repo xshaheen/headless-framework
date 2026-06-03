@@ -77,6 +77,42 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     }
 
     [Fact]
+    public async Task should_remove_if_equal_when_expected_is_null_and_stored_frame_is_null()
+    {
+        // given
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync<string?>(key, null, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync<string?>(key, null, AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_not_remove_if_equal_when_expected_is_null_and_stored_frame_is_not_null()
+    {
+        // given
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync<string?>(key, null, AbortToken);
+
+        // then
+        result.Should().BeFalse();
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        exists.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_remove_all_keys()
     {
         // given
