@@ -113,7 +113,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [payments.md](payments.md) — Paymob Accept (cash-in / cash-out).
 - [permissions.md](permissions.md) — Permission management with caching, authorization, EF Core storage.
 - [push-notifications.md](push-notifications.md) — Push notifications (Firebase FCM, dev no-op).
-- [distributed-locks.md](distributed-locks.md) — Distributed locking (Redis, cache-based, in-memory).
+- [distributed-locks.md](distributed-locks.md) — Distributed locking (Redis, Postgres, cache-based, in-memory).
 - [serialization.md](serialization.md) — Serialization (System.Text.Json, MessagePack).
 - [settings.md](settings.md) — Dynamic runtime settings with hierarchical providers and EF Core storage.
 - [sms.md](sms.md) — SMS sending (Twilio, AWS SNS, Infobip, regional providers).
@@ -243,6 +243,8 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Distributed Locks
 - `Headless.DistributedLocks.Abstractions` — Distributed lock interface.
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
+- `Headless.DistributedLocks.Core.Db` — Shared connection-scoped database lock engine.
+- `Headless.DistributedLocks.Postgres` — PostgreSQL advisory-lock provider.
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
 
 ### Serialization

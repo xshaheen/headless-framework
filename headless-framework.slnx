@@ -94,7 +94,10 @@
     <Folder Name="/DistributedLocks/">
         <Project Path="src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
         <Project Path="src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
+        <Project Path="src\Headless.DistributedLocks.Core.Db\Headless.DistributedLocks.Core.Db.csproj" />
+        <Project Path="src\Headless.DistributedLocks.Postgres\Headless.DistributedLocks.Postgres.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.Postgres.Tests.Integration\Headless.DistributedLocks.Postgres.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Tests.Unit\Headless.DistributedLocks.Tests.Unit.csproj" />
