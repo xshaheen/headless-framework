@@ -420,6 +420,70 @@ public sealed class SubscribeInvokerTests : TestBase
     }
 
     [Fact]
+    public async Task should_rewrite_callback_name_from_consumer_headers()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<RewriteCallbackConsumer>()
+            );
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("callback"),
+            "test.messageName",
+            callbackName: "callbacks.original"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage, RewriteCallbackConsumer>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var result = await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        result.CallbackName.Should().Be("callbacks.rewritten");
+        result.Result.Should().Be(new InvokerResponse("accepted"));
+    }
+
+    [Fact]
+    public async Task should_remove_callback_name_from_consumer_headers()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.ForMessage<InvokerTestMessage>(message =>
+                message.MessageName("test.messageName").OnBus<RemoveCallbackConsumer>()
+            );
+        });
+
+        using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = _CreateMediumMessage(
+            new InvokerTestMessage("callback"),
+            "test.messageName",
+            callbackName: "callbacks.original"
+        );
+        var descriptor = _CreateDescriptor<InvokerTestMessage, RemoveCallbackConsumer>();
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        var result = await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        result.CallbackName.Should().BeNull();
+        result.Result.Should().Be(new InvokerResponse("accepted"));
+    }
+
+    [Fact]
     public async Task should_use_sent_time_header_for_consume_context_timestamp()
     {
         // given
@@ -717,6 +781,26 @@ public sealed class ResponseBodyAndHeaderConsumer : IConsume<InvokerTestMessage>
     {
         context.SetResponse(new InvokerResponse("accepted"));
         context.Headers.AddResponseHeader("response-key", "response-value");
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class RewriteCallbackConsumer : IConsume<InvokerTestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    {
+        context.Headers.RewriteCallback("callbacks.rewritten");
+        context.SetResponse(new InvokerResponse("accepted"));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class RemoveCallbackConsumer : IConsume<InvokerTestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
+    {
+        context.Headers.RemoveCallback();
+        context.SetResponse(new InvokerResponse("accepted"));
         return ValueTask.CompletedTask;
     }
 }

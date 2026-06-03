@@ -113,7 +113,7 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         await next().ConfigureAwait(false);
 
-        var callbackName = context.MediumMessage.Origin.GetCallbackName();
+        consumeHeaders.TryGetValue(Headers.CallbackName, out var callbackName);
         var callbackHeaders = consumeHeaders.ResponseHeader;
         return string.IsNullOrEmpty(callbackName)
             ? new ConsumerExecutedResult(

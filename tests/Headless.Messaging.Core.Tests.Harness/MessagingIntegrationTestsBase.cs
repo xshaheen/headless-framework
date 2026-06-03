@@ -1,7 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Messages;
+using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,6 +65,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
     /// <summary>Gets the publisher for sending messages.</summary>
     protected IOutboxBus Publisher => ServiceProvider.GetRequiredService<IOutboxBus>();
+
+    /// <summary>Gets the queue publisher for sending point-to-point messages.</summary>
+    protected IOutboxQueue QueuePublisher => ServiceProvider.GetRequiredService<IOutboxQueue>();
 
     /// <summary>Gets the data storage for message persistence.</summary>
     protected IDataStorage DataStorage => ServiceProvider.GetRequiredService<IDataStorage>();
@@ -124,11 +131,111 @@ public abstract class MessagingIntegrationTestsBase : TestBase
                     .MessageName("failing-message")
                     .OnBus<FailingTestSubscriber>(consumer => consumer.Group("test-group").Concurrency(1))
             );
+            setup.ForMessage<CallbackRequestMessage>(message =>
+                message
+                    .MessageName("callback-request")
+                    .OnBus<CallbackRequestConsumer>(consumer => consumer.Group("callback-request").Concurrency(1))
+            );
+            setup.ForMessage<CallbackQueueRequestMessage>(message =>
+                message
+                    .MessageName("callback-queue-request")
+                    .OnQueue<CallbackQueueRequestConsumer>(consumer =>
+                        consumer.Group("callback-queue-request").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<CallbackFailureRequestMessage>(message =>
+                message
+                    .MessageName("callback-failure-request")
+                    .OnBus<CallbackFailureRequestConsumer>(consumer =>
+                        consumer.Group("callback-failure-request").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<FanOutRequestMessage>(message =>
+                message
+                    .MessageName("fanout-request")
+                    .OnBus<FanOutConsumerA>(consumer => consumer.Group("fanout-a").Concurrency(1))
+                    .OnBus<FanOutConsumerB>(consumer => consumer.Group("fanout-b").Concurrency(1))
+            );
+            setup.ForMessage<IsolationRequestMessage>(message =>
+                message
+                    .MessageName("isolation-request")
+                    .OnBus<IsolationKeepConsumer>(consumer => consumer.Group("isolation-keep").Concurrency(1))
+                    .OnBus<IsolationRewriteConsumer>(consumer => consumer.Group("isolation-rewrite").Concurrency(1))
+            );
+            setup.ForMessage<ChainRequestMessage>(message =>
+                message
+                    .MessageName("chain-request")
+                    .OnBus<ChainRequestConsumer>(consumer => consumer.Group("chain-request").Concurrency(1))
+            );
+            setup.ForMessage<CallbackResponse>(message =>
+                message
+                    .MessageName("callback-response")
+                    .OnBus<MessageCollector<CallbackResponse>>(consumer =>
+                        consumer.Group("callback-response").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<RewrittenCallbackResponse>(message =>
+                message
+                    .MessageName("rewritten-callback-response")
+                    .OnBus<MessageCollector<RewrittenCallbackResponse>>(consumer =>
+                        consumer.Group("rewritten-callback-response").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<FanOutResponse>(message =>
+                message
+                    .MessageName("fanout-response")
+                    .OnBus<MessageCollector<FanOutResponse>>(consumer =>
+                        consumer.Group("fanout-response").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<IsolationKeepResponse>(message =>
+                message
+                    .MessageName("isolation-callback")
+                    .OnBus<MessageCollector<IsolationKeepResponse>>(consumer =>
+                        consumer.Group("isolation-callback").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<IsolationRewriteResponse>(message =>
+                message
+                    .MessageName("isolation-rewritten-callback")
+                    .OnBus<MessageCollector<IsolationRewriteResponse>>(consumer =>
+                        consumer.Group("isolation-rewritten-callback").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<ChainIntermediateResponse>(message =>
+                message
+                    .MessageName("chain-intermediate-callback")
+                    .OnBus<ChainIntermediateConsumer>(consumer =>
+                        consumer.Group("chain-intermediate-callback").Concurrency(1)
+                    )
+            );
+            setup.ForMessage<ChainFinalResponse>(message =>
+                message
+                    .MessageName("chain-final-callback")
+                    .OnBus<MessageCollector<ChainFinalResponse>>(consumer =>
+                        consumer.Group("chain-final-callback").Concurrency(1)
+                    )
+            );
         });
 
         // Register test helpers as singletons (same instance used throughout tests)
         services.AddSingleton<TestSubscriber>();
         services.AddSingleton<FailingTestSubscriber>();
+        services.AddSingleton<CallbackRequestConsumer>();
+        services.AddSingleton<CallbackQueueRequestConsumer>();
+        services.AddSingleton<CallbackFailureRequestConsumer>();
+        services.AddSingleton<FanOutConsumerA>();
+        services.AddSingleton<FanOutConsumerB>();
+        services.AddSingleton<IsolationKeepConsumer>();
+        services.AddSingleton<IsolationRewriteConsumer>();
+        services.AddSingleton<ChainRequestConsumer>();
+        services.AddSingleton<ChainIntermediateConsumer>();
+        services.AddSingleton<MessageCollector<CallbackResponse>>();
+        services.AddSingleton<MessageCollector<RewrittenCallbackResponse>>();
+        services.AddSingleton<MessageCollector<FanOutResponse>>();
+        services.AddSingleton<MessageCollector<IsolationKeepResponse>>();
+        services.AddSingleton<MessageCollector<IsolationRewriteResponse>>();
+        services.AddSingleton<MessageCollector<ChainFinalResponse>>();
 
         // Allow additional service configuration
         ConfigureServices(services);
@@ -388,6 +495,252 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         return Task.CompletedTask;
     }
 
+    public virtual async Task should_publish_callback_response_for_bus_request()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        collector.Clear();
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Normal);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(15), AbortToken);
+
+        // then
+        received.Should().BeTrue("callback response should be delivered through the outbox bus path");
+        var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
+        context.Message.RequestId.Should().Be(request.Id);
+        context.Message.SourceIntent.Should().Be(nameof(IntentType.Bus));
+        context.Headers[Headers.Type].Should().Be(nameof(CallbackResponse));
+        context.CorrelationId.Should().NotBeNullOrWhiteSpace();
+        context.Headers[Headers.CorrelationSequence].Should().Be("1");
+    }
+
+    public virtual async Task should_publish_callback_response_for_queue_request()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        collector.Clear();
+        var request = new CallbackQueueRequestMessage(Guid.NewGuid().ToString("N"));
+
+        // when
+        await QueuePublisher.EnqueueAsync(
+            request,
+            new EnqueueOptions
+            {
+                MessageName = "callback-queue-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(15), AbortToken);
+
+        // then
+        received.Should().BeTrue("queue-originated requests should still publish callbacks on the bus path");
+        var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
+        context.Message.RequestId.Should().Be(request.Id);
+        context.Message.SourceIntent.Should().Be(nameof(IntentType.Queue));
+        context.MessageName.Should().Be(ResolveMessageName("callback-response"));
+    }
+
+    public virtual async Task should_rewrite_callback_when_response_is_set()
+    {
+        // given
+        var originalCollector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        var rewrittenCollector = ServiceProvider.GetRequiredService<MessageCollector<RewrittenCallbackResponse>>();
+        originalCollector.Clear();
+        rewrittenCollector.Clear();
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Rewrite);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var rewrittenReceived = await rewrittenCollector.WaitForCountAsync(1, TimeSpan.FromSeconds(15), AbortToken);
+        var originalReceived = await originalCollector.WaitForCountAsync(1, TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        rewrittenReceived.Should().BeTrue("rewritten callback should receive the response");
+        originalReceived.Should().BeFalse("original callback should not receive rewritten responses");
+        rewrittenCollector.ReceivedMessages.Should().ContainSingle(message => message.RequestId == request.Id);
+    }
+
+    public virtual async Task should_remove_callback_even_when_response_is_set()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        collector.Clear();
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Remove);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "callback-request",
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
+
+        // then
+        received.Should().BeFalse("RemoveCallback should suppress response publication");
+    }
+
+    public virtual async Task should_drop_set_response_when_callback_name_is_absent()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        collector.Clear();
+        var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Normal);
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions { MessageName = "callback-request" },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
+
+        // then
+        received.Should().BeFalse("responses without callback names are captured but not published");
+    }
+
+    public virtual async Task should_publish_one_callback_response_per_fanout_subscriber()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<FanOutResponse>>();
+        collector.Clear();
+        var request = new FanOutRequestMessage(Guid.NewGuid().ToString("N"));
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "fanout-request",
+                CallbackName = "fanout-response",
+            },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(2, TimeSpan.FromSeconds(20), AbortToken);
+
+        // then
+        received.Should().BeTrue("each fan-out subscriber should publish its own callback response");
+        collector.ReceivedMessages.Select(message => message.Consumer).Should().BeEquivalentTo("A", "B");
+    }
+
+    public virtual async Task should_isolate_callback_controls_between_fanout_subscribers()
+    {
+        // given
+        var originalCollector = ServiceProvider.GetRequiredService<MessageCollector<IsolationKeepResponse>>();
+        var rewrittenCollector = ServiceProvider.GetRequiredService<MessageCollector<IsolationRewriteResponse>>();
+        originalCollector.Clear();
+        rewrittenCollector.Clear();
+        var request = new IsolationRequestMessage(Guid.NewGuid().ToString("N"));
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "isolation-request",
+                CallbackName = "isolation-callback",
+            },
+            AbortToken
+        );
+
+        var originalReceived = await originalCollector.WaitForCountAsync(1, TimeSpan.FromSeconds(20), AbortToken);
+        var rewrittenReceived = await rewrittenCollector.WaitForCountAsync(1, TimeSpan.FromSeconds(20), AbortToken);
+
+        // then
+        originalReceived.Should().BeTrue("one subscriber should retain the original callback");
+        rewrittenReceived.Should().BeTrue("one subscriber should independently rewrite its callback");
+        originalCollector.ReceivedMessages.Should().ContainSingle(message => message.RequestId == request.Id);
+        rewrittenCollector.ReceivedMessages.Should().ContainSingle(message => message.RequestId == request.Id);
+    }
+
+    public virtual async Task should_chain_callback_when_response_sets_next_callback_header()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<ChainFinalResponse>>();
+        collector.Clear();
+        var request = new ChainRequestMessage(Guid.NewGuid().ToString("N"));
+
+        // when
+        await Publisher.PublishAsync(
+            request,
+            new PublishOptions
+            {
+                MessageName = "chain-request",
+                CallbackName = "chain-intermediate-callback",
+            },
+            AbortToken
+        );
+
+        var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(20), AbortToken);
+
+        // then
+        received.Should().BeTrue("callback messages should be able to carry the next callback name");
+        var context = collector.ReceivedContexts.Should().ContainSingle().Subject;
+        context.Message.RequestId.Should().Be(request.Id);
+        context.Headers[Headers.CorrelationSequence].Should().Be("2");
+    }
+
+    public virtual async Task should_fail_consume_when_callback_response_cannot_serialize()
+    {
+        // given
+        var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        var failingConsumer = ServiceProvider.GetRequiredService<CallbackFailureRequestConsumer>();
+        collector.Clear();
+        failingConsumer.Reset();
+        var requestId = Guid.NewGuid().ToString("N");
+        var messageId = $"callback-failure-{requestId}";
+
+        // when
+        await Publisher.PublishAsync(
+            new CallbackFailureRequestMessage(requestId),
+            new PublishOptions
+            {
+                MessageName = "callback-failure-request",
+                MessageId = messageId,
+                CallbackName = "callback-response",
+            },
+            AbortToken
+        );
+
+        var attempted = await failingConsumer.WaitForAttemptAsync(TimeSpan.FromSeconds(15), AbortToken);
+        var callbackReceived = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
+
+        // then
+        attempted.Should().BeTrue("the failing response consumer should have attempted to serialize a response");
+        callbackReceived.Should().BeFalse("serialization failure should prevent callback publication");
+
+        var succeeded = await _FindReceivedMessagesAsync(messageId, nameof(StatusName.Succeeded), AbortToken);
+        succeeded.Should().BeEmpty("response serialization failure must not mark the request consume as succeeded");
+    }
+
     protected async Task EnsureTestSubscriberReadyAsync(
         string messageName = "test-message",
         TimeSpan? timeout = null,
@@ -434,6 +787,29 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
             ? messageName
             : string.Concat(MessagingOptions.MessageNamePrefix, ".", messageName);
+    }
+
+    private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(
+        string messageId,
+        string statusName,
+        CancellationToken cancellationToken
+    )
+    {
+        var page = await DataStorage
+            .GetMonitoringApi()
+            .GetMessagesAsync(
+                new MessageQuery
+                {
+                    MessageType = MessageType.Subscribe,
+                    StatusName = statusName,
+                    CurrentPage = 0,
+                    PageSize = 100,
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return page.Items.Where(message => message.MessageId == messageId).ToArray();
     }
 }
 
@@ -511,4 +887,246 @@ public sealed class FailingTestSubscriber : IConsume<FailingTestMessage>
             return false;
         }
     }
+}
+
+public sealed class MessageCollector<TMessage> : IConsume<TMessage>
+    where TMessage : class
+{
+    private readonly ConcurrentQueue<ConsumeContext<TMessage>> _receivedContexts = new();
+    private readonly Lock _lock = new();
+    private TaskCompletionSource<bool> _arrivedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public IReadOnlyCollection<ConsumeContext<TMessage>> ReceivedContexts => _receivedContexts;
+
+    public IReadOnlyCollection<TMessage> ReceivedMessages => _receivedContexts.Select(context => context.Message).ToArray();
+
+    public ValueTask ConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _receivedContexts.Enqueue(context);
+            _arrivedTcs.TrySetResult(true);
+            _arrivedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public async Task<bool> WaitForCountAsync(
+        int count,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default
+    )
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
+        try
+        {
+            while (true)
+            {
+                Task waitTask;
+
+                lock (_lock)
+                {
+                    if (_receivedContexts.Count >= count)
+                    {
+                        return true;
+                    }
+
+                    waitTask = _arrivedTcs.Task;
+                }
+
+                await waitTask.WaitAsync(cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    public void Clear()
+    {
+        lock (_lock)
+        {
+            _receivedContexts.Clear();
+            _arrivedTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+}
+
+public sealed record CallbackRequestMessage(string Id, CallbackRequestMode Mode);
+
+public enum CallbackRequestMode
+{
+    Normal,
+    Rewrite,
+    Remove,
+}
+
+public sealed record CallbackQueueRequestMessage(string Id);
+
+public sealed record CallbackFailureRequestMessage(string Id);
+
+public sealed record FanOutRequestMessage(string Id);
+
+public sealed record IsolationRequestMessage(string Id);
+
+public sealed record ChainRequestMessage(string Id);
+
+public sealed record CallbackResponse(string RequestId, string SourceIntent);
+
+public sealed record RewrittenCallbackResponse(string RequestId);
+
+public sealed record FanOutResponse(string RequestId, string Consumer);
+
+public sealed record IsolationKeepResponse(string RequestId);
+
+public sealed record IsolationRewriteResponse(string RequestId);
+
+public sealed record ChainIntermediateResponse(string RequestId);
+
+public sealed record ChainFinalResponse(string RequestId);
+
+public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<CallbackRequestMessage> context, CancellationToken cancellationToken)
+    {
+        switch (context.Message.Mode)
+        {
+            case CallbackRequestMode.Rewrite:
+                context.Headers.RewriteCallback("rewritten-callback-response");
+                context.SetResponse(new RewrittenCallbackResponse(context.Message.Id));
+                break;
+            case CallbackRequestMode.Remove:
+                context.Headers.RemoveCallback();
+                context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+                break;
+            default:
+                context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+                break;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class CallbackQueueRequestConsumer : IConsume<CallbackQueueRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<CallbackQueueRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class CallbackFailureRequestConsumer : IConsume<CallbackFailureRequestMessage>
+{
+    private readonly Lock _lock = new();
+    private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public ValueTask ConsumeAsync(ConsumeContext<CallbackFailureRequestMessage> context, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            _attemptTcs.TrySetResult(true);
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
+        context.SetResponse(new UnserializableCallbackResponse(context.Message.Id));
+        return ValueTask.CompletedTask;
+    }
+
+    public async Task<bool> WaitForAttemptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
+        try
+        {
+            Task waitTask;
+
+            lock (_lock)
+            {
+                waitTask = _attemptTcs.Task;
+            }
+
+            await waitTask.WaitAsync(cts.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+    }
+}
+
+public sealed class FanOutConsumerA : IConsume<FanOutRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<FanOutRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.SetResponse(new FanOutResponse(context.Message.Id, "A"));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class FanOutConsumerB : IConsume<FanOutRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<FanOutRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.SetResponse(new FanOutResponse(context.Message.Id, "B"));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class IsolationKeepConsumer : IConsume<IsolationRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<IsolationRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.SetResponse(new IsolationKeepResponse(context.Message.Id));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class IsolationRewriteConsumer : IConsume<IsolationRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<IsolationRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.Headers.RewriteCallback("isolation-rewritten-callback");
+        context.SetResponse(new IsolationRewriteResponse(context.Message.Id));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class ChainRequestConsumer : IConsume<ChainRequestMessage>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<ChainRequestMessage> context, CancellationToken cancellationToken)
+    {
+        context.Headers.AddResponseHeader(Headers.CallbackName, "chain-final-callback");
+        context.SetResponse(new ChainIntermediateResponse(context.Message.Id));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed class ChainIntermediateConsumer : IConsume<ChainIntermediateResponse>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<ChainIntermediateResponse> context, CancellationToken cancellationToken)
+    {
+        context.SetResponse(new ChainFinalResponse(context.Message.RequestId));
+        return ValueTask.CompletedTask;
+    }
+}
+
+public sealed record UnserializableCallbackResponse(string RequestId)
+{
+    public string ThrowingValue => throw new InvalidOperationException("Callback response cannot serialize.");
 }
