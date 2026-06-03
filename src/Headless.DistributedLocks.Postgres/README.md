@@ -76,7 +76,7 @@ options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-buil
 
 ## Dependencies
 
-- `Headless.DistributedLocks.Core.Db`
+- `Headless.DistributedLocks.Core.Database`
 - `Headless.DistributedLocks.Core`
 - `Headless.Hosting`
 - `Npgsql`
