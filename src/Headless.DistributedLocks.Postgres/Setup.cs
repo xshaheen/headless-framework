@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.DistributedLocks.Postgres;
 
@@ -54,7 +55,8 @@ public static class SetupPostgresDistributedLocks
                 sp.GetRequiredService<ILongIdGenerator>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<ConnectionScopedDistributedLockProvider>>(),
-                sp.GetService<IFencingTokenSource>()
+                sp.GetService<IFencingTokenSource>(),
+                pollingFallback: sp.GetRequiredService<IOptions<PostgresDistributedLockOptions>>().Value.PollingFallback
             ));
             services.TryAddSingleton<IDistributedLockProvider>(sp =>
                 sp.GetRequiredService<ConnectionScopedDistributedLockProvider>()

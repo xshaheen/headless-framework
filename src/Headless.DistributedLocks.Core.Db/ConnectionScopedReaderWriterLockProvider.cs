@@ -48,17 +48,17 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
 
     public Task<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return mutexProvider.IsLockedAsync(resource, cancellationToken);
+        return mutexProvider.IsLockedAsync(resource, isShared: true, cancellationToken);
     }
 
     public Task<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return mutexProvider.IsLockedAsync(resource, cancellationToken);
+        return mutexProvider.IsLockedAsync(resource, isShared: false, cancellationToken);
     }
 
     public async Task<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return await mutexProvider.IsLockedAsync(resource, cancellationToken).ConfigureAwait(false) ? 1 : 0;
+        return await mutexProvider.GetLocksCountAsync(resource, isShared: true, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IDistributedLock> _AcquireAsync(

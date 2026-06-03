@@ -18,6 +18,12 @@ public interface IConnectionScopedLockStorage
 
     ValueTask<bool> IsLockedAsync(string resource, bool? isShared = null, CancellationToken cancellationToken = default);
 
+    ValueTask<long> GetLocksCountAsync(
+        string resource,
+        bool? isShared = null,
+        CancellationToken cancellationToken = default
+    );
+
     ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);

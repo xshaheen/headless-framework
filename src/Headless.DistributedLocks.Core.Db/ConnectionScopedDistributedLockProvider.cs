@@ -15,10 +15,12 @@ public sealed class ConnectionScopedDistributedLockProvider(
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
     ILogger<ConnectionScopedDistributedLockProvider> logger,
-    IFencingTokenSource? fencingTokenSource = null
+    IFencingTokenSource? fencingTokenSource = null,
+    TimeSpan? pollingFallback = null
 ) : IDistributedLockProvider
 {
     private static readonly TimeSpan _DefaultPollingFallback = TimeSpan.FromMilliseconds(100);
+    private readonly TimeSpan _pollingFallback = pollingFallback ?? _DefaultPollingFallback;
 
     public TimeSpan DefaultTimeUntilExpires => Timeout.InfiniteTimeSpan;
 
@@ -85,9 +87,27 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
             if (handle is not null)
             {
-                var fencingToken = isShared || fencingTokenSource is null
-                    ? null
-                    : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
+                long? fencingToken;
+
+                try
+                {
+                    fencingToken = isShared || fencingTokenSource is null
+                        ? null
+                        : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    try
+                    {
+                        await _ReleaseAsync(handle, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception releaseException)
+                    {
+                        logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, lockId);
+                    }
+
+                    throw;
+                }
 
                 var waited = timeProvider.GetElapsedTime(started);
 
@@ -115,7 +135,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
             }
 
             var remaining = deadline == DateTimeOffset.MaxValue
-                ? _DefaultPollingFallback
+                ? _pollingFallback
                 : deadline - timeProvider.GetUtcNow();
 
             if (remaining <= TimeSpan.Zero)
@@ -123,7 +143,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
                 continue;
             }
 
-            var wait = remaining < _DefaultPollingFallback ? remaining : _DefaultPollingFallback;
+            var wait = remaining < _pollingFallback ? remaining : _pollingFallback;
             await releaseSignal.WaitAsync(resource, wait, cancellationToken).ConfigureAwait(false);
         }
     }
@@ -153,6 +173,16 @@ public sealed class ConnectionScopedDistributedLockProvider(
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
     {
         return storage.IsLockedAsync(resource, cancellationToken: cancellationToken).AsTask();
+    }
+
+    internal Task<bool> IsLockedAsync(string resource, bool isShared, CancellationToken cancellationToken = default)
+    {
+        return storage.IsLockedAsync(resource, isShared, cancellationToken).AsTask();
+    }
+
+    internal Task<long> GetLocksCountAsync(string resource, bool isShared, CancellationToken cancellationToken = default)
+    {
+        return storage.GetLocksCountAsync(resource, isShared, cancellationToken).AsTask();
     }
 
     public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default)

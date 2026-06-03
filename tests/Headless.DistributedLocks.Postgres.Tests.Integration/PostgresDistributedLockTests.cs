@@ -4,6 +4,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Postgres;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Tests;
 
@@ -40,7 +41,72 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         handle.IsMonitored.Should().BeTrue();
     }
 
-    private ServiceProvider _CreateProvider()
+    [Fact]
+    public async Task should_report_reader_and_writer_state_by_lock_mode()
+    {
+        await using var provider = _CreateProvider();
+        var locks = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using (var firstReader = await locks.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
+        await using (var secondReader = await locks.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
+        {
+            (await locks.IsReadLockedAsync(resource, AbortToken)).Should().BeTrue();
+            (await locks.IsWriteLockedAsync(resource, AbortToken)).Should().BeFalse();
+            (await locks.GetReaderCountAsync(resource, AbortToken)).Should().Be(2);
+        }
+
+        await using var writer = await locks.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
+
+        (await locks.IsReadLockedAsync(resource, AbortToken)).Should().BeFalse();
+        (await locks.IsWriteLockedAsync(resource, AbortToken)).Should().BeTrue();
+        (await locks.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_not_publish_postgres_notification_when_push_wakeup_is_disabled()
+    {
+        await using var listener = new NpgsqlConnection(fixture.ConnectionString);
+        await listener.OpenAsync(AbortToken);
+
+        var notifications = 0;
+        listener.Notification += (_, args) =>
+        {
+            if (args.Channel == "headless_distributed_locks_release")
+            {
+                notifications++;
+            }
+        };
+
+        await using (var command = listener.CreateCommand())
+        {
+            command.CommandText = "LISTEN headless_distributed_locks_release";
+            await command.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        await using var provider = _CreateProvider(options => options.EnablePushWakeup = false);
+        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var resource = Faker.Random.AlphaNumeric(12);
+        await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        await handle.ReleaseAsync();
+
+        using var waitTimeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromMilliseconds(250));
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(waitTimeout.Token, AbortToken);
+
+        try
+        {
+            await listener.WaitAsync(waitCancellation.Token);
+        }
+        catch (OperationCanceledException) when (waitTimeout.IsCancellationRequested)
+        {
+            // Expected path when no notification is emitted.
+        }
+
+        notifications.Should().Be(0);
+    }
+
+    private ServiceProvider _CreateProvider(Action<PostgresDistributedLockOptions>? configure = null)
     {
         var services = new ServiceCollection();
 
@@ -49,6 +115,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         {
             options.ConnectionString = fixture.ConnectionString;
             options.KeyPrefix = "test:";
+            configure?.Invoke(options);
         });
 
         return services.BuildServiceProvider();

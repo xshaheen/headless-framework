@@ -29,21 +29,33 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         CancellationToken cancellationToken = default
     )
     {
-        var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        NpgsqlConnection? connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var key = _CreateKey(resource);
-        var acquired = await _TryAcquireAsync(connection, key, isShared, cancellationToken).ConfigureAwait(false);
+        var ownershipTransferred = false;
 
-        if (!acquired)
+        try
         {
-            await connection.DisposeAsync().ConfigureAwait(false);
-            return null;
+            var acquired = await _TryAcquireAsync(connection, key, isShared, cancellationToken).ConfigureAwait(false);
+
+            if (!acquired)
+            {
+                return null;
+            }
+
+            var held = new HeldLock(resource, lockId, key, isShared, connection);
+            connection.StateChange += held.OnStateChanged;
+            _heldByLockId[lockId] = held;
+            ownershipTransferred = true;
+
+            return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, held.ConnectionLostToken);
         }
-
-        var held = new HeldLock(resource, lockId, key, isShared, connection);
-        connection.StateChange += held.OnStateChanged;
-        _heldByLockId[lockId] = held;
-
-        return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, held.ConnectionLostToken);
+        finally
+        {
+            if (!ownershipTransferred)
+            {
+                await connection.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     public async ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
@@ -65,7 +77,6 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             if (held.Connection.FullState.HasFlag(ConnectionState.Open))
             {
                 await _ReleaseAsync(held.Connection, held.Key, held.IsShared, cancellationToken).ConfigureAwait(false);
-                await _NotifyAsync(held.Connection, held.Resource, cancellationToken).ConfigureAwait(false);
             }
         }
         finally
@@ -75,6 +86,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     }
 
     public async ValueTask<bool> IsLockedAsync(
+        string resource,
+        bool? isShared = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var count = await GetLocksCountAsync(resource, isShared, cancellationToken).ConfigureAwait(false);
+
+        return count > 0;
+    }
+
+    public async ValueTask<long> GetLocksCountAsync(
         string resource,
         bool? isShared = null,
         CancellationToken cancellationToken = default
@@ -100,9 +122,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             command.Parameters.AddWithValue("mode", isShared.Value ? "ShareLock" : "ExclusiveLock");
         }
 
-        var count = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
-
-        return count > 0;
+        return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
     public ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default)
@@ -178,14 +198,6 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     {
         await using var command = connection.CreateCommand();
         command.CommandText = $"SELECT pg_catalog.pg_advisory_unlock{(isShared ? "_shared" : "")}({AddKeyParameters(command, key)})";
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static async ValueTask _NotifyAsync(NpgsqlConnection connection, string resource, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT pg_catalog.pg_notify('headless_distributed_locks_release', @resource)";
-        command.Parameters.AddWithValue("resource", resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
