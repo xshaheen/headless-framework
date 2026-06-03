@@ -1,4 +1,4 @@
-# Headless.DistributedLocks.Core.Db
+# Headless.DistributedLocks.Core.Database
 
 ## Problem Solved
 
@@ -30,12 +30,12 @@ Then compose them: construct a `ConnectionScopedDistributedLockProvider` with yo
 ## Installation
 
 ```bash
-dotnet add package Headless.DistributedLocks.Core.Db
+dotnet add package Headless.DistributedLocks.Core.Database
 ```
 
 ## Quick Start
 
-Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Db` directly.
+Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Database` directly.
 
 ## Configuration
 

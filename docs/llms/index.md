@@ -243,7 +243,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Distributed Locks
 - `Headless.DistributedLocks.Abstractions` — Distributed lock interface.
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
-- `Headless.DistributedLocks.Core.Db` — Shared connection-scoped database lock engine.
+- `Headless.DistributedLocks.Core.Database` — Shared connection-scoped database lock engine.
 - `Headless.DistributedLocks.Postgres` — PostgreSQL advisory-lock provider.
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
 

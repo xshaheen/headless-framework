@@ -1,6 +1,6 @@
 ---
 domain: Distributed Locks
-packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks.Core.Db, DistributedLocks.Postgres, DistributedLocks.Redis
+packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks.Core.Database, DistributedLocks.Postgres, DistributedLocks.Redis
 ---
 
 # Distributed Locks
@@ -37,7 +37,7 @@ packages: DistributedLocks.Abstractions, DistributedLocks.Core, DistributedLocks
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.DistributedLocks.Core.Db](#headlessdistributedlockscoredb)
+- [Headless.DistributedLocks.Core.Database](#headlessdistributedlockscoredb)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Design Notes](#design-notes-2)
@@ -389,7 +389,7 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ---
 
-## Headless.DistributedLocks.Core.Db
+## Headless.DistributedLocks.Core.Database
 
 Shared connection-scoped engine contracts for database-backed distributed locks.
 
@@ -413,12 +413,12 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 ### Installation
 
 ```bash
-dotnet add package Headless.DistributedLocks.Core.Db
+dotnet add package Headless.DistributedLocks.Core.Database
 ```
 
 ### Quick Start
 
-Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Db` directly.
+Use a concrete provider such as `Headless.DistributedLocks.Postgres`; application code normally does not register `Core.Database` directly.
 
 ### Configuration
 
@@ -517,7 +517,7 @@ options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-buil
 
 ### Dependencies
 
-- `Headless.DistributedLocks.Core.Db`
+- `Headless.DistributedLocks.Core.Database`
 - `Headless.DistributedLocks.Core`
 - `Headless.Hosting`
 - `Npgsql`
