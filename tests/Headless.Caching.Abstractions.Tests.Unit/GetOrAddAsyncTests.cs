@@ -17,6 +17,28 @@ public sealed class GetOrAddAsyncTests : TestBase
 
     private InMemoryCache _CreateCache() => new(_timeProvider, new InMemoryCacheOptions());
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task should_throw_when_options_duration_is_not_positive(int seconds)
+    {
+        // given
+        using var cache = _CreateCache();
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromSeconds(seconds) };
+
+        // when
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                "key",
+                _ => ValueTask.FromResult<string?>("value"),
+                options,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
     [Fact]
     public async Task should_return_cached_value_when_exists()
     {

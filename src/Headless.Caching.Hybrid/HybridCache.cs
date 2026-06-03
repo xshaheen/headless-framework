@@ -107,13 +107,15 @@ public sealed class HybridCache(
     public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
-        TimeSpan expiration,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
+
+        var expiration = options.Duration;
         Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 

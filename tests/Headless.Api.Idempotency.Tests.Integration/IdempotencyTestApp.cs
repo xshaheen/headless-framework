@@ -458,7 +458,7 @@ internal static class IdempotencyTestApp
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
             Func<CancellationToken, ValueTask<T?>> factory,
-            TimeSpan expiration,
+            CacheEntryOptions options,
             CancellationToken cancellationToken = default
         ) => throw _Boom();
 

@@ -15,6 +15,10 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 - Can act as `IRemoteCache` adapter for single-instance scenarios
 - Optional value cloning for isolation
 
+## Design Notes
+
+Memory cache stores entries in an internal envelope with logical expiration and physical expiration. In the current public behavior, both timestamps are equal for every write: physical expiration drives eviction, read misses, LRU maintenance, and size compaction, while logical expiration is returned by `GetExpirationAsync`. The envelope also reserves last-factory-error and tag slots for later fail-safe and tagging features; those slots remain empty until those behaviors ship.
+
 ## Installation
 
 ```bash

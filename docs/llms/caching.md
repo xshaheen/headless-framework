@@ -12,16 +12,18 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
 - [Headless.Caching.Abstractions](#headlesscachingabstractions)
     - [Problem Solved](#problem-solved)
     - [Key Features](#key-features)
+    - [Design Notes](#design-notes)
     - [Installation](#installation)
-    - [Usage](#usage)
+    - [Quick Start](#quick-start)
     - [Configuration](#configuration)
     - [Dependencies](#dependencies)
     - [Side Effects](#side-effects)
 - [Headless.Caching.Memory](#headlesscachingmemory)
     - [Problem Solved](#problem-solved-1)
     - [Key Features](#key-features-1)
+    - [Design Notes](#design-notes-1)
     - [Installation](#installation-1)
-    - [Quick Start](#quick-start)
+    - [Quick Start](#quick-start-1)
     - [Configuration](#configuration-1)
         - [Options](#options)
     - [Dependencies](#dependencies-1)
@@ -30,7 +32,7 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Installation](#installation-2)
-    - [Quick Start](#quick-start-1)
+    - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
         - [appsettings.json](#appsettingsjson)
         - [Options](#options-1)
@@ -40,7 +42,7 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
 - [Headless.Caching.Hybrid](#headlesscachinghybrid)
     - [Installation](#installation-3)
     - [Prerequisites](#prerequisites)
-    - [Usage](#usage-1)
+    - [Usage](#usage)
         - [Basic Setup](#basic-setup)
         - [Using the Cache](#using-the-cache)
     - [Architecture](#architecture)
@@ -70,6 +72,8 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - Use `Caching.Memory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCaching()`) for production multi-instance deployments.
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value` — cache misses return `HasValue = false`, not null.
+- `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
+- Keep direct write operations (`UpsertAsync`, `TryInsertAsync`, set/increment operations) on `TimeSpan?`; `CacheEntryOptions` currently applies only to factory-backed loads.
 - Key length validation is the consumer's responsibility. The framework does not enforce key length limits for DoS protection — validate at your application boundary.
 - StackExchange.Redis does not support `CancellationToken` — timeouts are configured via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`. Cancellation is checked at the start of operations only.
 - For Redis, SCAN-based operations (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) are cancellable during iteration; single-key and batch operations complete atomically once started.
@@ -99,6 +103,11 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 - `IRemoteCache` - Marker interface for remote implementations
 - `ICache<T>` - Strongly-typed cache wrapper
 - `CacheValue<T>` - Cache result with HasValue semantics
+- `CacheEntryOptions` - Factory-backed entry options. Only `Duration` is active today; future cache resilience knobs grow on this type.
+
+## Design Notes
+
+`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
 
 ## Installation
 
@@ -106,24 +115,41 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 dotnet add package Headless.Caching.Abstractions
 ```
 
-## Usage
+## Quick Start
 
 ```csharp
-public sealed class ProductService(ICache cache)
+public sealed record Product(int Id, string Name);
+
+public interface IProductRepository
+{
+    ValueTask<Product?> GetAsync(int id, CancellationToken cancellationToken);
+}
+
+public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(int id, CancellationToken ct)
     {
         var key = $"product:{id}";
-        var cached = await cache.GetAsync<Product>(key, ct).ConfigureAwait(false);
+        var cached = await cache
+            .GetOrAddAsync(key, token => repository.GetAsync(id, token), TimeSpan.FromMinutes(10), ct)
+            .ConfigureAwait(false);
 
-        if (cached.HasValue)
-            return cached.Value;
+        return cached.HasValue ? cached.Value : null;
+    }
 
-        var product = await _repository.GetAsync(id, ct).ConfigureAwait(false);
-        if (product is not null)
-            await cache.UpsertAsync(key, product, TimeSpan.FromMinutes(10), ct).ConfigureAwait(false);
+    public async Task<Product?> GetProductWithOptionsAsync(int id, CancellationToken ct)
+    {
+        var key = $"product:{id}";
+        var cached = await cache
+            .GetOrAddAsync(
+                key,
+                token => repository.GetAsync(id, token),
+                new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) },
+                ct
+            )
+            .ConfigureAwait(false);
 
-        return product;
+        return cached.HasValue ? cached.Value : null;
     }
 }
 ```
@@ -138,7 +164,7 @@ None.
 
 ## Side Effects
 
-## None. This is an abstractions package.
+None. This is an abstractions package.
 
 # Headless.Caching.Memory
 
@@ -156,6 +182,10 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 - Automatic memory management with configurable limits (MaxItems + LRU eviction)
 - Can act as `IRemoteCache` adapter for single-instance scenarios
 - Optional value cloning for isolation
+
+## Design Notes
+
+Memory cache stores entries in an internal envelope with logical expiration and physical expiration. In the current public behavior, both timestamps are equal for every write: physical expiration drives eviction, read misses, LRU maintenance, and size compaction, while logical expiration is returned by `GetExpirationAsync`. The envelope also reserves last-factory-error and tag slots for later fail-safe and tagging features; those slots remain empty until those behaviors ship.
 
 ## Installation
 
@@ -312,23 +342,32 @@ var redis = ConnectionMultiplexer.Connect("localhost:6379");
 services.AddInMemoryCache(isDefault: false);
 services.AddSingleton<IConnectionMultiplexer>(redis);
 services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
-services.AddHybridCache(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
+services.AddHybridCache(options => options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
 ```
 
 ### Using the Cache
 
 ```csharp
-public class ProductService(ICache cache)
+public sealed record Product(string Id, string Name);
+
+public interface IProductRepository
+{
+    ValueTask<Product?> GetByIdAsync(string id, CancellationToken cancellationToken);
+}
+
+public sealed class ProductService(ICache cache, IProductRepository repository)
 {
     public async Task<Product?> GetProductAsync(string id, CancellationToken ct)
     {
-        return (await cache.GetOrAddAsync(
+        var cached = await cache.GetOrAddAsync(
             $"product:{id}",
-            async token => await _repository.GetByIdAsync(id, token),
+            token => repository.GetByIdAsync(id, token),
             TimeSpan.FromHours(1),
             ct
-        )).Value;
+        );
+
+        return cached.HasValue ? cached.Value : null;
     }
 }
 ```

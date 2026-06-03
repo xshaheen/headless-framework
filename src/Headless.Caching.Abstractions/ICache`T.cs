@@ -10,13 +10,14 @@ public interface ICache<T>
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
-    /// <param name="expiration">Expiration time for the cached value.</param>
+    /// <param name="options">Cache entry options for the cached value.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="CacheEntryOptions.Duration"/> is not positive.</exception>
     ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
-        TimeSpan expiration,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     );
 
@@ -107,11 +108,11 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
-        TimeSpan expiration,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )
     {
-        return cache.GetOrAddAsync(key, factory, expiration, cancellationToken);
+        return cache.GetOrAddAsync(key, factory, options, cancellationToken);
     }
 
     public ValueTask<bool> UpsertAsync(
