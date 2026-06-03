@@ -460,6 +460,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 - Under PgBouncer transaction or statement pooling, use the transaction-coupled static API with a caller-owned `NpgsqlTransaction`; do not use session-scoped handles.
 - Session-scoped locks have no TTL. `RenewAsync(...)` returns `true` and `GetExpirationAsync(...)` returns `null`.
 - Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required.
+- Prompt connection-death detection for an idle lock holder (surfaced through `ConnectionScopedLockHandle.ConnectionLostToken`) depends on Npgsql's `Keepalive`: a silently-dropped TCP connection only fires `StateChange` once a keepalive probe fails. When the provider builds its own data source from `ConnectionString` it defaults `KeepAlive` (30s, see `PostgresDistributedLockOptions.KeepAlive`) unless the connection string already sets one. If you inject your own `DataSource`, set `Keepalive` on it yourself or a dead idle holder is detected only on the next operation. An application-level connection monitor is a planned follow-up that will remove this dependency.
 
 ### Installation
 
@@ -511,6 +512,7 @@ options.DataSource = dataSource;         // preferred when already registered
 options.KeyPrefix = "distributed-lock:";
 options.PollingFallback = TimeSpan.FromMilliseconds(100);
 options.EnablePushWakeup = true;
+options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-built DataSource
 ```
 
 ### Dependencies

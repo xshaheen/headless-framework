@@ -16,7 +16,7 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
 
     public PostgresFencingTokenSource(IOptions<PostgresDistributedLockOptions> options)
     {
-        _dataSource = options.Value.DataSource ?? NpgsqlDataSource.Create(options.Value.ConnectionString!);
+        _dataSource = PostgresDataSourceFactory.CreateDataSource(options.Value);
         _ownsDataSource = options.Value.DataSource is null;
         _commandTimeout = options.Value.CommandTimeout;
     }

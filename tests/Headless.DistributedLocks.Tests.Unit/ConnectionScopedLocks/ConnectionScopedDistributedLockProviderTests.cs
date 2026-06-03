@@ -31,10 +31,17 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_configured_polling_fallback_when_waiting_for_contention()
+    public async Task should_jitter_polling_fallback_across_waits_when_waiting_for_contention()
     {
+        // 50 contended attempts before success forces 50 jittered waits on the same resource.
+        const int contendedAttempts = 50;
         var pollingFallback = TimeSpan.FromSeconds(7);
-        _storage.AcquireResults.Enqueue(false);
+
+        for (var i = 0; i < contendedAttempts; i++)
+        {
+            _storage.AcquireResults.Enqueue(false);
+        }
+
         _storage.AcquireResults.Enqueue(true);
 
         var provider = _CreateProvider(pollingFallback: pollingFallback);
@@ -42,17 +49,26 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
 
         await using var handle = await provider.TryAcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(1) },
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(10) },
             AbortToken
         );
 
         handle.Should().NotBeNull();
 
-        // The polling fallback is jittered by [0.8, 1.2) before each wait so that many waiters on the
-        // same resource do not wake in lockstep. Assert the single wait lands within that band rather
-        // than pinning the exact value.
-        var wait = _releaseSignal.WaitDurations.Should().ContainSingle().Subject;
-        wait.Should().BeGreaterThanOrEqualTo(pollingFallback * 0.8).And.BeLessThanOrEqualTo(pollingFallback * 1.2);
+        var waits = _releaseSignal.WaitDurations;
+        waits.Should().HaveCount(contendedAttempts);
+
+        // Every wait must stay inside the [0.8, 1.2) jitter band around the base fallback.
+        waits.Should().AllSatisfy(wait =>
+            wait.Should().BeGreaterThanOrEqualTo(pollingFallback * 0.8).And.BeLessThanOrEqualTo(pollingFallback * 1.2)
+        );
+
+        // Prove jitter is actually applied: a no-jitter implementation would return exactly the base
+        // every time. Require distinct values that fall on BOTH sides of the base fallback so the test
+        // cannot pass against an impl that just returns a constant (even a constant != base).
+        waits.Distinct().Should().HaveCountGreaterThan(1);
+        waits.Should().Contain(wait => wait < pollingFallback);
+        waits.Should().Contain(wait => wait > pollingFallback);
     }
 
     private ConnectionScopedDistributedLockProvider _CreateProvider(

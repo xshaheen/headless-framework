@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
 using System.Globalization;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -44,11 +43,12 @@ public sealed class ConnectionScopedDistributedLockProvider(
     private static readonly TimeSpan _DefaultPollingFallback = TimeSpan.FromMilliseconds(100);
     private readonly TimeSpan _pollingFallback = pollingFallback ?? _DefaultPollingFallback;
 
-    // Per-resource waiter accounting for DoS protection, mirroring the sibling DistributedLockProvider.
-    // Tracks how many acquirers are currently blocked waiting for each contended resource so the
-    // configured caps (MaxConcurrentWaitingResources / MaxWaitersPerResource) can be enforced.
-    private readonly ConcurrentDictionary<string, int> _waitersByResource = new(StringComparer.Ordinal);
-    private readonly Lock _waiterLock = new();
+    // Per-resource waiter accounting for DoS protection, sharing the same cap enforcement as the
+    // sibling DistributedLockProvider via the common WaiterCapRegistry.
+    private readonly WaiterCapRegistry _waiterCaps = new(
+        options.MaxConcurrentWaitingResources,
+        options.MaxWaitersPerResource
+    );
 
     public TimeSpan DefaultTimeUntilExpires => Timeout.InfiniteTimeSpan;
 
@@ -184,7 +184,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
                 // Account for this acquirer as a waiter exactly once, the first time it has to block.
                 if (!isWaiting)
                 {
-                    _EnterWaiting(resource);
+                    _waiterCaps.Enter(resource);
                     isWaiting = true;
                 }
 
@@ -203,55 +203,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
         {
             if (isWaiting)
             {
-                _ExitWaiting(resource);
-            }
-        }
-    }
-
-    private void _EnterWaiting(string resource)
-    {
-        lock (_waiterLock)
-        {
-            if (_waitersByResource.TryGetValue(resource, out var existing))
-            {
-                if (options.MaxWaitersPerResource is { } maxPerResource)
-                {
-                    Ensure.True(existing < maxPerResource, $"Maximum waiters per resource ({maxPerResource}) exceeded");
-                }
-
-                _waitersByResource[resource] = existing + 1;
-
-                return;
-            }
-
-            if (options.MaxConcurrentWaitingResources is { } maxResources)
-            {
-                Ensure.True(
-                    _waitersByResource.Count < maxResources,
-                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
-                );
-            }
-
-            _waitersByResource[resource] = 1;
-        }
-    }
-
-    private void _ExitWaiting(string resource)
-    {
-        lock (_waiterLock)
-        {
-            if (!_waitersByResource.TryGetValue(resource, out var existing))
-            {
-                return;
-            }
-
-            if (existing <= 1)
-            {
-                _waitersByResource.TryRemove(resource, out _);
-            }
-            else
-            {
-                _waitersByResource[resource] = existing - 1;
+                _waiterCaps.Exit(resource);
             }
         }
     }

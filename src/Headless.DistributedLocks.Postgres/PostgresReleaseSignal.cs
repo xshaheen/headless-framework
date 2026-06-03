@@ -30,7 +30,13 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
         if (Options.EnablePushWakeup)
         {
-            _dataSource = Options.DataSource ?? (_ownedDataSource = NpgsqlDataSource.Create(Options.ConnectionString!));
+            // Only the provider-built data source is disposed here (through _ownedDataSource); an injected
+            // DataSource is owned by the consumer and must not be disposed. The factory returns the
+            // injected instance unchanged when one is supplied, so assigning _dataSource from the owned
+            // field when we build it keeps disposal coupled to the field the analyzer can see.
+            _dataSource = Options.DataSource is null
+                ? (_ownedDataSource = PostgresDataSourceFactory.CreateDataSource(Options))
+                : Options.DataSource;
             _listenerTask = Task.Run(_ListenAsync);
         }
     }

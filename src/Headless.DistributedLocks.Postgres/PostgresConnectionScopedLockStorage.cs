@@ -20,7 +20,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     public PostgresConnectionScopedLockStorage(IOptions<PostgresDistributedLockOptions> options)
     {
         _options = options.Value;
-        _dataSource = _options.DataSource ?? NpgsqlDataSource.Create(_options.ConnectionString!);
+        _dataSource = PostgresDataSourceFactory.CreateDataSource(_options);
         _ownsDataSource = _options.DataSource is null;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
     }
