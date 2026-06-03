@@ -139,6 +139,52 @@ public sealed class ConnectionMonitorTests : TestBase
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task should_wake_an_in_flight_monitoring_probe_to_let_a_contended_acquirer_take_the_connection_lock()
+    {
+        // given (a monitoring probe is in flight and holding the connection lock until it is cancelled — this models the
+        // long server-side monitoring sleep that the FIFO-with-retry AcquireConnectionLockAsync path must interrupt)
+        var (connection, fake) = _CreateConnection();
+        await using var _ = connection;
+
+        var probeEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var probeObservedCancellation = false;
+
+        fake.ExecuteNonQueryHandler = async (_, cancellationToken) =>
+        {
+            probeEntered.TrySetResult();
+
+            try
+            {
+                // Hold the connection lock (as a real server-side sleep would) until the contended acquirer cancels us.
+                await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                probeObservedCancellation = true;
+                throw;
+            }
+
+            return 0;
+        };
+
+        using var handle = connection.GetConnectionMonitoringHandle();
+        await probeEntered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // when (a caller needs the connection while the probe holds the lock; AcquireConnectionLockAsync must fire
+        // state-changed to cancel the in-flight probe and let this acquirer in, retrying until it wins the lock)
+        var releaser = await connection
+            .ConnectionMonitor.AcquireConnectionLockAsync(AbortToken)
+            .AsTask()
+            .WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then (the acquirer got the lock by waking/cancelling the in-flight probe — not by waiting out a timeout)
+        releaser.Should().NotBeNull();
+        probeObservedCancellation.Should().BeTrue("the contended acquire must cancel the in-flight monitoring probe");
+
+        releaser!.Dispose();
+    }
+
     private (TestDatabaseConnection Connection, FakeDbConnection Fake) _CreateConnection()
     {
         var fake = new FakeDbConnection();

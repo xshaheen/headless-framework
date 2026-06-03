@@ -70,6 +70,52 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
         pids.Should().HaveCount(2, "the colliding shared lock must be dedicated to a separate backend connection");
     }
 
+    [Fact]
+    public async Task should_release_outstanding_advisory_locks_when_the_provider_is_disposed_without_disposing_handles()
+    {
+        var keyPrefix = $"mux-dispose:{Faker.Random.AlphaNumeric(8)}:";
+        var resourceA = Faker.Random.AlphaNumeric(12);
+        var resourceB = Faker.Random.AlphaNumeric(12);
+
+        var provider = _CreateProvider(keyPrefix);
+        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+
+        // Acquire two locks and DELIBERATELY never dispose the handles. Connection-scoped advisory locks have no TTL and
+        // no GC finalizer reclaim, so disposing the provider is what must release them — this pins the documented
+        // lifecycle contract (storage disposal tears down every outstanding held lock, then the data source).
+        _ = await locks.AcquireAsync(resourceA, cancellationToken: AbortToken);
+        _ = await locks.AcquireAsync(resourceB, cancellationToken: AbortToken);
+
+        // sanity: both are genuinely held server-side before disposal (otherwise the post-dispose assertion is vacuous)
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA)).Should().NotBeEmpty("resource A is held before dispose");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Should().NotBeEmpty("resource B is held before dispose");
+
+        // when (the provider is disposed while both handles are still outstanding)
+        await provider.DisposeAsync();
+
+        // then (provider disposal releases every outstanding advisory lock — poll bound to the test token, no fixed sleep)
+        await _WaitUntilAsync(async () =>
+            (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA)).Count == 0
+            && (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Count == 0
+        );
+
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA)).Should().BeEmpty("provider disposal must release resource A");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Should().BeEmpty("provider disposal must release resource B");
+    }
+
+    /// <summary>Polls <paramref name="condition"/> until true or a bounded deadline, linked to the test abort token.</summary>
+    private async Task _WaitUntilAsync(Func<Task<bool>> condition)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+
+        while (!await condition())
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(TimeSpan.FromMilliseconds(50), cts.Token);
+        }
+    }
+
     /// <summary>
     /// Returns the distinct set of backend process ids (<c>pg_locks.pid</c>) currently holding a granted advisory lock
     /// for <paramref name="keyMaterial"/> in the current database. Filtering on the exact (classid, objid, objsubid)
