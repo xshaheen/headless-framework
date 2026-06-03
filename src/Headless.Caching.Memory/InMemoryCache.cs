@@ -78,7 +78,6 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
-        Argument.IsNotNull(options);
 
         var expiration = options.Duration;
         Argument.IsPositive(expiration);
@@ -2192,7 +2191,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         }
     }
 
-    private sealed record LastFactoryError(Exception Error, DateTimeOffset DateCreated);
+    private sealed record LastFactoryError(Exception Error, DateTime DateCreated);
 
     private DateTime? _ExpireAndGetMaxExpiration<T>(IDictionary<T, DateTime?> dictionary)
         where T : notnull

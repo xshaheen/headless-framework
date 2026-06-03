@@ -17,25 +17,6 @@ public sealed class GetOrAddAsyncTests : TestBase
 
     private InMemoryCache _CreateCache() => new(_timeProvider, new InMemoryCacheOptions());
 
-    [Fact]
-    public async Task should_throw_when_options_is_null()
-    {
-        // given
-        using var cache = _CreateCache();
-
-        // when
-        var act = async () =>
-            await cache.GetOrAddAsync<string>(
-                "key",
-                _ => ValueTask.FromResult<string?>("value"),
-                null!,
-                AbortToken
-            );
-
-        // then
-        await act.Should().ThrowAsync<ArgumentNullException>();
-    }
-
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]

@@ -88,7 +88,6 @@ public sealed class RedisCache(
     {
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
-        Argument.IsNotNull(options);
 
         var expiration = options.Duration;
         Argument.IsPositive(expiration);

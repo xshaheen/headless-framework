@@ -58,6 +58,9 @@ public sealed class InMemoryCacheTests : TestBase
         var lastFactoryErrorType = typeof(InMemoryCache).GetNestedType("LastFactoryError", BindingFlags.NonPublic);
         lastFactoryErrorType.Should().NotBeNull();
 
+        // Binds the private CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
+        // #378 tags) adds parameters here; when that happens GetConstructor returns null and the NotBeNull
+        // assertion below fails with a descriptive message instead of an opaque NRE at Invoke.
         var constructor = entryType!.GetConstructor(
             BindingFlags.Instance | BindingFlags.NonPublic,
             binder: null,
@@ -74,7 +77,11 @@ public sealed class InMemoryCacheTests : TestBase
             ],
             modifiers: null
         );
-        constructor.Should().NotBeNull();
+        constructor
+            .Should()
+            .NotBeNull(
+                "the private CacheEntry constructor signature changed — update _ReplaceEntryEnvelope to match"
+            );
 
         var entry = constructor!.Invoke(
             [

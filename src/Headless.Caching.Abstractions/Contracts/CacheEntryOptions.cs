@@ -12,10 +12,13 @@ namespace Headless.Caching;
 /// factory timeouts, refresh, and tagging. This slice only activates <see cref="Duration"/>.
 /// </remarks>
 [PublicAPI]
-public sealed class CacheEntryOptions
+public readonly record struct CacheEntryOptions
 {
-    /// <summary>Gets or sets the cache entry duration.</summary>
-    public TimeSpan Duration { get; set; }
+    /// <summary>
+    /// Gets the cache entry duration. Must be a positive value; zero or negative durations are
+    /// rejected with an <see cref="ArgumentOutOfRangeException"/> when the entry is created.
+    /// </summary>
+    public TimeSpan Duration { get; init; }
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>

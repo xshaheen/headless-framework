@@ -114,7 +114,6 @@ public sealed class HybridCache(
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
-        Argument.IsNotNull(options);
 
         var expiration = options.Duration;
         Argument.IsPositive(expiration);
