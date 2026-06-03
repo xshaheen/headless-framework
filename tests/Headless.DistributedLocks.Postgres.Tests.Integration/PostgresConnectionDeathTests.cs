@@ -32,12 +32,26 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         await _TerminateLockHoldingBackendAsync(resource);
 
         // The StateChange wiring should observe the connection leaving the Open state and cancel the
-        // handle-lost token so callers stop trusting the lock.
-        using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));
+        // handle-lost token so callers stop trusting the lock. Link the death-detection wait to both
+        // AbortToken and the handle-lost token: a test abort cancels the wait (surfaced as a thrown
+        // cancellation rather than a wall-clock poll slipping past to assert on stale state), the
+        // handle-lost cancellation ends the wait immediately, and a genuine 10s timeout falls through
+        // to the assertion so it fails loudly.
+        using var detection = CancellationTokenSource.CreateLinkedTokenSource(AbortToken, handle.HandleLostToken);
+        detection.CancelAfter(TimeSpan.FromSeconds(10));
 
-        while (!handle.HandleLostToken.IsCancellationRequested && !timeout.IsCancellationRequested)
+        try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, detection.Token);
+        }
+        catch (OperationCanceledException) when (AbortToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            // Either the handle-lost token fired (success) or the 10s timeout elapsed (failure);
+            // both fall through to the assertion below, which decides the outcome.
         }
 
         handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
@@ -69,7 +83,11 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         command.Parameters.AddWithValue("classId", keys.Key1);
         command.Parameters.AddWithValue("objId", keys.Key2);
         command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
-        await command.ExecuteNonQueryAsync(AbortToken);
+
+        // Capture the result: if no backend matched (null/no rows) or termination failed (false), the
+        // test must fail here rather than later asserting on a connection that was never killed.
+        var terminated = await command.ExecuteScalarAsync(AbortToken);
+        terminated.Should().Be(true, "the lock-holding backend should be found and terminated");
     }
 
     private ServiceProvider _CreateProvider()

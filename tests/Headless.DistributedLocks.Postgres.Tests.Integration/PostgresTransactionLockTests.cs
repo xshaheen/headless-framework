@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture fixture) : TestBase
 {
     [Fact]
-    public async Task should_release_transaction_lock_on_commit()
+    public async Task should_release_transaction_lock_when_transaction_commits()
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 
@@ -28,7 +28,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     }
 
     [Fact]
-    public async Task should_release_transaction_lock_on_rollback()
+    public async Task should_release_transaction_lock_when_transaction_rolls_back()
     {
         var key = new PostgresAdvisoryLockKey(Faker.Random.Long());
 

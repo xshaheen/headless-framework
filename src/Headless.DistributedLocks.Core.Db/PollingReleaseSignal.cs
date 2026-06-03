@@ -1,100 +1,70 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Nito.AsyncEx;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Default in-process <see cref="IReleaseSignal"/>. Wakes local waiters via a per-resource
-/// <see cref="Nito.AsyncEx.AsyncAutoResetEvent"/> and otherwise relies on the caller-supplied polling
-/// fallback. A provider with a native cross-process push channel (for example <c>LISTEN/NOTIFY</c>) can
-/// substitute its own implementation; this one is correct but only signals waiters in the same process.
+/// Default in-process <see cref="IReleaseSignal"/>. Wakes a local waiter through a per-resource
+/// <see cref="TaskCompletionSource"/> and otherwise relies on the caller-supplied polling fallback,
+/// so correctness never depends on the push signal being delivered. A provider with a native
+/// cross-process push channel (for example <c>LISTEN/NOTIFY</c>) can substitute its own
+/// implementation; this one is correct but only signals waiters in the same process.
 /// </summary>
 /// <param name="timeProvider">Clock used for the polling delay; defaults to <see cref="TimeProvider.System"/>.</param>
 [PublicAPI]
 public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IReleaseSignal
 {
-    private readonly ConcurrentDictionary<string, Waiters> _signals = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource> _signals = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
+    /// <summary>
+    /// Waits until either the resource is signalled via <see cref="PublishAsync"/> or the polling
+    /// fallback elapses, whichever happens first. Returning on the fallback is expected: the caller
+    /// re-probes the underlying store, so a missed or coalesced signal only costs one extra poll.
+    /// </summary>
+    /// <param name="resource">Resource key whose release the caller is waiting for.</param>
+    /// <param name="pollingFallback">Maximum time to wait before returning to let the caller re-probe.</param>
+    /// <param name="cancellationToken">Token used to cancel the wait.</param>
     public async ValueTask WaitAsync(
         string resource,
         TimeSpan pollingFallback,
         CancellationToken cancellationToken = default
     )
     {
-        // AsyncAutoResetEvent delivers each Set() to exactly one waiter and latches a single pending
-        // signal, so a publish that races ahead of a late waiter's registration is not missed.
-        var waiters = _signals.AddOrUpdate(
+        var signal = _signals.GetOrAdd(
             resource,
-            static _ => new Waiters(),
-            static (_, existing) =>
-            {
-                existing.Increment();
-                return existing;
-            }
+            static _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
         );
 
-        // Cancel the polling delay as soon as the push signal wins, so the timer task is not leaked.
-        using var delayCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = _timeProvider.Delay(pollingFallback, cancellationToken);
+        var completed = await Task.WhenAny(signal.Task, delay).ConfigureAwait(false);
 
-        try
+        if (completed == signal.Task)
         {
-            var signalTask = waiters.Event.WaitAsync(cancellationToken);
-            var delayTask = _timeProvider.Delay(pollingFallback, delayCts.Token);
-
-            var completed = await Task.WhenAny(signalTask, delayTask).ConfigureAwait(false);
-
-            if (completed == signalTask)
-            {
-                await delayCts.CancelAsync().ConfigureAwait(false);
-            }
-
-            await completed.ConfigureAwait(false);
+            _signals.TryRemove(resource, out _);
         }
-        catch (OperationCanceledException) when (delayCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-        {
-            // The delay was cancelled because the push signal won; not an error.
-        }
-        finally
-        {
-            _Release(resource, waiters);
-        }
+
+        await completed.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Wakes the waiter (if any) currently registered for <paramref name="resource"/>. Best-effort:
+    /// a publish that races ahead of a waiter's registration is simply absorbed by the polling
+    /// fallback rather than tracked, so this never blocks and never throws on a missing waiter.
+    /// </summary>
+    /// <param name="resource">Resource key whose waiter should be woken.</param>
+    /// <param name="cancellationToken">Token observed before publishing.</param>
     public ValueTask PublishAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_signals.TryGetValue(resource, out var waiters))
+        if (_signals.TryRemove(resource, out var signal))
         {
-            waiters.Event.Set();
+            signal.TrySetResult();
         }
 
         return ValueTask.CompletedTask;
-    }
-
-    private void _Release(string resource, Waiters waiters)
-    {
-        if (waiters.Decrement() == 0)
-        {
-            // Only remove if this is still the current entry and nobody else re-incremented it.
-            _signals.TryRemove(new KeyValuePair<string, Waiters>(resource, waiters));
-        }
-    }
-
-    private sealed class Waiters
-    {
-        // Seeded at 1 for the first waiter (the AddOrUpdate add delegate); each additional waiter
-        // increments via the update delegate. Every waiter decrements exactly once in its finally.
-        private int _refCount = 1;
-
-        public AsyncAutoResetEvent Event { get; } = new(set: false);
-
-        public void Increment() => Interlocked.Increment(ref _refCount);
-
-        public int Decrement() => Interlocked.Decrement(ref _refCount);
     }
 }

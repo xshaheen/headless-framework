@@ -94,6 +94,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
                 await using (var listen = connection.CreateCommand())
                 {
+                    listen.CommandTimeout = _commandTimeoutSeconds;
                     listen.CommandText = $"LISTEN {_Channel}";
                     await listen.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }

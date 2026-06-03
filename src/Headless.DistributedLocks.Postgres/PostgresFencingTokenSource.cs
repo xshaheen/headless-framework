@@ -47,7 +47,7 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
 
         try
         {
-            if (_sequenceEnsured)
+            if (Volatile.Read(ref _sequenceEnsured))
             {
                 return;
             }

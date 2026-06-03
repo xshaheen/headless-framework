@@ -5,6 +5,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Postgres;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Tests;
 
@@ -14,9 +15,10 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task should_wake_waiting_acquirer_after_holder_releases(bool enablePushWakeup)
+    public async Task should_wake_waiting_acquirer_when_holder_releases(bool enablePushWakeup)
     {
-        await using var provider = _CreateProvider(enablePushWakeup);
+        var keyPrefix = $"contention:{Faker.Random.AlphaNumeric(6)}:";
+        await using var provider = _CreateProvider(enablePushWakeup, keyPrefix);
         var locks = provider.GetRequiredService<IDistributedLockProvider>();
         var resource = Faker.Random.AlphaNumeric(12);
 
@@ -37,8 +39,12 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
             AbortToken
         );
 
-        // Give the contender time to enter its wait loop, then confirm it has not acquired yet.
-        await Task.Delay(TimeSpan.FromMilliseconds(300), AbortToken);
+        // Prove the lock is genuinely held before the negative assertion instead of sleeping a fixed
+        // interval: the provider acquires via non-blocking pg_try_advisory_lock + application polling,
+        // so the contender never produces an ungranted pg_locks row. Wait until Postgres reports the
+        // holder's granted advisory lock for this resource — that lock is exactly what forces every
+        // contender pg_try_advisory_lock to fail — then assert the contender has not acquired.
+        await _WaitForHeldLockAsync(keyPrefix + resource);
         contender.IsCompleted.Should().BeFalse();
 
         var stopwatch = Stopwatch.StartNew();
@@ -56,7 +62,47 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
     }
 
-    private ServiceProvider _CreateProvider(bool enablePushWakeup)
+    private async Task _WaitForHeldLockAsync(string keyMaterial)
+    {
+        var key = PostgresAdvisoryLockKey.FromString(keyMaterial, allowHashing: true);
+        var keys = key.Keys;
+
+        using var timeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        while (true)
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync(AbortToken);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT COUNT(*)
+                FROM pg_catalog.pg_locks l
+                JOIN pg_catalog.pg_database d ON d.oid = l.database
+                WHERE l.locktype = 'advisory'
+                  AND l.granted
+                  AND d.datname = pg_catalog.current_database()
+                  AND l.classid = @classId
+                  AND l.objid = @objId
+                  AND l.objsubid = @objSubId
+                """;
+            command.Parameters.AddWithValue("classId", keys.Key1);
+            command.Parameters.AddWithValue("objId", keys.Key2);
+            command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
+
+            var held = (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
+
+            if (held > 0)
+            {
+                return;
+            }
+
+            timeout.Token.IsCancellationRequested.Should().BeFalse("the holder's advisory lock should be granted");
+            await Task.Delay(TimeSpan.FromMilliseconds(25), AbortToken);
+        }
+    }
+
+    private ServiceProvider _CreateProvider(bool enablePushWakeup, string keyPrefix)
     {
         var services = new ServiceCollection();
 
@@ -64,7 +110,7 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
         services.AddPostgresDistributedLocks(options =>
         {
             options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = $"contention:{Faker.Random.AlphaNumeric(6)}:";
+            options.KeyPrefix = keyPrefix;
             options.EnablePushWakeup = enablePushWakeup;
         });
 

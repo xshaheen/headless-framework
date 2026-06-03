@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -160,6 +161,13 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return ValueTask.FromResult((long)_heldByLockId.Count);
     }
 
+    /// <summary>Tears down every held lock and the owned data source.</summary>
+    /// <remarks>
+    /// A single teardown failure does not strand the remaining locks; all errors are collected and
+    /// surfaced after teardown completes. When exactly one error was collected it is rethrown
+    /// preserving its original type and stack trace; two or more are wrapped in an
+    /// <see cref="AggregateException"/>.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         List<Exception>? teardownErrors = null;
@@ -183,13 +191,29 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         if (_ownsDataSource)
         {
-            await _dataSource.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await _dataSource.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // Inside the try so a data-source failure does not drop the lock teardown errors.
+                (teardownErrors ??= []).Add(exception);
+            }
         }
 
-        if (teardownErrors is not null)
+        if (teardownErrors is null)
         {
-            throw new AggregateException(teardownErrors);
+            return;
         }
+
+        if (teardownErrors.Count == 1)
+        {
+            // Preserve the original exception type and stack trace; reserve AggregateException for 2+.
+            ExceptionDispatchInfo.Capture(teardownErrors[0]).Throw();
+        }
+
+        throw new AggregateException(teardownErrors);
     }
 
     private PostgresAdvisoryLockKey _CreateKey(string resource)
@@ -278,9 +302,26 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         public void OnStateChanged(object sender, StateChangeEventArgs args)
         {
-            if (args.CurrentState is not ConnectionState.Open)
+            if (args.CurrentState is ConnectionState.Open)
+            {
+                return;
+            }
+
+            // StateChange fires synchronously on Npgsql's thread and can race disposal: unsubscribe
+            // alone cannot abort a handler already in flight. Skip if already disposed and still guard
+            // Cancel(), since the disposed flag may be set between the check and the call.
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                return;
+            }
+
+            try
             {
                 _lostTokenSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Disposal won the race after the guard above; the lost token no longer has consumers.
             }
         }
 
