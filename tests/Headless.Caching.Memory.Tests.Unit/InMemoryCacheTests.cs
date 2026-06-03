@@ -331,7 +331,11 @@ public sealed class InMemoryCacheTests : TestBase
         await cache.TryReplaceAsync("try-replace", "new", duration, AbortToken);
         await cache.UpsertAsync("try-replace-equal", "old", duration, AbortToken);
         await cache.TryReplaceIfEqualAsync("try-replace-equal", "old", "new", duration, AbortToken);
-        await cache.UpsertAllAsync(new Dictionary<string, string> { ["upsert-all"] = "value" }, duration, AbortToken);
+        await cache.UpsertAllAsync(
+            new Dictionary<string, string>(StringComparer.Ordinal) { ["upsert-all"] = "value" },
+            duration,
+            AbortToken
+        );
         await cache.IncrementAsync("increment", 1L, duration, AbortToken);
         await cache.UpsertAsync("set-if-higher-refresh", 10L, duration, AbortToken);
         await cache.SetIfHigherAsync("set-if-higher-refresh", 5L, duration, AbortToken);
