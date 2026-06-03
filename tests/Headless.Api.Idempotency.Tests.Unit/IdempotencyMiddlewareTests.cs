@@ -16,6 +16,7 @@ using IdempotencyMiddleware = Headless.Api.IdempotencyMiddleware;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 {
     // ── pass-through ──────────────────────────────────────────────────────────
@@ -356,7 +357,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             {
                 nextCalled = true;
                 ctx.Response.StatusCode = 201;
-                return ctx.Response.Body.WriteAsync(new byte[] { 100, 101, 102 }).AsTask();
+                return ctx.Response.Body.WriteAsync("def"u8.ToArray()).AsTask();
             }
         );
 
@@ -439,7 +440,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     {
         // given — cached Complete record whose fingerprint does NOT match the incoming body
         byte[] body = [1, 2, 3];
-        var differentFingerprint = SHA256.HashData([9, 9, 9]);
+        var differentFingerprint = SHA256.HashData("\t\t\t"u8);
 
         var record = new IdempotencyRecord
         {
@@ -488,7 +489,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     public async Task should_return_409_when_mismatch_status_code_is_409()
     {
         byte[] body = [1, 2, 3];
-        var differentFingerprint = SHA256.HashData([9, 9, 9]);
+        var differentFingerprint = SHA256.HashData("\t\t\t"u8);
 
         var record = new IdempotencyRecord
         {
@@ -629,7 +630,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             Kind = RecordKind.Complete,
             StatusCode = 200,
             Body = [9],
-            Fingerprint = SHA256.HashData([9, 9, 9]), // different fingerprint
+            Fingerprint = SHA256.HashData("\t\t\t"u8), // different fingerprint
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
@@ -853,7 +854,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             Kind = RecordKind.Complete,
             StatusCode = 200,
             Body = [9],
-            Fingerprint = SHA256.HashData([9, 9, 9]), // mismatch
+            Fingerprint = SHA256.HashData("\t\t\t"u8), // mismatch
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
@@ -1392,7 +1393,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
         var inFlight = new IdempotencyRecord
         {
             Kind = RecordKind.InFlight,
-            Fingerprint = SHA256.HashData([9, 9, 9]),
+            Fingerprint = SHA256.HashData("\t\t\t"u8),
             CreatedAt = DateTimeOffset.UtcNow,
         };
 
@@ -1625,7 +1626,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
     {
         // given — cts is cancelled by the handler before it throws; cleanup must still run
         // with CancellationToken.None (i.e., a non-cancelled token).
-        var cts = new CancellationTokenSource();
+        using var cts = new CancellationTokenSource();
         var ctp = Substitute.For<ICancellationTokenProvider>();
         ctp.Token.Returns(cts.Token);
 

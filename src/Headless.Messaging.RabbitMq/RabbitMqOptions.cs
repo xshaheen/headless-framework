@@ -100,7 +100,7 @@ public sealed class RabbitMqOptions
     /// https://www.rabbitmq.com/consumer-prefetch.html
     /// </see>
     /// </summary>
-    public BasicQos? BasicQosOptions { get; set; } = null;
+    public BasicQos? BasicQosOptions { get; set; }
 
     public class QueueArgumentsOptions
     {
@@ -152,8 +152,8 @@ public sealed class RabbitMqOptions
     public class QueueRabbitOptions
     {
         public bool Durable { get; set; } = true;
-        public bool Exclusive { get; set; } = false;
-        public bool AutoDelete { get; set; } = false;
+        public bool Exclusive { get; set; }
+        public bool AutoDelete { get; set; }
     }
 }
 

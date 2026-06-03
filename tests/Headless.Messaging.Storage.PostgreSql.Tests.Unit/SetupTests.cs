@@ -4,7 +4,7 @@ using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.PostgreSql;
+using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

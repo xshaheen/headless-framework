@@ -22,7 +22,7 @@ public class FluentChainJobBuilder<TTimeJob>
             Id = Guid.NewGuid(),
             CreatedAt = now,
             UpdatedAt = now,
-            Children = new List<TTimeJob>(),
+            Children = [],
         };
 
         // Initialize grandchildren tracking
@@ -148,7 +148,7 @@ public class FluentChainJobBuilder<TTimeJob>
             ParentId = _rootTicker.Id,
             CreatedAt = now,
             UpdatedAt = now,
-            Children = new List<TTimeJob>(),
+            Children = [],
         };
     }
 

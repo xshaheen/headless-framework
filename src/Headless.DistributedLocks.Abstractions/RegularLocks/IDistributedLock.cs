@@ -13,6 +13,14 @@ public interface IDistributedLock : IAsyncDisposable
     /// <summary>A unique identifier for the lock instance.</summary>
     string LockId { get; }
 
+    /// <summary>
+    /// A per-resource monotonic grant counter used by protected resources to reject stale writes.
+    /// This is distinct from <see cref="LockId"/>, which remains the opaque ownership token used
+    /// for release and renew equality checks. Returns <see langword="null"/> when the backend or
+    /// lock type does not support fencing tokens.
+    /// </summary>
+    long? FencingToken { get; }
+
     /// <summary>A name that uniquely identifies the lock.</summary>
     string Resource { get; }
 

@@ -256,7 +256,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         var consumeResult = new ConsumeResult<string, byte[]>
         {
             TopicPartitionOffset = new TopicPartitionOffset("orders.created", new Partition(2), new Offset(17)),
-            Message = new Message<string, byte[]> { Value = [1], Headers = new Headers() },
+            Message = new Message<string, byte[]> { Value = [1], Headers = [] },
         };
 
         // when
@@ -461,7 +461,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                             new Partition(0),
                             new Offset(5)
                         ),
-                        Message = new Message<string, byte[]> { Value = [1], Headers = new Headers() },
+                        Message = new Message<string, byte[]> { Value = [1], Headers = [] },
                     };
                 }
 

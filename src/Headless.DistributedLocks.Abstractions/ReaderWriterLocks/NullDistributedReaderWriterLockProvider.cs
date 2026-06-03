@@ -104,6 +104,8 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
 
         public string LockId { get; } = Guid.NewGuid().ToString("N");
 
+        public long? FencingToken => null;
+
         public string Resource { get; } = resource;
 
         public int RenewalCount => Volatile.Read(ref _renewalCount);

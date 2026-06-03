@@ -75,7 +75,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
         {
             if (header.Value is not null)
             {
-                headers ??= new NatsHeaders();
+                headers ??= [];
                 headers[header.Key] = header.Value;
             }
         }

@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.SqlServer;
+namespace Headless.Messaging.Storage.SqlServer;
 
 internal static partial class SqlServerLoggerExtensions
 {

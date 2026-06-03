@@ -38,7 +38,7 @@ internal sealed class PublishMiddlewarePipeline(
     private static readonly ConditionalWeakTable<
         IMiddlewareDescriptorRegistry,
         ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
-    > _TrackedTypesByRegistry = new();
+    > _TrackedTypesByRegistry = [];
 
     private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
 

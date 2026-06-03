@@ -359,7 +359,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
     {
         if (entities == null || entities.Count == 0)
         {
-            return new JobResult<List<TTimeJob>>(entities ?? new List<TTimeJob>());
+            return new JobResult<List<TTimeJob>>(entities ?? []);
         }
 
         var jobFunctionsHashSet = new HashSet<string>(JobFunctionProvider.JobFunctions.Keys, StringComparer.Ordinal);

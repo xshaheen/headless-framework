@@ -10,20 +10,27 @@ namespace Tests;
 
 public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
 {
+    private static object _SampleParameters =>
+        new
+        {
+            key = (RedisKey)"key",
+            value = (RedisValue)"new",
+            expected = (RedisValue)"expected",
+            expires = RedisValue.EmptyString,
+        };
+
     [Fact]
-    public async Task should_recover_from_noscript_error_by_reloading_once()
+    public async Task should_recover_from_noscript_error_by_re_evaluating_with_eval()
     {
         // given
         var multiplexer = Substitute.For<IConnectionMultiplexer>();
         var db = Substitute.For<IDatabase>();
         var server = Substitute.For<IServer>();
-
-        // Use a concrete EndPoint since NSubstitute for abstract types with no parameterless constructor is tricky
         var endpoint = new IPEndPoint(IPAddress.Loopback, 6379);
 
         multiplexer.GetEndPoints().Returns([endpoint]);
         multiplexer.GetServer(endpoint).Returns(server);
-        multiplexer.GetDatabase().Returns(db);
+        server.IsConnected.Returns(true);
 
         using var sut = new HeadlessRedisScriptsLoader(
             multiplexer,
@@ -31,29 +38,34 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             logger: LoggerFactory.CreateLogger<HeadlessRedisScriptsLoader>()
         );
 
-        // First call fails with NOSCRIPT
+        // The cached EVALSHA path (LoadedLuaScript) fails with NOSCRIPT — e.g. the serving node is
+        // missing the script after a failover.
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
-            .Returns(
-                _ => throw new RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD."),
-                _ => Task.FromResult(RedisResult.Create(1)) // Success on retry
+            .Returns<Task<RedisResult>>(
+                _ => throw new RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD.")
             );
 
+        // The recovery path re-runs the full body via EVAL (LuaScript overload), which succeeds.
+        db.ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(RedisResult.Create(1)));
+
         // when
-        var result = await sut.ReplaceIfEqualAsync(db, "key", "expected", "new");
+        var result = await sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
 
         // then
-        result.Should().BeTrue();
+        ((int)result).Should().Be(1);
 
-        // Verify script was loaded twice (initial + once after NOSCRIPT)
-        // Each load triggers 5 ScriptLoadAsync calls (one for each script in the loader)
-        await server.Received(10).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+        // Recovery does NOT reload the script — it falls straight back to EVAL, so the script is
+        // loaded only once (the initial preload) and the EVALSHA path is attempted only once.
+        await server.Received(1).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
+        await db.Received(1).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
 
-        // Verify evaluate was called twice
-        await db.Received(2).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
+        // The EVAL recovery is invoked exactly once, with NoScriptCache so it cannot NOSCRIPT again.
+        await db.Received(1).ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), CommandFlags.NoScriptCache);
     }
 
     [Fact]
-    public async Task should_propagate_error_if_retry_also_fails_with_noscript()
+    public async Task should_propagate_error_and_not_loop_when_eval_recovery_also_fails()
     {
         // given
         var multiplexer = Substitute.For<IConnectionMultiplexer>();
@@ -63,20 +75,51 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
 
         multiplexer.GetEndPoints().Returns([endpoint]);
         multiplexer.GetServer(endpoint).Returns(server);
+        server.IsConnected.Returns(true);
 
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
-        // All calls fail with NOSCRIPT
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
-            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("NOSCRIPT Still no script."));
+            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("NOSCRIPT No matching script."));
+
+        // Even the EVAL recovery fails (e.g. the connection drops mid-recovery).
+        db.ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>())
+            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("LOADING Redis is loading the dataset."));
 
         // when
-        var act = () => sut.ReplaceIfEqualAsync(db, "key", "expected", "new");
+        var act = () => sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<RedisServerException>().WithMessage("NOSCRIPT*");
+        await act.Should().ThrowAsync<RedisServerException>();
 
-        // Verify it didn't infinite loop - should try twice (initial + 1 retry)
-        await db.Received(2).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
+        // The recovery is attempted exactly once — no retry loop.
+        await db.Received(1).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
+        await db.Received(1).ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    public async Task should_not_attempt_recovery_when_error_is_not_noscript()
+    {
+        // given
+        var multiplexer = Substitute.For<IConnectionMultiplexer>();
+        var db = Substitute.For<IDatabase>();
+        var server = Substitute.For<IServer>();
+        var endpoint = new IPEndPoint(IPAddress.Loopback, 6379);
+
+        multiplexer.GetEndPoints().Returns([endpoint]);
+        multiplexer.GetServer(endpoint).Returns(server);
+        server.IsConnected.Returns(true);
+
+        using var sut = new HeadlessRedisScriptsLoader(multiplexer);
+
+        db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
+            .Returns<Task<RedisResult>>(_ => throw new RedisServerException("WRONGTYPE Operation against a key."));
+
+        // when
+        var act = () => sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
+
+        // then — a non-NOSCRIPT error propagates immediately; the EVAL recovery path is never entered.
+        await act.Should().ThrowAsync<RedisServerException>().WithMessage("WRONGTYPE*");
+        await db.DidNotReceive().ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>());
     }
 }

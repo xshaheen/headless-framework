@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
 using Headless.Features.Entities;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -45,10 +45,8 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -70,10 +68,8 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -93,7 +89,7 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
         // Serialize concurrent-startup DDL across replicas with a transaction-scoped advisory
         // lock keyed on the schema (multiple tables share the schema). Auto-released on COMMIT/ROLLBACK.
         var lockResource = $"headless_features_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -141,7 +137,7 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
         var groupsTable = _Qualified(options.Schema, options.FeatureGroupDefinitionsTableName);
 
         var lockResource = $"headless_features_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -155,9 +151,15 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
             """;
     }
 
-    internal static string Qualified(FeaturesStorageOptions options, string tableName) => _Qualified(options.Schema, tableName);
+    internal static string Qualified(FeaturesStorageOptions options, string tableName) =>
+        _Qualified(options.Schema, tableName);
 
-    private static string _Qualified(string schema, string tableName) => $@"""{schema}"".""{tableName}""";
+    private static string _Qualified(string schema, string tableName)
+    {
+        return $"""
+            "{schema}"."{tableName}"
+            """;
+    }
 
     [LoggerMessage(
         EventId = 1,
@@ -165,5 +167,6 @@ internal sealed partial class PostgreSqlFeaturesStorageInitializer(
         Level = LogLevel.Information,
         Message = "PostgreSql features initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

@@ -20,15 +20,13 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"""SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[IsEnabled],[Providers],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)};""";
+            $"SELECT [Id],[GroupName],[Name],[ParentName],[DisplayName],[IsEnabled],[Providers],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)};";
 
         var result = new List<PermissionDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -59,20 +57,22 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     )
     {
         var sql =
-            $"""SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)};""";
+            $"SELECT [Id],[Name],[DisplayName],[ExtraProperties] FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)};";
 
         var result = new List<PermissionGroupDefinitionRecord>();
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = new SqlCommand(sql, connection)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection);
+        command.CommandTimeout = _CommandTimeout();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var record = new PermissionGroupDefinitionRecord(reader.GetGuid(0), reader.GetString(1), reader.GetString(2));
+            var record = new PermissionGroupDefinitionRecord(
+                reader.GetGuid(0),
+                reader.GetString(1),
+                reader.GetString(2)
+            );
 
             foreach (var (key, value) in _DeserializeExtraProperties(reader.GetString(3)))
             {
@@ -101,32 +101,68 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
 
         foreach (var record in newGroups)
         {
-            await _ExecuteGroupAsync(connection, (SqlTransaction)transaction, _InsertGroupSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteGroupAsync(
+                    connection,
+                    (SqlTransaction)transaction,
+                    _InsertGroupSql(),
+                    record,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         foreach (var record in updatedGroups)
         {
-            await _ExecuteGroupAsync(connection, (SqlTransaction)transaction, _UpdateGroupSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecuteGroupAsync(
+                    connection,
+                    (SqlTransaction)transaction,
+                    _UpdateGroupSql(),
+                    record,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         foreach (var record in deletedGroups)
         {
-            await _DeleteAsync(connection, (SqlTransaction)transaction, _DeleteGroupSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(connection, (SqlTransaction)transaction, _DeleteGroupSql(), record.Id, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         foreach (var record in newPermissions)
         {
-            await _ExecutePermissionAsync(connection, (SqlTransaction)transaction, _InsertPermissionSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecutePermissionAsync(
+                    connection,
+                    (SqlTransaction)transaction,
+                    _InsertPermissionSql(),
+                    record,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         foreach (var record in updatedPermissions)
         {
-            await _ExecutePermissionAsync(connection, (SqlTransaction)transaction, _UpdatePermissionSql(), record, cancellationToken).ConfigureAwait(false);
+            await _ExecutePermissionAsync(
+                    connection,
+                    (SqlTransaction)transaction,
+                    _UpdatePermissionSql(),
+                    record,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         foreach (var record in deletedPermissions)
         {
-            await _DeleteAsync(connection, (SqlTransaction)transaction, _DeletePermissionSql(), record.Id, cancellationToken).ConfigureAwait(false);
+            await _DeleteAsync(
+                    connection,
+                    (SqlTransaction)transaction,
+                    _DeletePermissionSql(),
+                    record.Id,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
@@ -140,14 +176,15 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@Name", record.Name);
         command.Parameters.AddWithValue("@DisplayName", record.DisplayName);
-        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
+        command.Parameters.AddWithValue(
+            "@ExtraProperties",
+            serializer.SerializeToString(record.ExtraProperties) ?? "{}"
+        );
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -159,10 +196,8 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddWithValue("@Id", record.Id);
         command.Parameters.AddWithValue("@GroupName", record.GroupName);
         command.Parameters.AddWithValue("@Name", record.Name);
@@ -170,7 +205,10 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         command.Parameters.AddWithValue("@IsEnabled", record.IsEnabled);
         command.Parameters.AddWithValue("@ParentName", (object?)record.ParentName ?? DBNull.Value);
         command.Parameters.AddWithValue("@Providers", (object?)record.Providers ?? DBNull.Value);
-        command.Parameters.AddWithValue("@ExtraProperties", serializer.SerializeToString(record.ExtraProperties) ?? "{}");
+        command.Parameters.AddWithValue(
+            "@ExtraProperties",
+            serializer.SerializeToString(record.ExtraProperties) ?? "{}"
+        );
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -182,10 +220,8 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
         CancellationToken cancellationToken
     )
     {
-        await using var command = new SqlCommand(sql, connection, transaction)
-        {
-            CommandTimeout = _CommandTimeout(),
-        };
+        await using var command = new SqlCommand(sql, connection, transaction);
+        command.CommandTimeout = _CommandTimeout();
         command.Parameters.AddWithValue("@Id", id);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -193,22 +229,22 @@ internal sealed class SqlServerPermissionDefinitionRecordRepository(
     private int _CommandTimeout() => (int)providerOptions.Value.CommandTimeout.TotalSeconds;
 
     private string _InsertGroupSql() =>
-        $"""INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@ExtraProperties);""";
+        $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} ([Id],[Name],[DisplayName],[ExtraProperties]) VALUES (@Id,@Name,@DisplayName,@ExtraProperties);";
 
     private string _UpdateGroupSql() =>
-        $"""UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;""";
+        $"UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} SET [Name]=@Name,[DisplayName]=@DisplayName,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
 
     private string _DeleteGroupSql() =>
-        $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} WHERE [Id]=@Id;""";
+        $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionGroupDefinitionsTableName)} WHERE [Id]=@Id;";
 
     private string _InsertPermissionSql() =>
-        $"""INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} ([Id],[GroupName],[Name],[DisplayName],[IsEnabled],[ParentName],[Providers],[ExtraProperties]) VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);""";
+        $"INSERT INTO {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} ([Id],[GroupName],[Name],[DisplayName],[IsEnabled],[ParentName],[Providers],[ExtraProperties]) VALUES (@Id,@GroupName,@Name,@DisplayName,@IsEnabled,@ParentName,@Providers,@ExtraProperties);";
 
     private string _UpdatePermissionSql() =>
-        $"""UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[IsEnabled]=@IsEnabled,[ParentName]=@ParentName,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;""";
+        $"UPDATE {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} SET [GroupName]=@GroupName,[Name]=@Name,[DisplayName]=@DisplayName,[IsEnabled]=@IsEnabled,[ParentName]=@ParentName,[Providers]=@Providers,[ExtraProperties]=@ExtraProperties WHERE [Id]=@Id;";
 
     private string _DeletePermissionSql() =>
-        $"""DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE [Id]=@Id;""";
+        $"DELETE FROM {SqlServerPermissionsStorageInitializer.Qualified(storageOptions.Value, storageOptions.Value.PermissionDefinitionsTableName)} WHERE [Id]=@Id;";
 
     private ExtraProperties _DeserializeExtraProperties(string json) =>
         serializer.Deserialize<ExtraProperties>(json) ?? [];

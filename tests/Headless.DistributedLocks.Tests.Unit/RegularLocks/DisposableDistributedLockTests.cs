@@ -28,6 +28,21 @@ public sealed class DisposableDistributedLockTests : TestBase
     }
 
     [Fact]
+    public void should_store_fencing_token()
+    {
+        // given
+        var resource = Faker.Random.AlphaNumeric(10);
+        var lockId = Faker.Random.Guid().ToString();
+        var fencingToken = Faker.Random.Long(1);
+
+        // when
+        var sut = _CreateLock(resource, lockId, fencingToken: fencingToken);
+
+        // then
+        sut.FencingToken.Should().Be(fencingToken);
+    }
+
+    [Fact]
     public void should_store_acquired_at()
     {
         // given
@@ -472,12 +487,14 @@ public sealed class DisposableDistributedLockTests : TestBase
         TimeSpan? timeWaitedForLock = null,
         bool releaseOnDispose = true,
         bool autoExtend = false,
+        long? fencingToken = null,
         Action<string, string>? deregisterMonitor = null
     )
     {
         return new DisposableDistributedLock(
             resource,
             lockId,
+            fencingToken,
             TimeSpan.FromSeconds(10),
             timeWaitedForLock ?? TimeSpan.Zero,
             _lockProvider,

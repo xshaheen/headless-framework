@@ -12,6 +12,7 @@ using NSubstitute.ExceptionExtensions;
 
 namespace Tests;
 
+// ReSharper disable AccessToDisposedClosure
 public sealed class AzureServiceBusQueueTransportTests
 {
     private static readonly IOptions<AzureServiceBusOptions> _Options = Options.Create(
@@ -144,7 +145,7 @@ public sealed class AzureServiceBusQueueTransportTests
     {
         var field = typeof(AzureServiceBusQueueTransport).GetField(
             "_senders",
-            BindingFlags.NonPublic | BindingFlags.Instance
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
         )!;
         var senders = (ConcurrentDictionary<string, Lazy<ServiceBusSender>>)field.GetValue(transport)!;
         senders[queueName] = new Lazy<ServiceBusSender>(() => sender);

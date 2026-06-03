@@ -12,7 +12,7 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 - Can serve as default `ICache` or alongside distributed cache
 - Supports strongly-typed `ICache<T>` pattern
 - Automatic memory management with configurable limits (MaxItems + LRU eviction)
-- Can act as `IDistributedCache` adapter for single-instance scenarios
+- Can act as `IRemoteCache` adapter for single-instance scenarios
 - Optional value cloning for isolation
 
 ## Design Notes
@@ -63,5 +63,5 @@ options.KeyPrefix = "myapp:";   // Optional key prefix
 
 - Registers `IInMemoryCache` as singleton
 - Registers `ICache` as singleton (if isDefault: true)
-- Registers `IDistributedCache` adapter (if isDefault: true)
+- Registers `IRemoteCache` adapter (if isDefault: true)
 - Registers `ICache<T>` and `IInMemoryCache<T>` as singletons

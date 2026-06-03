@@ -616,6 +616,8 @@ internal static class IdempotencyTestApp
 
         public string LockId { get; } = lockId;
 
+        public long? FencingToken => null;
+
         public string Resource { get; } = resource;
 
         public int RenewalCount => 0;

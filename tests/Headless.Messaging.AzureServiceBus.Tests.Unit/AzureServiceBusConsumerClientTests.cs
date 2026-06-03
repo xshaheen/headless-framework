@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -74,7 +75,7 @@ public sealed class AzureServiceBusConsumerClientTests
     {
         // given
         await using var client = new AzureServiceBusConsumerClient(_logger, "test-sub", 1, _options, _serviceProvider);
-        Func<Headless.Messaging.Messages.TransportMessage, object?, Task> callback = (_, _) => Task.CompletedTask;
+        Func<TransportMessage, object?, Task> callback = (_, _) => Task.CompletedTask;
 
         // when
         client.OnMessageCallback = callback;

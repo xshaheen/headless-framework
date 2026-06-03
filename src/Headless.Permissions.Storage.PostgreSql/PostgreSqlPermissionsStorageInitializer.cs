@@ -45,10 +45,8 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -70,10 +68,8 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
 
         try
         {
-            await using var command = new NpgsqlCommand(sql, connection, transaction)
-            {
-                CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds,
-            };
+            await using var command = new NpgsqlCommand(sql, connection, transaction);
+            command.CommandTimeout = (int)providerOptions.Value.CommandTimeout.TotalSeconds;
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -93,7 +89,7 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
         // Serialize concurrent-startup DDL across replicas with a transaction-scoped advisory
         // lock keyed on the schema. Auto-released on COMMIT/ROLLBACK; no explicit release.
         var lockResource = $"headless_permissions_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -139,7 +135,7 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
         var groupsTable = _Qualified(options.Schema, options.PermissionGroupDefinitionsTableName);
 
         var lockResource = $"headless_permissions_init:{options.Schema}";
-        var acquireLock = $"""SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));""";
+        var acquireLock = $"SELECT pg_advisory_xact_lock(hashtextextended('{lockResource}', 0));";
 
         return $"""
             {acquireLock}
@@ -152,9 +148,15 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
             """;
     }
 
-    internal static string Qualified(PermissionsStorageOptions options, string tableName) => _Qualified(options.Schema, tableName);
+    internal static string Qualified(PermissionsStorageOptions options, string tableName) =>
+        _Qualified(options.Schema, tableName);
 
-    private static string _Qualified(string schema, string tableName) => $@"""{schema}"".""{tableName}""";
+    private static string _Qualified(string schema, string tableName)
+    {
+        return $"""
+            "{schema}"."{tableName}"
+            """;
+    }
 
     [LoggerMessage(
         EventId = 1,
@@ -162,5 +164,6 @@ internal sealed partial class PostgreSqlPermissionsStorageInitializer(
         Level = LogLevel.Information,
         Message = "PostgreSql permissions initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }

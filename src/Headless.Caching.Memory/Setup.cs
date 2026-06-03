@@ -63,14 +63,14 @@ public static class SetupInMemoryCache
             {
                 services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IInMemoryCache>());
                 services.AddKeyedSingleton(CacheConstants.MemoryCacheProvider, x => x.GetRequiredService<ICache>());
-                // Distributed Cache adapter
-                services.TryAddSingleton<IDistributedCache>(provider => new InMemoryCacheDistributedCacheAdapter(
+                // Remote cache adapter
+                services.TryAddSingleton<IRemoteCache>(provider => new InMemoryRemoteCacheAdapter(
                     provider.GetRequiredService<IInMemoryCache>()
                 ));
-                services.TryAddSingleton(typeof(IDistributedCache<>), typeof(DistributedCache<>));
+                services.TryAddSingleton(typeof(IRemoteCache<>), typeof(RemoteCache<>));
                 services.AddKeyedSingleton(
-                    CacheConstants.DistributedCacheProvider,
-                    x => x.GetRequiredService<IDistributedCache>()
+                    CacheConstants.RemoteCacheProvider,
+                    x => x.GetRequiredService<IRemoteCache>()
                 );
             }
 
@@ -78,7 +78,7 @@ public static class SetupInMemoryCache
         }
     }
 
-    private sealed class InMemoryCacheDistributedCacheAdapter(IInMemoryCache inMemoryCache) : IDistributedCache
+    private sealed class InMemoryRemoteCacheAdapter(IInMemoryCache inMemoryCache) : IRemoteCache
     {
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,

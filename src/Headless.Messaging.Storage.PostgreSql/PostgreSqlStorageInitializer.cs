@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
 /// PostgreSQL implementation of <see cref="IStorageInitializer"/> for database schema setup.

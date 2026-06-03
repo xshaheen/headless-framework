@@ -29,7 +29,7 @@ public sealed class MessagingOptions
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 #pragma warning restore IDE0032
 
-    internal Dictionary<Type, string> MessageNameMappings { get; } = new();
+    internal Dictionary<Type, string> MessageNameMappings { get; } = [];
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>

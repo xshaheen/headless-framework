@@ -110,8 +110,7 @@ public sealed class BlockInEnvironmentAttributeTests : TestBase
         IProblemDetailsCreator? problemDetailsCreator = null
     )
     {
-        var httpContext = new DefaultHttpContext();
-        httpContext.Request.Path = path;
+        var httpContext = new DefaultHttpContext { Request = { Path = path } };
 
         var services = new ServiceCollection();
         services.AddSingleton(env ?? _CreateEnvironment("Development"));
@@ -132,7 +131,7 @@ public sealed class BlockInEnvironmentAttributeTests : TestBase
         return env;
     }
 
-    private static IProblemDetailsCreator _CreateProblemDetailsCreator()
+    private static ProblemDetailsCreator _CreateProblemDetailsCreator()
     {
         var now = DateTimeOffset.UtcNow;
         var timeProvider = new FakeTimeProvider(now);

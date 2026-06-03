@@ -10,7 +10,7 @@ namespace Headless.Messaging.Internal;
 
 public static partial class Helper
 {
-    private static readonly ConditionalWeakTable<Type, TypeConverter> _ConverterCache = new();
+    private static readonly ConditionalWeakTable<Type, TypeConverter> _ConverterCache = [];
 
     private static readonly ConditionalWeakTable<Type, TypeConverter>.CreateValueCallback _ConverterFactory =
         TypeDescriptor.GetConverter;

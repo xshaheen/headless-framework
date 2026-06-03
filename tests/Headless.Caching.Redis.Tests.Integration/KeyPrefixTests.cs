@@ -10,7 +10,7 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
         // given
         await FlushAsync();
         const string prefix = "myapp:";
-        var cache = CreateCache(prefix);
+        using var cache = CreateCache(prefix);
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -29,8 +29,8 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        var cache1 = CreateCache("tenant1:");
-        var cache2 = CreateCache("tenant2:");
+        using var cache1 = CreateCache("tenant1:");
+        using var cache2 = CreateCache("tenant2:");
         const string key = "shared-key";
 
         // when
@@ -50,7 +50,7 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
         // given
         await FlushAsync();
         const string prefix = "prefixed:";
-        var cache = CreateCache(prefix);
+        using var cache = CreateCache(prefix);
         var key = Faker.Random.AlphaNumeric(10);
 
         // when
@@ -70,7 +70,7 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
     {
         // given
         await FlushAsync();
-        var cache = CreateCache(keyPrefix: "");
+        using var cache = CreateCache(keyPrefix: "");
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Lorem.Sentence();
 
@@ -89,7 +89,7 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
         // given
         await FlushAsync();
         const string appPrefix = "app:";
-        var cache = CreateCache(appPrefix);
+        using var cache = CreateCache(appPrefix);
         await cache.UpsertAsync("users:1", "user1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("users:2", "user2", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("orders:1", "order1", TimeSpan.FromMinutes(5), AbortToken);
@@ -107,7 +107,7 @@ public sealed class KeyPrefixTests(RedisCacheFixture fixture) : RedisCacheTestBa
         // given
         await FlushAsync();
         const string appPrefix = "app:";
-        var cache = CreateCache(appPrefix);
+        using var cache = CreateCache(appPrefix);
         await cache.UpsertAsync("users:1", "user1", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("users:2", "user2", TimeSpan.FromMinutes(5), AbortToken);
         await cache.UpsertAsync("orders:1", "order1", TimeSpan.FromMinutes(5), AbortToken);

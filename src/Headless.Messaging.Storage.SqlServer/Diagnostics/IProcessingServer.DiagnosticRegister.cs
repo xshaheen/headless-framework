@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using Headless.Messaging.Internal;
 
-namespace Headless.Messaging.SqlServer.Diagnostics;
+namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 
 public sealed class DiagnosticRegister(DiagnosticProcessorObserver observer) : IProcessingServer
 {

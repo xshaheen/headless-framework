@@ -3,7 +3,7 @@
 using System.Text.RegularExpressions;
 using Headless.Checks;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 public partial class PostgreSqlEntityFrameworkMessagingOptions
 {

@@ -9,7 +9,7 @@ namespace Headless.Domain;
 
 public sealed class ServiceProviderLocalMessagePublisher(IServiceProvider services) : ILocalMessagePublisher
 {
-    private readonly ConditionalWeakTable<Type, StrongBox<int>> _handlerOrderCache = new();
+    private readonly ConditionalWeakTable<Type, StrongBox<int>> _handlerOrderCache = [];
 
     private static readonly ConditionalWeakTable<Type, StrongBox<int>>.CreateValueCallback _ComputeHandlerOrder =
         static type =>

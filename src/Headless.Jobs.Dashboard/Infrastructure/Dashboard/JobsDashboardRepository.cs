@@ -108,7 +108,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             {
                 var statusCounts = groupedData.TryGetValue(date, out var statusData)
                     ? statusData
-                    : new Dictionary<JobStatus, int>();
+                    : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
@@ -162,7 +162,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             {
                 var statusCounts = groupedData.TryGetValue(date, out var statusData)
                     ? statusData
-                    : new Dictionary<JobStatus, int>();
+                    : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
@@ -238,7 +238,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
             {
                 var statusCounts = groupedData.TryGetValue(date, out var statusData)
                     ? statusData
-                    : new Dictionary<JobStatus, int>();
+                    : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
@@ -280,7 +280,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var failedCount = allStatuses.Count(x => x == JobStatus.Failed);
         var totalCount = allStatuses.Count;
 
-        return new List<(int, int)> { (0, doneOrDueDoneCount), (1, failedCount), (2, totalCount) };
+        return [(0, doneOrDueDoneCount), (1, failedCount), (2, totalCount)];
     }
 
     public async Task<IList<(JobStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken = default)

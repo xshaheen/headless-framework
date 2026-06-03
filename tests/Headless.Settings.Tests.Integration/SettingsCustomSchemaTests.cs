@@ -109,9 +109,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
             options.InitVectorBytes = "TestInitVector16"u8.ToArray();
             options.DefaultSalt = "TestSalt"u8.ToArray();
         });
-        services.AddDbContextFactory<SharedSettingsContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        services.AddDbContextFactory<SharedSettingsContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(ConfigureSettingsStorage);
@@ -181,6 +179,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
     {
         await using var connection = new NpgsqlConnection(Fixture.SqlConnectionString);
         await connection.OpenAsync(AbortToken);
+
         await using var command = new NpgsqlCommand(
             $"""SELECT EXISTS (SELECT 1 FROM "{schema}"."{tableName}")""",
             connection

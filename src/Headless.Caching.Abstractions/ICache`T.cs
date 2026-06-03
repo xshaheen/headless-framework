@@ -227,10 +227,10 @@ public class Cache<T>(ICache cache) : ICache<T>
     }
 }
 
-public interface IDistributedCache<T> : ICache<T>;
+public interface IRemoteCache<T> : ICache<T>;
 
 public interface IInMemoryCache<T> : ICache<T>;
 
-public sealed class DistributedCache<T>(IDistributedCache cache) : Cache<T>(cache), IDistributedCache<T>;
+public sealed class RemoteCache<T>(IRemoteCache cache) : Cache<T>(cache), IRemoteCache<T>;
 
 public sealed class InMemoryCache<T>(IInMemoryCache cache) : Cache<T>(cache), IInMemoryCache<T>;

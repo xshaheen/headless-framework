@@ -12,7 +12,7 @@ public sealed class HybridCacheTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
 
-    private (HybridCache cache, IInMemoryCache l1, IDistributedCache l2, IBus publisher) _CreateCache(
+    private (HybridCache cache, IInMemoryCache l1, IRemoteCache l2, IBus publisher) _CreateCache(
         HybridCacheOptions? options = null
     )
     {
@@ -22,7 +22,7 @@ public sealed class HybridCacheTests : TestBase
 
         // Create a separate in-memory cache as the "distributed" cache for testing
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryCacheDistributedAdapter(new InMemoryCache(_timeProvider, l2Options));
+        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -516,7 +516,7 @@ public sealed class HybridCacheTests : TestBase
         using var l1 = new InMemoryCache(_timeProvider, l1Options);
 
         // Use a test double that throws on write but returns values on read
-        using var l2 = new FailingWriteDistributedCache(_timeProvider);
+        using var l2 = new FailingWriteRemoteCache(_timeProvider);
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -548,7 +548,7 @@ public sealed class HybridCacheTests : TestBase
     }
 
     /// <summary>A distributed cache that throws on write operations but works normally for reads.</summary>
-    private sealed class FailingWriteDistributedCache(TimeProvider timeProvider) : IDistributedCache, IDisposable
+    private sealed class FailingWriteRemoteCache(TimeProvider timeProvider) : IRemoteCache, IDisposable
     {
         private readonly InMemoryCache _cache = new(timeProvider, new InMemoryCacheOptions());
 
@@ -710,7 +710,7 @@ public sealed class HybridCacheTests : TestBase
         var l1Options = new InMemoryCacheOptions { CloneValues = true };
         var l1 = new InMemoryCache(_timeProvider, l1Options);
         var l2Options = new InMemoryCacheOptions { CloneValues = true };
-        var l2 = new InMemoryCacheDistributedAdapter(new InMemoryCache(_timeProvider, l2Options));
+        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
 
         var publisher = Substitute.For<IBus>();
         publisher
@@ -883,8 +883,8 @@ public sealed class HybridCacheTests : TestBase
 
     #endregion
 
-    /// <summary>Simple adapter to use InMemoryCache as IDistributedCache for testing.</summary>
-    private sealed class InMemoryCacheDistributedAdapter(InMemoryCache cache) : IDistributedCache
+    /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
+    private sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache
     {
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,

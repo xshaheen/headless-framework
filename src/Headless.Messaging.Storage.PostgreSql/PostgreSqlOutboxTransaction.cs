@@ -8,7 +8,7 @@ using Headless.Messaging.Transport;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Messaging.PostgreSql;
+namespace Headless.Messaging.Storage.PostgreSql;
 
 public sealed class PostgreSqlOutboxTransaction(IDispatcher dispatcher, IOutboxTransactionAccessor accessor)
     : OutboxTransaction(dispatcher, accessor)

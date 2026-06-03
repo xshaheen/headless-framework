@@ -16,7 +16,7 @@ namespace System;
 [PublicAPI]
 public static class EnumExtensions
 {
-    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<ulong, object>> _LocaleCache = new();
+    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<ulong, object>> _LocaleCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

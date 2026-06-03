@@ -1123,7 +1123,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             UpdatedAt = job.UpdatedAt,
             ParentId = job.ParentId,
             ExecutionTime = job.ExecutionTime,
-            Children = new List<TimeJobEntity>(),
+            Children = [],
         };
 
         if (_ChildrenIndex.TryGetValue(job.Id, out var directChildren) && !directChildren.IsEmpty)
@@ -1151,7 +1151,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
                     Retries = ch.Retries,
                     RetryIntervals = ch.RetryIntervals,
                     RunCondition = ch.RunCondition,
-                    Children = new List<TimeJobEntity>(),
+                    Children = [],
                 };
 
                 if (_ChildrenIndex.TryGetValue(ch.Id, out var grandChildren) && !grandChildren.IsEmpty)
@@ -1268,7 +1268,7 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             CreatedAt = job.CreatedAt,
             UpdatedAt = job.UpdatedAt,
             Description = job.Description,
-            Children = new List<TTimeJob>(),
+            Children = [],
         };
 
         return cloned;

@@ -17,7 +17,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     private readonly string _groupId;
     private readonly IntentType _intentType;
     private readonly byte _groupConcurrent;
-    private readonly BlockingCollection<TransportMessage> _messageQueue = new();
+    private readonly BlockingCollection<TransportMessage> _messageQueue = [];
     private readonly SemaphoreSlim _semaphore;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);

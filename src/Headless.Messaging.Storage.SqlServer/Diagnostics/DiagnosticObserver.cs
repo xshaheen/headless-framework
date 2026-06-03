@@ -6,13 +6,13 @@ using System.Runtime.CompilerServices;
 using Headless.Messaging.Internal;
 using Microsoft.Data.SqlClient;
 
-namespace Headless.Messaging.SqlServer.Diagnostics;
+namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 
 internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
     : IObserver<KeyValuePair<string, object?>>
 {
     private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache =
-        new();
+        [];
 
     private static readonly ConditionalWeakTable<
         Type,

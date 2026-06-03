@@ -186,4 +186,4 @@ public interface ICache
 
 public interface IInMemoryCache : ICache;
 
-public interface IDistributedCache : ICache;
+public interface IRemoteCache : ICache;
