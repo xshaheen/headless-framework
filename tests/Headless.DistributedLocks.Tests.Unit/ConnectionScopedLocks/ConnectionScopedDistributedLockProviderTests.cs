@@ -47,7 +47,12 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         );
 
         handle.Should().NotBeNull();
-        _releaseSignal.WaitDurations.Should().ContainSingle().Which.Should().Be(pollingFallback);
+
+        // The polling fallback is jittered by [0.8, 1.2) before each wait so that many waiters on the
+        // same resource do not wake in lockstep. Assert the single wait lands within that band rather
+        // than pinning the exact value.
+        var wait = _releaseSignal.WaitDurations.Should().ContainSingle().Subject;
+        wait.Should().BeGreaterThanOrEqualTo(pollingFallback * 0.8).And.BeLessThanOrEqualTo(pollingFallback * 1.2);
     }
 
     private ConnectionScopedDistributedLockProvider _CreateProvider(

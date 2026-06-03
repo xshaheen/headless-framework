@@ -3,11 +3,33 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 using System.Globalization;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// <see cref="IDistributedLockProvider"/> implementation over the connection-scoped seams. A custom database
+/// provider supplies an <see cref="IConnectionScopedLockStorage"/>, an <see cref="IReleaseSignal"/>, and an
+/// optional <see cref="IFencingTokenSource"/>; this type owns the portable concerns: single-attempt acquire
+/// plus retry loop, acquire-timeout contract, jittered polling backed by the release signal, waiter caps for
+/// DoS protection, and fencing-token stamping on exclusive handles.
+/// </summary>
+/// <remarks>
+/// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> is a no-op success and
+/// <see cref="GetExpirationAsync"/> returns <see langword="null"/>. Lock loss is tied to the storage
+/// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// </remarks>
+/// <param name="storage">Backend storage seam performing the native acquire/release.</param>
+/// <param name="releaseSignal">Wake-up seam used between retry attempts; polling is the correctness fallback.</param>
+/// <param name="options">Shared lock options, including resource-name length and waiter caps.</param>
+/// <param name="longIdGenerator">Source of per-acquisition lock ids.</param>
+/// <param name="timeProvider">Clock used for deadlines and waits (deterministic under test).</param>
+/// <param name="logger">Logger for release-failure diagnostics.</param>
+/// <param name="fencingTokenSource">Optional source of monotonic fencing tokens for exclusive locks.</param>
+/// <param name="pollingFallback">Maximum delay between retry attempts; defaults to 100ms.</param>
+[PublicAPI]
 public sealed class ConnectionScopedDistributedLockProvider(
     IConnectionScopedLockStorage storage,
     IReleaseSignal releaseSignal,
@@ -21,6 +43,12 @@ public sealed class ConnectionScopedDistributedLockProvider(
 {
     private static readonly TimeSpan _DefaultPollingFallback = TimeSpan.FromMilliseconds(100);
     private readonly TimeSpan _pollingFallback = pollingFallback ?? _DefaultPollingFallback;
+
+    // Per-resource waiter accounting for DoS protection, mirroring the sibling DistributedLockProvider.
+    // Tracks how many acquirers are currently blocked waiting for each contended resource so the
+    // configured caps (MaxConcurrentWaitingResources / MaxWaitersPerResource) can be enforced.
+    private readonly ConcurrentDictionary<string, int> _waitersByResource = new(StringComparer.Ordinal);
+    private readonly Lock _waiterLock = new();
 
     public TimeSpan DefaultTimeUntilExpires => Timeout.InfiniteTimeSpan;
 
@@ -78,73 +106,153 @@ public sealed class ConnectionScopedDistributedLockProvider(
             ? DateTimeOffset.MaxValue
             : timeProvider.GetUtcNow().Add(acquireTimeout);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var isWaiting = false;
 
-        while (true)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var handle = await storage.TryAcquireAsync(resource, lockId, isShared, cancellationToken).ConfigureAwait(false);
-
-            if (handle is not null)
+            while (true)
             {
-                long? fencingToken;
+                cancellationToken.ThrowIfCancellationRequested();
 
-                try
+                var handle = await storage.TryAcquireAsync(resource, lockId, isShared, cancellationToken).ConfigureAwait(false);
+
+                if (handle is not null)
                 {
-                    fencingToken = isShared || fencingTokenSource is null
-                        ? null
-                        : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
-                }
-                catch
-                {
+                    long? fencingToken;
+
                     try
                     {
-                        await _ReleaseAsync(handle, CancellationToken.None).ConfigureAwait(false);
+                        fencingToken = isShared || fencingTokenSource is null
+                            ? null
+                            : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
                     }
-                    catch (Exception releaseException)
+                    catch
                     {
-                        logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, lockId);
+                        try
+                        {
+                            await _ReleaseAsync(handle, CancellationToken.None).ConfigureAwait(false);
+                        }
+                        catch (Exception releaseException)
+                        {
+                            logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, lockId);
+                        }
+
+                        throw;
                     }
 
-                    throw;
+                    var waited = timeProvider.GetElapsedTime(started);
+
+                    return new ConnectionScopedDistributedLockHandle(
+                        handle,
+                        fencingToken,
+                        waited,
+                        acquireOptions?.ReleaseOnDispose ?? true,
+                        timeProvider,
+                        _ReleaseAsync,
+                        logger
+                    );
                 }
 
-                var waited = timeProvider.GetElapsedTime(started);
+                if (acquireTimeout == TimeSpan.Zero || timeProvider.GetUtcNow() >= deadline)
+                {
+                    if (!throwOnTimeout)
+                    {
+                        return null;
+                    }
 
-                return new ConnectionScopedDistributedLockHandle(
-                    handle,
-                    fencingToken,
-                    waited,
-                    acquireOptions?.ReleaseOnDispose ?? true,
-                    timeProvider,
-                    _ReleaseAsync,
-                    logger
+                    throw acquireTimeout == TimeSpan.Zero
+                        ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+                        : new LockAcquisitionTimeoutException(resource);
+                }
+
+                var remaining = deadline == DateTimeOffset.MaxValue
+                    ? _pollingFallback
+                    : deadline - timeProvider.GetUtcNow();
+
+                if (remaining <= TimeSpan.Zero)
+                {
+                    // Past the deadline. Re-entering the loop would open a fresh connection for one
+                    // more TryAcquire; honour the timeout contract instead.
+                    if (!throwOnTimeout)
+                    {
+                        return null;
+                    }
+
+                    throw new LockAcquisitionTimeoutException(resource);
+                }
+
+                // Account for this acquirer as a waiter exactly once, the first time it has to block.
+                if (!isWaiting)
+                {
+                    _EnterWaiting(resource);
+                    isWaiting = true;
+                }
+
+                var wait = remaining < _pollingFallback ? remaining : _pollingFallback;
+
+                // Apply jitter so many waiters on the same resource do not wake in lockstep and
+                // stampede the store. Stay within the remaining budget.
+                var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+                var jittered = TimeSpan.FromMilliseconds(wait.TotalMilliseconds * jitter);
+                wait = jittered < remaining ? jittered : remaining;
+
+                await releaseSignal.WaitAsync(resource, wait, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (isWaiting)
+            {
+                _ExitWaiting(resource);
+            }
+        }
+    }
+
+    private void _EnterWaiting(string resource)
+    {
+        lock (_waiterLock)
+        {
+            if (_waitersByResource.TryGetValue(resource, out var existing))
+            {
+                if (options.MaxWaitersPerResource is { } maxPerResource)
+                {
+                    Ensure.True(existing < maxPerResource, $"Maximum waiters per resource ({maxPerResource}) exceeded");
+                }
+
+                _waitersByResource[resource] = existing + 1;
+
+                return;
+            }
+
+            if (options.MaxConcurrentWaitingResources is { } maxResources)
+            {
+                Ensure.True(
+                    _waitersByResource.Count < maxResources,
+                    $"Maximum concurrent waiting resources ({maxResources}) exceeded"
                 );
             }
 
-            if (acquireTimeout == TimeSpan.Zero || timeProvider.GetUtcNow() >= deadline)
-            {
-                if (!throwOnTimeout)
-                {
-                    return null;
-                }
+            _waitersByResource[resource] = 1;
+        }
+    }
 
-                throw acquireTimeout == TimeSpan.Zero
-                    ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
-                    : new LockAcquisitionTimeoutException(resource);
+    private void _ExitWaiting(string resource)
+    {
+        lock (_waiterLock)
+        {
+            if (!_waitersByResource.TryGetValue(resource, out var existing))
+            {
+                return;
             }
 
-            var remaining = deadline == DateTimeOffset.MaxValue
-                ? _pollingFallback
-                : deadline - timeProvider.GetUtcNow();
-
-            if (remaining <= TimeSpan.Zero)
+            if (existing <= 1)
             {
-                continue;
+                _waitersByResource.TryRemove(resource, out _);
             }
-
-            var wait = remaining < _pollingFallback ? remaining : _pollingFallback;
-            await releaseSignal.WaitAsync(resource, wait, cancellationToken).ConfigureAwait(false);
+            else
+            {
+                _waitersByResource[resource] = existing - 1;
+            }
         }
     }
 

@@ -12,18 +12,21 @@ namespace Headless.DistributedLocks.Postgres;
 internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 {
     private const string _Channel = "headless_distributed_locks_release";
+    private static readonly TimeSpan _MaxReconnectBackoff = TimeSpan.FromSeconds(30);
     private readonly PollingReleaseSignal _local;
     private readonly TimeProvider _timeProvider;
     private readonly NpgsqlDataSource? _ownedDataSource;
     private readonly NpgsqlDataSource? _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
     private readonly Task? _listenerTask;
+    private readonly int _commandTimeoutSeconds;
 
     public PostgresReleaseSignal(IOptions<PostgresDistributedLockOptions> options, TimeProvider timeProvider)
     {
         Options = options.Value;
         _timeProvider = timeProvider;
         _local = new PollingReleaseSignal(timeProvider);
+        _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
 
         if (Options.EnablePushWakeup)
         {
@@ -54,6 +57,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
         await using var connection = await _OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = _commandTimeoutSeconds;
         command.CommandText = $"SELECT pg_catalog.pg_notify('{_Channel}', @resource)";
         command.Parameters.AddWithValue("resource", resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -79,6 +83,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private async Task _ListenAsync()
     {
         var cancellationToken = _disposeTokenSource.Token;
+        var consecutiveFailures = 0;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -93,6 +98,10 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
                     await listen.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 }
 
+                // Listener is established; clear the backoff so a future transient failure restarts
+                // from the base delay rather than the previous (possibly capped) interval.
+                consecutiveFailures = 0;
+
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     await connection.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -106,7 +115,13 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
             }
             catch
             {
-                await _timeProvider.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                // Exponential backoff with jitter so a PG restart does not trigger a synchronized
+                // reconnect storm across every instance: min(1s * 2^n, 30s) * [0.8, 1.2).
+                var exponential = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds));
+                consecutiveFailures++;
+                var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
+                var delay = TimeSpan.FromMilliseconds(exponential.TotalMilliseconds * jitter);
+                await _timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -126,20 +141,9 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
     private async ValueTask<NpgsqlConnection> _OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        if (Options.DataSource is { } configuredDataSource)
-        {
-            return await configuredDataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        if (_ownedDataSource is not null)
-        {
-            return await _ownedDataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        var connection = new NpgsqlConnection(Options.ConnectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-        return connection;
+        // Only reachable when EnablePushWakeup is true, which guarantees _dataSource was assigned
+        // (either the configured DataSource or the owned one created from ConnectionString).
+        return await _dataSource!.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 #pragma warning restore VSTHRD003, VSTHRD110, MA0134, ERP022

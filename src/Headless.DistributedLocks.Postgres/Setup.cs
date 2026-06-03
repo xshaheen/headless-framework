@@ -17,6 +17,9 @@ public static class SetupPostgresDistributedLocks
         public IServiceCollection AddPostgresDistributedLocks(IConfiguration configuration)
         {
             services.Configure<PostgresDistributedLockOptions, PostgresDistributedLockOptionsValidator>(configuration);
+            // Bind the shared guardrail knobs (waiter caps, resource-name length, polling cadence) so
+            // operators can override the constructor defaults from configuration.
+            services.Configure<DistributedLockOptions>(configuration.GetSection("Headless:DistributedLocks"));
 
             return services._AddPostgresDistributedLocksCore();
         }
@@ -47,7 +50,11 @@ public static class SetupPostgresDistributedLocks
             );
             services.TryAddSingleton<IReleaseSignal, PostgresReleaseSignal>();
             services.TryAddSingleton<IFencingTokenSource, PostgresFencingTokenSource>();
-            services.TryAddSingleton<DistributedLockOptions>();
+            // Resolve from IOptions so any configuration binding of DistributedLockOptions (the
+            // shared guardrail knobs) flows through to the provider rather than constructor defaults.
+            services.TryAddSingleton<DistributedLockOptions>(sp =>
+                sp.GetRequiredService<IOptions<DistributedLockOptions>>().Value
+            );
             services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(sp => new ConnectionScopedDistributedLockProvider(
                 sp.GetRequiredService<IConnectionScopedLockStorage>(),
                 sp.GetRequiredService<IReleaseSignal>(),

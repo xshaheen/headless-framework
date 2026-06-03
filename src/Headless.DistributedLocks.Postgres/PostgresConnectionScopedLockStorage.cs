@@ -14,12 +14,14 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
     private readonly bool _ownsDataSource;
     private readonly NpgsqlDataSource _dataSource;
+    private readonly int _commandTimeoutSeconds;
 
     public PostgresConnectionScopedLockStorage(IOptions<PostgresDistributedLockOptions> options)
     {
         _options = options.Value;
         _dataSource = _options.DataSource ?? NpgsqlDataSource.Create(_options.ConnectionString!);
         _ownsDataSource = _options.DataSource is null;
+        _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
     }
 
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
@@ -35,7 +37,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         try
         {
-            var acquired = await _TryAcquireAsync(connection, key, isShared, cancellationToken).ConfigureAwait(false);
+            var acquired = await _TryAcquireAsync(connection, key, isShared, _commandTimeoutSeconds, cancellationToken).ConfigureAwait(false);
 
             if (!acquired)
             {
@@ -70,13 +72,14 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             return;
         }
 
-        held.Connection.StateChange -= held.OnStateChanged;
-
         try
         {
             if (held.Connection.FullState.HasFlag(ConnectionState.Open))
             {
-                await _ReleaseAsync(held.Connection, held.Key, held.IsShared, cancellationToken).ConfigureAwait(false);
+                // Releasing the advisory lock and emitting the wake-up NOTIFY must not be abandoned on
+                // caller cancellation; otherwise waiters wait a full polling interval until pool reset.
+                await _ReleaseAsync(held.Connection, held.Key, held.IsShared, _commandTimeoutSeconds, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
         }
         finally
@@ -106,6 +109,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         var key = _CreateKey(resource);
 
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = _commandTimeoutSeconds;
         command.CommandText = $"""
             SELECT COUNT(*)
             FROM pg_catalog.pg_locks l
@@ -158,9 +162,21 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     public async ValueTask DisposeAsync()
     {
+        List<Exception>? teardownErrors = null;
+
         foreach (var held in _heldByLockId.Values)
         {
-            await held.DisposeAsync().ConfigureAwait(false);
+            try
+            {
+                await held.DisposeAsync().ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                // A single held lock failing to tear down must not strand the remaining locks
+                // (which would leak their connections and advisory locks under No Reset On Close).
+                // Collect and surface after every lock has had a chance to dispose.
+                (teardownErrors ??= []).Add(exception);
+            }
         }
 
         _heldByLockId.Clear();
@@ -168,6 +184,11 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         if (_ownsDataSource)
         {
             await _dataSource.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (teardownErrors is not null)
+        {
+            throw new AggregateException(teardownErrors);
         }
     }
 
@@ -180,10 +201,12 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         NpgsqlConnection connection,
         PostgresAdvisoryLockKey key,
         bool isShared,
+        int commandTimeoutSeconds,
         CancellationToken cancellationToken
     )
     {
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = commandTimeoutSeconds;
         command.CommandText = $"SELECT pg_catalog.pg_try_advisory_lock{(isShared ? "_shared" : "")}({AddKeyParameters(command, key)})";
 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
@@ -193,10 +216,12 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         NpgsqlConnection connection,
         PostgresAdvisoryLockKey key,
         bool isShared,
+        int commandTimeoutSeconds,
         CancellationToken cancellationToken
     )
     {
         await using var command = connection.CreateCommand();
+        command.CommandTimeout = commandTimeoutSeconds;
         command.CommandText = $"SELECT pg_catalog.pg_advisory_unlock{(isShared ? "_shared" : "")}({AddKeyParameters(command, key)})";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -218,11 +243,19 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     internal static string AddLockFilter(NpgsqlCommand command, PostgresAdvisoryLockKey key)
     {
-        var keys = key.HasSingleKey ? PostgresAdvisoryLockKey.FromString(key.ToString()).Keys : key.Keys;
+        // Keys yields the same (classid, objid) 32-bit split that Postgres stores for the
+        // single-bigint encoding (pg_locks splits the bigint into high/low 32-bit halves),
+        // so no ToString/FromString round-trip is needed.
+        var keys = key.Keys;
         command.Parameters.AddWithValue("classId", keys.Key1);
         command.Parameters.AddWithValue("objId", keys.Key2);
 
-        return "l.classid = @classId AND l.objid = @objId";
+        // pg_locks records objsubid = 1 for single-bigint advisory keys and 2 for the (int,int)
+        // form. Filtering on it prevents conflating a single-bigint key with an (int,int) key
+        // whose halves coincide.
+        command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
+
+        return "l.classid = @classId AND l.objid = @objId AND l.objsubid = @objSubId";
     }
 
     private sealed class HeldLock(
@@ -234,6 +267,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     ) : IAsyncDisposable
     {
         private readonly CancellationTokenSource _lostTokenSource = new();
+        private int _disposed;
 
         public string Resource { get; } = resource;
         public string LockId { get; } = lockId;
@@ -252,8 +286,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         public async ValueTask DisposeAsync()
         {
-            _lostTokenSource.Dispose();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            // Unsubscribe on every teardown path so closing the connection below cannot fire
+            // OnStateChanged into an already-disposed CTS. Dispose the connection before the CTS
+            // for the same reason (the synchronous StateChange would otherwise hit a dead source).
+            Connection.StateChange -= OnStateChanged;
             await Connection.DisposeAsync().ConfigureAwait(false);
+            _lostTokenSource.Dispose();
         }
     }
 }

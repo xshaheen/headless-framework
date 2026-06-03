@@ -3,6 +3,13 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
+/// <summary>
+/// <see cref="IDistributedReaderWriterLockProvider"/> implementation that maps read/write locks onto the
+/// shared/exclusive modes of a <see cref="ConnectionScopedDistributedLockProvider"/>: read locks acquire in
+/// shared mode, write locks in exclusive mode. Reader-writer handles never carry a fencing token.
+/// </summary>
+/// <param name="mutexProvider">The connection-scoped mutex provider whose shared/exclusive storage backs this.</param>
+[PublicAPI]
 public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDistributedLockProvider mutexProvider)
     : IDistributedReaderWriterLockProvider
 {
@@ -70,6 +77,17 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
     {
         var handle = await mutexProvider.TryAcquireAsync(resource, isShared, options, cancellationToken).ConfigureAwait(false);
 
-        return handle ?? throw new LockAcquisitionTimeoutException(resource);
+        if (handle is not null)
+        {
+            return handle;
+        }
+
+        // Match the mutex provider: a zero-timeout (try-once) contention throws the specific
+        // ForTryOnceContention shape so callers catching it behave consistently across lock kinds.
+        var acquireTimeout = options?.AcquireTimeout ?? mutexProvider.DefaultAcquireTimeout;
+
+        throw acquireTimeout == TimeSpan.Zero
+            ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+            : new LockAcquisitionTimeoutException(resource);
     }
 }

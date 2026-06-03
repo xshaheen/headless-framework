@@ -14,7 +14,12 @@ public static class PostgresDistributedLock
         CancellationToken cancellationToken = default
     )
     {
-        await using var command = transaction.Connection!.CreateCommand();
+        var connection = transaction.Connection
+            ?? throw new InvalidOperationException(
+                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
+            );
+
+        await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"SELECT pg_catalog.pg_advisory_xact_lock({PostgresConnectionScopedLockStorage.AddKeyParameters(command, key)})";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -26,7 +31,12 @@ public static class PostgresDistributedLock
         CancellationToken cancellationToken = default
     )
     {
-        await using var command = transaction.Connection!.CreateCommand();
+        var connection = transaction.Connection
+            ?? throw new InvalidOperationException(
+                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
+            );
+
+        await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = $"SELECT pg_catalog.pg_try_advisory_xact_lock({PostgresConnectionScopedLockStorage.AddKeyParameters(command, key)})";
 

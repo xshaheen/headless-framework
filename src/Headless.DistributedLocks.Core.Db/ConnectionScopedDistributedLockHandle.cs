@@ -81,8 +81,10 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLock
 
     public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
     {
+        // No-op for session-scoped locks: the advisory lock is held for the connection's lifetime,
+        // so there is no lease to extend. RenewalCount stays at 0 to avoid signalling monitoring
+        // that the lifetime was extended.
         cancellationToken.ThrowIfCancellationRequested();
-        RenewalCount++;
 
         return Task.FromResult(true);
     }
