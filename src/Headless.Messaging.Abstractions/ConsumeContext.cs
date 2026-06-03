@@ -44,6 +44,8 @@ public record ConsumeContext
 
     internal Type? ResponseType { get; private set; }
 
+    internal string? NextCallbackName { get; private set; }
+
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
@@ -63,6 +65,7 @@ public record ConsumeContext
     /// <typeparam name="TResponse">The response contract type to stamp on the callback message.</typeparam>
     /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
     public void SetResponse<TResponse>(TResponse value)
+        where TResponse : class
     {
         if (_isCompleted)
         {
@@ -71,6 +74,27 @@ public record ConsumeContext
 
         Response = value;
         ResponseType = typeof(TResponse);
+    }
+
+    /// <summary>
+    /// Routes the captured response to a new callback message for the next hop in a callback chain.
+    /// </summary>
+    /// <remarks>
+    /// This is the first-class way to chain to a callback that the originating message did not declare.
+    /// It targets the reserved <c>Headers.CallbackName</c> through a typed surface so the value is mapped
+    /// to <see cref="MessagePublishOptionsBase.CallbackName"/> on the response publish, rather than being
+    /// pushed through <see cref="MessageHeader.AddResponseHeader"/> (which the publish pipeline rejects for
+    /// reserved keys).
+    /// </remarks>
+    /// <param name="callbackName">The callback message name to attach to the published response.</param>
+    public void SetNextCallback(string callbackName)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+        }
+
+        NextCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
     }
 
     internal void MarkCompleted()

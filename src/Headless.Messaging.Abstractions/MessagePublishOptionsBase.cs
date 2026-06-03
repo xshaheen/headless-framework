@@ -116,6 +116,7 @@ public abstract record MessagePublishOptionsBase
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && CorrelationSequence == other.CorrelationSequence
+            && MessageType == other.MessageType
             && string.Equals(CallbackName, other.CallbackName, StringComparison.Ordinal)
             && string.Equals(TenantId, other.TenantId, StringComparison.Ordinal)
             && HeadersEqual(Headers, other.Headers);
@@ -129,6 +130,7 @@ public abstract record MessagePublishOptionsBase
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CorrelationSequence);
+        hash.Add(MessageType);
         hash.Add(CallbackName, StringComparer.Ordinal);
         hash.Add(TenantId, StringComparer.Ordinal);
 

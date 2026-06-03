@@ -55,7 +55,7 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // when
-        context.SetResponse<ConcreteResponse?>(null);
+        context.SetResponse<ConcreteResponse>(null!);
 
         // then
         context.Response.Should().BeNull();

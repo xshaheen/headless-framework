@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Demo;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
