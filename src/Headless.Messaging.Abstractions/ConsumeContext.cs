@@ -64,6 +64,12 @@ public record ConsumeContext
     /// </summary>
     /// <typeparam name="TResponse">The response contract type to stamp on the callback message.</typeparam>
     /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
+    /// <remarks>
+    /// The callback rides the durable bus path, which is <strong>at-least-once</strong>: if the process crashes
+    /// after the response is written to the outbox but before the request is marked succeeded, the request is
+    /// redelivered and the response is published again. Make response consumers idempotent (e.g. dedupe on
+    /// <c>CorrelationId</c>); the framework does not deduplicate callback deliveries.
+    /// </remarks>
     public void SetResponse<TResponse>(TResponse value)
         where TResponse : class
     {
