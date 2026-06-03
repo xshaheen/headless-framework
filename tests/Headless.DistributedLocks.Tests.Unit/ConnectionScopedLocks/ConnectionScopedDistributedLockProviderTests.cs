@@ -5,6 +5,7 @@ using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
+using System.Diagnostics;
 
 namespace Tests.ConnectionScopedLocks;
 
@@ -69,6 +70,35 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         waits.Distinct().Should().HaveCountGreaterThan(1);
         waits.Should().Contain(wait => wait < pollingFallback);
         waits.Should().Contain(wait => wait > pollingFallback);
+    }
+
+    [Fact]
+    public async Task should_emit_a_lock_acquire_activity_with_the_resource_tag_when_a_lock_is_acquired()
+    {
+        // given (listen to the distributed-locks activity source)
+        var activities = new List<Activity>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "Headless.DistributedLocks",
+            Sample = static (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllData,
+            ActivityStopped = activities.Add,
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        // when (an uncontended acquire — the storage fake grants immediately)
+        await using var handle = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then (the connection-scoped provider now emits the same lock.acquire activity as the regular provider).
+        // Filter by this test's unique resource tag so activities emitted by test classes running in parallel — the
+        // listener is process-wide — cannot pollute the assertion.
+        activities
+            .Should()
+            .ContainSingle(a =>
+                a.OperationName == "lock.acquire" && (string?)a.GetTagItem("headless.lock.resource") == resource
+            );
     }
 
     private ConnectionScopedDistributedLockProvider _CreateProvider(

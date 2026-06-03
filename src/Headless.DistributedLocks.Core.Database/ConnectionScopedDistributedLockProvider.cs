@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
+using System.Diagnostics;
 using System.Globalization;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -108,6 +109,16 @@ public sealed class ConnectionScopedDistributedLockProvider(
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var isWaiting = false;
 
+        using var activity = _StartLockActivity(resource);
+
+        // Records the wait-time histogram plus the failure counter for any non-acquiring outcome (timeout,
+        // past-deadline, or fencing failure), mirroring the sibling DistributedLockProvider's instrumentation.
+        void recordFailedAcquisition()
+        {
+            DistributedLockMetrics.LockWaitTime.Record(timeProvider.GetElapsedTime(started).TotalMilliseconds);
+            DistributedLockMetrics.LockFailed.Add(1);
+        }
+
         try
         {
             while (true)
@@ -137,10 +148,14 @@ public sealed class ConnectionScopedDistributedLockProvider(
                             logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, lockId);
                         }
 
+                        recordFailedAcquisition();
+
                         throw;
                     }
 
                     var waited = timeProvider.GetElapsedTime(started);
+
+                    DistributedLockMetrics.LockWaitTime.Record(waited.TotalMilliseconds);
 
                     return new ConnectionScopedDistributedLockHandle(
                         handle,
@@ -155,6 +170,8 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
                 if (acquireTimeout == TimeSpan.Zero || timeProvider.GetUtcNow() >= deadline)
                 {
+                    recordFailedAcquisition();
+
                     if (!throwOnTimeout)
                     {
                         return null;
@@ -171,6 +188,8 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
                 if (remaining <= TimeSpan.Zero)
                 {
+                    recordFailedAcquisition();
+
                     // Past the deadline. Re-entering the loop would open a fresh connection for one
                     // more TryAcquire; honour the timeout contract instead.
                     if (!throwOnTimeout)
@@ -272,5 +291,20 @@ public sealed class ConnectionScopedDistributedLockProvider(
     {
         await storage.ReleaseAsync(handle, cancellationToken).ConfigureAwait(false);
         await releaseSignal.PublishAsync(handle.Resource, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Activity? _StartLockActivity(string resource)
+    {
+        var activity = DistributedLocksDiagnostics.Start("lock.acquire");
+
+        if (activity is null)
+        {
+            return null;
+        }
+
+        activity.AddTag("headless.lock.resource", resource);
+        activity.DisplayName = $"Lock: {resource}";
+
+        return activity;
     }
 }
