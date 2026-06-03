@@ -14,7 +14,9 @@ Lets database providers map session-scoped or transaction-scoped lock primitives
 
 ## Design Notes
 
-- Connection-scoped locks have no TTL. `RenewAsync(...)` is a no-op success, `GetExpirationAsync(...)` returns `null`, and handle loss is tied to the storage connection's loss token.
+- Connection-scoped locks have no TTL and no GC finalizer reclaim. `RenewAsync(...)` is a no-op success, `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed (or `ReleaseAsync()` is called). The provider holds a strong reference to the engine handle for its lifetime, so an abandoned handle leaks its connection and lock until the provider is disposed. Always `await using` the handle.
+- Handle loss is backed by an active connection monitor, not just the connection's `StateChange` event: monitored handles (`IsMonitored == true`) run a periodic bounded-timeout server-side probe so a silent half-open connection cancels `HandleLostToken` instead of going unnoticed until the next query.
+- The engine optimistically multiplexes uncontended locks on distinct keys onto a shared physical connection and transparently falls back to a dedicated connection on contention or advisory-key collision. This is a performance characteristic; lock semantics are unchanged.
 - Reader-writer locks do not issue fencing tokens; `FencingToken` is `null` for read and write handles.
 
 ## Implementing a custom DB provider
