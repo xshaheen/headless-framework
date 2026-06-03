@@ -4,6 +4,10 @@
     <RootNamespace>Headless.DistributedLocks</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Postgres" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Core.Database.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Nito.AsyncEx" />
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

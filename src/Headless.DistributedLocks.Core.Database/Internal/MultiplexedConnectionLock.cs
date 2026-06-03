@@ -1,0 +1,413 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics;
+
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
+
+/// <summary>
+/// Allows multiple advisory locks to be taken on a single <see cref="DatabaseConnection"/> (optimistic multiplexing).
+/// Thread-safe except for <see cref="DisposeAsync"/>, which must be called only when no locks are held.
+/// </summary>
+/// <remarks>
+/// The held-lock set is keyed by the strategy's resolved physical-lock identity (see
+/// <see cref="IDbSynchronizationStrategy{TLockCookie}.GetHeldLockIdentity"/>), not the resource string, so two distinct
+/// resource strings that map to the same advisory key cannot both believe they hold an exclusive lock on one shared
+/// connection — the colliding acquirer is reported as "already held" and routed to a dedicated connection.
+/// </remarks>
+internal sealed class MultiplexedConnectionLock : IAsyncDisposable
+{
+    // Limits concurrent use of the connection to one acquire/release at a time. SemaphoreSlim (not Nito.AsyncEx.AsyncLock)
+    // because the opportunistic path needs a zero-wait try-acquire, which AsyncLock does not expose.
+#pragma warning disable CA2213 // Disposed at the end of DisposeAsync, after the connection is torn down.
+    private readonly SemaphoreSlim _mutex = new(initialCount: 1, maxCount: 1);
+#pragma warning restore CA2213
+
+    private readonly Dictionary<object, TimeSpan> _heldLockIdentitiesToKeepaliveCadences = [];
+    private readonly DatabaseConnection _connection;
+
+    // We track this explicitly (rather than reading DatabaseConnection.CanExecuteQueries) so we Close() once per Open()
+    // and never try to re-open a broken connection.
+    private bool _connectionOpened;
+
+    public MultiplexedConnectionLock(DatabaseConnection connection)
+    {
+        _connection = connection;
+    }
+
+    private bool _IsConnectionBrokenNoLock => _connectionOpened && !_connection.CanExecuteQueries;
+
+    public async ValueTask<Result> TryAcquireAsync<TLockCookie>(
+        string name,
+        TimeSpan timeout,
+        IDbSynchronizationStrategy<TLockCookie> strategy,
+        TimeSpan keepaliveCadence,
+        bool opportunistic,
+        CancellationToken cancellationToken
+    )
+        where TLockCookie : class
+    {
+        var mutexAcquired = await _mutex
+            .WaitAsync(opportunistic ? TimeSpan.Zero : Timeout.InfiniteTimeSpan, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!mutexAcquired)
+        {
+            // The mutex was busy. Only the opportunistic path uses a zero timeout, so we must be opportunistic; allow a
+            // retry on a different lock instance. We never acquired the mutex, so we cannot inspect the held set to
+            // decide whether disposal is safe.
+            Debug.Assert(opportunistic);
+
+            return new Result(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: false);
+        }
+
+        try
+        {
+            // Redundant with the catch below, but avoids issuing a query on a connection we already know is broken.
+            if (opportunistic && _IsConnectionBrokenNoLock)
+            {
+                return _GetAlreadyBrokenResultNoLock();
+            }
+
+            var identity = strategy.GetHeldLockIdentity(name);
+
+            if (_heldLockIdentitiesToKeepaliveCadences.ContainsKey(identity))
+            {
+                // We won't hold the same physical lock twice on one connection (advisory locks are re-entrant per
+                // session, so the database would grant it and both callers would wrongly believe they hold it
+                // exclusively). Force the second acquirer elsewhere. See guard #1.
+                return _GetFailureResultNoLock(isAlreadyHeld: true, opportunistic, timeout);
+            }
+
+            if (!_connectionOpened)
+            {
+                await _connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+                _connectionOpened = true;
+            }
+
+            var lockCookie = await strategy
+                .TryAcquireAsync(_connection, name, opportunistic ? TimeSpan.Zero : timeout, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (lockCookie is not null)
+            {
+                // The handle is the caller's resource — ownership transfers out via the returned Result.
+#pragma warning disable CA2000
+                var handle = new Handle<TLockCookie>(this, strategy, name, identity, lockCookie);
+#pragma warning restore CA2000
+                _heldLockIdentitiesToKeepaliveCadences.Add(identity, keepaliveCadence);
+
+                if (keepaliveCadence != Timeout.InfiniteTimeSpan)
+                {
+                    _SetKeepaliveCadenceNoLock();
+                }
+
+                return new Result(handle);
+            }
+
+            // We failed to acquire; retry if we were opportunistically using an artificially-shortened timeout.
+            return _GetFailureResultNoLock(isAlreadyHeld: false, opportunistic, timeout);
+        }
+        // Never punish the caller for a connection that was already broken (https://github.com/madelson/DistributedLock/issues/83):
+        // the broken connection — not the caller's request — is the failure, and the pool retries it on a fresh lock.
+#pragma warning disable ERP022
+        catch when (opportunistic && _IsConnectionBrokenNoLock)
+        {
+            return _GetAlreadyBrokenResultNoLock();
+        }
+#pragma warning restore ERP022
+        finally
+        {
+            await _CloseConnectionIfNeededNoLockAsync().ConfigureAwait(false);
+            _mutex.Release();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Debug.Assert(_heldLockIdentitiesToKeepaliveCadences.Count == 0);
+
+        try
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _mutex.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// <see langword="true"/> if the connection is currently busy (mutex held by an in-flight acquire/release) or still
+    /// holds at least one lock. Used by the pool's pruning pass to decide whether the lock can be disposed.
+    /// </summary>
+    public async ValueTask<bool> GetIsInUseAsync()
+    {
+        if (!await _mutex.WaitAsync(TimeSpan.Zero, CancellationToken.None).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        try
+        {
+            return _heldLockIdentitiesToKeepaliveCadences.Count != 0;
+        }
+        finally
+        {
+            _mutex.Release();
+        }
+    }
+
+    private Result _GetAlreadyBrokenResultNoLock() =>
+        // Retry on any already-broken connection so the death of a connection has no observable effect (other than
+        // perf) compared to not multiplexing.
+        new(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: _heldLockIdentitiesToKeepaliveCadences.Count == 0);
+
+    private Result _GetFailureResultNoLock(bool isAlreadyHeld, bool opportunistic, TimeSpan timeout)
+    {
+        // Only opportunistic acquisitions trigger retries.
+        if (!opportunistic)
+        {
+            return new Result(
+                MultiplexedConnectionLockRetry.NoRetry,
+                canSafelyDispose: _heldLockIdentitiesToKeepaliveCadences.Count == 0
+            );
+        }
+
+        if (isAlreadyHeld)
+        {
+            // We're already holding the physical lock, so retry on a different lock instance. We can't dispose because
+            // we're holding the lock.
+            return new Result(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: false);
+        }
+
+        // We failed due to a timeout.
+        var isHoldingLocks = _heldLockIdentitiesToKeepaliveCadences.Count != 0;
+
+        if (timeout == TimeSpan.Zero)
+        {
+            // The caller asked for a zero timeout, so a timeout is a conventional failure with no retry.
+            return new Result(MultiplexedConnectionLockRetry.NoRetry, canSafelyDispose: !isHoldingLocks);
+        }
+
+        if (isHoldingLocks)
+        {
+            // Holding other locks, so retry on another lock (don't block their release).
+            return new Result(MultiplexedConnectionLockRetry.Retry, canSafelyDispose: false);
+        }
+
+        // Holding nothing: safe to retry on this instance since we can't block a release. It's also safe to dispose,
+        // but we won't — we'll retry on it instead.
+        return new Result(MultiplexedConnectionLockRetry.RetryOnThisLock, canSafelyDispose: true);
+    }
+
+    private async ValueTask _ReleaseAsync<TLockCookie>(
+        IDbSynchronizationStrategy<TLockCookie> strategy,
+        string name,
+        object identity,
+        TLockCookie lockCookie
+    )
+        where TLockCookie : class
+    {
+        await _mutex.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        try
+        {
+            // A broken connection has already released all of its advisory locks server-side, so the explicit unlock
+            // is unnecessary and would only fault ("connection is not open"). Skipping it lets a handle whose connection
+            // died (the lost-token path) dispose cleanly.
+            //
+            // If this unlock throws while sibling locks are still held on the shared connection, we deliberately let it
+            // propagate and do NOT force-close the connection to "recover" the failed lock. Force-closing would release
+            // the siblings' advisory locks server-side, but the close routes through ConnectionMonitor.StopAsync, which
+            // tears down their connection-lost-token registrations *without firing them* (a stop means "clean teardown",
+            // not "connection lost"). The sibling holders would then keep running their critical sections believing they
+            // still hold a lock another process can now take — a silent mutual-exclusion violation. Letting the failure
+            // propagate instead leaves the failed lock held server-side only until this connection closes normally (when
+            // its co-tenants finish and the held-set empties): bounded extra latency on that one resource, never a safety
+            // violation. This mirrors the reference engine, which only ever closes a connection once it holds nothing.
+            if (_connection.CanExecuteQueries)
+            {
+                await strategy.ReleaseAsync(_connection, name, lockCookie).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (_heldLockIdentitiesToKeepaliveCadences.Remove(identity, out var keepaliveCadence))
+            {
+                if (keepaliveCadence != Timeout.InfiniteTimeSpan)
+                {
+                    // Recompute even when we're about to close, so the cadence is correct if and when we re-open.
+                    _SetKeepaliveCadenceNoLock();
+                }
+            }
+
+            await _CloseConnectionIfNeededNoLockAsync().ConfigureAwait(false);
+            _mutex.Release();
+        }
+    }
+
+    private async ValueTask _CloseConnectionIfNeededNoLockAsync()
+    {
+        // Close the connection (which releases every advisory lock on the session) only once the last held lock is
+        // gone. We never force-close a connection that still holds sibling locks — see _ReleaseAsync for why doing so
+        // would strand the siblings' connection-lost tokens and break mutual exclusion.
+        if (_connectionOpened && _heldLockIdentitiesToKeepaliveCadences.Count == 0)
+        {
+            await _connection.CloseAsync().ConfigureAwait(false);
+            _connectionOpened = false;
+        }
+    }
+
+    private void _SetKeepaliveCadenceNoLock()
+    {
+        var minCadence = Timeout.InfiniteTimeSpan;
+
+        foreach (var cadence in _heldLockIdentitiesToKeepaliveCadences.Values)
+        {
+            if (_CompareCadence(cadence, minCadence) < 0)
+            {
+                minCadence = cadence;
+            }
+        }
+
+        _connection.SetKeepaliveCadence(minCadence);
+    }
+
+    private static int _CompareCadence(TimeSpan a, TimeSpan b)
+    {
+        // Treat Timeout.InfiniteTimeSpan as larger than any finite cadence.
+        var aInfinite = a == Timeout.InfiniteTimeSpan;
+        var bInfinite = b == Timeout.InfiniteTimeSpan;
+
+        if (aInfinite || bInfinite)
+        {
+            return aInfinite == bInfinite ? 0 : (aInfinite ? 1 : -1);
+        }
+
+        return a.CompareTo(b);
+    }
+
+    public readonly struct Result
+    {
+        public Result(IDistributedLock handle)
+        {
+            Handle = handle;
+            Retry = MultiplexedConnectionLockRetry.NoRetry;
+            CanSafelyDispose = false; // we have a handle
+        }
+
+        public Result(MultiplexedConnectionLockRetry retry, bool canSafelyDispose)
+        {
+            Handle = null;
+            Retry = retry;
+            CanSafelyDispose = canSafelyDispose;
+        }
+
+        public IDistributedLock? Handle { get; }
+
+        public MultiplexedConnectionLockRetry Retry { get; }
+
+        public bool CanSafelyDispose { get; }
+    }
+
+    private sealed class Handle<TLockCookie> : IDistributedLock
+        where TLockCookie : class
+    {
+        private readonly MultiplexedConnectionLock _lock;
+        private readonly IDbSynchronizationStrategy<TLockCookie> _strategy;
+        private readonly object _identity;
+        private TLockCookie? _lockCookie;
+        private IDatabaseConnectionMonitoringHandle? _monitoringHandle;
+        private int _disposed;
+
+        public Handle(
+            MultiplexedConnectionLock @lock,
+            IDbSynchronizationStrategy<TLockCookie> strategy,
+            string name,
+            object identity,
+            TLockCookie lockCookie
+        )
+        {
+            _lock = @lock;
+            _strategy = strategy;
+            Resource = name;
+            _identity = identity;
+            _lockCookie = lockCookie;
+            LockId = Guid.NewGuid().ToString("N");
+            DateAcquired = DateTimeOffset.UtcNow;
+        }
+
+        public string LockId { get; }
+
+        public long? FencingToken => null;
+
+        public string Resource { get; }
+
+        public int RenewalCount => 0;
+
+        public DateTimeOffset DateAcquired { get; }
+
+        public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
+
+        public bool IsMonitored => true;
+
+        public CancellationToken HandleLostToken
+        {
+            get
+            {
+                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+
+                // Lazily register a monitoring handle on first read. The connection outlives this handle until release,
+                // so it is safe to ask its monitor for a connection-lost token here.
+                if (Volatile.Read(ref _monitoringHandle) is null)
+                {
+                    var newHandle = _lock._connection.GetConnectionMonitoringHandle();
+
+                    if (Interlocked.CompareExchange(ref _monitoringHandle, newHandle, comparand: null) is not null)
+                    {
+                        // Lost the race against a concurrent reader; discard ours.
+                        newHandle.Dispose();
+                    }
+                }
+
+                var handle = Volatile.Read(ref _monitoringHandle);
+                ObjectDisposedException.ThrowIf(handle is null, this);
+
+                return handle.ConnectionLostToken;
+            }
+        }
+
+        public async Task ReleaseAsync() => await DisposeAsync().ConfigureAwait(false);
+
+        public Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default)
+        {
+            // The advisory lock is held for the connection's lifetime; there is no lease to renew.
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return Task.FromResult(true);
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            Interlocked.Exchange(ref _monitoringHandle, null)?.Dispose();
+
+            var lockCookie = _lockCookie!;
+            _lockCookie = null;
+
+            await _lock._ReleaseAsync(_strategy, Resource, _identity, lockCookie).ConfigureAwait(false);
+        }
+    }
+}
+
+internal enum MultiplexedConnectionLockRetry
+{
+    NoRetry,
+    RetryOnThisLock,
+    Retry,
+}
