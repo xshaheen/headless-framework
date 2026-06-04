@@ -248,6 +248,32 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_store_null_and_return_null_cache_value_when_factory_returns_null()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>(null),
+                _CreateOptions(),
+                AbortToken
+            );
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.IsNull.Should().BeTrue();
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key);
+        entry.Should().NotBeNull();
+        entry!.IsNull.Should().BeTrue();
+        entry.Value.Should().BeNull();
+    }
+
+    [Fact]
     public async Task should_treat_store_read_failure_as_miss()
     {
         // given

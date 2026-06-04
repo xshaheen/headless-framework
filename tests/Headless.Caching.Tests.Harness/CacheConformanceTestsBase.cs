@@ -252,7 +252,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
         await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
 
-        await cache.GetOrAddAsync<string>(
+        var activated = await cache.GetOrAddAsync<string>(
             key,
             _ =>
             {
@@ -286,6 +286,7 @@ public abstract class CacheConformanceTestsBase : TestBase
             AbortToken
         );
 
+        activated.IsStale.Should().BeTrue();
         throttled.Value.Should().Be("value");
         throttled.IsStale.Should().BeFalse();
         refreshed.Value.Should().Be("new");

@@ -1588,7 +1588,18 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
         }
 
-        var value = existingEntry.GetValue<T>();
+        T? value;
+
+        try
+        {
+            // PeekValue avoids the deep-clone and LRU touch GetValue performs: this is a metadata read.
+            value = existingEntry.PeekValue<T>();
+        }
+        catch (Exception ex) when (!_shouldThrowOnSerializationError)
+        {
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
+            return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
+        }
 
         return new ValueTask<CacheStoreEntry<T>>(
             new CacheStoreEntry<T>(
@@ -1603,12 +1614,13 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
     async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T value,
+        T? value,
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
         CancellationToken cancellationToken
     )
+        where T : default
     {
         _ThrowIfDisposed();
         Argument.IsNotNullOrEmpty(key);
@@ -2072,7 +2084,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 size
             ) { }
 
-        public CacheEntry(
+        internal CacheEntry(
             object? value,
             DateTime? logicalExpiresAt,
             DateTime? physicalExpiresAt,
@@ -2149,14 +2161,19 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         /// are both incorrect and wasteful.</summary>
         internal object? PeekValue() => _cacheValue;
 
+        /// <summary>Converts the raw stored value to <typeparamref name="T"/> without touching LRU or
+        /// cloning. Used for metadata reads where a clone/LRU touch would be incorrect or wasteful.</summary>
+        internal T? PeekValue<T>() => _ConvertValue<T>(_cacheValue);
+
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
         internal CacheEntry WithExpiration(DateTime? expiresAt) =>
             new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt);
 
-        public T? GetValue<T>()
+        public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
+
+        private static T? _ConvertValue<T>(object? val)
         {
-            var val = ReadValue();
             var t = typeof(T);
 
             if (

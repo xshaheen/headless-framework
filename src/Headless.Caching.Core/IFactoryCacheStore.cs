@@ -4,6 +4,7 @@
 namespace Headless.Caching;
 
 /// <summary>Store primitive used by <see cref="FactoryCacheCoordinator"/>.</summary>
+[PublicAPI]
 public interface IFactoryCacheStore
 {
     /// <summary>Attempts to get an entry with its logical and physical expiration metadata.</summary>
@@ -22,7 +23,7 @@ public interface IFactoryCacheStore
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask SetEntryAsync<T>(
         string key,
-        T value,
+        T? value,
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,

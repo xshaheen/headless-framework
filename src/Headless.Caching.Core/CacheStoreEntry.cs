@@ -10,6 +10,7 @@ namespace Headless.Caching;
 /// <param name="Value">The cached value.</param>
 /// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale.</param>
 /// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained.</param>
+[PublicAPI]
 public readonly record struct CacheStoreEntry<T>(
     bool Found,
     bool IsNull,
@@ -26,4 +27,27 @@ public readonly record struct CacheStoreEntry<T>(
         LogicalExpiresAt: null,
         PhysicalExpiresAt: null
     );
+}
+
+/// <summary>Shared expiration predicates over <see cref="CacheStoreEntry{T}"/> used by Core and providers.</summary>
+[PublicAPI]
+public static class CacheStoreEntryExtensions
+{
+    /// <summary>Returns whether the entry is present and not past its logical (stale) expiration.</summary>
+    public static bool IsFresh<T>(this CacheStoreEntry<T> entry, DateTime now)
+    {
+        if (!entry.IsPhysicallyPresent(now))
+        {
+            return false;
+        }
+
+        return !entry.LogicalExpiresAt.HasValue || entry.LogicalExpiresAt.Value > now;
+    }
+
+    /// <summary>Returns whether the entry is present and not past its physical (retention) expiration.</summary>
+    public static bool IsPhysicallyPresent<T>(this CacheStoreEntry<T> entry, DateTime now) =>
+        entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
+
+    /// <summary>Returns the earlier of two timestamps.</summary>
+    public static DateTime Min(DateTime left, DateTime right) => left <= right ? left : right;
 }

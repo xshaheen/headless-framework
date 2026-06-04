@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>
+[PublicAPI]
 public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null)
     : IDisposable
 {
@@ -34,62 +35,51 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
         Argument.IsPositive(options.Duration);
-        Argument.IsPositive(options.FailSafeMaxDuration);
-        Argument.IsPositive(options.FailSafeThrottleDuration);
-        cancellationToken.ThrowIfCancellationRequested();
 
-        var read = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
-        var now = _GetUtcNow();
-
-        if (_IsFresh(read.Entry, now))
+        if (options.IsFailSafeEnabled)
         {
-            return _ToCacheValue(read.Entry, isStale: false);
+            Argument.IsPositive(options.FailSafeMaxDuration);
+            Argument.IsPositive(options.FailSafeThrottleDuration);
         }
 
-        var staleCandidate = _IsPhysicallyPresent(read.Entry, now) ? read.Entry : CacheStoreEntry<T>.NotFound;
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+        var now = _GetUtcNow();
+
+        if (_IsFresh(entry, now))
+        {
+            return _ToCacheValue(entry, isStale: false);
+        }
+
+        var staleCandidate = _IsStaleCandidate(entry, now) ? entry : CacheStoreEntry<T>.NotFound;
 
         using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
         {
-            read = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+            entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
             now = _GetUtcNow();
 
-            if (_IsFresh(read.Entry, now))
+            if (_IsFresh(entry, now))
             {
-                return _ToCacheValue(read.Entry, isStale: false);
+                return _ToCacheValue(entry, isStale: false);
             }
 
-            if (_IsPhysicallyPresent(read.Entry, now))
+            if (_IsStaleCandidate(entry, now))
             {
-                staleCandidate = read.Entry;
+                staleCandidate = entry;
             }
+
+            T? value;
 
             try
             {
-                var value = await factory(cancellationToken).ConfigureAwait(false);
-                var logicalExpiresAt = now.Add(options.Duration);
-                var physicalDuration = options.IsFailSafeEnabled
-                    ? _Max(options.Duration, options.FailSafeMaxDuration)
-                    : options.Duration;
-                var physicalExpiresAt = now.Add(physicalDuration);
-
-                await store
-                    .SetEntryAsync(
-                        key,
-                        value,
-                        isNull: value is null,
-                        logicalExpiresAt,
-                        physicalExpiresAt,
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                return new CacheValue<T>(value, hasValue: true);
+                value = await factory(cancellationToken).ConfigureAwait(false);
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
                 now = _GetUtcNow();
 
-                if (!options.IsFailSafeEnabled || !_IsPhysicallyPresent(staleCandidate, now))
+                if (!options.IsFailSafeEnabled || !_IsStaleCandidate(staleCandidate, now))
                 {
                     throw;
                 }
@@ -100,6 +90,21 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
                 return _ToCacheValue(staleCandidate, isStale: true);
             }
+
+            // The factory succeeded: persist the fresh value and return it. A store-write failure on the
+            // fresh path must propagate rather than activate fail-safe (which would discard the fresh value).
+            now = _GetUtcNow();
+            var logicalExpiresAt = now.Add(options.Duration);
+            var physicalDuration = options.IsFailSafeEnabled
+                ? _Max(options.Duration, options.FailSafeMaxDuration)
+                : options.Duration;
+            var physicalExpiresAt = now.Add(physicalDuration);
+
+            await store
+                .SetEntryAsync(key, value, isNull: value is null, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                .ConfigureAwait(false);
+
+            return new CacheValue<T>(value, hasValue: true);
         }
     }
 
@@ -123,10 +128,15 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             return;
         }
 
-        var logicalExpiresAt = _Min(now.Add(options.FailSafeThrottleDuration), staleCandidate.PhysicalExpiresAt.Value);
+        var logicalExpiresAt = CacheStoreEntryExtensions.Min(
+            now.Add(options.FailSafeThrottleDuration),
+            staleCandidate.PhysicalExpiresAt.Value
+        );
 
         try
         {
+            // The restamp is a throttle optimization, not caller work, so it uses CancellationToken.None: a
+            // caller cancellation between the factory throw and this await must not abort the stale return.
             await store
                 .SetEntryAsync(
                     key,
@@ -134,17 +144,18 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     staleCandidate.IsNull,
                     logicalExpiresAt,
                     staleCandidate.PhysicalExpiresAt.Value,
-                    cancellationToken
+                    CancellationToken.None
                 )
                 .ConfigureAwait(false);
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception)
         {
+            // Swallow all exceptions (including cancellation): the stale value must always be returned.
             _logger.LogFailSafeRestampFailed(exception, key);
         }
     }
 
-    private async ValueTask<(bool Succeeded, CacheStoreEntry<T> Entry)> _TryGetEntryAsync<T>(
+    private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(
         IFactoryCacheStore store,
         string key,
         CancellationToken cancellationToken
@@ -152,12 +163,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     {
         try
         {
-            return (true, await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false));
+            return await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogCacheStoreReadFailed(exception, key);
-            return (false, CacheStoreEntry<T>.NotFound);
+            return CacheStoreEntry<T>.NotFound;
         }
     }
 
@@ -173,24 +184,17 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             : new CacheValue<T>(entry.Value, hasValue: true, isStale);
     }
 
-    private static bool _IsFresh<T>(CacheStoreEntry<T> entry, DateTime now)
-    {
-        if (!_IsPhysicallyPresent(entry, now))
-        {
-            return false;
-        }
+    private static bool _IsFresh<T>(CacheStoreEntry<T> entry, DateTime now) => entry.IsFresh(now);
 
-        return !entry.LogicalExpiresAt.HasValue || entry.LogicalExpiresAt.Value > now;
-    }
-
-    private static bool _IsPhysicallyPresent<T>(CacheStoreEntry<T> entry, DateTime now) =>
-        entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
+    // A fail-safe stale candidate must carry a non-null physical expiration. A genuine fail-safe reserve
+    // always has one (the coordinator writes it); requiring it here closes the throttle hole where a
+    // null-physical entry would be served as stale without a throttle write, hammering the factory.
+    private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now) =>
+        entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
 
     private DateTime _GetUtcNow() => timeProvider.GetUtcNow().UtcDateTime;
 
     private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
-
-    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 }
 
 internal static partial class FactoryCacheCoordinatorLog

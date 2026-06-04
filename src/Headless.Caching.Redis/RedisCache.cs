@@ -1126,12 +1126,13 @@ public sealed class RedisCache(
 
     async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
         string key,
-        T value,
+        T? value,
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
         CancellationToken cancellationToken
     )
+        where T : default
     {
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
