@@ -1,10 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
+using System.Data;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Headless.Checks;
+using Headless.DistributedLocks;
+using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
@@ -19,6 +23,12 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     private const int _HashPartLength = 8;
     private const int _HashStringLength = 16;
     private const int _SeparatedHashStringLength = _HashStringLength + 1;
+
+    // Memoizes the SHA256-hashed keys for long names so the provider's retry loop (one FromString per
+    // poll) does not re-hash the same resource string every attempt. Unbounded: the distinct-resource
+    // count is bounded in practice by the application's lock-key cardinality, which is small.
+    private static readonly ConcurrentDictionary<string, PostgresAdvisoryLockKey> _HashedKeyCache =
+        new(StringComparer.Ordinal);
 
     private readonly long _key;
     private readonly KeyEncoding _keyEncoding;
@@ -51,7 +61,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
         if (allowHashing)
         {
-            return new PostgresAdvisoryLockKey(_HashString(name));
+            return _HashedKeyCache.GetOrAdd(name, static n => new PostgresAdvisoryLockKey(_HashString(n)));
         }
 
         throw new FormatException($"Name '{name}' could not be encoded as a {nameof(PostgresAdvisoryLockKey)}.");
@@ -89,6 +99,77 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     public static bool operator ==(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => left.Equals(right);
 
     public static bool operator !=(PostgresAdvisoryLockKey left, PostgresAdvisoryLockKey right) => !left.Equals(right);
+
+    // Advisory-key SQL helpers shared by every command-emitting call site (the transaction API on
+    // NpgsqlCommand, and the multiplexing engine on DatabaseCommand). Co-located with the key encoding
+    // so the parameter binding and the (classid, objid, objsubid) pg_locks split stay in one place.
+
+    /// <summary>
+    /// Binds this key's parameter(s) to <paramref name="command"/> and returns the SQL placeholder list
+    /// for an advisory-lock function call (for example <c>@key</c> or <c>@key1, @key2</c>).
+    /// </summary>
+    internal string AddKeyParameters(NpgsqlCommand command)
+    {
+        if (HasSingleKey)
+        {
+            command.Parameters.AddWithValue("key", Key);
+
+            return "@key";
+        }
+
+        var (key1, key2) = Keys;
+        command.Parameters.AddWithValue("key1", key1);
+        command.Parameters.AddWithValue("key2", key2);
+
+        return "@key1, @key2";
+    }
+
+    /// <inheritdoc cref="AddKeyParameters(NpgsqlCommand)"/>
+    internal string AddKeyParameters(DatabaseCommand command)
+    {
+        if (HasSingleKey)
+        {
+            command.AddParameter("key", Key, DbType.Int64);
+
+            return "@key";
+        }
+
+        var (key1, key2) = Keys;
+        command.AddParameter("key1", key1, DbType.Int32);
+        command.AddParameter("key2", key2, DbType.Int32);
+
+        return "@key1, @key2";
+    }
+
+    /// <summary>
+    /// Binds this key's <c>pg_locks</c> filter parameters to <paramref name="command"/> and returns the
+    /// SQL predicate matching its (classid, objid, objsubid) split.
+    /// </summary>
+    /// <remarks>
+    /// pg_locks splits a bigint advisory key into classid (high 32 bits) / objid (low 32 bits) with
+    /// objsubid = 1; an (int,int) key uses classid = key1, objid = key2, objsubid = 2. Filtering on
+    /// objsubid prevents conflating a single-bigint key with an (int,int) key whose halves coincide.
+    /// </remarks>
+    internal string AddLockFilter(NpgsqlCommand command)
+    {
+        var (key1, key2) = Keys;
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
+        command.Parameters.AddWithValue("objSubId", (short)(HasSingleKey ? 1 : 2));
+
+        return "l.classid = @classId AND l.objid = @objId AND l.objsubid = @objSubId";
+    }
+
+    /// <inheritdoc cref="AddLockFilter(NpgsqlCommand)"/>
+    internal string AddLockFilter(DatabaseCommand command)
+    {
+        var (key1, key2) = Keys;
+        command.AddParameter("classId", key1, DbType.Int32);
+        command.AddParameter("objId", key2, DbType.Int32);
+        command.AddParameter("objSubId", (short)(HasSingleKey ? 1 : 2), DbType.Int16);
+
+        return "l.classid = @classId AND l.objid = @objId AND l.objsubid = @objSubId";
+    }
 
     private static long _CombineKeys(int key1, int key2)
     {

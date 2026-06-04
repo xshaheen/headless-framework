@@ -101,17 +101,159 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_throw_when_max_waiters_per_resource_is_exceeded()
+    {
+        // One waiter slot per resource: the second concurrent acquirer on the same resource must be rejected.
+        var options = new DistributedLockOptions { MaxWaitersPerResource = 1 };
+        var blockingSignal = new BlockingReleaseSignal();
+        var alwaysContended = new AlwaysContendedStorage();
+
+        var provider = _CreateProvider(
+            options: options,
+            storage: alwaysContended,
+            releaseSignal: blockingSignal
+        );
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var acquireOptions = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(10) };
+
+        // First acquirer blocks as the single allowed waiter.
+        var first = provider.TryAcquireAsync(resource, acquireOptions, AbortToken);
+        await _PollUntilAsync(() => blockingSignal.ActiveWaiters >= 1);
+
+        // Second acquirer on the same resource overflows the per-resource cap.
+        var act = async () => await provider.TryAcquireAsync(resource, acquireOptions, AbortToken);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should()
+            .Contain("Maximum waiters per resource");
+
+        blockingSignal.ReleaseAll();
+        alwaysContended.GrantNext();
+
+        // Drain the first acquirer so its background loop doesn't outlive the test.
+        await using var handle = await first;
+    }
+
+    [Fact]
+    public async Task should_throw_when_max_concurrent_waiting_resources_is_exceeded()
+    {
+        // One waiting-resource slot: a second distinct contended resource must be rejected.
+        var options = new DistributedLockOptions { MaxConcurrentWaitingResources = 1 };
+        var blockingSignal = new BlockingReleaseSignal();
+        var alwaysContended = new AlwaysContendedStorage();
+
+        var provider = _CreateProvider(
+            options: options,
+            storage: alwaysContended,
+            releaseSignal: blockingSignal
+        );
+
+        var acquireOptions = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(10) };
+
+        var first = provider.TryAcquireAsync(Faker.Random.AlphaNumeric(12), acquireOptions, AbortToken);
+        await _PollUntilAsync(() => blockingSignal.ActiveWaiters >= 1);
+
+        var act = async () => await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(12), acquireOptions, AbortToken);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should()
+            .Contain("Maximum concurrent waiting resources");
+
+        blockingSignal.ReleaseAll();
+        alwaysContended.GrantNext();
+
+        await using var handle = await first;
+    }
+
+    [Fact]
+    public async Task should_throw_lock_acquisition_timeout_when_acquire_times_out()
+    {
+        // Storage never grants; FakeReleaseSignal returns immediately, so the loop spins until the
+        // (real-clock) zero-budget deadline forces the timeout. A zero acquire timeout is a single
+        // try-once attempt that throws on contention.
+        for (var i = 0; i < 100; i++)
+        {
+            _storage.AcquireResults.Enqueue(false);
+        }
+
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var act = async () =>
+            await provider.AcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+    }
+
+    [Fact]
+    public async Task should_throw_lock_acquisition_timeout_on_read_lock_acquire_timeout()
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            _storage.AcquireResults.Enqueue(false);
+        }
+
+        var rwProvider = new ConnectionScopedReaderWriterLockProvider(_CreateProvider());
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var act = async () =>
+            await rwProvider.AcquireReadLockAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+    }
+
+    [Fact]
+    public async Task should_throw_lock_acquisition_timeout_on_write_lock_acquire_timeout()
+    {
+        for (var i = 0; i < 100; i++)
+        {
+            _storage.AcquireResults.Enqueue(false);
+        }
+
+        var rwProvider = new ConnectionScopedReaderWriterLockProvider(_CreateProvider());
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var act = async () =>
+            await rwProvider.AcquireWriteLockAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<LockAcquisitionTimeoutException>();
+    }
+
+    private async Task _PollUntilAsync(Func<bool> condition)
+    {
+        while (!condition())
+        {
+            AbortToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+        }
+    }
+
     private ConnectionScopedDistributedLockProvider _CreateProvider(
         IFencingTokenSource? fencingTokenSource = null,
-        TimeSpan? pollingFallback = null
+        TimeSpan? pollingFallback = null,
+        DistributedLockOptions? options = null,
+        IConnectionScopedLockStorage? storage = null,
+        IReleaseSignal? releaseSignal = null
     )
     {
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
         return new ConnectionScopedDistributedLockProvider(
-            _storage,
-            _releaseSignal,
-            new DistributedLockOptions(),
+            storage ?? _storage,
+            releaseSignal ?? _releaseSignal,
+            options ?? new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<ConnectionScopedDistributedLockProvider>(),
@@ -236,5 +378,86 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
 
             throw new InvalidOperationException("fencing failed");
         }
+    }
+
+    /// <summary>Storage that reports contention (no grant) until <see cref="GrantNext"/> flips it.</summary>
+    private sealed class AlwaysContendedStorage : IConnectionScopedLockStorage
+    {
+        private volatile bool _grant;
+
+        public void GrantNext() => _grant = true;
+
+        public ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
+            string resource,
+            string lockId,
+            bool isShared,
+            CancellationToken cancellationToken = default
+        )
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return ValueTask.FromResult<ConnectionScopedLockHandle?>(
+                _grant ? new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, CancellationToken.None) : null
+            );
+        }
+
+        public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public ValueTask<bool> IsLockedAsync(
+            string resource,
+            bool? isShared = null,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult(false);
+
+        public ValueTask<long> GetLocksCountAsync(
+            string resource,
+            bool? isShared = null,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult(0L);
+
+        public ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<string?>(null);
+
+        public ValueTask<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<IReadOnlyList<LockInfo>>([]);
+
+        public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(0L);
+    }
+
+    /// <summary>Release signal whose <see cref="WaitAsync"/> blocks until <see cref="ReleaseAll"/> is called.</summary>
+    private sealed class BlockingReleaseSignal : IReleaseSignal
+    {
+        private readonly TaskCompletionSource _gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeWaiters;
+
+        public int ActiveWaiters => Volatile.Read(ref _activeWaiters);
+
+        public void ReleaseAll() => _gate.TrySetResult();
+
+        public async ValueTask WaitAsync(
+            string resource,
+            TimeSpan pollingFallback,
+            CancellationToken cancellationToken = default
+        )
+        {
+            Interlocked.Increment(ref _activeWaiters);
+
+            try
+            {
+                await _gate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeWaiters);
+            }
+        }
+
+        public ValueTask PublishAsync(string resource, CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
     }
 }

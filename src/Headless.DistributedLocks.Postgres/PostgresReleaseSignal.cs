@@ -17,14 +17,14 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private readonly PollingReleaseSignal _local;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<PostgresReleaseSignal> _logger;
-    private readonly NpgsqlDataSource? _ownedDataSource;
-    private readonly NpgsqlDataSource? _dataSource;
+    private readonly NpgsqlDataSource _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
     private readonly Task? _listenerTask;
     private readonly int _commandTimeoutSeconds;
 
     public PostgresReleaseSignal(
         IOptions<PostgresDistributedLockOptions> options,
+        NpgsqlDataSource dataSource,
         TimeProvider timeProvider,
         ILogger<PostgresReleaseSignal> logger
     )
@@ -34,16 +34,11 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         _logger = logger;
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
+        // The data source is shared and owned by the DI registration; it is never disposed here.
+        _dataSource = dataSource;
 
         if (Options.EnablePushWakeup)
         {
-            // Only the provider-built data source is disposed here (through _ownedDataSource); an injected
-            // DataSource is owned by the consumer and must not be disposed. The factory returns the
-            // injected instance unchanged when one is supplied, so assigning _dataSource from the owned
-            // field when we build it keeps disposal coupled to the field the analyzer can see.
-            _dataSource = Options.DataSource is null
-                ? (_ownedDataSource = PostgresDataSourceFactory.CreateDataSource(Options))
-                : Options.DataSource;
             _listenerTask = Task.Run(_ListenAsync);
         }
     }
@@ -86,11 +81,6 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         }
 
         _disposeTokenSource.Dispose();
-
-        if (_ownedDataSource is not null)
-        {
-            await _ownedDataSource.DisposeAsync().ConfigureAwait(false);
-        }
     }
 
     private async Task _ListenAsync()
@@ -102,7 +92,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         {
             try
             {
-                await using var connection = await _dataSource!.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
                 connection.Notification += OnNotification;
 
                 await using (var listen = connection.CreateCommand())
@@ -159,9 +149,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
     private async ValueTask<NpgsqlConnection> _OpenConnectionAsync(CancellationToken cancellationToken)
     {
-        // Only reachable when EnablePushWakeup is true, which guarantees _dataSource was assigned
-        // (either the configured DataSource or the owned one created from ConnectionString).
-        return await _dataSource!.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        return await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 }
 #pragma warning restore VSTHRD003, VSTHRD110, MA0134, ERP022

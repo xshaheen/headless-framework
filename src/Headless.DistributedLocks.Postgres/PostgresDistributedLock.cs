@@ -21,7 +21,7 @@ public static class PostgresDistributedLock
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_advisory_xact_lock({PostgresConnectionScopedLockStorage.AddKeyParameters(command, key)})";
+        command.CommandText = $"SELECT pg_catalog.pg_advisory_xact_lock({key.AddKeyParameters(command)})";
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -38,7 +38,7 @@ public static class PostgresDistributedLock
 
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_try_advisory_xact_lock({PostgresConnectionScopedLockStorage.AddKeyParameters(command, key)})";
+        command.CommandText = $"SELECT pg_catalog.pg_try_advisory_xact_lock({key.AddKeyParameters(command)})";
 
         return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
     }

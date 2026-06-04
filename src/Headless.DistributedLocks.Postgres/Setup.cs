@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Headless.DistributedLocks.Postgres;
 
@@ -44,6 +45,15 @@ public static class SetupPostgresDistributedLocks
         {
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+
+            // Build the data source once and share it across all three consumers (storage, release
+            // signal, fencing) so a connection-string configuration produces a single pool rather than
+            // three. The owner wrapper centralizes disposal: an injected DataSource is consumer-owned and
+            // never disposed, while a connection-string-built one is owned and disposed on container
+            // teardown. Consumers inject the NpgsqlDataSource directly and must not dispose it.
+            services.TryAddSingleton<PostgresLockDataSource>();
+            services.TryAddSingleton(sp => sp.GetRequiredService<PostgresLockDataSource>().DataSource);
+
             services.TryAddSingleton<PostgresConnectionScopedLockStorage>();
             services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
                 sp.GetRequiredService<PostgresConnectionScopedLockStorage>()

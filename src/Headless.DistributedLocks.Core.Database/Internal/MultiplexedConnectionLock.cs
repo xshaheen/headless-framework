@@ -110,8 +110,13 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
         }
         // Never punish the caller for a connection that was already broken (https://github.com/madelson/DistributedLock/issues/83):
         // the broken connection — not the caller's request — is the failure, and the pool retries it on a fresh lock.
+        // The same applies to a transient failure re-opening an idle pooled connection on the opportunistic path: the
+        // open faults before _connectionOpened flips, so _IsConnectionBrokenNoLock (which requires it) would miss it
+        // and let the exception fault the whole acquire loop. A not-yet-opened connection holds no locks (you cannot
+        // hold an advisory lock on a closed connection), so treat the failed reuse like a broken connection and retry
+        // on a fresh lock rather than failing the caller.
 #pragma warning disable ERP022
-        catch when (opportunistic && _IsConnectionBrokenNoLock)
+        catch when (opportunistic && (_IsConnectionBrokenNoLock || !_connectionOpened))
         {
             return _GetAlreadyBrokenResultNoLock();
         }

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
@@ -26,16 +25,15 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
     // A non-null sentinel returned on success; advisory locks carry no per-acquire release state beyond the key.
     private static readonly object _Cookie = new();
 
-    public static readonly PostgresAdvisoryLock ExclusiveLock = new(isShared: false);
-    public static readonly PostgresAdvisoryLock SharedLock = new(isShared: true);
-
     private readonly bool _isShared;
     private readonly bool _allowHashing;
+    private readonly TimeProvider _timeProvider;
 
-    private PostgresAdvisoryLock(bool isShared, bool allowHashing = true)
+    public PostgresAdvisoryLock(bool isShared, TimeProvider timeProvider, bool allowHashing = true)
     {
         _isShared = isShared;
         _allowHashing = allowHashing;
+        _timeProvider = timeProvider;
     }
 
     /// <summary>Advisory locks do not natively support upgradeable read locks.</summary>
@@ -73,11 +71,10 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             }
 
             // The lock is already held on this connection; an externally-owned connection cannot acquire it again, so
-            // wait out the timeout and report failure. The strategy is a stateless singleton (ExclusiveLock/SharedLock),
-            // so we use the system clock here rather than an injected TimeProvider; this degenerate path is reached only
-            // by the externally-owned transaction API, never by the connection-scoped provider (which owns its
-            // connections and never re-acquires the same lock on one).
-            await TimeProvider.System.Delay(timeout, cancellationToken).ConfigureAwait(false);
+            // wait out the timeout and report failure. This degenerate path is reached only by the externally-owned
+            // transaction API, never by the connection-scoped provider (which owns its connections and never
+            // re-acquires the same lock on one).
+            await _timeProvider.Delay(timeout, cancellationToken).ConfigureAwait(false);
 
             return null;
         }
@@ -197,7 +194,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
 
         using var command = connection.CreateCommand();
         command.SetCommandText(
-            $"SELECT pg_catalog.pg_advisory_unlock{(_isShared ? "_shared" : string.Empty)}({_AddKeyParameters(command, key)})"
+            $"SELECT pg_catalog.pg_advisory_unlock{(_isShared ? "_shared" : string.Empty)}({key.AddKeyParameters(command)})"
         );
 
         var result = (bool)(await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false))!;
@@ -221,7 +218,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             FROM pg_catalog.pg_locks l
             JOIN pg_catalog.pg_database d ON d.oid = l.database
             WHERE l.locktype = 'advisory'
-                AND {_AddLockFilter(command, key)}
+                AND {key.AddLockFilter(command)}
                 AND l.pid = pg_catalog.pg_backend_pid()
                 AND d.datname = pg_catalog.current_database()
             """
@@ -273,7 +270,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             commandText.Append("_shared");
         }
 
-        commandText.Append('(').Append(_AddKeyParameters(command, key)).Append(") AS result");
+        commandText.Append('(').Append(key.AddKeyParameters(command)).Append(") AS result");
 
         command.SetCommandText(commandText.ToString());
         command.SetTimeout(timeout);
@@ -366,48 +363,6 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         // Transaction-scoped locking applies to internally-owned connections with a transaction and externally-owned
         // connections whose transaction we can see (i.e. came through the transactional API).
         connection.HasTransaction;
-
-    private static string _AddKeyParameters(DatabaseCommand command, PostgresAdvisoryLockKey key)
-    {
-        if (key.HasSingleKey)
-        {
-            command.AddParameter("key", key.Key, DbType.Int64);
-
-            return "@key";
-        }
-
-        var (key1, key2) = key.Keys;
-        command.AddParameter("key1", key1, DbType.Int32);
-        command.AddParameter("key2", key2, DbType.Int32);
-
-        return "@key1, @key2";
-    }
-
-    private static string _AddLockFilter(DatabaseCommand command, PostgresAdvisoryLockKey key)
-    {
-        // pg_locks splits a bigint advisory key into classid (high 32 bits) / objid (low 32 bits) with objsubid = 1;
-        // an (int,int) key uses classid = key1, objid = key2, objsubid = 2.
-        string classIdParameter;
-        string objIdParameter;
-        string objSubId;
-
-        if (key.HasSingleKey)
-        {
-            var (keyUpper32, keyLower32) = key.Keys;
-            command.AddParameter(classIdParameter = "keyUpper32", keyUpper32, DbType.Int32);
-            command.AddParameter(objIdParameter = "keyLower32", keyLower32, DbType.Int32);
-            objSubId = "1";
-        }
-        else
-        {
-            _AddKeyParameters(command, key);
-            classIdParameter = "key1";
-            objIdParameter = "key2";
-            objSubId = "2";
-        }
-
-        return $"(l.classid = @{classIdParameter} AND l.objid = @{objIdParameter} AND l.objsubid = {objSubId})";
-    }
 
     [StructLayout(LayoutKind.Auto)]
     private readonly struct CapturedTimeoutSettings(string statementTimeout, string lockTimeout)

@@ -38,4 +38,22 @@ public sealed class PostgresAdvisoryLockKeyTests : TestBase
         first.Should().Be(second);
         first.HasSingleKey.Should().BeTrue();
     }
+
+    [Fact]
+    public void should_throw_when_key_getter_called_on_pair_key()
+    {
+        var key = new PostgresAdvisoryLockKey(10, 20);
+
+        var act = () => key.Key;
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void should_throw_format_exception_when_long_name_cannot_be_encoded_without_hashing()
+    {
+        var act = () => PostgresAdvisoryLockKey.FromString(new string('a', 40), allowHashing: false);
+
+        act.Should().Throw<FormatException>();
+    }
 }

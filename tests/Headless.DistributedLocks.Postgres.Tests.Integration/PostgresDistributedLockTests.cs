@@ -66,21 +66,38 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
     [Fact]
     public async Task should_not_publish_postgres_notification_when_push_wakeup_is_disabled()
     {
+        const string channel = "headless_distributed_locks_release";
+        const string sentinelPayload = "wakeup-disabled-fence";
+
         await using var listener = new NpgsqlConnection(fixture.ConnectionString);
         await listener.OpenAsync(AbortToken);
 
-        var notifications = 0;
+        var releaseNotifications = 0;
+        var sentinelSeen = false;
         listener.Notification += (_, args) =>
         {
-            if (args.Channel == "headless_distributed_locks_release")
+            if (args.Channel != channel)
             {
-                notifications++;
+                return;
+            }
+
+            // The sentinel is the synchronization fence: NOTIFY delivery on a single connection is
+            // ordered, so once we observe our own sentinel every notification the release could have
+            // emitted (it runs strictly before the sentinel publish) has already been delivered. No
+            // wall-clock wait is needed.
+            if (string.Equals(args.Payload, sentinelPayload, StringComparison.Ordinal))
+            {
+                sentinelSeen = true;
+            }
+            else
+            {
+                releaseNotifications++;
             }
         };
 
         await using (var command = listener.CreateCommand())
         {
-            command.CommandText = "LISTEN headless_distributed_locks_release";
+            command.CommandText = $"LISTEN {channel}";
             await command.ExecuteNonQueryAsync(AbortToken);
         }
 
@@ -91,19 +108,24 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
 
         await handle.ReleaseAsync();
 
-        using var waitTimeout = TimeProvider.System.CreateCancellationTokenSource(TimeSpan.FromMilliseconds(250));
-        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(waitTimeout.Token, AbortToken);
-
-        try
+        // Publish our own sentinel on the same channel from a separate connection, then drain the
+        // listener until it arrives. Any framework-emitted release notification would be ordered before
+        // the sentinel and counted by then.
+        await using (var sentinelConnection = new NpgsqlConnection(fixture.ConnectionString))
         {
-            await listener.WaitAsync(waitCancellation.Token);
-        }
-        catch (OperationCanceledException) when (waitTimeout.IsCancellationRequested)
-        {
-            // Expected path when no notification is emitted.
+            await sentinelConnection.OpenAsync(AbortToken);
+            await using var notify = sentinelConnection.CreateCommand();
+            notify.CommandText = $"SELECT pg_notify('{channel}', @payload)";
+            notify.Parameters.AddWithValue("payload", sentinelPayload);
+            await notify.ExecuteNonQueryAsync(AbortToken);
         }
 
-        notifications.Should().Be(0);
+        while (!sentinelSeen)
+        {
+            await listener.WaitAsync(AbortToken);
+        }
+
+        releaseNotifications.Should().Be(0);
     }
 
     private ServiceProvider _CreateProvider(Action<PostgresDistributedLockOptions>? configure = null)

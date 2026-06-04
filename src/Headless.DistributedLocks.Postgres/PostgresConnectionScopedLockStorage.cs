@@ -23,24 +23,38 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     private readonly PostgresDistributedLockOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
-    private readonly bool _ownsDataSource;
     private readonly NpgsqlDataSource _dataSource;
     private readonly string _connectionString;
     private readonly int _commandTimeoutSeconds;
     private readonly TimeSpan _keepaliveCadence;
     private readonly MultiplexedConnectionLockPool _multiplexedConnectionLockPool;
+    private readonly PostgresAdvisoryLock _exclusiveLock;
+    private readonly PostgresAdvisoryLock _sharedLock;
+
+    // The engine wrapper only varies by resource name (pool + connection string are storage-level
+    // constants), so it is cached per resolved name and reused across acquisitions.
+    private readonly ConcurrentDictionary<string, OptimisticConnectionMultiplexingDbDistributedLock> _enginesByName =
+        new(StringComparer.Ordinal);
+
+    // Set at the top of DisposeAsync so an acquire racing teardown does not leave a lock that the
+    // teardown loop already missed (it iterates a snapshot of _heldByLockId).
+    private volatile bool _disposed;
 
     public PostgresConnectionScopedLockStorage(
         IOptions<PostgresDistributedLockOptions> options,
+        NpgsqlDataSource dataSource,
         TimeProvider timeProvider
     )
     {
         _options = options.Value;
         _timeProvider = timeProvider;
-        _dataSource = PostgresDataSourceFactory.CreateDataSource(_options);
-        _ownsDataSource = _options.DataSource is null;
+        // The data source is owned and disposed by the DI registration (a single shared instance across the
+        // three Postgres consumers), so this storage never disposes it.
+        _dataSource = dataSource;
         _connectionString = _dataSource.ConnectionString;
         _commandTimeoutSeconds = (int)_options.CommandTimeout.TotalSeconds;
+        _exclusiveLock = new PostgresAdvisoryLock(isShared: false, timeProvider);
+        _sharedLock = new PostgresAdvisoryLock(isShared: true, timeProvider);
 
         // The ConnectionMonitor's keepalive probe is complementary to TCP keepalive (configured on the data source):
         // a positive interval keeps an idle holder's connection warm so a provider idle-timeout cannot silently drop
@@ -60,13 +74,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     )
     {
         var name = _options.KeyPrefix + resource;
-        var strategy = isShared ? PostgresAdvisoryLock.SharedLock : PostgresAdvisoryLock.ExclusiveLock;
+        var strategy = isShared ? _sharedLock : _exclusiveLock;
 
-        var engine = new OptimisticConnectionMultiplexingDbDistributedLock(
+        var engine = _enginesByName.GetOrAdd(
             name,
-            _connectionString,
-            _multiplexedConnectionLockPool,
-            _keepaliveCadence
+            static (key, state) => new OptimisticConnectionMultiplexingDbDistributedLock(
+                key,
+                state._connectionString,
+                state._multiplexedConnectionLockPool,
+                state._keepaliveCadence
+            ),
+            this
         );
 
         // A zero timeout maps to a single non-blocking try (pg_try_advisory_lock): the provider owns the wait/retry
@@ -87,6 +105,11 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             // Read the engine handle's lost token now so the ConnectionMonitor registers its monitoring handle (and
             // starts the active probe) at acquire time rather than lazily on first consumer read.
             var connectionLostToken = engineHandle.HandleLostToken;
+
+            // Close the dispose race: if teardown has begun, the just-acquired lock would be missed by the
+            // teardown snapshot of _heldByLockId, leaking its connection and advisory lock under No Reset On
+            // Close. Drop it explicitly instead of registering it.
+            ObjectDisposedException.ThrowIf(_disposed, this);
 
             var held = new HeldLock(resource, lockId, engineHandle);
             _heldByLockId[lockId] = held;
@@ -150,7 +173,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
             WHERE l.locktype = 'advisory'
               AND l.granted
               AND d.datname = pg_catalog.current_database()
-              AND {AddLockFilter(command, key)}
+              AND {key.AddLockFilter(command)}
             """;
 
         if (isShared.HasValue)
@@ -202,6 +225,10 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// </remarks>
     public async ValueTask DisposeAsync()
     {
+        // Set before the snapshot iteration so a concurrent acquire observes disposal and drops its
+        // just-acquired lock rather than registering it after the teardown loop has already passed.
+        _disposed = true;
+
         List<Exception>? teardownErrors = null;
 
         foreach (var held in _heldByLockId.Values)
@@ -221,18 +248,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         _heldByLockId.Clear();
 
-        if (_ownsDataSource)
-        {
-            try
-            {
-                await _dataSource.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (Exception exception)
-            {
-                // Inside the try so a data-source failure does not drop the lock teardown errors.
-                (teardownErrors ??= []).Add(exception);
-            }
-        }
+        // The data source is shared and owned by the DI registration; it is not disposed here.
 
         if (teardownErrors is null)
         {
@@ -258,38 +274,6 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     private PostgresAdvisoryLockKey _CreateKey(string resource)
     {
         return PostgresAdvisoryLockKey.FromString(_options.KeyPrefix + resource, allowHashing: true);
-    }
-
-    internal static string AddKeyParameters(NpgsqlCommand command, PostgresAdvisoryLockKey key)
-    {
-        if (key.HasSingleKey)
-        {
-            command.Parameters.AddWithValue("key", key.Key);
-            return "@key";
-        }
-
-        var keys = key.Keys;
-        command.Parameters.AddWithValue("key1", keys.Key1);
-        command.Parameters.AddWithValue("key2", keys.Key2);
-
-        return "@key1, @key2";
-    }
-
-    internal static string AddLockFilter(NpgsqlCommand command, PostgresAdvisoryLockKey key)
-    {
-        // Keys yields the same (classid, objid) 32-bit split that Postgres stores for the
-        // single-bigint encoding (pg_locks splits the bigint into high/low 32-bit halves),
-        // so no ToString/FromString round-trip is needed.
-        var keys = key.Keys;
-        command.Parameters.AddWithValue("classId", keys.Key1);
-        command.Parameters.AddWithValue("objId", keys.Key2);
-
-        // pg_locks records objsubid = 1 for single-bigint advisory keys and 2 for the (int,int)
-        // form. Filtering on it prevents conflating a single-bigint key with an (int,int) key
-        // whose halves coincide.
-        command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
-
-        return "l.classid = @classId AND l.objid = @objId AND l.objsubid = @objSubId";
     }
 
     /// <summary>
