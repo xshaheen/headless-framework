@@ -17,7 +17,9 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 
 ## Design Notes
 
-Memory cache stores entries in an internal envelope with logical expiration and physical expiration. In the current public behavior, both timestamps are equal for every write: physical expiration drives eviction, read misses, LRU maintenance, and size compaction, while logical expiration is returned by `GetExpirationAsync`. The envelope also reserves last-factory-error and tag slots for later fail-safe and tagging features; those slots remain empty until those behaviors ship.
+Memory cache stores entries in an internal envelope with logical expiration and physical expiration. Direct writes set both timestamps equal. Fail-safe `GetOrAddAsync` can make physical expiration outlive logical expiration so a stale reserve stays in memory after normal value reads miss. Physical expiration still drives eviction, LRU maintenance, size compaction, `GetCountAsync`, and key listing. Logical expiration drives `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`, and `GetExpirationAsync`.
+
+Long `FailSafeMaxDuration` values can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments.
 
 ## Installation
 
@@ -57,6 +59,7 @@ options.KeyPrefix = "myapp:";   // Optional key prefix
 ## Dependencies
 
 - `Headless.Caching.Abstractions`
+- `Headless.Caching.Core`
 - `Headless.Hosting`
 
 ## Side Effects
