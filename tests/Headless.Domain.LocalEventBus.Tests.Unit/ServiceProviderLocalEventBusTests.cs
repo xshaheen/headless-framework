@@ -82,9 +82,9 @@ public sealed class ServiceProviderLocalEventBusTests
         string exceptionMessage = "Handler failed"
     ) : IDomainEventHandler<TestLocalMessage>
     {
-        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        public async ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
         {
-            cts.Cancel();
+            await cts.CancelAsync().ConfigureAwait(false);
             throw new InvalidOperationException(exceptionMessage);
         }
     }
