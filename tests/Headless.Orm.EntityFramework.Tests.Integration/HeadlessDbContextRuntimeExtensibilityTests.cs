@@ -8,6 +8,8 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -343,9 +345,54 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.DistributedEmitters.Should().ContainSingle(message => message.UniqueId == "custom-distributed");
     }
 
+    [Fact]
+    public async Task save_changes_should_publish_domain_events_at_most_once_when_execution_strategy_retries()
+    {
+        // given — SQLite has no built-in retrying strategy, so we wire a one-shot retrying execution strategy
+        // (ReplaceService<IExecutionStrategyFactory>) plus a SaveChanges interceptor that throws a marker
+        // exception on its FIRST invocation and passes through on the second. The interceptor fires inside
+        // baseSaveChanges, which the pipeline calls AFTER its domain-event publish loop. So attempt 1:
+        // publish domain events -> baseSaveChanges throws the marker -> execution strategy classifies it as
+        // transient and replays the whole operation. Attempt 2: the at-most-once guard skips the publish loop,
+        // the interceptor passes through, the save commits. A correct guard fires each handler exactly once.
+        var bus = new CountingLocalEventBus();
+        var interceptor = new OneShotTransientFailureInterceptor();
+        var (provider, connection) = await _CreateProviderAsync(
+            configureServices: services => services.AddSingleton<ILocalEventBus>(bus),
+            configureDbContext: options =>
+                options
+                    .ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+                    .AddInterceptors(interceptor)
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "retries-once" };
+
+        db.Entities.Add(entity);
+
+        // when
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then — the interceptor actually fired and the strategy replayed (guards against a silently-green
+        // test where no retry happened at all).
+        interceptor.InvocationCount.Should().Be(2, "the operation must be replayed once");
+
+        // AggregateRoot.Add emits EntityCreated + EntityChanged = 2 domain events. Each handler must fire
+        // exactly once across BOTH attempts — a re-fire on the replay would double the count to 4.
+        bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
+
+        // and the row is persisted (the save ultimately succeeded on the replayed attempt).
+        (await db.Entities.CountAsync(TestContext.Current.CancellationToken))
+            .Should()
+            .Be(1);
+    }
+
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
         Action<IServiceCollection>? configureServices = null,
-        Action<HeadlessDbContextOptions>? configureHeadlessOptions = null
+        Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
+        Action<DbContextOptionsBuilder>? configureDbContext = null
     )
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -364,7 +411,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             configureHeadlessOptions?.Invoke(options);
         });
         configureServices?.Invoke(services);
-        services.AddDbContext<RuntimeTestDbContext>(options => options.UseSqlite(connection).AddHeadlessExtension());
+        services.AddDbContext<RuntimeTestDbContext>(options =>
+        {
+            options.UseSqlite(connection).AddHeadlessExtension();
+            configureDbContext?.Invoke(options);
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -465,6 +516,83 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         services.AddScoped<IHeadlessOutboxDispatcher>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
 
         return services;
+    }
+
+    // Counts every domain-event publish so the test can prove handlers fire exactly once across the retry.
+    private sealed class CountingLocalEventBus : ILocalEventBus
+    {
+        private int _publishCount;
+
+        public int PublishCount => _publishCount;
+
+        public void Publish<T>(T domainEvent)
+            where T : class, IDomainEvent => Interlocked.Increment(ref _publishCount);
+
+        public void Publish(IDomainEvent domainEvent) => Interlocked.Increment(ref _publishCount);
+
+        public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent
+        {
+            Interlocked.Increment(ref _publishCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _publishCount);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    // Marker exception the one-shot strategy classifies as transient.
+    private sealed class TransientMarkerException() : Exception("Simulated transient save fault.");
+
+    // SaveChanges interceptor that throws the transient marker on its FIRST invocation and passes through on
+    // the second. Because the pipeline runs its domain-event publish loop BEFORE baseSaveChanges (where this
+    // interceptor fires), the throw forces a real replay AFTER the events have already published on attempt 1.
+    private sealed class OneShotTransientFailureInterceptor : ISaveChangesInterceptor
+    {
+        private int _invocationCount;
+
+        public int InvocationCount => _invocationCount;
+
+        public InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            if (Interlocked.Increment(ref _invocationCount) == 1)
+            {
+                throw new TransientMarkerException();
+            }
+
+            return result;
+        }
+
+        public ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Interlocked.Increment(ref _invocationCount) == 1)
+            {
+                throw new TransientMarkerException();
+            }
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+    }
+
+    // Retries the wrapped operation at most once, treating TransientMarkerException as transient. Zero retry
+    // delay keeps the test fast and deterministic.
+    private sealed class OneShotRetryExecutionStrategy(ExecutionStrategyDependencies dependencies)
+        : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => exception is TransientMarkerException;
+    }
+
+    private sealed class OneShotRetryExecutionStrategyFactory(ExecutionStrategyDependencies dependencies)
+        : IExecutionStrategyFactory
+    {
+        public IExecutionStrategy Create() => new OneShotRetryExecutionStrategy(dependencies);
     }
 
     private sealed record RuntimeLocalMessage(string UniqueId) : IDomainEvent;

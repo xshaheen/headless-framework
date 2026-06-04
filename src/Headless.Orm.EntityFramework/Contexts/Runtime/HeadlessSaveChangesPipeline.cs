@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.Domain;
@@ -111,6 +112,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             auditEntries,
             acceptAllChangesOnSuccess,
             baseSaveChangesAsync,
+            new StrongBox<bool>(),
             cancellationToken
         );
 
@@ -140,7 +142,14 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         var saveContext = _ProcessEntries(context, trackedEntries);
         var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
 
-        var state = new SaveState(context, saveContext, auditEntries, acceptAllChangesOnSuccess, baseSaveChanges);
+        var state = new SaveState(
+            context,
+            saveContext,
+            auditEntries,
+            acceptAllChangesOnSuccess,
+            baseSaveChanges,
+            new StrongBox<bool>()
+        );
 
         if (context.Database.CurrentTransaction is not null)
         {
@@ -213,9 +222,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
-    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (domain-event
-    // loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two are kept
-    // in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
+    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (at-most-once
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
     private async Task<int> _SaveWithinTransactionAsync(
         AsyncSaveState state,
         IDbContextTransaction transaction,
@@ -231,7 +240,14 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.DomainEventEmitters.Count > 0)
+            // Domain-event handlers are at-most-once. They run before baseSaveChanges so handlers can enlist
+            // changes into this same save, but this method is the execution strategy's retried operation: a
+            // transient fault during save/commit replays it. The DomainEventsPublished flag (shared across the
+            // by-value state copies) ensures handlers are NOT re-invoked on a replay. The contract trade-off:
+            // handlers may run even if a later attempt ultimately fails to commit, so domain-event side effects
+            // must tolerate a rolled-back save (keep them idempotent / replay-safe). For commit-coupled,
+            // exactly-once delivery use integration events (the transactional outbox), not domain events.
+            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
             {
                 var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
 
@@ -243,6 +259,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                         await bus.PublishAsync(domainEvent, state.CancellationToken).ConfigureAwait(false);
                     }
                 }
+
+                state.DomainEventsPublished.Value = true;
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
@@ -303,9 +321,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         }
     }
 
-    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (domain-event
-    // loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two are kept
-    // in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
+    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (at-most-once
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
     private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
     {
 #pragma warning disable MA0045 // Sync intentionally.
@@ -318,7 +336,10 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.DomainEventEmitters.Count > 0)
+            // At-most-once domain-event guard — see the async twin for the full rationale. The shared
+            // DomainEventsPublished flag prevents re-invoking handlers when the execution strategy replays
+            // this operation after a transient save/commit fault.
+            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
             {
                 var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
 
@@ -329,6 +350,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                         bus.Publish(domainEvent);
                     }
                 }
+
+                state.DomainEventsPublished.Value = true;
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
@@ -405,6 +428,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         IReadOnlyList<AuditLogEntryData>? AuditEntries,
         bool AcceptAllChangesOnSuccess,
         Func<bool, CancellationToken, Task<int>> BaseSaveChangesAsync,
+        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
+        // domain-event guard in _SaveWithinTransactionAsync survives a replay. See the publish loop there.
+        StrongBox<bool> DomainEventsPublished,
         CancellationToken CancellationToken
     );
 
@@ -413,6 +439,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         HeadlessSaveEntryContext SaveContext,
         IReadOnlyList<AuditLogEntryData>? AuditEntries,
         bool AcceptAllChangesOnSuccess,
-        Func<bool, int> BaseSaveChanges
+        Func<bool, int> BaseSaveChanges,
+        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
+        // domain-event guard in _SaveWithinTransaction survives a replay. See the publish loop there.
+        StrongBox<bool> DomainEventsPublished
     );
 }
