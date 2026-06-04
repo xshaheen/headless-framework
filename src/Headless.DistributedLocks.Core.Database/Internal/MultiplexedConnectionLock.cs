@@ -265,27 +265,13 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
 
         foreach (var cadence in _heldLockIdentitiesToKeepaliveCadences.Values)
         {
-            if (_CompareCadence(cadence, minCadence) < 0)
+            if (TimeSpanCadence.CompareWithInfinite(cadence, minCadence) < 0)
             {
                 minCadence = cadence;
             }
         }
 
         _connection.SetKeepaliveCadence(minCadence);
-    }
-
-    private static int _CompareCadence(TimeSpan a, TimeSpan b)
-    {
-        // Treat Timeout.InfiniteTimeSpan as larger than any finite cadence.
-        var aInfinite = a == Timeout.InfiniteTimeSpan;
-        var bInfinite = b == Timeout.InfiniteTimeSpan;
-
-        if (aInfinite || bInfinite)
-        {
-            return aInfinite == bInfinite ? 0 : (aInfinite ? 1 : -1);
-        }
-
-        return a.CompareTo(b);
     }
 
     public readonly struct Result
@@ -335,7 +321,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
             _identity = identity;
             _lockCookie = lockCookie;
             LockId = Guid.NewGuid().ToString("N");
-            DateAcquired = DateTimeOffset.UtcNow;
+            DateAcquired = @lock._connection.TimeProvider.GetUtcNow();
         }
 
         public string LockId { get; }

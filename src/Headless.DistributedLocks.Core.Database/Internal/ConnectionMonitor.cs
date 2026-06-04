@@ -114,7 +114,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                 !_StartMonitorWorkerIfNeededNoLock()
                 && _state == State.Active
                 && !_HasRegisteredMonitoringHandlesNoLock
-                && _Compare(keepaliveCadence, originalKeepaliveCadence) < 0
+                && TimeSpanCadence.CompareWithInfinite(keepaliveCadence, originalKeepaliveCadence) < 0
             )
             {
                 // An active worker is already performing keepalive on a longer cadence. It is likely asleep, so fire
@@ -528,20 +528,6 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             // Intentionally empty.
         }
 #pragma warning restore CA1031, ERP022
-    }
-
-    private static int _Compare(TimeSpan a, TimeSpan b)
-    {
-        // Treat Timeout.InfiniteTimeSpan as larger than any finite value.
-        var aInfinite = a == Timeout.InfiniteTimeSpan;
-        var bInfinite = b == Timeout.InfiniteTimeSpan;
-
-        if (aInfinite || bInfinite)
-        {
-            return aInfinite == bInfinite ? 0 : (aInfinite ? 1 : -1);
-        }
-
-        return a.CompareTo(b);
     }
 
     private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable

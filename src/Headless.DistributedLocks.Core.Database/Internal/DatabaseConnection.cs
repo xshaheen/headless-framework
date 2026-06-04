@@ -26,11 +26,8 @@ internal abstract class DatabaseConnection : IAsyncDisposable
     {
         InnerConnection = Argument.IsNotNull(connection);
         IsExternallyOwned = isExternallyOwned;
-        ConnectionMonitor = new ConnectionMonitor(
-            this,
-            Argument.IsNotNull(timeProvider),
-            monitoringCommandTimeoutSeconds
-        );
+        TimeProvider = Argument.IsNotNull(timeProvider);
+        ConnectionMonitor = new ConnectionMonitor(this, TimeProvider, monitoringCommandTimeoutSeconds);
     }
 
     protected DatabaseConnection(
@@ -53,6 +50,8 @@ internal abstract class DatabaseConnection : IAsyncDisposable
     }
 
     internal ConnectionMonitor ConnectionMonitor { get; }
+
+    internal TimeProvider TimeProvider { get; }
 
     internal DbConnection InnerConnection { get; }
 

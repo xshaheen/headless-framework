@@ -43,7 +43,12 @@ public sealed class PollingReleaseSignal(TimeProvider? timeProvider = null) : IR
 
         if (completed == signal.Task)
         {
-            _signals.TryRemove(resource, out _);
+            // Remove only if this is still our own signal. A blind TryRemove(resource) could drop a fresh TCS
+            // that a concurrent waiter registered under the same key after our publisher already removed ours,
+            // silently demoting that waiter's push wake-up to the polling fallback.
+            ((ICollection<KeyValuePair<string, TaskCompletionSource>>)_signals).Remove(
+                new KeyValuePair<string, TaskCompletionSource>(resource, signal)
+            );
         }
 
         await completed.ConfigureAwait(false);

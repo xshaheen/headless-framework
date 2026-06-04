@@ -106,13 +106,27 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
     /// <summary>Polls <paramref name="condition"/> until true or a bounded deadline, linked to the test abort token.</summary>
     private async Task _WaitUntilAsync(Func<Task<bool>> condition)
     {
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        using var deadlineCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(AbortToken, deadlineCts.Token);
 
         while (!await condition())
         {
-            cts.Token.ThrowIfCancellationRequested();
-            await Task.Delay(TimeSpan.FromMilliseconds(50), cts.Token);
+            // A test-runner abort propagates; a deadline becomes a clear assertion failure (not an opaque OCE).
+            AbortToken.ThrowIfCancellationRequested();
+
+            if (deadlineCts.IsCancellationRequested)
+            {
+                Assert.Fail("Condition was not satisfied within the 15s deadline.");
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), linked.Token);
+            }
+            catch (OperationCanceledException) when (deadlineCts.IsCancellationRequested && !AbortToken.IsCancellationRequested)
+            {
+                Assert.Fail("Condition was not satisfied within the 15s deadline.");
+            }
         }
     }
 

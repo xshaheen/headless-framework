@@ -19,4 +19,17 @@ internal static partial class LoggerExtensions
         string resource,
         string lockId
     );
+
+    [LoggerMessage(
+        EventId = 2,
+        Level = LogLevel.Warning,
+        EventName = "ReleaseWakePublishFailed",
+        Message = "Publishing the release wake-up for resource {Resource} (lock id {LockId}) failed; waiters fall back to polling."
+    )]
+    public static partial void LogReleaseWakePublishFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource,
+        string lockId
+    );
 }

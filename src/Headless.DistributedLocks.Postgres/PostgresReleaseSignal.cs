@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -15,16 +16,22 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private static readonly TimeSpan _MaxReconnectBackoff = TimeSpan.FromSeconds(30);
     private readonly PollingReleaseSignal _local;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<PostgresReleaseSignal> _logger;
     private readonly NpgsqlDataSource? _ownedDataSource;
     private readonly NpgsqlDataSource? _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
     private readonly Task? _listenerTask;
     private readonly int _commandTimeoutSeconds;
 
-    public PostgresReleaseSignal(IOptions<PostgresDistributedLockOptions> options, TimeProvider timeProvider)
+    public PostgresReleaseSignal(
+        IOptions<PostgresDistributedLockOptions> options,
+        TimeProvider timeProvider,
+        ILogger<PostgresReleaseSignal> logger
+    )
     {
         Options = options.Value;
         _timeProvider = timeProvider;
+        _logger = logger;
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
 
@@ -120,8 +127,10 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
             {
                 throw;
             }
-            catch
+            catch (Exception exception)
             {
+                _logger.LogReleaseListenerReconnecting(exception, consecutiveFailures + 1);
+
                 // Exponential backoff with jitter so a PG restart does not trigger a synchronized
                 // reconnect storm across every instance: min(1s * 2^n, 30s) * [0.8, 1.2).
                 var exponential = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds));
@@ -134,11 +143,13 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
         void OnNotification(object sender, NpgsqlNotificationEventArgs args)
         {
+            var resource = args.Payload;
+
             _local
-                .PublishAsync(args.Payload, CancellationToken.None)
+                .PublishAsync(resource, CancellationToken.None)
                 .AsTask()
                 .ContinueWith(
-                    static task => _ = task.Exception,
+                    task => _logger.LogReleaseNotificationFanoutFailed(task.Exception!, resource),
                     CancellationToken.None,
                     TaskContinuationOptions.OnlyOnFaulted,
                     TaskScheduler.Default

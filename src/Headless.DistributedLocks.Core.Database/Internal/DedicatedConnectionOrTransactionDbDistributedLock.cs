@@ -138,7 +138,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
             _innerHandle = new InnerHandle(connection, strategy, name, lockCookie, transactionScoped, connectionResource);
             LockId = Guid.NewGuid().ToString("N");
             Resource = name;
-            DateAcquired = DateTimeOffset.UtcNow;
+            DateAcquired = connection.TimeProvider.GetUtcNow();
         }
 
         public string LockId { get; }

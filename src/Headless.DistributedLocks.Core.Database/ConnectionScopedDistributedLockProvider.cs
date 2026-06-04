@@ -246,7 +246,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
     public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         await storage.ReleaseAsync(resource, lockId, cancellationToken).ConfigureAwait(false);
-        await releaseSignal.PublishAsync(resource, cancellationToken).ConfigureAwait(false);
+        await _PublishReleaseAsync(resource, lockId).ConfigureAwait(false);
     }
 
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -290,7 +290,22 @@ public sealed class ConnectionScopedDistributedLockProvider(
     private async ValueTask _ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken)
     {
         await storage.ReleaseAsync(handle, cancellationToken).ConfigureAwait(false);
-        await releaseSignal.PublishAsync(handle.Resource, cancellationToken).ConfigureAwait(false);
+        await _PublishReleaseAsync(handle.Resource, handle.LockId).ConfigureAwait(false);
+    }
+
+    private async ValueTask _PublishReleaseAsync(string resource, string lockId)
+    {
+        try
+        {
+            // The unlock has already committed; the wake-up is only a latency optimization (polling is the
+            // correctness floor). Publish with None so a cancelled caller cannot strand the other waiters that
+            // depend on this wake, and never surface a wake-publish failure as a release failure.
+            await releaseSignal.PublishAsync(resource, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            logger.LogReleaseWakePublishFailed(exception, resource, lockId);
+        }
     }
 
     private static Activity? _StartLockActivity(string resource)
