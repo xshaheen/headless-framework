@@ -9,9 +9,9 @@ using Nito.AsyncEx.Synchronous;
 
 namespace Headless.Domain;
 
-public sealed class ServiceProviderLocalEventBus(IServiceProvider services) : ILocalEventBus
+internal sealed class ServiceProviderLocalEventBus(IServiceProvider services) : ILocalEventBus
 {
-    private readonly ConditionalWeakTable<Type, StrongBox<int>> _handlerOrderCache = [];
+    private static readonly ConditionalWeakTable<Type, StrongBox<int>> _HandlerOrderCache = [];
 
     private static readonly ConditionalWeakTable<Type, StrongBox<int>>.CreateValueCallback _ComputeHandlerOrder =
         static type =>
@@ -68,7 +68,7 @@ public sealed class ServiceProviderLocalEventBus(IServiceProvider services) : IL
 
             try
             {
-                await handler.HandleAsync(domainEvent, cancellationToken);
+                await handler.HandleAsync(domainEvent, cancellationToken).ConfigureAwait(false);
             }
             catch (TargetInvocationException e)
             {
@@ -102,9 +102,9 @@ public sealed class ServiceProviderLocalEventBus(IServiceProvider services) : IL
 
     #region Helpers
 
-    private int _GetHandlerOrder(Type handlerType)
+    private static int _GetHandlerOrder(Type handlerType)
     {
-        return _handlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
+        return _HandlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
     }
 
     private static void _ThrowOriginalExceptions(Type eventType, List<Exception> exceptions)

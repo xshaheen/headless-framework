@@ -177,6 +177,32 @@ public sealed class OutboxIntegrationEventDispatcherTests
     }
 
     [Fact]
+    public async Task dispatch_async_should_cleanup_transaction_when_cancelled_before_publishing()
+    {
+        // given — a pre-cancelled token with a non-empty event list. The per-event loop trips
+        // ThrowIfCancellationRequested on the first iteration, so the OperationCanceledException must
+        // propagate while the finally-block still detaches the outbox transaction (DbTransaction = null).
+        var bus = new RecordingOutboxBus();
+        var outboxTransaction = Substitute.For<IOutboxTransaction>();
+        var serviceCollection = new ServiceCollection();
+        serviceCollection.AddSingleton(outboxTransaction);
+        await using var services = serviceCollection.BuildServiceProvider();
+        var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
+        var transaction = Substitute.For<IDbContextTransaction>();
+        IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when — await directly so the task completes before the provider is disposed (CA2025).
+        var act = async () => await dispatcher.DispatchAsync(events, transaction, cts.Token);
+
+        // then — cancellation propagates and the finally-block cleanup still ran.
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        outboxTransaction.Received(1).DbTransaction = null;
+        bus.Published.Should().BeEmpty();
+    }
+
+    [Fact]
     public void dispatch_sync_should_forward_to_dispatch_async_and_publish_all_events()
     {
         // given

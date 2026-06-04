@@ -213,6 +213,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
+    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (domain-event
+    // loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two are kept
+    // in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
     private async Task<int> _SaveWithinTransactionAsync(
         AsyncSaveState state,
         IDbContextTransaction transaction,
@@ -300,6 +303,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         }
     }
 
+    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (domain-event
+    // loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two are kept
+    // in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
     private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
     {
 #pragma warning disable MA0045 // Sync intentionally.

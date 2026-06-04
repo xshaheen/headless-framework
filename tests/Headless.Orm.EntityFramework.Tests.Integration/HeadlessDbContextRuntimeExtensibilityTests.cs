@@ -192,6 +192,81 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     }
 
     [Fact]
+    public async Task save_changes_should_name_add_domain_events_when_domain_event_emitted_without_local_event_bus()
+    {
+        // given — the default pipeline emits lifecycle domain events for the tracked AggregateRoot, but
+        // no ILocalEventBus is registered. The guard message must point the consumer at the actionable
+        // registration call (AddDomainEvents), not just the bus interface name.
+        var (provider, connection) = await _CreateProviderAsync();
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "names-add-domain-events" };
+
+        db.Entities.Add(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddDomainEvents*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_name_add_integration_event_outbox_when_integration_event_emitted_without_outbox_dispatcher()
+    {
+        // given — ILocalEventBus is registered so the first save's lifecycle domain events drain, but no
+        // IHeadlessOutboxDispatcher. Queuing an integration event on the tracked entity must fail with a
+        // message naming the actionable registration call (AddIntegrationEventOutbox).
+        var (provider, connection) = await _CreateProviderAsync(services =>
+            services.AddScoped<ILocalEventBus, RuntimeRecordingMessageDispatcher>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "names-add-integration-outbox" };
+
+        db.Entities.Add(entity);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddIntegrationEventOutbox*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_not_throw_when_aggregate_root_emits_no_events_and_no_buses_registered()
+    {
+        // given — an AggregateRoot is tracked and saved, but the lifecycle local-event processor is
+        // removed so it emits zero domain events and (untouched) zero integration events. With neither
+        // ILocalEventBus nor IHeadlessOutboxDispatcher registered the guards must stay silent: emitting
+        // nothing is the common case and must never require either bus.
+        var (provider, connection) = await _CreateProviderAsync(configureHeadlessOptions: options =>
+            options.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "emits-nothing" };
+
+        db.Entities.Add(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        (await db.Entities.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task save_changes_should_use_registered_message_dispatcher_when_messages_are_emitted()
     {
         // given

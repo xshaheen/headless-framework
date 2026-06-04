@@ -19,7 +19,7 @@ public static class SetupEntityFramework
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
@@ -34,7 +34,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -50,7 +50,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
@@ -65,7 +65,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -73,7 +73,7 @@ public static class SetupEntityFramework
         )
             where TDbContext : HeadlessDbContext
         {
-            services.AddHeadlessDbContextServices(configureHeadlessOptions);
+            var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
@@ -91,7 +91,7 @@ public static class SetupEntityFramework
             // call and transfers ownership to the returned context.
             services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
 
-            return services;
+            return builder;
         }
 
         public IHeadlessDbContextBuilder AddHeadlessDbContextServices()
