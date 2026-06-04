@@ -1,0 +1,27 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+namespace Headless.DistributedLocks;
+
+/// <summary>
+/// There are several strategies for implementing SQL-based locks (multiplexed-optimistic, dedicated connection,
+/// transaction-scoped). This interface abstracts between them so the connection-scoped storage that drives the
+/// acquire/release loop stays independent of the chosen connection-management strategy.
+/// </summary>
+internal interface IDbDistributedLock
+{
+    /// <summary>
+    /// Attempts to acquire the lock for <paramref name="strategy"/>, returning <see langword="null"/> on failure or a
+    /// handle on success. The <paramref name="contextHandle"/> argument is used when acquiring a nested lock (such as
+    /// upgrading an upgradeable read lock to a write lock); it lets the implementation reuse the connection that
+    /// already holds the outer lock.
+    /// </summary>
+    /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
+    ValueTask<IDistributedLock?> TryAcquireAsync<TLockCookie>(
+        TimeSpan timeout,
+        IDbSynchronizationStrategy<TLockCookie> strategy,
+        IDistributedLock? contextHandle,
+        CancellationToken cancellationToken
+    )
+        where TLockCookie : class;
+}
