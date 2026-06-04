@@ -77,6 +77,18 @@ public sealed class ServiceProviderLocalEventBusTests
         }
     }
 
+    private sealed class FailingAndCancellingHandler(
+        CancellationTokenSource cts,
+        string exceptionMessage = "Handler failed"
+    ) : IDomainEventHandler<TestLocalMessage>
+    {
+        public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
+        {
+            cts.Cancel();
+            throw new InvalidOperationException(exceptionMessage);
+        }
+    }
+
     private sealed class TargetInvocationExceptionHandler : IDomainEventHandler<TestLocalMessage>
     {
         public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
@@ -394,6 +406,123 @@ public sealed class ServiceProviderLocalEventBusTests
 
         // then
         await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_throw_when_cancellation_requested_before_handler_invocation()
+    {
+        // given — a pre-cancelled token must short-circuit the handler loop before any handler runs.
+        var handler = new TrackingHandler();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
+        var publisher = _CreatePublisher(services);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), cts.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        handler.ReceivedMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_preserve_prior_handler_exceptions_when_cancellation_is_requested_async()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var failingHandler = new FailingAndCancellingHandler(cts, "Initial failure");
+        var trackingHandler = new TrackingHandler();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(trackingHandler);
+        var publisher = _CreatePublisher(services);
+
+        // when
+        var act = async () => await publisher.PublishAsync(new TestLocalMessage("test"), cts.Token);
+
+        // then
+        var exception = await act.Should().ThrowAsync<InvalidOperationException>();
+        exception.WithMessage("Initial failure");
+        trackingHandler.ReceivedMessages.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Non-generic runtime-typed dispatch (invoker cache)
+
+    [Fact]
+    public void should_dispatch_to_runtime_type_handlers_via_non_generic_publish()
+    {
+        // given — referenced through IDomainEvent so the non-generic Publish(IDomainEvent) overload
+        // (compiled invoker) is selected. Handlers fire only if it routes by runtime type to
+        // Publish<TestLocalMessage>; a wrong IDomainEvent-typed dispatch would resolve zero handlers.
+        var handler = new TrackingHandler();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
+        var publisher = _CreatePublisher(services);
+        IDomainEvent message = new TestLocalMessage("runtime-typed");
+
+        // when
+        publisher.Publish(message);
+
+        // then
+        handler.ReceivedMessages.Should().ContainSingle().Which.Should().Be("runtime-typed");
+    }
+
+    [Fact]
+    public async Task should_dispatch_to_runtime_type_handlers_via_non_generic_publish_async()
+    {
+        // given
+        var handler = new TrackingHandler();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
+        var publisher = _CreatePublisher(services);
+        IDomainEvent message = new TestLocalMessage("runtime-typed-async");
+        using var cts = new CancellationTokenSource();
+
+        // when
+        await publisher.PublishAsync(message, cts.Token);
+
+        // then
+        handler.ReceivedMessages.Should().ContainSingle().Which.Should().Be("runtime-typed-async");
+        handler.ReceivedTokens.Should().ContainSingle().Which.Should().Be(cts.Token);
+    }
+
+    [Fact]
+    public void should_cache_and_reuse_runtime_typed_invoker_across_calls()
+    {
+        // given
+        var handler = new TrackingHandler();
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
+        var publisher = _CreatePublisher(services);
+
+        // when — repeated non-generic dispatch of the same runtime type reuses the cached invoker
+        IDomainEvent first = new TestLocalMessage("first");
+        IDomainEvent second = new TestLocalMessage("second");
+        publisher.Publish(first);
+        publisher.Publish(second);
+
+        // then
+        handler.ReceivedMessages.Should().ContainInOrder("first", "second");
+    }
+
+    [Fact]
+    public void should_propagate_handler_failure_through_non_generic_publish()
+    {
+        // given — the generic path's exception semantics must flow through the compiled invoker.
+        var services = new ServiceCollection();
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new FailingHandler("non-generic failure"));
+        var publisher = _CreatePublisher(services);
+        IDomainEvent message = new TestLocalMessage("test");
+
+        // when
+        var act = () => publisher.Publish(message);
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("non-generic failure");
     }
 
     #endregion

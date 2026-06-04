@@ -56,6 +56,16 @@ public sealed class ServiceProviderLocalEventBus(IServiceProvider services) : IL
 
         foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                if (exceptions.Count > 0)
+                {
+                    _ThrowOriginalExceptions(typeof(T), exceptions);
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
             try
             {
                 await handler.HandleAsync(domainEvent, cancellationToken);

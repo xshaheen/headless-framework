@@ -236,6 +236,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                 {
                     foreach (var domainEvent in emitter.Events)
                     {
+                        state.CancellationToken.ThrowIfCancellationRequested();
                         await bus.PublishAsync(domainEvent, state.CancellationToken).ConfigureAwait(false);
                     }
                 }

@@ -195,6 +195,8 @@ public static class SetupEntityFramework
     /// </summary>
     public static IHeadlessDbContextBuilder AddDomainEvents(this IHeadlessDbContextBuilder builder)
     {
+        Argument.IsNotNull(builder);
+
         builder.Services.AddHeadlessLocalEventBus();
 
         return builder;
