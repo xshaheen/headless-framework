@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Demo;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +15,9 @@ container
     {
         setup.ForMessage<ShowTimeEvent>(message =>
             message.MessageName("sample.console.showtime").OnBus<EventConsumer>()
+        );
+        setup.ForMessage<ShowTimeResponse>(message =>
+            message.MessageName("sample.console.showtime.response").OnBus<ShowTimeResponseConsumer>()
         );
         // Console app does not support dashboard
         setup.UseInMemoryStorage();
@@ -33,8 +38,12 @@ _ = Task.Run(
 
             await sp.GetRequiredService<IOutboxBus>()
                 .PublishAsync(
-                    DateTime.UtcNow,
-                    new PublishOptions { MessageName = "sample.console.showtime" },
+                    new ShowTimeEvent(DateTime.UtcNow),
+                    new PublishOptions
+                    {
+                        MessageName = "sample.console.showtime",
+                        CallbackName = "sample.console.showtime.response",
+                    },
                     cts.Token
                 );
         }

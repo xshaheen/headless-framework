@@ -446,6 +446,41 @@ internal sealed class SubscribeExecutor(
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
+            if (!string.IsNullOrEmpty(ret.CallbackName))
+            {
+                // TraceParent is NOT a reserved header, so it rides in PublishOptions.Headers alongside
+                // any user-supplied AddResponseHeader keys. The correlation identifiers ARE reserved
+                // (MessagePublishRequestFactory rejects them as custom headers), so they must flow through
+                // the typed PublishOptions surface instead of CallbackHeader.
+                if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceParent))
+                {
+                    ret.CallbackHeader ??= new Dictionary<string, string?>(StringComparer.Ordinal);
+                    ret.CallbackHeader[Headers.TraceParent] = traceParent;
+                }
+
+                await provider
+                    .GetRequiredService<IOutboxBus>()
+                    .PublishAsync(
+                        ret.Result,
+                        new PublishOptions
+                        {
+                            MessageName = ret.CallbackName,
+                            Headers = ret.CallbackHeader,
+                            MessageType = ret.ResultType,
+                            CorrelationId = message.Origin.GetId(),
+                            CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
+                            // Chain the next hop: the published response carries this callback name so its
+                            // consumer can react and publish a further response.
+                            CallbackName = ret.ResponseCallbackName,
+                        },
+                        // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
+                        CancellationToken.None
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            // Fire AfterSubscriberInvoke only after the callback response publish completes so the success
+            // event also reflects a successful callback publish; still fires on the no-callback path above.
             _TracingAfter(
                 tracingTimestamp,
                 message.Origin,
@@ -454,29 +489,6 @@ internal sealed class SubscribeExecutor(
                 message.Retries,
                 cancellationToken
             );
-
-            if (!string.IsNullOrEmpty(ret.CallbackName))
-            {
-                ret.CallbackHeader ??= new Dictionary<string, string?>(StringComparer.Ordinal);
-                ret.CallbackHeader[Headers.CorrelationId] = message.Origin.GetId();
-                ret.CallbackHeader[Headers.CorrelationSequence] = (
-                    message.Origin.GetCorrelationSequence() + 1
-                ).ToString(CultureInfo.InvariantCulture);
-
-                if (message.Origin.Headers.TryGetValue(Headers.TraceParent, out var traceParent))
-                {
-                    ret.CallbackHeader[Headers.TraceParent] = traceParent;
-                }
-
-                await provider
-                    .GetRequiredService<IOutboxBus>()
-                    .PublishAsync(
-                        ret.Result,
-                        new PublishOptions { MessageName = ret.CallbackName, Headers = ret.CallbackHeader },
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
         }
         catch (OperationCanceledException oce)
         {

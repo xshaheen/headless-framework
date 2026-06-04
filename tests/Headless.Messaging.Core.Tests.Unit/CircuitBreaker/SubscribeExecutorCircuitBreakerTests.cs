@@ -169,7 +169,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new ConsumerExecutedResult(null, "msg-1", null, null)));
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "msg-1", null, null)));
 
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 
@@ -293,7 +293,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
         var invoker = Substitute.For<ISubscribeInvoker>();
         invoker
             .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(new ConsumerExecutedResult(null, "msg-1", null, null)));
+            .Returns(Task.FromResult(new ConsumerExecutedResult(null, null, "msg-1", null, null)));
 
         var (executor, cbMock) = _CreateExecutor(invoker, storage);
 

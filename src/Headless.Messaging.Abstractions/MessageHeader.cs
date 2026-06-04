@@ -6,7 +6,7 @@ namespace Headless.Messaging;
 
 [PublicAPI]
 public sealed class MessageHeader(IDictionary<string, string?> dictionary)
-    : ReadOnlyDictionary<string, string?>(dictionary)
+    : ReadOnlyDictionary<string, string?>(new Dictionary<string, string?>(dictionary, StringComparer.Ordinal))
 {
     internal IDictionary<string, string?>? ResponseHeader { get; set; }
 

@@ -8,7 +8,7 @@ namespace Headless.Messaging.Internal;
 /// <summary>
 /// Perform user definition method of consumers.
 /// </summary>
-public interface ISubscribeInvoker
+internal interface ISubscribeInvoker
 {
     /// <summary>
     /// Invoke subscribe method with the consumer context.

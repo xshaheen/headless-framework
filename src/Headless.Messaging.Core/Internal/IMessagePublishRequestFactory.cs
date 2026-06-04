@@ -58,7 +58,7 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         var messageName = _ResolveMessageName(typeof(T), options?.MessageName);
-        var headers = _CreateHeaders(typeof(T), messageName, options, delayTime);
+        var headers = _CreateHeaders(options?.MessageType ?? typeof(T), messageName, options, delayTime);
         var publishAt = _ResolvePublishAt(delayTime);
 
         headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
