@@ -1,4 +1,4 @@
-# Headless.Caching.Memory
+# Headless.Caching.InMemory
 
 In-memory cache implementation for single-instance applications.
 
@@ -22,7 +22,7 @@ Memory cache stores entries in an internal envelope with logical expiration and 
 ## Installation
 
 ```bash
-dotnet add package Headless.Caching.Memory
+dotnet add package Headless.Caching.InMemory
 ```
 
 ## Quick Start

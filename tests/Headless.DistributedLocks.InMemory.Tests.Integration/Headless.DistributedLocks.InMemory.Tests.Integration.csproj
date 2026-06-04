@@ -9,8 +9,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Tests.Harness\Headless.DistributedLocks.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

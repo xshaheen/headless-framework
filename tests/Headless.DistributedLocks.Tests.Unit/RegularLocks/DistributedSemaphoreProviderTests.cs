@@ -2,23 +2,23 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
 public sealed class DistributedSemaphoreProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeDistributedSemaphoreStorage _storage;
+    private readonly InMemoryDistributedSemaphoreStorage _storage;
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
 
     public DistributedSemaphoreProviderTests()
     {
-        _storage = new FakeDistributedSemaphoreStorage(_timeProvider);
+        _storage = new InMemoryDistributedSemaphoreStorage(_timeProvider);
     }
 
     [Fact]

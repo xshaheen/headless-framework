@@ -14,7 +14,7 @@ dependencies: []
 
 ## Findings
 
-- **File:** `src/Headless.Caching.Memory/InMemoryCache.cs`
+- **File:** `src/Headless.Caching.InMemory/InMemoryCache.cs`
 - **Status:** Identified during PR #216 code review
 - **Priority:** p2
 

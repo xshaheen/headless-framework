@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Tests.Fakes;
 
 namespace Tests;
 
@@ -19,7 +19,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -40,7 +40,7 @@ public sealed class SetupTests : TestBase
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
         // when — AddDistributedLock BEFORE AddHeadlessMessaging so the registration is drained.
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
 
@@ -64,8 +64,8 @@ public sealed class SetupTests : TestBase
 
         // when — both the lock and semaphore providers register; they share one consumer via the
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
 
@@ -85,7 +85,7 @@ public sealed class SetupTests : TestBase
         // when / then — the consumer registry was already drained, so a late auto-registration would
         // be silently ignored. The seam fails fast instead. (Order-independent registration via
         // runtime subscription is tracked in #390.)
-        var act = () => services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        var act = () => services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
         act.Should().Throw<InvalidOperationException>();
     }
 
@@ -97,8 +97,8 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when — call AddDistributedLock twice.
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
-        services.AddDistributedLock<FakeDistributedLockStorage>(_ => { });
+        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
 
         // then — only one descriptor per service type (TryAdd* semantics) and a single consumer.
         services
