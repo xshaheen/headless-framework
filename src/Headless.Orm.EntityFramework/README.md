@@ -4,7 +4,7 @@ Entity Framework Core integration with framework conventions, global filters, an
 
 ## Problem Solved
 
-Provides a feature-rich DbContext base class with automatic auditing, soft delete handling, domain event dispatching, multi-tenancy support, and framework type value converters.
+Provides a feature-rich DbContext base class with automatic auditing, soft delete handling, two-tier event dispatch (in-process domain events plus transactional integration-event outbox), multi-tenancy support, and framework type value converters.
 
 ## Key Features
 
@@ -14,7 +14,9 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 - Multi-tenancy filter for `IMultiTenant` entities driven by `ICurrentTenant.Id`
 - Optional tenant write guard for `IMultiTenant` save protection
 - Composable save pipeline with built-in entry processors (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
-- Domain event collection via `IHeadlessMessageDispatcher`; local messages are published during save, and distributed messages are transactionally enqueued
+- Two-tier event dispatch: in-process domain events published via `ILocalEventBus` before commit (opt in with `.AddDomainEvents()`), and integration events enqueued to the transactional outbox via `IHeadlessOutboxDispatcher` for post-commit delivery (opt in with `.AddIntegrationEventOutbox()` from the `Headless.Orm.EntityFramework.Messaging` bridge package)
+- Builder-chain registration: `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder` so event tiers chain off it
+- Runtime guard that fails the save with a remediation message when entities emit events but the matching dispatch tier is not registered
 - Transaction-aware save with audit-log second-pass commit
 - Value converters: Money, Month, AccountId, UserId, DateTime normalization
 - DataGrid extensions for pagination and ordering
@@ -51,13 +53,21 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("Default"))
 );
+
+// Opt in to the event tiers your entities use. AddHeadlessDbContextServices(...)
+// returns IHeadlessDbContextBuilder so the tiers chain off it:
+builder.Services.AddHeadlessDbContextServices()
+    .AddDomainEvents()             // ILocalEventBus for in-process domain events
+    .AddIntegrationEventOutbox();  // outbox dispatch for integration events (bridge package)
 ```
+
+If an entity emits domain events but `.AddDomainEvents()` was not called, or emits integration events but `.AddIntegrationEventOutbox()` was not called, the save throws an `InvalidOperationException` naming the missing registration. Guards fire only when events are actually emitted, so entities that emit nothing never require either tier.
 
 ## Pooling
 
 `HeadlessDbContext` is intentionally **not poolable**. Do not register subclasses with `AddDbContextPool` or `AddPooledDbContextFactory`. Two independent reasons:
 
-1. **Private per-instance state holds a scoped save pipeline.** The constructor builds a private `HeadlessDbContextRuntime` field that captures the request-scoped outbox dispatcher (`IHeadlessMessageDispatcher`, enlisted in the EF transaction) and audit persistence (`IHeadlessAuditPersistence`, capturing this request's entries). EF's own guidance is to avoid pooling when the context maintains private state — EF only resets the state it knows about, so a pooled instance would reuse a prior request's outbox / audit unit of work. That is a captive-dependency correctness bug, not a perf trade-off.
+1. **Private per-instance state holds a scoped save pipeline.** The constructor builds a private `HeadlessDbContextRuntime` field that captures the request-scoped integration-event outbox dispatcher (`IHeadlessOutboxDispatcher`, enlisted in the EF transaction) and audit persistence (`IHeadlessAuditPersistence`, capturing this request's entries). EF's own guidance is to avoid pooling when the context maintains private state — EF only resets the state it knows about, so a pooled instance would reuse a prior request's outbox / audit unit of work. That is a captive-dependency correctness bug, not a perf trade-off.
 2. **Two-argument constructor.** Pooling resolves contexts through a single-`DbContextOptions` constructor; the second `HeadlessDbContextServices` parameter is not supported by `AddDbContextPool`. EF's "managing state in pooled contexts" guidance exists precisely because per-request state cannot be constructor-injected into pooled contexts — it requires a custom lease-time factory.
 
 `ICurrentTenant` (AsyncLocal-backed singleton) and `IClock` (singleton) are **not** the problem — both resolve fresh per request even from a long-lived instance. Only the save / outbox / audit pipeline is request-bound.
@@ -105,15 +115,16 @@ var everything = await dbContext.Products
 `AddHeadlessDbContextServices()` registers ordered, composable save-time services. Add focused entry processors through `HeadlessDbContextOptions`; replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control. Keep module-specific model mapping explicit with `ModelBuilder` extensions, such as `modelBuilder.AddHeadlessSettings(settingsStorageOptions)`.
 
 - `IHeadlessSaveEntryProcessor` for per-entry mutations before `SaveChanges`
-- `IHeadlessMessageDispatcher` for local message publishing and distributed message enqueueing
-- `IHeadlessSaveChangesPipeline` for transaction, audit, and message orchestration
+- `ILocalEventBus` for in-process domain-event publishing within the save transaction (opt in with `.AddDomainEvents()`)
+- `IHeadlessOutboxDispatcher` for transactional integration-event enqueueing to the outbox (opt in with `.AddIntegrationEventOutbox()`)
+- `IHeadlessSaveChangesPipeline` for transaction, audit, and event orchestration
 
 The default processor chain runs in registration order against every tracked entity:
 
 1. `HeadlessEntitySaveEntryProcessor` — stamps `Guid` IDs, tenant IDs, concurrency stamps
 2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields
-3. `HeadlessLocalEventSaveEntryProcessor` — publishes `EntityCreated/Updated/Deleted/Changed` lifecycle messages on `ILocalMessageEmitter` entities
-4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending local + distributed messages onto the save context
+3. `HeadlessLocalEventSaveEntryProcessor` — emits `EntityCreated/Updated/Deleted/Changed` lifecycle domain events on `IDomainEventEmitter` entities
+4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending domain + integration events onto the save context
 
 Custom processors are inserted after the entity/audit defaults and before the terminal lifecycle/message collectors, so app-specific mutations or queued messages are visible to the framework collectors.
 
@@ -135,17 +146,22 @@ services.AddHeadlessDbContextServices(options =>
 
 Re-registering the same processor type removes the prior entry and re-inserts it at its effective priority. Normal processors run before terminal collectors; terminal processors keep their framework order. Use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of one of the built-in processors entirely.
 
-Message dispatch defaults to a fail-fast dispatcher (`ThrowHeadlessMessageDispatcher`). If entities emit local or distributed messages, register a dispatcher that publishes local messages and transactionally enqueues distributed messages. Distributed messages are collected before the EF transaction commits, so dispatchers must not publish them directly to an external broker from this callback unless the enqueue is idempotent and commit-aware.
+### Event Dispatch
+
+Events are dispatched in two tiers, both opt-in off the `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)`:
 
 ```csharp
-services.AddHeadlessDbContextServices();
-services.AddHeadlessMessageDispatcher<AppHeadlessMessageDispatcher>();
-
-// Or use a factory when the dispatcher wraps existing application services.
-services.AddHeadlessMessageDispatcher(provider =>
-    new AppHeadlessMessageDispatcher(provider.GetRequiredService<AppMessageBus>())
-);
+services.AddHeadlessDbContextServices()
+    .AddDomainEvents()             // ILocalEventBus for in-process domain events
+    .AddIntegrationEventOutbox();  // outbox dispatch for integration events (bridge package)
 ```
+
+- **Domain events** (`IDomainEvent`, emitted by `IDomainEventEmitter` entities) are in-process and in-transaction. The pipeline publishes each one through `ILocalEventBus` before the business `SaveChanges`, so handlers run inside the save transaction. `.AddDomainEvents()` (from this package) wires `ILocalEventBus` via `services.AddHeadlessLocalEventBus()`.
+- **Integration events** (`IIntegrationEvent`, emitted by `IIntegrationEventEmitter` entities) are distributed. The pipeline hands them to `IHeadlessOutboxDispatcher` after the business save and audit persistence but before commit, so outbox rows persist atomically with the business data and the messaging relay delivers them after commit. The real dispatcher ships in the `Headless.Orm.EntityFramework.Messaging` bridge package; `.AddIntegrationEventOutbox()` (from that package) registers it.
+
+Within the save transaction the order is: domain events published via `ILocalEventBus` (per event) → business `SaveChanges` → audit persistence → integration events enqueued to the outbox via `IHeadlessOutboxDispatcher` → commit.
+
+There is no startup validation. A runtime guard fires only when events are actually emitted: emitting domain events without `ILocalEventBus` throws an `InvalidOperationException` naming `.AddDomainEvents()` (or `services.AddHeadlessLocalEventBus()`); emitting integration events without `IHeadlessOutboxDispatcher` throws naming the `Headless.Orm.EntityFramework.Messaging` package and `.AddIntegrationEventOutbox()`. Entities that emit no events never require either tier.
 
 ### Tenant Write Guard
 
@@ -217,7 +233,8 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 
 ## Side Effects
 
-- Registers `HeadlessDbContextServices`, the default save-entry processor chain, `IHeadlessSaveChangesPipeline`, and a fail-fast `IHeadlessMessageDispatcher` (`ThrowHeadlessMessageDispatcher`)
+- Registers `HeadlessDbContextServices`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`), and `IHeadlessSaveChangesPipeline`
+- `.AddDomainEvents()` registers `ILocalEventBus` (via `services.AddHeadlessLocalEventBus()`); `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`. Neither is registered by default — emitting events without the matching tier throws at save
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
 - Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
 - Registers `ICurrentTenant` as `CurrentTenant` by default, replacing only the framework fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations

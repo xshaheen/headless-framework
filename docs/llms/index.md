@@ -143,7 +143,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Security` — String encryption and hashing services.
 - `Headless.Checks` — Guard clauses (`Argument.*`, `Ensure.*`).
 - `Headless.Domain` — DDD entities, aggregate roots, value objects, auditing.
-- `Headless.Domain.LocalPublisher` — DI-based `ILocalMessagePublisher` for in-process domain events.
+- `Headless.Domain.LocalEventBus` — DI-based `ILocalEventBus` for in-process domain events.
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
@@ -221,6 +221,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### ORM
 - `Headless.Orm.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
+- `Headless.Orm.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
 - `Headless.Orm.Couchbase` — Couchbase with bucket context and cluster management.
 
 ### Payments
