@@ -70,6 +70,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         string resource,
         string lockId,
         bool isShared,
+        TimeSpan acquireTimeout,
         CancellationToken cancellationToken = default
     )
     {
