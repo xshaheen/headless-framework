@@ -13,6 +13,8 @@ public abstract class CacheConformanceTestsBase : TestBase
 
     protected virtual ValueTask AdvancePastExpirationAsync(TimeSpan expiration) => ValueTask.CompletedTask;
 
+    protected virtual ValueTask AdvanceAsync(TimeSpan duration) => AdvancePastExpirationAsync(duration);
+
     public virtual async Task should_round_trip_object_and_string_values()
     {
         await ResetAsync();
@@ -178,6 +180,170 @@ public abstract class CacheConformanceTestsBase : TestBase
         replaceExisting.Should().BeTrue();
         cached.Value.Should().Be("second");
     }
+
+    public virtual async Task should_serve_stale_when_failsafe_factory_throws_within_window()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateFailSafeOptions();
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        var result = await cache.GetOrAddAsync<string>(
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            options,
+            AbortToken
+        );
+
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("value");
+        result.IsStale.Should().BeTrue();
+    }
+
+    public virtual async Task should_propagate_factory_exception_after_failsafe_physical_window()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateFailSafeOptions();
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(options.FailSafeMaxDuration + TimeSpan.FromMilliseconds(50));
+
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                options,
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    public virtual async Task should_propagate_factory_exception_when_failsafe_cache_is_cold()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                _CreateFailSafeOptions(),
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    public virtual async Task should_throttle_failsafe_factory_retries()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateFailSafeOptions(throttleDuration: TimeSpan.FromMilliseconds(250));
+        var factoryCalls = 0;
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        await cache.GetOrAddAsync<string>(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                throw new InvalidOperationException("downstream unavailable");
+            },
+            options,
+            AbortToken
+        );
+
+        var throttled = await cache.GetOrAddAsync<string>(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult<string?>("new");
+            },
+            options,
+            AbortToken
+        );
+
+        await AdvanceAsync(options.FailSafeThrottleDuration + TimeSpan.FromMilliseconds(50));
+        var refreshed = await cache.GetOrAddAsync<string>(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                return ValueTask.FromResult<string?>("new");
+            },
+            options,
+            AbortToken
+        );
+
+        throttled.Value.Should().Be("value");
+        throttled.IsStale.Should().BeFalse();
+        refreshed.Value.Should().Be("new");
+        factoryCalls.Should().Be(2);
+    }
+
+    public virtual async Task should_not_serve_stale_when_failsafe_disabled_by_default()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMilliseconds(100);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), duration, AbortToken);
+        await AdvanceAsync(duration + TimeSpan.FromMilliseconds(50));
+
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                duration,
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    public virtual async Task should_not_serve_stale_when_caller_cancels()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateFailSafeOptions();
+        using var cts = new CancellationTokenSource();
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+        await cts.CancelAsync();
+
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                key,
+                _ => throw new OperationCanceledException(cts.Token),
+                options,
+                cts.Token
+            );
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null) =>
+        new()
+        {
+            Duration = TimeSpan.FromMilliseconds(100),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMilliseconds(900),
+            FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromMilliseconds(200),
+        };
 
     protected sealed record CacheConformanceObject(Guid Id, string Name);
 }

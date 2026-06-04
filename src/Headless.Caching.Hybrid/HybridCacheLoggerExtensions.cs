@@ -70,6 +70,14 @@ internal static partial class HybridCacheLoggerExtensions
 
     [LoggerMessage(
         EventId = 8,
+        EventName = "FailedToReadFromL2Cache",
+        Level = LogLevel.Debug,
+        Message = "Failed to read from L2 cache for key {Key}, treating it as a miss"
+    )]
+    public static partial void LogFailedToReadFromL2Cache(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 9,
         EventName = "BatchSettingLocalCacheKeys",
         Level = LogLevel.Trace,
         Message = "Batch setting {Count} local cache keys with expiration: {Expiration}"
@@ -77,7 +85,7 @@ internal static partial class HybridCacheLoggerExtensions
     public static partial void LogBatchSettingLocalCacheKeys(this ILogger logger, int count, TimeSpan? expiration);
 
     [LoggerMessage(
-        EventId = 9,
+        EventId = 10,
         EventName = "SettingKey",
         Level = LogLevel.Trace,
         Message = "Setting key {Key} with expiration: {Expiration}"
@@ -85,7 +93,7 @@ internal static partial class HybridCacheLoggerExtensions
     public static partial void LogSettingKey(this ILogger logger, string key, TimeSpan? expiration);
 
     [LoggerMessage(
-        EventId = 10,
+        EventId = 11,
         EventName = "SettingKeys",
         Level = LogLevel.Trace,
         Message = "Setting keys {Keys} with expiration: {Expiration}"
@@ -93,7 +101,7 @@ internal static partial class HybridCacheLoggerExtensions
     public static partial void LogSettingKeys(this ILogger logger, ICollection<string> keys, TimeSpan? expiration);
 
     [LoggerMessage(
-        EventId = 11,
+        EventId = 12,
         EventName = "AddingKeyToLocalCache",
         Level = LogLevel.Trace,
         Message = "Adding key {Key} to local cache with expiration: {Expiration}"
@@ -101,7 +109,7 @@ internal static partial class HybridCacheLoggerExtensions
     public static partial void LogAddingKeyToLocalCache(this ILogger logger, string key, TimeSpan? expiration);
 
     [LoggerMessage(
-        EventId = 12,
+        EventId = 13,
         EventName = "FailedToPublishCacheInvalidation",
         Level = LogLevel.Warning,
         Message = "Failed to publish cache invalidation (keyCount={KeyCount}, hasPrefix={HasPrefix}, flushAll={FlushAll}), other instances may serve stale data until TTL expires"

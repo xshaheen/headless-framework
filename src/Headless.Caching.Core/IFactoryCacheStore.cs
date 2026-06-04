@@ -22,7 +22,7 @@ public interface IFactoryCacheStore
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask SetEntryAsync<T>(
         string key,
-        T? value,
+        T value,
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,

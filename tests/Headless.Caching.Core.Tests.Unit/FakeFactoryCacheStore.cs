@@ -69,7 +69,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public ValueTask SetEntryAsync<T>(
         string key,
-        T? value,
+        T value,
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,

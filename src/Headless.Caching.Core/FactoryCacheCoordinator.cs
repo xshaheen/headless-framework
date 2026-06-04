@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>
-public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger<FactoryCacheCoordinator>? logger = null)
+public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null)
     : IDisposable
 {
     private readonly KeyedAsyncLock _keyedLock = new();

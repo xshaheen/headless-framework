@@ -58,11 +58,11 @@ public sealed class InMemoryCacheTests : TestBase
         var lastFactoryErrorType = typeof(InMemoryCache).GetNestedType("LastFactoryError", BindingFlags.NonPublic);
         lastFactoryErrorType.Should().NotBeNull();
 
-        // Binds the private CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
+        // Binds the CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
         // #378 tags) adds parameters here; when that happens GetConstructor returns null and the NotBeNull
         // assertion below fails with a descriptive message instead of an opaque NRE at Invoke.
         var constructor = entryType!.GetConstructor(
-            BindingFlags.Instance | BindingFlags.NonPublic,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
             binder: null,
             [
                 typeof(object),
@@ -297,7 +297,7 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_physical_expiration_for_reads_and_logical_expiration_for_expiration_query()
+    public async Task should_use_logical_expiration_for_value_reads_and_physical_expiration_for_key_presence()
     {
         // given
         using var cache = _CreateCache();
@@ -309,12 +309,15 @@ public sealed class InMemoryCacheTests : TestBase
         var cached = await cache.GetAsync<string>(key, AbortToken);
         var exists = await cache.ExistsAsync(key, AbortToken);
         var expiration = await cache.GetExpirationAsync(key, AbortToken);
+        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
+        var keys = await cache.GetAllKeysByPrefixAsync("", AbortToken);
 
         // then
-        cached.HasValue.Should().BeTrue();
-        cached.Value.Should().Be("value");
-        exists.Should().BeTrue();
-        expiration.Should().BeLessThan(TimeSpan.Zero);
+        cached.HasValue.Should().BeFalse();
+        exists.Should().BeFalse();
+        expiration.Should().BeNull();
+        count.Should().Be(1);
+        keys.Should().Contain(key);
     }
 
     [Fact]

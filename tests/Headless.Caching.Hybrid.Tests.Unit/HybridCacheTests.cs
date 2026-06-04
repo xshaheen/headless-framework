@@ -29,7 +29,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, options);
+        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
         return (cache, l1, l2, publisher);
     }
@@ -523,7 +523,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -717,7 +717,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("Publish failed"));
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -884,7 +884,7 @@ public sealed class HybridCacheTests : TestBase
     #endregion
 
     /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-    private sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache
+    private sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache, IFactoryCacheStore
     {
         public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
             string key,
@@ -892,6 +892,20 @@ public sealed class HybridCacheTests : TestBase
             CacheEntryOptions options,
             CancellationToken cancellationToken = default
         ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
+
+        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
+            ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
+
+        public ValueTask SetEntryAsync<T>(
+            string key,
+            T value,
+            bool isNull,
+            DateTime logicalExpiresAt,
+            DateTime physicalExpiresAt,
+            CancellationToken cancellationToken
+        ) =>
+            ((IFactoryCacheStore)cache)
+                .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken);
 
         public ValueTask<bool> UpsertAsync<T>(
             string key,
