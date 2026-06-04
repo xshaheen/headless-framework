@@ -103,6 +103,40 @@ public sealed class HybridCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_fresh_l2_value_when_l1_has_stale_reserve()
+    {
+        // given
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var staleValue = Faker.Random.Int(1, 100);
+        var freshValue = Faker.Random.Int(101, 200);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        await ((IFactoryCacheStore)l1)
+            .SetEntryAsync(key, staleValue, isNull: false, now.AddMinutes(-1), now.AddMinutes(5), AbortToken);
+        await l2.UpsertAsync(key, freshValue, TimeSpan.FromMinutes(5), AbortToken);
+        var factoryCalled = false;
+
+        // when
+        var result = await cache.GetOrAddAsync(
+            key,
+            _ =>
+            {
+                factoryCalled = true;
+                return new ValueTask<int?>(999);
+            },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be(freshValue);
+        factoryCalled.Should().BeFalse("a fresh L2 value should win over a stale L1 reserve");
+    }
+
+    [Fact]
     public async Task should_call_factory_and_populate_both_caches_when_complete_miss()
     {
         // given

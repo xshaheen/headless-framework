@@ -1024,15 +1024,23 @@ public sealed class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        var now = _GetUtcNow();
+        CacheStoreEntry<T>? l1StaleCandidate = null;
+
         if (LocalCache is IFactoryCacheStore l1Store)
         {
             var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
 
-            if (l1Entry.Found)
+            if (_IsFresh(l1Entry, now))
             {
                 _logger.LogLocalCacheHit(key);
                 Interlocked.Increment(ref _localCacheHits);
                 return l1Entry;
+            }
+
+            if (_IsPhysicallyPresent(l1Entry, now))
+            {
+                l1StaleCandidate = l1Entry;
             }
         }
         else
@@ -1069,7 +1077,7 @@ public sealed class HybridCache(
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             _logger.LogFailedToReadFromL2Cache(exception, key);
-            return CacheStoreEntry<T>.NotFound;
+            return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
         if (l2Entry.Found && LocalCache is IFactoryCacheStore l1StoreForPromotion)
@@ -1077,7 +1085,7 @@ public sealed class HybridCache(
             await _SetLocalEntryAsync(l1StoreForPromotion, key, l2Entry, cancellationToken).ConfigureAwait(false);
         }
 
-        return l2Entry;
+        return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
     }
 
     async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
@@ -1172,6 +1180,19 @@ public sealed class HybridCache(
     private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;
+
+    private static bool _IsFresh<T>(CacheStoreEntry<T> entry, DateTime now)
+    {
+        if (!_IsPhysicallyPresent(entry, now))
+        {
+            return false;
+        }
+
+        return !entry.LogicalExpiresAt.HasValue || entry.LogicalExpiresAt.Value > now;
+    }
+
+    private static bool _IsPhysicallyPresent<T>(CacheStoreEntry<T> entry, DateTime now) =>
+        entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
 
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
