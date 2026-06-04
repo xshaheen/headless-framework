@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.ComponentModel.DataAnnotations.Schema;
-using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.Reflection;
@@ -13,30 +11,10 @@ namespace Headless.EntityFramework.Contexts.Processors;
 
 [PublicAPI]
 public sealed class HeadlessEntitySaveEntryProcessor(
-    IGuidGenerator guidGenerator,
     IOptions<TenantWriteGuardOptions> tenantWriteGuardOptions,
     ITenantWriteGuardBypass tenantWriteGuardBypass
 ) : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _ShouldStampGuidIdCache = [];
-
-    private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _ShouldStampGuidIdFactory =
-        static type =>
-        {
-            var idProperty = type.GetProperty(nameof(IEntity<>.Id));
-
-            if (idProperty is null)
-            {
-                return new StrongBox<bool>(value: false);
-            }
-
-            var stamp =
-                idProperty.GetFirstOrDefaultAttribute<DatabaseGeneratedAttribute>()
-                is not { DatabaseGeneratedOption: not DatabaseGeneratedOption.None };
-
-            return new StrongBox<bool>(stamp);
-        };
-
     public void Process(EntityEntry entry, HeadlessSaveEntryContext context)
     {
         _EnsureTenantWriteAllowed(entry, context.TenantId);
@@ -44,7 +22,8 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         switch (entry.State)
         {
             case EntityState.Added:
-                _TrySetGuidId(entry);
+                // Keys are produced by the EF Core value generators (ConfigureHeadlessValueGenerated) when the
+                // entity transitions to Added, so by the time it reaches the save pipeline its id is already set.
                 _TrySetMultiTenantId(entry, context.TenantId);
                 _TrySetConcurrencyStamp(entry);
                 break;
@@ -129,26 +108,6 @@ public sealed class HeadlessEntitySaveEntryProcessor(
     private static string _GetEntityTypeName(EntityEntry entry)
     {
         return entry.Metadata.ClrType.FullName ?? entry.Metadata.ClrType.Name;
-    }
-
-    private void _TrySetGuidId(EntityEntry entry)
-    {
-        if (entry.Entity is not IEntity<Guid> entity || entity.Id != Guid.Empty)
-        {
-            return;
-        }
-
-        if (!_ShouldStampGuidId(entity.GetType()))
-        {
-            return;
-        }
-
-        ObjectPropertiesHelper.TrySetProperty(entity, x => x.Id, guidGenerator.Create);
-    }
-
-    private static bool _ShouldStampGuidId(Type entityType)
-    {
-        return _ShouldStampGuidIdCache.GetValue(entityType, _ShouldStampGuidIdFactory).Value;
     }
 
     private static void _TrySetMultiTenantId(EntityEntry entry, string? tenantId)

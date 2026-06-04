@@ -9,7 +9,7 @@ Provides EF Core repository implementations for feature values, feature definiti
 ## Key Features
 
 - `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessFeatures(options)` entity mapping for shared contexts
+- `modelBuilder.AddHeadlessFeatures(this)` entity mapping for shared contexts (resolves `FeaturesStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
 - `EfFeatureValueRecordRecordRepository` for feature values
 - `EfFeatureDefinitionRecordRepository` for feature definitions and groups
 - `FeaturesStorageOptions` for schema and table-name configuration
@@ -27,15 +27,14 @@ the required services first — `TimeProvider`, `ICache`, `IDistributedLock`, an
 `IGuidGenerator`.
 
 ```csharp
-public sealed class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<FeaturesStorageOptions> featuresStorage
-) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessFeatures(featuresStorage.Value);
+        // Resolves FeaturesStorageOptions from the context's service provider —
+        // no need to inject IOptions<FeaturesStorageOptions> into the constructor.
+        modelBuilder.AddHeadlessFeatures(this);
     }
 }
 

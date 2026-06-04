@@ -87,6 +87,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 
 - `HeadlessDbContext` base context (requires `HeadlessDbContextServices` ctor parameter and `DefaultSchema` override)
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)`
+- Application-generated keys: every `IEntity<Guid>` and `IEntity<long>` mapped in a `HeadlessDbContext` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side as the entity transitions to `Added` (via `Add`, a direct state change, or attach-then-promote) — never database-generated. Guid keys come from `IGuidGenerator` (sequential, index-friendly); long keys from `ILongIdGenerator` (snowflake). The id is therefore known before `SaveChanges` (usable for foreign keys, outbox, and domain events in the same unit of work) and is provider-portable. A `[DatabaseGenerated]` attribute on the `Id` opts that entity back into store generation; other key types are left to their own configuration
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
 - Three named global filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
 - Composable save pipeline driven by `HeadlessDbContextOptions` and a fixed default chain of `IHeadlessSaveEntryProcessor` instances
@@ -227,7 +228,7 @@ Known gaps:
 
 - Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`), and the fail-fast `ThrowHeadlessMessageDispatcher`
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
-- Registers framework defaults via `TryAddSingleton`: `IClock`, `IGuidGenerator`, `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
+- Registers framework defaults via `TryAddSingleton`: `IClock`, `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ILongIdGenerator` (`SnowflakeIdLongIdGenerator`), `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
 - Replaces compiled query cache key generator so tenant-scoped queries share plans correctly
 - Forwards `DbContext` to registered `TDbContext` via scoped registration
 

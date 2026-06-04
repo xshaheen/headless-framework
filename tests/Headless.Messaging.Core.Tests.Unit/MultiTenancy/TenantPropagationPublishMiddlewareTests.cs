@@ -113,10 +113,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
     public async Task should_skip_stamping_when_ambient_tenant_exceeds_max_length()
     {
         // given
-        var currentTenant = new TestCurrentTenant
-        {
-            Id = new string('x', MessagePublishOptionsBase.TenantIdMaxLength + 1),
-        };
+        var currentTenant = new TestCurrentTenant { Id = new string('x', MessageOptions.TenantIdMaxLength + 1) };
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
         var context = new PublishingContext<Payload>(
             new Payload("hello"),
@@ -136,7 +133,7 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
     public async Task should_stamp_when_ambient_tenant_is_exactly_max_length()
     {
         // given
-        var exactlyMax = new string('x', MessagePublishOptionsBase.TenantIdMaxLength);
+        var exactlyMax = new string('x', MessageOptions.TenantIdMaxLength);
         var currentTenant = new TestCurrentTenant { Id = exactlyMax };
         var middleware = new TenantPropagationPublishMiddleware(currentTenant);
         var context = new PublishingContext<Payload>(

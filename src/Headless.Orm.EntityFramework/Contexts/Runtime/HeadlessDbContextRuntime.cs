@@ -175,6 +175,12 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
             if (!type.IsOwned() && type.ClrType.IsAssignableTo<IEntity>())
             {
                 modelBuilder.Entity(type.ClrType).ConfigureHeadlessConvention();
+                // Opt Guid/long keys into client-side generation: ValueGenerated.Never plus the framework's
+                // value generator (IGuidGenerator / ILongIdGenerator), which EF Core runs at add time. Only
+                // applied here, inside the HeadlessDbContext runtime, so it stays a deliberate framework choice —
+                // not in the general ConfigureHeadlessConvention bundle, which also runs in plain consumer
+                // DbContexts that may want store-generated keys.
+                type.ConfigureHeadlessValueGenerated();
             }
         }
     }

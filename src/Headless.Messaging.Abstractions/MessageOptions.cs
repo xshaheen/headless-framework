@@ -3,12 +3,12 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Shared base for publish-side option records. Carries the intent-agnostic metadata fields
-/// (message name, identifiers, tenancy, headers, callback) that every publisher accepts.
+/// Shared base for outbound message option records. Carries the intent-agnostic metadata fields
+/// (message name, identifiers, tenancy, headers, callback) that every send path accepts.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Intent-specific publisher interfaces (<c>IBus</c>, <c>IOutboxBus</c>, <c>IQueue</c>,
+/// Intent-specific send interfaces (<c>IBus</c>, <c>IOutboxBus</c>, <c>IQueue</c>,
 /// <c>IOutboxQueue</c>) accept records derived from this base. Each derived record adds the
 /// intent-specific knobs (for example, <c>Delay</c> on the outbox variants).
 /// </para>
@@ -20,7 +20,7 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public abstract record MessagePublishOptionsBase
+public abstract record MessageOptions
 {
     /// <summary>
     /// Maximum supported length for <see cref="MessageId"/> when publishing messages that may be stored durably.
@@ -92,10 +92,10 @@ public abstract record MessagePublishOptionsBase
     public string? TenantId { get; init; }
 
     /// <summary>
-    /// Determines whether the specified <see cref="MessagePublishOptionsBase"/> equals this instance
+    /// Determines whether the specified <see cref="MessageOptions"/> equals this instance
     /// using value semantics across every scalar field plus structural comparison on <see cref="Headers"/>.
     /// </summary>
-    public virtual bool Equals(MessagePublishOptionsBase? other)
+    public virtual bool Equals(MessageOptions? other)
     {
         if (other is null)
         {

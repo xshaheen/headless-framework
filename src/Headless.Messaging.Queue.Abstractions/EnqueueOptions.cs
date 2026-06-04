@@ -15,11 +15,11 @@ namespace Headless.Messaging;
 /// <para>
 /// This type is a record so middleware can mutate a single property via a <c>with</c> expression
 /// without manually copying every other property. Equality is value-based across every scalar
-/// property; <see cref="MessagePublishOptionsBase.Headers"/> uses structural comparison.
+/// property; <see cref="MessageOptions.Headers"/> uses structural comparison.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record EnqueueOptions : MessagePublishOptionsBase
+public sealed record EnqueueOptions : MessageOptions
 {
     /// <summary>
     /// Gets the delay applied before the persisted message is dispatched.
@@ -33,7 +33,7 @@ public sealed record EnqueueOptions : MessagePublishOptionsBase
     /// <summary>
     /// Determines whether the specified <see cref="EnqueueOptions"/> equals this instance using
     /// value semantics across every scalar field plus structural comparison on
-    /// <see cref="MessagePublishOptionsBase.Headers"/>.
+    /// <see cref="MessageOptions.Headers"/>.
     /// </summary>
     public bool Equals(EnqueueOptions? other)
     {

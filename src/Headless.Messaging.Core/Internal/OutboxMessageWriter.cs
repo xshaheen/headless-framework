@@ -24,7 +24,7 @@ internal sealed class OutboxMessageWriter(
 
     internal Task PublishAsync<T>(
         T? contentObj,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         IntentType intentType,
         CancellationToken cancellationToken
     )
@@ -52,7 +52,7 @@ internal sealed class OutboxMessageWriter(
     internal Task PublishDelayAsync<T>(
         TimeSpan delayTime,
         T? contentObj,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         IntentType intentType,
         CancellationToken cancellationToken
     )

@@ -9,7 +9,7 @@ Provides EF Core repository implementations for permission grants, permission de
 ## Key Features
 
 - `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessPermissions(options)` entity mapping for shared contexts
+- `modelBuilder.AddHeadlessPermissions(this)` entity mapping for shared contexts (resolves `PermissionsStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
 - `EfPermissionGrantRepository` for permission grants
 - `EfPermissionDefinitionRecordRepository` for permission definitions
 - `PermissionsStorageOptions` for schema and table-name configuration
@@ -33,15 +33,14 @@ Register the required services first — `TimeProvider`, `ICache`, `IDistributed
 `IGuidGenerator`.
 
 ```csharp
-public sealed class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<PermissionsStorageOptions> permissionsStorage
-) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(permissionsStorage.Value);
+        // Resolves PermissionsStorageOptions from the context's service provider —
+        // no need to inject IOptions<PermissionsStorageOptions> into the constructor.
+        modelBuilder.AddHeadlessPermissions(this);
     }
 }
 

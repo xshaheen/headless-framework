@@ -9,7 +9,7 @@ Provides EF Core repository implementations for setting definitions and values u
 ## Key Features
 
 - `AddHeadlessSettings(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessSettings(options)` entity mapping for shared contexts
+- `modelBuilder.AddHeadlessSettings(this)` entity mapping for shared contexts (resolves `SettingsStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
 - `EfSettingValueRecordRepository` for setting values
 - `EfSettingDefinitionRecordRepository` for definition records
 - `SettingsStorageOptions` for schema and table-name configuration
@@ -33,15 +33,14 @@ the required services first — `TimeProvider`, caching, distributed lock, and
 `IStringEncryptionService` (the management core throws on startup if encryption is missing).
 
 ```csharp
-public sealed class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<SettingsStorageOptions> settingsStorage
-) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessSettings(settingsStorage.Value);
+        // Resolves SettingsStorageOptions from the context's service provider —
+        // no need to inject IOptions<SettingsStorageOptions> into the constructor.
+        modelBuilder.AddHeadlessSettings(this);
     }
 }
 

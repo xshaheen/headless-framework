@@ -16,9 +16,9 @@ internal interface IPublishMiddlewarePipeline
     Task ExecuteAsync<T>(
         T? content,
         IntentType intentType,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         TimeSpan? delayTime,
-        Func<MessagePublishOptionsBase?, TimeSpan?, CancellationToken, Task> innerPublish,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     );
@@ -45,9 +45,9 @@ internal sealed class PublishMiddlewarePipeline(
     public async Task ExecuteAsync<T>(
         T? content,
         IntentType intentType,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         TimeSpan? delayTime,
-        Func<MessagePublishOptionsBase?, TimeSpan?, CancellationToken, Task> innerPublish,
+        Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
     )

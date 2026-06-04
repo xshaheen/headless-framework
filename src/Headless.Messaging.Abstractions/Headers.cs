@@ -60,7 +60,7 @@ public static class Headers
     public const string CallbackName = "headless-callback-name";
 
     /// <summary>
-    /// Multi-tenancy identifier for the message, populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time
+    /// Multi-tenancy identifier for the message, populated from <see cref="MessageOptions.TenantId"/> at publish time
     /// and exposed on <c>ConsumeContext&lt;TMessage&gt;.TenantId</c> at consume time.
     /// </summary>
     /// <remarks>
@@ -68,7 +68,7 @@ public static class Headers
     /// The publish pipeline enforces a strict 4-case integrity policy: a raw write to this key
     /// without a typed property is rejected with <see cref="InvalidOperationException"/>; a raw write
     /// that disagrees with the typed property is also rejected; a raw write that matches the typed
-    /// property is accepted. Use <see cref="MessagePublishOptionsBase.TenantId"/> as the source of truth.
+    /// property is accepted. Use <see cref="MessageOptions.TenantId"/> as the source of truth.
     /// </para>
     /// <para>
     /// Consume-side values are untrusted wire data. The framework does not sanitize the value's

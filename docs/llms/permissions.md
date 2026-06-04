@@ -73,7 +73,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 - Three states: **Granted** (record with `IsGranted = true`), **Prohibited** (record with `IsGranted = false`), **Undefined** (no record, defaults to deny).
 - Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider` to be registered. Ensure these are wired before adding permissions.
 - `AddHeadlessPermissions(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<PermissionManagementOptions>(...)` works too and composes regardless of order.
-- Storage.EntityFramework uses the consumer's `DbContext`. Register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessPermissions(options)` in `OnModelCreating`.
+- Storage.EntityFramework uses the consumer's `DbContext`. Register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessPermissions(this)` in `OnModelCreating` (resolves `PermissionsStorageOptions` from the context's service provider — no `IOptions<>` constructor injection needed; an `(options)` overload exists when you already hold them).
 - Storage.PostgreSql and Storage.SqlServer provide Mode 2 raw providers. Use `AddHeadlessPermissions(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - `PermissionsInitializationBackgroundService` runs on startup — permission definitions are synced to the database automatically.
 - For testing, use `AlwaysAllowPermissionManager` from Core to bypass all permission checks.
@@ -274,7 +274,7 @@ Provides EF Core repository implementations for permission grants, permission de
 ## Key Features
 
 - `AddHeadlessPermissions(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessPermissions(options)` entity mapping for shared contexts
+- `modelBuilder.AddHeadlessPermissions(this)` entity mapping for shared contexts (resolves `PermissionsStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
 - `EfPermissionGrantRepository` for permission grants
 - `EfPermissionDefinitionRecordRepository` for permission definitions
 - `PermissionsStorageOptions` for schema and table-name configuration
@@ -288,15 +288,14 @@ dotnet add package Headless.Permissions.Storage.EntityFramework
 ## Quick Start
 
 ```csharp
-public sealed class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<PermissionsStorageOptions> permissionsStorage
-) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(permissionsStorage.Value);
+        // Resolves PermissionsStorageOptions from the context's service provider —
+        // no need to inject IOptions<PermissionsStorageOptions> into the constructor.
+        modelBuilder.AddHeadlessPermissions(this);
     }
 }
 
