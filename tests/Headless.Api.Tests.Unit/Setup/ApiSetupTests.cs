@@ -355,8 +355,8 @@ public sealed class SetupApiTests
         // Second call must be a no-op.
         SetupApi.ConfigureGlobalSettings();
 
-        ValidatorOptions.Global.DefaultRuleLevelCascadeMode
-            .Should()
+        ValidatorOptions
+            .Global.DefaultRuleLevelCascadeMode.Should()
             .Be(CascadeMode.Continue, "second call must not overwrite settings");
 
         // Restore for other tests.
@@ -377,8 +377,8 @@ public sealed class SetupApiTests
         SetupApi.ResetForTesting();
         SetupApi.ConfigureGlobalSettings();
 
-        ValidatorOptions.Global.DefaultRuleLevelCascadeMode
-            .Should()
+        ValidatorOptions
+            .Global.DefaultRuleLevelCascadeMode.Should()
             .Be(CascadeMode.Stop, "ConfigureGlobalSettings should re-apply Stop after reset");
 
         // Leave in a consistent state.

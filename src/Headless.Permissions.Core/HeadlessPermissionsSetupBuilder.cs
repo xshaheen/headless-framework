@@ -18,7 +18,8 @@ public sealed class HeadlessPermissionsSetupBuilder
 
     internal PermissionsStorageOptions StorageOptions { get; } = new();
 
-    internal IList<IPermissionsStorageOptionsExtension> Extensions { get; } = new List<IPermissionsStorageOptionsExtension>();
+    internal IList<IPermissionsStorageOptionsExtension> Extensions { get; } =
+        new List<IPermissionsStorageOptionsExtension>();
 
     public HeadlessPermissionsSetupBuilder ConfigureStorage(Action<PermissionsStorageOptions> configure)
     {

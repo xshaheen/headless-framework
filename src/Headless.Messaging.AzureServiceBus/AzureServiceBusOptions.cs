@@ -153,8 +153,7 @@ public class AzureServiceBusOptions
     /// </summary>
     public List<KeyValuePair<string, string>>? SqlFilters { get; set; }
 
-    internal ICollection<IServiceBusProducerDescriptor> CustomProducers { get; set; } =
-        [];
+    internal ICollection<IServiceBusProducerDescriptor> CustomProducers { get; set; } = [];
 
     public AzureServiceBusOptions ConfigureCustomProducer<T>(
         Action<ServiceBusProducerDescriptorBuilder<T>> configuration

@@ -74,7 +74,9 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         );
 
         // then
-        ((long)result).Should().Be(1);
+        ((long)result)
+            .Should()
+            .Be(1);
     }
 
     [Fact]

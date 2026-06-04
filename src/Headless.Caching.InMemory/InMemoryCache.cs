@@ -1896,10 +1896,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
                     if (key is not null && _memory.TryGetValue(key, out var entry))
                     {
-                        if (
-                            entry.PhysicalExpiresAt.HasValue
-                            && entry.PhysicalExpiresAt.Value.Ticks <= expiresAtTicks
-                        )
+                        if (entry.PhysicalExpiresAt.HasValue && entry.PhysicalExpiresAt.Value.Ticks <= expiresAtTicks)
                         {
                             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                             {

@@ -38,7 +38,9 @@ public sealed class HeadlessSettingsSetupBuilder
         return this;
     }
 
-    public HeadlessSettingsSetupBuilder ConfigureManagement(Action<SettingManagementOptions, IServiceProvider> configure)
+    public HeadlessSettingsSetupBuilder ConfigureManagement(
+        Action<SettingManagementOptions, IServiceProvider> configure
+    )
     {
         Argument.IsNotNull(configure);
 

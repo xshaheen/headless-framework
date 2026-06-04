@@ -353,7 +353,8 @@ public static class SetupApi
                             // Capture otel by reference so MapHeadlessEndpoints() can replace
                             // SkipOperationalEndpointFunc with a delegate built from the actual
                             // configured paths before any requests start flowing.
-                            instrumentation.Filter = otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
+                            instrumentation.Filter =
+                                otel.Filter ?? (context => !otel.SkipOperationalEndpointFunc(context));
 
                             // User hook runs LAST so it can override Filter, add enrichers, etc.
                             otel.ConfigureAspNetCoreInstrumentation?.Invoke(instrumentation);

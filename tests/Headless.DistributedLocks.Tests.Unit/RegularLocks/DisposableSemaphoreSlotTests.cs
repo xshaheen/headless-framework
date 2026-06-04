@@ -20,17 +20,19 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
     {
         // Default: acquire succeeds, renew succeeds, validate holds, release succeeds.
         _storage
-            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .TryAcquireAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<int>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(new DistributedLockAcquireResult(Acquired: true, FencingToken: 1));
         _storage
             .TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(true);
-        _storage
-            .ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(true);
-        _storage
-            .ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+        _storage.ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        _storage.ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
     }
 
     // -----------------------------------------------------------------------
@@ -49,11 +51,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         await slot.ReleaseAsync();
 
         // then — provider.ReleaseAsync should have been called exactly once
-        await _storage.Received(1).ReleaseAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -68,11 +72,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         await slot.DisposeAsync();
 
         // then
-        await _storage.Received(1).ReleaseAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -87,11 +93,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         await slot.DisposeAsync();
 
         // then
-        await _storage.Received(1).ReleaseAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     // -----------------------------------------------------------------------
@@ -109,11 +117,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         await slot.DisposeAsync();
 
         // then
-        await _storage.Received(1).ReleaseAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -127,11 +137,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         await slot.DisposeAsync();
 
         // then
-        await _storage.DidNotReceive().ReleaseAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage.DidNotReceive().ReleaseAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // -----------------------------------------------------------------------
@@ -230,13 +236,17 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 
         // then — auto-extend calls TryExtendAsync (renew path), not ValidateAsync
         result.Should().Be(LeaseMonitor.LeaseState.Renewed);
-        await _storage.Received(1).TryExtendAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<TimeSpan>(),
-            Arg.Any<CancellationToken>()
-        );
-        await _storage.DidNotReceive().ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await _storage
+            .Received(1)
+            .TryExtendAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _storage
+            .DidNotReceive()
+            .ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -251,12 +261,16 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 
         // then — monitor-only calls ValidateAsync, not TryExtendAsync
         result.Should().Be(LeaseMonitor.LeaseState.Held);
-        await _storage.Received(1).ValidateAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
-        await _storage.DidNotReceive().TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
+        await _storage
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
+        await _storage
+            .DidNotReceive()
+            .TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -268,9 +282,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         _storage
             .TryExtendAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns(false);
-        _storage
-            .ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(true);
+        _storage.ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         var slot = await _AcquireSlotAsync(resource, autoExtend: true);
 
         // when
@@ -280,11 +292,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         // not signalled lost.
         result.Should().Be(LeaseMonitor.LeaseState.Unknown);
         slot.HandleLostToken.IsCancellationRequested.Should().BeFalse();
-        await _storage.Received(1).ValidateAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ValidateAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -292,9 +306,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        _storage
-            .ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(false);
+        _storage.ValidateAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(false);
         var slot = await _AcquireSlotAsync(resource, autoExtend: false);
 
         // when
@@ -357,11 +369,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
         handleLostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
-        await _storage.Received(1).ReleaseAsync(
-            Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>()
-        );
+        await _storage
+            .Received(1)
+            .ReleaseAsync(
+                Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
+                Arg.Any<string>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     // -----------------------------------------------------------------------

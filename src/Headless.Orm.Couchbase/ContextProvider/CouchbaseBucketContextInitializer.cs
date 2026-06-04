@@ -39,8 +39,7 @@ public static class CouchbaseBucketContextInitializer
         typeof(IDocumentSet<>).Assembly.GetType("Couchbase.Linq.DocumentSet`1")
         ?? throw new InvalidOperationException("Could not find DocumentSet type.");
 
-    private static readonly ConditionalWeakTable<Type, Action<CouchbaseBucketContext, string?>> _InitializeCache =
-        [];
+    private static readonly ConditionalWeakTable<Type, Action<CouchbaseBucketContext, string?>> _InitializeCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

@@ -91,10 +91,7 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
             && options.TimeUntilExpires == Timeout.InfiniteTimeSpan
         )
         {
-            throw new ArgumentException(
-                "Lease monitoring requires a finite time until expiration.",
-                nameof(options)
-            );
+            throw new ArgumentException("Lease monitoring requires a finite time until expiration.", nameof(options));
         }
     }
 

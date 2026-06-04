@@ -7,9 +7,7 @@ namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class PostgreSqlSettingsFixture
-    : HeadlessPostgreSqlFixture,
-        ICollectionFixture<PostgreSqlSettingsFixture>
+public sealed class PostgreSqlSettingsFixture : HeadlessPostgreSqlFixture, ICollectionFixture<PostgreSqlSettingsFixture>
 {
     public string ConnectionString => Container.GetConnectionString();
 

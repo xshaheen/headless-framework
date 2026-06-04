@@ -23,9 +23,7 @@ public sealed class PermissionsEntityValidationStartupGateTests(PermissionsTestF
         builder.Services.AddDbContextFactory<MissingPermissionsEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
-        builder.Services.AddHeadlessPermissions(setup =>
-            setup.UseEntityFramework<MissingPermissionsEntityDbContext>()
-        );
+        builder.Services.AddHeadlessPermissions(setup => setup.UseEntityFramework<MissingPermissionsEntityDbContext>());
         using var host = builder.Build();
 
         // when
@@ -38,7 +36,6 @@ public sealed class PermissionsEntityValidationStartupGateTests(PermissionsTestF
             .WithMessage("*PermissionGrantRecord*modelBuilder.AddHeadlessPermissions*");
     }
 
-    private sealed class MissingPermissionsEntityDbContext(
-        DbContextOptions<MissingPermissionsEntityDbContext> options
-    ) : DbContext(options);
+    private sealed class MissingPermissionsEntityDbContext(DbContextOptions<MissingPermissionsEntityDbContext> options)
+        : DbContext(options);
 }

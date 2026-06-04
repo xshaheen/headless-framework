@@ -118,8 +118,8 @@ public static class AddDistributedLockExtensions
             // collected IEnumerable<ICanReceiveLockReleased> so mutex and semaphore providers share
             // one decoupled wake-up seam.
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLockProvider>(
-                    static sp => sp.GetRequiredService<DistributedLockProvider>()
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLockProvider>(static sp =>
+                    sp.GetRequiredService<DistributedLockProvider>()
                 )
             );
 

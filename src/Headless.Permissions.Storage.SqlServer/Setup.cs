@@ -90,14 +90,19 @@ public static class SetupPermissionsSqlServer
             }
             else
             {
-                services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(_configureWithServices);
+                services.Configure<SqlServerPermissionsOptions, SqlServerPermissionsOptionsValidator>(
+                    _configureWithServices
+                );
             }
 
             services.AddOptions<PermissionsStorageOptions, SqlServerPermissionsStorageOptionsValidator>();
             services.AddInitializerHostedService<SqlServerPermissionsStorageInitializer>();
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IPermissionGrantRepository, SqlServerPermissionGrantRepository>();
-            services.TryAddSingleton<IPermissionDefinitionRecordRepository, SqlServerPermissionDefinitionRecordRepository>();
+            services.TryAddSingleton<
+                IPermissionDefinitionRecordRepository,
+                SqlServerPermissionDefinitionRecordRepository
+            >();
         }
     }
 

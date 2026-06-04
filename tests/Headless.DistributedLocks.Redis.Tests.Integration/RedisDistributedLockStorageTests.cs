@@ -123,8 +123,16 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
         var secondKey = $"lock:{Faker.Random.AlphaNumeric(10)}";
 
         // when
-        var first = await fixture.LockStorage.InsertAsync(firstKey, Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(5));
-        var second = await fixture.LockStorage.InsertAsync(secondKey, Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(5));
+        var first = await fixture.LockStorage.InsertAsync(
+            firstKey,
+            Guid.NewGuid().ToString("N"),
+            TimeSpan.FromMinutes(5)
+        );
+        var second = await fixture.LockStorage.InsertAsync(
+            secondKey,
+            Guid.NewGuid().ToString("N"),
+            TimeSpan.FromMinutes(5)
+        );
 
         // then
         first.FencingToken.Should().Be(1);

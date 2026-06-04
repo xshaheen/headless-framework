@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
-using System.Runtime.InteropServices;
 using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
@@ -29,7 +29,14 @@ public sealed class RedisDistributedSemaphoreStorage(
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var result = await _TryAcquireSemaphoreAsync(keys.HoldersKey, keys.FenceKey, lockId, maxCount, ttl, cancellationToken)
+        var result = await _TryAcquireSemaphoreAsync(
+                keys.HoldersKey,
+                keys.FenceKey,
+                lockId,
+                maxCount,
+                ttl,
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         return result.Acquired

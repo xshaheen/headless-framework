@@ -151,7 +151,10 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
         Interlocked.Increment(ref _renewalCount);
     }
 
-    public abstract Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);
+    public abstract Task<bool> RenewAsync(
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    );
 
     public async Task ReleaseAsync()
     {

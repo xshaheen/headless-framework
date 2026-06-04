@@ -75,7 +75,8 @@ public sealed class SqlServerAuditLogStorageTests(SqlServerAuditLogFixture fixtu
         var createdAt = new DateTimeOffset(2026, 5, 24, 12, 0, 0, TimeSpan.Zero);
 
         const int totalEntries = 150;
-        var entries = Enumerable.Range(0, totalEntries)
+        var entries = Enumerable
+            .Range(0, totalEntries)
             .Select(i => new AuditLogEntryData
             {
                 Action = "batch.write",

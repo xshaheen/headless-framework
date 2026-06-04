@@ -9,8 +9,7 @@ public class AuditTestDbContext(
     HeadlessDbContextServices services,
     DbContextOptions options,
     IOptions<AuditLogStorageOptions> auditLogStorage
-)
-    : HeadlessDbContext(services, options)
+) : HeadlessDbContext(services, options)
 {
     public DbSet<Order> Orders => Set<Order>();
 

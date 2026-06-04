@@ -108,10 +108,10 @@ public sealed class HeadlessIdentityDbContextGlobalFiltersTests
         >(_ => { });
 
         // then — HeadlessDbContextServices must be in the descriptor list
-        var hasHeadlessServices = services.Any(d =>
-            d.ServiceType == typeof(HeadlessDbContextServices)
-        );
-        hasHeadlessServices.Should().BeTrue("Identity setup must wire HeadlessDbContextServices via AddHeadlessDbContextServices");
+        var hasHeadlessServices = services.Any(d => d.ServiceType == typeof(HeadlessDbContextServices));
+        hasHeadlessServices
+            .Should()
+            .BeTrue("Identity setup must wire HeadlessDbContextServices via AddHeadlessDbContextServices");
     }
 
     [Fact]

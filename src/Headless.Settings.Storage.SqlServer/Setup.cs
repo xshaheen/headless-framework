@@ -45,9 +45,7 @@ public static class SetupSettingsSqlServer
             return setup;
         }
 
-        public HeadlessSettingsSetupBuilder UseSqlServer(
-            Action<SqlServerSettingsOptions, IServiceProvider> configure
-        )
+        public HeadlessSettingsSetupBuilder UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
 

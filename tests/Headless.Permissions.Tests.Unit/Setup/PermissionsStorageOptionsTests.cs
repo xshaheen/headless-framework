@@ -155,7 +155,8 @@ public sealed class PermissionsStorageOptionsTests
 
         public DbSet<PermissionDefinitionRecord> PermissionDefinitions => Set<PermissionDefinitionRecord>();
 
-        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions => Set<PermissionGroupDefinitionRecord>();
+        public DbSet<PermissionGroupDefinitionRecord> PermissionGroupDefinitions =>
+            Set<PermissionGroupDefinitionRecord>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

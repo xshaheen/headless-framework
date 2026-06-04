@@ -111,7 +111,10 @@ internal sealed class EfAuditLogStore : IAuditLogStore
                     TenantId = AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId),
                     IpAddress = AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress),
                     UserAgent = AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent),
-                    CorrelationId = AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId),
+                    CorrelationId = AuditLogFieldLimits.Truncate(
+                        entry.CorrelationId,
+                        AuditLogFieldLimits.CorrelationId
+                    ),
                     Action = AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action),
                     ChangeType = entry.ChangeType,
                     EntityType = AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType),

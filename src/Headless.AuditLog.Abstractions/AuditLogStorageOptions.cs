@@ -46,11 +46,16 @@ public enum AuditLogJsonColumnType
 
 internal static class AuditLogJsonColumnTypeExtensions
 {
-    public static string ToSqlFragment(this AuditLogJsonColumnType columnType) => columnType switch
-    {
-        AuditLogJsonColumnType.Jsonb => "jsonb",
-        AuditLogJsonColumnType.Json => "json",
-        AuditLogJsonColumnType.NvarcharMax => "nvarchar(max)",
-        _ => throw new ArgumentOutOfRangeException(nameof(columnType), columnType, "Unknown AuditLogJsonColumnType."),
-    };
+    public static string ToSqlFragment(this AuditLogJsonColumnType columnType) =>
+        columnType switch
+        {
+            AuditLogJsonColumnType.Jsonb => "jsonb",
+            AuditLogJsonColumnType.Json => "json",
+            AuditLogJsonColumnType.NvarcharMax => "nvarchar(max)",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(columnType),
+                columnType,
+                "Unknown AuditLogJsonColumnType."
+            ),
+        };
 }

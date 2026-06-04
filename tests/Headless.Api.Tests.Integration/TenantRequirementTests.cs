@@ -159,7 +159,10 @@ public sealed class TenantRequirementTests : TestBase
         // the discriminator survives even when a consumer registers a custom
         // IAuthorizationMiddlewareResultHandler after AddHeadlessTenancy(), which would otherwise
         // shadow the tenant feature handler.
-        await using var app = await _CreateAppAsync(configureProblemDetails: null, registerCustomAuthResultHandler: true);
+        await using var app = await _CreateAppAsync(
+            configureProblemDetails: null,
+            registerCustomAuthResultHandler: true
+        );
         using var client = HttpTenancyTestHarness.CreateClient(app);
 
         using var response = await _SendAsync(client, "/tenant-required", user: "alice");
@@ -263,7 +266,10 @@ public sealed class TenantRequirementTests : TestBase
         {
             // Registered after AddHeadlessTenancy() to verify the typed-feature contract survives
             // any IAuthorizationMiddlewareResultHandler registration order.
-            builder.Services.AddSingleton<IAuthorizationMiddlewareResultHandler, PassthroughAuthorizationResultHandler>();
+            builder.Services.AddSingleton<
+                IAuthorizationMiddlewareResultHandler,
+                PassthroughAuthorizationResultHandler
+            >();
         }
 
         builder.Services.AddControllers().AddApplicationPart(typeof(TenantRequirementController).Assembly);

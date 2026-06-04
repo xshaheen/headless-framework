@@ -5,10 +5,10 @@ using Headless.Hosting.Initialization;
 using Headless.Permissions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Repositories;
+using Headless.Permissions.Seeders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Headless.Permissions.Seeders;
 
 namespace Tests;
 
@@ -26,7 +26,8 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not PermissionsInitializationBackgroundService);
         var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
         var definitionRepository = host.Services.GetRequiredService<IPermissionDefinitionRecordRepository>();
@@ -44,9 +45,16 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
             [],
             TestContext.Current.CancellationToken
         );
-        var stored = await grantRepository.FindAsync("Users.Create", "Role", "admin", TestContext.Current.CancellationToken);
+        var stored = await grantRepository.FindAsync(
+            "Users.Create",
+            "Role",
+            "admin",
+            TestContext.Current.CancellationToken
+        );
         var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
-        var storedPermissions = await definitionRepository.GetPermissionsListAsync(TestContext.Current.CancellationToken);
+        var storedPermissions = await definitionRepository.GetPermissionsListAsync(
+            TestContext.Current.CancellationToken
+        );
 
         // then
         initializer.IsInitialized.Should().BeTrue();
@@ -133,7 +141,9 @@ public sealed class PostgreSqlPermissionsStorageTests(PostgreSqlPermissionsFixtu
         await host.StartAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await _IndexExistsAsync("IX_PermissionGroupDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_PermissionGroupDefinitions_Name"))
+            .Should()
+            .BeTrue();
         (await _IndexExistsAsync("IX_PermissionDefinitions_GroupName")).Should().BeTrue();
         (await _IndexExistsAsync("IX_PermissionDefinitions_Name")).Should().BeTrue();
         (await _IndexExistsAsync("IX_PermissionGrants_TenantId_Name_ProviderName_ProviderKey")).Should().BeTrue();
