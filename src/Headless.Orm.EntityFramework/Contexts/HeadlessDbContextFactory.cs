@@ -7,18 +7,18 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// <see cref="IDbContextFactory{TContext}"/> for <see cref="HeadlessDbContext"/> subclasses. Creates a
-/// dedicated service scope per call so the context's scoped dependencies
-/// (<see cref="HeadlessDbContextServices"/>, save-changes pipeline, audit persistence) resolve cleanly,
-/// then hands scope ownership to the returned context — disposing the context disposes the scope.
+/// <see cref="IDbContextFactory{TContext}"/> for the Headless DbContext bases (both
+/// <see cref="HeadlessDbContext"/> and the Identity context). Creates a dedicated service scope per call so
+/// the context's scoped dependencies (<see cref="HeadlessDbContextServices"/>, save-changes pipeline, audit
+/// persistence) resolve cleanly, then hands scope ownership to the returned context via
+/// <see cref="IHeadlessDbContext.OwnedScope"/> — disposing the context disposes the scope.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Why not <c>AddPooledDbContextFactory</c>: <see cref="HeadlessDbContext"/> is explicitly non-poolable
-/// (private per-request runtime state, non-standard constructor shape). Why not the stock
-/// <c>AddDbContextFactory</c>: it Activator-creates contexts from a singleton
-/// <see cref="DbContextOptions{TContext}"/>, which doesn't compose with the constructor's required
-/// scoped <see cref="HeadlessDbContextServices"/> parameter.
+/// Why not <c>AddPooledDbContextFactory</c>: the Headless contexts are explicitly non-poolable (private
+/// per-request runtime state, non-standard constructor shape). Why not the stock <c>AddDbContextFactory</c>:
+/// it Activator-creates contexts from a singleton <see cref="DbContextOptions{TContext}"/>, which doesn't
+/// compose with the constructor's required scoped <see cref="HeadlessDbContextServices"/> parameter.
 /// </para>
 /// <para>
 /// Registered as singleton from <c>AddHeadlessDbContext&lt;TDbContext&gt;</c>. Consumers resolve
@@ -28,7 +28,7 @@ namespace Headless.EntityFramework;
 /// </remarks>
 internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory scopeFactory)
     : IDbContextFactory<TDbContext>
-    where TDbContext : HeadlessDbContext
+    where TDbContext : DbContext, IHeadlessDbContext
 {
     public TDbContext CreateDbContext()
     {
@@ -36,9 +36,7 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
 
         try
         {
-            var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
-            context.OwnedScope = scope;
-            return context;
+            return _AttachScope(scope);
         }
         catch
         {
@@ -49,12 +47,36 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
 
     /// <summary>
     /// Explicit override so callers awaiting <see cref="IDbContextFactory{TContext}.CreateDbContextAsync"/>
-    /// observe the cancellation token. The default interface implementation just wraps
-    /// <see cref="CreateDbContext"/> in <c>Task.FromResult</c> and silently drops the token.
+    /// observe the cancellation token and get async disposal on the failure path. The default interface
+    /// implementation wraps <see cref="CreateDbContext"/> in <c>Task.FromResult</c> — dropping the token and
+    /// disposing a failed scope synchronously, which throws for async-only-disposable scoped services.
     /// </summary>
-    public Task<TDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
+    public async Task<TDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(CreateDbContext());
+
+        var scope = scopeFactory.CreateAsyncScope();
+
+        try
+        {
+            return _AttachScope(scope);
+        }
+        catch
+        {
+            // AsyncServiceScope.DisposeAsync async-disposes the scope, falling back to sync Dispose only for
+            // services that are merely IDisposable — so a scoped service instantiated before the failure that
+            // is async-only-disposable releases correctly instead of throwing (sync Dispose() would), which
+            // would otherwise mask the original resolution exception.
+            await scope.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private static TDbContext _AttachScope(IServiceScope scope)
+    {
+        var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
+        context.OwnedScope = scope;
+
+        return context;
     }
 }

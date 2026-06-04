@@ -13,6 +13,7 @@ Provides a pre-configured Identity DbContext base class with framework-specific 
 - Support for custom user, role, claim, and passkey types
 - ASP.NET Core Identity schema version 3 by default, enabling passkey tables for greenfield apps
 - Flexible service lifetime configuration
+- `IDbContextFactory<TDbContext>` registered automatically, at parity with `Headless.Orm.EntityFramework` — resolve detached, scope-owning contexts for background work, `IInitializer`, or `BackgroundService` without a separate `AddDbContextFactory` call
 
 ## Installation
 
@@ -59,5 +60,6 @@ builder.Services.AddHeadlessIdentity(setup =>
 ## Side Effects
 
 - Registers DbContext with specified lifetime (default: Scoped)
+- Registers `IDbContextFactory<TDbContext>` (singleton) for detached, scope-owning contexts
 - Adds framework EF extensions to DbContext options
 - Configures Identity store schema version 3 by default

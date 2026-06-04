@@ -4,6 +4,7 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
@@ -70,6 +71,24 @@ public abstract class HeadlessIdentityDbContext<
 
     public string? TenantId => _runtime.TenantId;
 
+    // Optional service scope owned by this context — set by HeadlessDbContextFactory (via the
+    // IHeadlessDbContext seam) when the context is created through IDbContextFactory<TDbContext>.
+    // Disposed alongside the context so factory-created contexts don't leak per-call scopes.
+    private IServiceScope? _ownedScope;
+
+    // The IHeadlessDbContext seam is internal, so satisfy it through explicit (non-overridable)
+    // implementations that delegate to the public members — keeps the public surface intact while avoiding
+    // an externally-overridable member bound to an internal interface (CA2119).
+    string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
+
+    string? IHeadlessDbContext.TenantId => TenantId;
+
+    IServiceScope? IHeadlessDbContext.OwnedScope
+    {
+        get => _ownedScope;
+        set => _ownedScope = value;
+    }
+
     protected HeadlessIdentityDbContext(HeadlessDbContextServices services, DbContextOptions options)
         : base(options)
     {
@@ -102,11 +121,9 @@ public abstract class HeadlessIdentityDbContext<
 
     public override void Dispose()
     {
-        // try/finally guarantees base.Dispose runs even if runtime disposal throws — without it
-        // a runtime teardown failure would leak the underlying DbConnection (never returned to the
-        // pool). Mirrors the iter2 fix in HeadlessDbContext.Dispose; the runtime currently returns
-        // ValueTask.CompletedTask synchronously so the throw path is unreachable today, but the
-        // structural guarantee matters as soon as the runtime gains real teardown work.
+        // Drain the runtime then the base context; try/finally guarantees the owned scope still disposes if
+        // either throws. Owned-scope disposal is centralized in HeadlessDbContextDisposal so it stays
+        // identical with the plain HeadlessDbContext base (previously this context disposed no owned scope).
         try
         {
             var disposeTask = _runtime.DisposeAsync();
@@ -114,18 +131,18 @@ public abstract class HeadlessIdentityDbContext<
             {
                 disposeTask.AsTask().GetAwaiter().GetResult();
             }
+
             base.Dispose();
         }
         finally
         {
+            this.DisposeOwnedScope();
             GC.SuppressFinalize(this);
         }
     }
 
     public override async ValueTask DisposeAsync()
     {
-        // Same exception-preserving guarantee as Dispose — if _runtime.DisposeAsync throws, the
-        // base async-disposal still runs so the underlying DbConnection releases cleanly.
         try
         {
             await _runtime.DisposeAsync().ConfigureAwait(false);
@@ -133,6 +150,7 @@ public abstract class HeadlessIdentityDbContext<
         }
         finally
         {
+            await this.DisposeOwnedScopeAsync().ConfigureAwait(false);
             GC.SuppressFinalize(this);
         }
     }

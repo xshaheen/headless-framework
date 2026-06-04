@@ -131,14 +131,16 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
         var entity = new RuntimeBasicEntity { Name = "defaults" };
 
+        // the framework value generator stamps the key as the entity is tracked, before SaveChanges
         db.BasicEntities.Add(entity);
-        entity.Id.Should().Be(Guid.Empty);
+        entity.Id.Should().NotBe(Guid.Empty);
 
-        // when
+        // when - no custom processors and no message dispatcher are registered
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // then
-        entity.Id.Should().NotBe(Guid.Empty);
+        // then - the default pipeline completes and the row round-trips
+        var persisted = await db.BasicEntities.CountAsync(TestContext.Current.CancellationToken);
+        persisted.Should().Be(1);
     }
 
     [Fact]
@@ -405,13 +407,6 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         public DbSet<RuntimeBasicEntity> BasicEntities => Set<RuntimeBasicEntity>();
 
         public override string DefaultSchema => "";
-
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
-        {
-            base.OnModelCreating(modelBuilder);
-            modelBuilder.Entity<RuntimeEntity>().Property(e => e.Id).ValueGeneratedNever();
-            modelBuilder.Entity<RuntimeBasicEntity>().Property(e => e.Id).ValueGeneratedNever();
-        }
     }
 
     private sealed class RuntimeBasicEntity : IEntity<Guid>

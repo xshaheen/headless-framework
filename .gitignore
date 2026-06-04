@@ -378,6 +378,7 @@ FodyWeavers.xsd
 
 # C# Dev Kit
 *.lscache
+cache/
 
 # Local History for Visual Studio Code
 .history/

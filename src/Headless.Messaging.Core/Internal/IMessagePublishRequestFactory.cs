@@ -13,7 +13,7 @@ internal interface IMessagePublishRequestFactory
 {
     PreparedPublishMessage Create<T>(
         T? contentObj,
-        MessagePublishOptionsBase? options = null,
+        MessageOptions? options = null,
         TimeSpan? delayTime = null,
         IntentType intentType = IntentType.Bus
     );
@@ -41,13 +41,10 @@ internal sealed class MessagePublishRequestFactory(
 
     private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;
-    private readonly ILongIdGenerator _idGenerator = idGenerator;
-    private readonly TimeProvider _timeProvider = timeProvider;
-    private readonly ICurrentTenant _currentTenant = currentTenant;
 
     public PreparedPublishMessage Create<T>(
         T? contentObj,
-        MessagePublishOptionsBase? options = null,
+        MessageOptions? options = null,
         TimeSpan? delayTime = null,
         IntentType intentType = IntentType.Bus
     )
@@ -81,7 +78,7 @@ internal sealed class MessagePublishRequestFactory(
     private Dictionary<string, string?> _CreateHeaders(
         Type messageType,
         string messageName,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         TimeSpan? delayTime
     )
     {
@@ -94,7 +91,7 @@ internal sealed class MessagePublishRequestFactory(
         _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
-            ? _idGenerator.Create().ToString(CultureInfo.InvariantCulture)
+            ? idGenerator.Create().ToString(CultureInfo.InvariantCulture)
             : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;
@@ -124,8 +121,8 @@ internal sealed class MessagePublishRequestFactory(
     {
         Argument.IsLessThanOrEqualTo(
             messageId.Length,
-            MessagePublishOptionsBase.MessageIdMaxLength,
-            $"Options.MessageId must be {MessagePublishOptionsBase.MessageIdMaxLength} characters or fewer before durable storage.",
+            MessageOptions.MessageIdMaxLength,
+            $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(messageId)
         );
 
@@ -134,7 +131,7 @@ internal sealed class MessagePublishRequestFactory(
 
     // Strict publish-time tenant integrity policy.
     //
-    // U2 4-case header check (shipped in #228): MessagePublishOptionsBase.TenantId is the source of truth;
+    // U2 4-case header check (shipped in #228): MessageOptions.TenantId is the source of truth;
     // writing the wire header directly is reserved for transport-internal use. Whitespace raw
     // headers are treated as unset to mirror the lenient consume-side mapping in
     // TenantContextScope.ResolveTenantId.
@@ -143,7 +140,7 @@ internal sealed class MessagePublishRequestFactory(
     // typed property is unset, resolve from the ambient ICurrentTenant. If both are null, throw
     // MissingTenantContextException. Sibling of the EF (#234) and Mediator (#236) tenancy guards.
     //
-    private void _ApplyTenantId(Dictionary<string, string?> headers, MessagePublishOptionsBase? options)
+    private void _ApplyTenantId(Dictionary<string, string?> headers, MessageOptions? options)
     {
         var typed = options?.TenantId;
         var rawPresent = headers.TryGetValue(Headers.TenantId, out var raw);
@@ -153,7 +150,7 @@ internal sealed class MessagePublishRequestFactory(
         // attempts cannot bypass by enabling strict tenancy.
         if (typed is null && rawSet)
         {
-            var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, MessagePublishOptionsBase.TenantIdMaxLength);
+            var safeRawForReservedMessage = LogSanitizer.Sanitize(raw, MessageOptions.TenantIdMaxLength);
 
             var ex = new InvalidOperationException(
                 $"Header '{Headers.TenantId}' is reserved. "
@@ -170,7 +167,7 @@ internal sealed class MessagePublishRequestFactory(
         // tenant when strict tenancy is required.
         if (typed is null && _options.TenantContextRequired)
         {
-            typed = _currentTenant.Id;
+            typed = currentTenant.Id;
             if (string.IsNullOrWhiteSpace(typed))
             {
                 var ex = new MissingTenantContextException(
@@ -201,7 +198,7 @@ internal sealed class MessagePublishRequestFactory(
             // Sanitize wire-side raw value before interpolating into the exception message.
             // R4 delegates charset validation to consumers, so a malicious caller could otherwise
             // smuggle CR/LF/control chars into Exception.Message and downstream log sinks.
-            var safeRaw = LogSanitizer.Sanitize(raw, MessagePublishOptionsBase.TenantIdMaxLength);
+            var safeRaw = LogSanitizer.Sanitize(raw, MessageOptions.TenantIdMaxLength);
 
             var ex = new InvalidOperationException(
                 $"Options.TenantId='{typed}' disagrees with header '{Headers.TenantId}'='{safeRaw}'. "
@@ -227,8 +224,8 @@ internal sealed class MessagePublishRequestFactory(
 
         Argument.IsLessThanOrEqualTo(
             tenantId.Length,
-            MessagePublishOptionsBase.TenantIdMaxLength,
-            $"Options.TenantId must be {MessagePublishOptionsBase.TenantIdMaxLength} characters or fewer before durable storage.",
+            MessageOptions.TenantIdMaxLength,
+            $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(tenantId)
         );
     }
@@ -246,7 +243,7 @@ internal sealed class MessagePublishRequestFactory(
 
     private DateTimeOffset _ResolvePublishAt(TimeSpan? delayTime)
     {
-        var publishAt = _timeProvider.GetUtcNow();
+        var publishAt = timeProvider.GetUtcNow();
         if (delayTime is { } delay)
         {
             publishAt += delay;

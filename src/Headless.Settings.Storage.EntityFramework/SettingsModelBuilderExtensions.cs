@@ -3,20 +3,40 @@
 using Headless.Checks;
 using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Settings;
 
 [PublicAPI]
 public static class SettingsModelBuilderExtensions
 {
-    public static ModelBuilder AddHeadlessSettings(this ModelBuilder modelBuilder, SettingsStorageOptions options)
+    extension(ModelBuilder modelBuilder)
     {
-        Argument.IsNotNull(modelBuilder);
-        Argument.IsNotNull(options);
+        /// <summary>
+        /// Applies the Headless settings entity configurations, resolving <see cref="SettingsStorageOptions"/>
+        /// from the <paramref name="context"/>'s service provider. Call from <c>OnModelCreating</c> with
+        /// <c>modelBuilder.AddHeadlessSettings(this)</c> to avoid injecting the options into the context.
+        /// </summary>
+        public ModelBuilder AddHeadlessSettings(DbContext context)
+        {
+            Argument.IsNotNull(modelBuilder);
+            Argument.IsNotNull(context);
 
-        modelBuilder.ApplyConfiguration(new SettingValueRecordConfiguration(options));
-        modelBuilder.ApplyConfiguration(new SettingDefinitionRecordConfiguration(options));
+            var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
 
-        return modelBuilder;
+            return modelBuilder.AddHeadlessSettings(options);
+        }
+
+        public ModelBuilder AddHeadlessSettings(SettingsStorageOptions options)
+        {
+            Argument.IsNotNull(modelBuilder);
+            Argument.IsNotNull(options);
+
+            modelBuilder.ApplyConfiguration(new SettingValueRecordConfiguration(options));
+            modelBuilder.ApplyConfiguration(new SettingDefinitionRecordConfiguration(options));
+
+            return modelBuilder;
+        }
     }
 }

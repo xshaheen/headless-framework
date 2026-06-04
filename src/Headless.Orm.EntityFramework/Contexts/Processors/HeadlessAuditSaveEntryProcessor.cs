@@ -114,7 +114,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
         if (
             entity.DateUpdated != null
             && propertyEntry.IsModified
-            && propertyEntry.CurrentValue != propertyEntry.OriginalValue
+            && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue)
         )
         {
             return;
@@ -143,7 +143,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         var propertyEntry = entry.Property(nameof(IUpdateAudit<>.UpdatedById));
 
-        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
+        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
         {
             return;
         }
@@ -215,7 +215,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         var propertyEntry = entry.Property(nameof(IDeleteAudit<>.DeletedById));
 
-        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
+        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
         {
             return;
         }
@@ -282,7 +282,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(IClock clock, ICurrentUser c
 
         var propertyEntry = entry.Property(nameof(ISuspendAudit<>.SuspendedById));
 
-        if (propertyEntry.IsModified && propertyEntry.CurrentValue != propertyEntry.OriginalValue)
+        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
         {
             return;
         }

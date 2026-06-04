@@ -4,7 +4,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
-namespace Headless.EntityFramework.GlobalFilters;
+namespace Headless.EntityFramework.CompiledQueryCache;
 
 /// <summary>Adds the current tenant id to EF Core compiled query cache keys.</summary>
 public sealed class HeadlessCompiledQueryCacheKeyGenerator(

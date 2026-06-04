@@ -95,7 +95,7 @@ public record ConsumeContext
     /// <remarks>
     /// This is the first-class way to chain to a callback that the originating message did not declare.
     /// It targets the reserved <c>Headers.CallbackName</c> through a typed surface so the value is mapped
-    /// to <see cref="MessagePublishOptionsBase.CallbackName"/> on the response publish, rather than being
+    /// to <see cref="MessageOptions.CallbackName"/> on the response publish, rather than being
     /// pushed through <see cref="MessageHeader.AddResponseHeader"/> (which the publish pipeline rejects for
     /// reserved keys). The framework does not cap callback hops, so callback chains must be kept acyclic and
     /// bounded by the consumer — a self-referential or cyclic chain produces an unbounded callback storm.
@@ -197,9 +197,9 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
-    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time.
+    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessageOptions.TenantId"/> at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
-    /// <see cref="MessagePublishOptionsBase.TenantIdMaxLength"/> (lenient consume-side handling).
+    /// <see cref="MessageOptions.TenantIdMaxLength"/> (lenient consume-side handling).
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty or whitespace string.

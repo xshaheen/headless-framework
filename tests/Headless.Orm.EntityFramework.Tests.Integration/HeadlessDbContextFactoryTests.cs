@@ -38,8 +38,9 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         ScopeProbe probe;
         await using (var ctx = await factory.CreateDbContextAsync(TestContext.Current.CancellationToken))
         {
-            ctx.OwnedScope.Should().NotBeNull("factory-created contexts carry their own scope");
-            probe = ctx.OwnedScope!.ServiceProvider.GetRequiredService<ScopeProbe>();
+            var scoped = (IHeadlessDbContext)ctx;
+            scoped.OwnedScope.Should().NotBeNull("factory-created contexts carry their own scope");
+            probe = scoped.OwnedScope!.ServiceProvider.GetRequiredService<ScopeProbe>();
             probe.IsDisposed.Should().BeFalse("scope is alive while the context is alive");
         }
 
@@ -60,7 +61,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         // then — different instances, different scopes
         a.Should().NotBeSameAs(b);
-        a.OwnedScope.Should().NotBeSameAs(b.OwnedScope);
+        ((IHeadlessDbContext)a).OwnedScope.Should().NotBeSameAs(((IHeadlessDbContext)b).OwnedScope);
     }
 
     [Fact]
@@ -74,7 +75,10 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
         services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<Headless.Abstractions.IGuidGenerator, Headless.Abstractions.SequentialAsStringGuidGenerator>();
+        services.AddSingleton<
+            Headless.Abstractions.IGuidGenerator,
+            Headless.Abstractions.SequentialAsStringGuidGenerator
+        >();
         services.AddScoped<ScopeProbe>();
         services.AddHeadlessDbContext<ThrowingDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
 
@@ -102,14 +106,17 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         }
     }
 
-private ServiceProvider _BuildProvider(Action<IServiceCollection>? configure = null)
+    private ServiceProvider _BuildProvider(Action<IServiceCollection>? configure = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
         services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<Headless.Abstractions.IGuidGenerator, Headless.Abstractions.SequentialAsStringGuidGenerator>();
+        services.AddSingleton<
+            Headless.Abstractions.IGuidGenerator,
+            Headless.Abstractions.SequentialAsStringGuidGenerator
+        >();
         services.AddHeadlessDbContext<FactoryTestDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
         configure?.Invoke(services);
 

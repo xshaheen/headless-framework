@@ -201,21 +201,14 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions
-        {
-            MessageId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength),
-        };
+        var publishOptions = new PublishOptions { MessageId = new string('m', MessageOptions.MessageIdMaxLength) };
 
         // when
         await publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
         testTransport.SentMessages.Should().HaveCount(1);
-        testTransport
-            .SentMessages[0]
-            .Headers[Headers.MessageId]
-            .Should()
-            .HaveLength(MessagePublishOptionsBase.MessageIdMaxLength);
+        testTransport.SentMessages[0].Headers[Headers.MessageId].Should().HaveLength(MessageOptions.MessageIdMaxLength);
     }
 
     [Fact]
@@ -226,10 +219,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions
-        {
-            MessageId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength + 1),
-        };
+        var publishOptions = new PublishOptions { MessageId = new string('m', MessageOptions.MessageIdMaxLength + 1) };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -238,7 +228,7 @@ public sealed class BusTests : TestBase
         await act.Should()
             .ThrowAsync<ArgumentOutOfRangeException>()
             .WithParameterName("messageId")
-            .WithMessage($"*{MessagePublishOptionsBase.MessageIdMaxLength} characters or fewer*");
+            .WithMessage($"*{MessageOptions.MessageIdMaxLength} characters or fewer*");
     }
 
     [Fact]
@@ -432,10 +422,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var publishOptions = new PublishOptions
-        {
-            TenantId = new string('t', MessagePublishOptionsBase.TenantIdMaxLength + 1),
-        };
+        var publishOptions = new PublishOptions { TenantId = new string('t', MessageOptions.TenantIdMaxLength + 1) };
 
         // when
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
@@ -444,7 +431,7 @@ public sealed class BusTests : TestBase
         await act.Should()
             .ThrowAsync<ArgumentOutOfRangeException>()
             .WithParameterName("tenantId")
-            .WithMessage($"*{MessagePublishOptionsBase.TenantIdMaxLength} characters or fewer*");
+            .WithMessage($"*{MessageOptions.TenantIdMaxLength} characters or fewer*");
         testTransport.SentMessages.Should().BeEmpty();
     }
 
@@ -456,7 +443,7 @@ public sealed class BusTests : TestBase
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
 
         var publisher = _CreateBus(testTransport, options);
-        var maxTenantId = new string('t', MessagePublishOptionsBase.TenantIdMaxLength);
+        var maxTenantId = new string('t', MessageOptions.TenantIdMaxLength);
         var publishOptions = new PublishOptions { TenantId = maxTenantId };
 
         // when

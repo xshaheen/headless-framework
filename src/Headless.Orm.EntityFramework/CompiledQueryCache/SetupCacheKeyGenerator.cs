@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.EntityFramework.GlobalFilters;
+namespace Headless.EntityFramework.CompiledQueryCache;
 
 internal static class SetupCacheKeyGenerator
 {
