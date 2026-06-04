@@ -587,7 +587,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         // given
         var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        var requestConsumer = ServiceProvider.GetRequiredService<CallbackRequestConsumer>();
         collector.Clear();
+        requestConsumer.Reset();
         var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Remove);
 
         // when
@@ -601,6 +603,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             AbortToken
         );
 
+        // Gate the absence poll on the request consumer actually running, so the negative assertion below
+        // only runs after the consumer body has executed RemoveCallback.
+        var consumerRan = await requestConsumer.WaitForAttemptAsync(TimeSpan.FromSeconds(20), AbortToken);
+        consumerRan.Should().BeTrue("the request consumer should run before asserting the callback is absent");
+
         var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
 
         // then
@@ -611,7 +618,9 @@ public abstract class MessagingIntegrationTestsBase : TestBase
     {
         // given
         var collector = ServiceProvider.GetRequiredService<MessageCollector<CallbackResponse>>();
+        var requestConsumer = ServiceProvider.GetRequiredService<CallbackRequestConsumer>();
         collector.Clear();
+        requestConsumer.Reset();
         var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Normal);
 
         // when
@@ -620,6 +629,11 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             new PublishOptions { MessageName = "callback-request" },
             AbortToken
         );
+
+        // Gate the absence poll on the request consumer actually running, so the negative assertion below
+        // only runs after the consumer body has executed SetResponse (with no callback name present).
+        var consumerRan = await requestConsumer.WaitForAttemptAsync(TimeSpan.FromSeconds(20), AbortToken);
+        consumerRan.Should().BeTrue("the request consumer should run before asserting the callback is absent");
 
         var received = await collector.WaitForCountAsync(1, TimeSpan.FromSeconds(2), AbortToken);
 

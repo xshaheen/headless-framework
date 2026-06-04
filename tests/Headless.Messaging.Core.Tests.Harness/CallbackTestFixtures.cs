@@ -107,6 +107,9 @@ public sealed record ChainFinalResponse(string RequestId);
 
 public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
 {
+    private readonly Lock _lock = new();
+    private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public ValueTask ConsumeAsync(ConsumeContext<CallbackRequestMessage> context, CancellationToken cancellationToken)
     {
         switch (context.Message.Mode)
@@ -124,7 +127,44 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
                 break;
         }
 
+        lock (_lock)
+        {
+            _attemptTcs.TrySetResult(true);
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
+
         return ValueTask.CompletedTask;
+    }
+
+    public async Task<bool> WaitForAttemptAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(timeout);
+
+        try
+        {
+            Task waitTask;
+
+            lock (_lock)
+            {
+                waitTask = _attemptTcs.Task;
+            }
+
+            await waitTask.WaitAsync(cts.Token).ConfigureAwait(false);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    public void Reset()
+    {
+        lock (_lock)
+        {
+            _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        }
     }
 }
 

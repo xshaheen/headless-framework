@@ -482,7 +482,8 @@ internal sealed class SubscribeExecutor(
                             // consumer can react and publish a further response.
                             CallbackName = ret.NextCallbackName,
                         },
-                        cancellationToken
+                        // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
+                        CancellationToken.None
                     )
                     .ConfigureAwait(false);
             }

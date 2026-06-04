@@ -116,6 +116,9 @@ public abstract record MessagePublishOptionsBase
             && string.Equals(MessageId, other.MessageId, StringComparison.Ordinal)
             && string.Equals(CorrelationId, other.CorrelationId, StringComparison.Ordinal)
             && CorrelationSequence == other.CorrelationSequence
+            // MessageType is internal-init and participates in equality so internally-produced options carrying a
+            // captured response type are not silently treated as equal to otherwise-identical options (prevents
+            // type-header loss in equality/cache contexts). External callers always have it null, so it is a no-op.
             && MessageType == other.MessageType
             && string.Equals(CallbackName, other.CallbackName, StringComparison.Ordinal)
             && string.Equals(TenantId, other.TenantId, StringComparison.Ordinal)
@@ -130,6 +133,9 @@ public abstract record MessagePublishOptionsBase
         hash.Add(MessageId, StringComparer.Ordinal);
         hash.Add(CorrelationId, StringComparer.Ordinal);
         hash.Add(CorrelationSequence);
+        // MessageType is internal-init and participates in equality so internally-produced options carrying a
+        // captured response type are not silently treated as equal to otherwise-identical options (prevents
+        // type-header loss in equality/cache contexts). External callers always have it null, so it is a no-op.
         hash.Add(MessageType);
         hash.Add(CallbackName, StringComparer.Ordinal);
         hash.Add(TenantId, StringComparer.Ordinal);

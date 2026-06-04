@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Core" />
+    <!-- Grants Tests.Unit access to internal ConsumeContext.Response/ResponseType/NextCallbackName and MarkCompleted() for callback-capture unit assertions. -->
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

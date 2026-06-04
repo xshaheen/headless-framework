@@ -62,13 +62,18 @@ public record ConsumeContext
     /// <summary>
     /// Captures a typed response payload to publish to the current message callback.
     /// </summary>
-    /// <typeparam name="TResponse">The response contract type to stamp on the callback message.</typeparam>
+    /// <typeparam name="TResponse">
+    /// The response contract type to stamp on the callback message. Must be a reference type
+    /// (<c>where TResponse : class</c>); wrap value types in a record if needed.
+    /// </typeparam>
     /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
     /// <remarks>
     /// The callback rides the durable bus path, which is <strong>at-least-once</strong>: if the process crashes
     /// after the response is written to the outbox but before the request is marked succeeded, the request is
     /// redelivered and the response is published again. Make response consumers idempotent (e.g. dedupe on
-    /// <c>CorrelationId</c>); the framework does not deduplicate callback deliveries.
+    /// <c>(CorrelationId, CorrelationSequence)</c> — <c>CorrelationId</c> alone is ambiguous across hops because
+    /// it is set to the immediate parent message id per hop, not the chain root); the framework does not
+    /// deduplicate callback deliveries.
     /// </remarks>
     public void SetResponse<TResponse>(TResponse value)
         where TResponse : class
