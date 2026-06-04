@@ -41,13 +41,13 @@ jobs:
 
     steps:
       - name: "Checkout"
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6.0.3
         with:
           lfs: false
           fetch-depth: 0
 
       - name: "Setup .NET SDK"
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           global-json-file: "./global.json"
 
