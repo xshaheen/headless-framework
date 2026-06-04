@@ -65,10 +65,12 @@
     </Folder>
     <Folder Name="/Caching/">
         <Project Path="src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+        <Project Path="src\Headless.Caching.Core\Headless.Caching.Core.csproj" />
         <Project Path="src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
         <Project Path="src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
         <Project Path="src/Headless.Caching.Hybrid/Headless.Caching.Hybrid.csproj" />
         <Project Path="tests\Headless.Caching.Abstractions.Tests.Unit\Headless.Caching.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Caching.Core.Tests.Unit\Headless.Caching.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Memory.Tests.Unit\Headless.Caching.Memory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Redis.Tests.Integration\Headless.Caching.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />

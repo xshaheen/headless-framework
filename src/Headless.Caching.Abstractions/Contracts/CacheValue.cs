@@ -7,7 +7,8 @@ namespace Headless.Caching;
 /// <summary>Cache value.</summary>
 /// <param name="value">Value.</param>
 /// <param name="hasValue">If set to <see langword="true"/> has value.</param>
-public sealed class CacheValue<T>(T? value, bool hasValue)
+/// <param name="isStale">If set to <see langword="true"/>, the value was served from a fail-safe reserve.</param>
+public sealed class CacheValue<T>(T? value, bool hasValue, bool isStale = false)
 {
     /// <summary>Gets the value.</summary>
     /// <value>The value.</value>
@@ -16,6 +17,12 @@ public sealed class CacheValue<T>(T? value, bool hasValue)
     /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> has value.</summary>
     /// <value><see langword="true"/> if has value; otherwise, <see langword="false"/>.</value>
     public bool HasValue { get; } = hasValue;
+
+    /// <summary>
+    /// Gets a value indicating whether this value was served from a fail-safe stale reserve.
+    /// </summary>
+    /// <value><see langword="true"/> when fail-safe activated; otherwise, <see langword="false"/>.</value>
+    public bool IsStale { get; } = isStale;
 
     /// <summary>Gets a value indicating whether this <see cref="CacheValue{T}"/> is null.</summary>
     /// <value><see langword="true"/> if is null; otherwise, <see langword="false"/>.</value>
