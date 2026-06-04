@@ -15,6 +15,8 @@ public sealed class TestHeadlessDbContext(
 
     public required DbSet<BasicEntity> Basics { get; set; }
 
+    public required DbSet<LongKeyedEntity> LongKeyed { get; set; }
+
     public List<IIntegrationEvent> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
 
     public List<IDomainEvent> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;

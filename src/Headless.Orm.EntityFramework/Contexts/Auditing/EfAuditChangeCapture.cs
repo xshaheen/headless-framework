@@ -7,15 +7,22 @@ using Headless.AuditLog;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
-internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, ILogger<EfAuditChangeCapture> logger)
-    : IAuditChangeCapture,
-        IAuditEntityIdResolver
+internal sealed class EfAuditChangeCapture(
+    IOptions<AuditLogOptions> options,
+    ILogger<EfAuditChangeCapture>? logger = null
+) : IAuditChangeCapture, IAuditEntityIdResolver
 {
+    // Optional logger at parity with the sibling save-pipeline services (HeadlessAuditPersistence,
+    // HeadlessSaveChangesPipeline): callers wiring this capture by hand — tests, minimal hosts — need not
+    // register ILogger<T>. Defaults to NullLogger rather than forcing an AddLogging() dependency.
+    private readonly ILogger<EfAuditChangeCapture> _logger = logger ?? NullLogger<EfAuditChangeCapture>.Instance;
+
     private static readonly ConditionalWeakTable<
         Type,
         ConcurrentDictionary<string, AuditPropertyMetadata>
@@ -92,7 +99,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
             }
             catch (Exception e) when (e is not OptionsValidationException)
             {
-                logger.LogAuditCaptureFailed(e, entry.Metadata.ClrType.FullName);
+                _logger.LogAuditCaptureFailed(e, entry.Metadata.ClrType.FullName);
             }
         }
 
@@ -121,7 +128,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
         }
 
         _hasLoggedDisabledWarning = true;
-        logger.LogAuditDisabled();
+        _logger.LogAuditDisabled();
     }
 
     private bool _ShouldAudit(EntityEntry entry, AuditLogOptions opts)
@@ -442,7 +449,7 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
                 }
                 catch (Exception ex)
                 {
-                    logger.LogSensitiveTransformerFailed(ex, clrType.FullName ?? clrType.Name, propertyName);
+                    _logger.LogSensitiveTransformerFailed(ex, clrType.FullName ?? clrType.Name, propertyName);
 
                     _ApplyValues(
                         changeType,
@@ -567,18 +574,6 @@ internal sealed class EfAuditChangeCapture(IOptions<AuditLogOptions> options, IL
 
         public bool IsUnsuspended { get; set; }
     }
-}
-
-internal static class AuditActionNames
-{
-    public const string SoftDeleted = "entity.soft_deleted";
-    public const string Restored = "entity.restored";
-    public const string Suspended = "entity.suspended";
-    public const string Unsuspended = "entity.unsuspended";
-    public const string Created = "entity.created";
-    public const string Updated = "entity.updated";
-    public const string Deleted = "entity.deleted";
-    public const string Unknown = "entity.unknown";
 }
 
 internal static partial class EfAuditChangeCaptureLog

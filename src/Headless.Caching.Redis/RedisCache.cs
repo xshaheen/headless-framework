@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
-using Microsoft.Extensions.DependencyInjection;
 using Headless.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
@@ -24,10 +25,6 @@ namespace Headless.Caching;
 /// Exception: <see cref="RemoveByPrefixAsync"/> and <see cref="GetAllKeysByPrefixAsync"/> use streaming
 /// SCAN and support cancellation during iteration since they may process unbounded key sets.
 /// </para>
-/// <para>
-/// <b>Limitation:</b> The literal string "@@NULL" cannot be stored as a cache value since it is used
-/// internally as a sentinel to distinguish null from missing keys.
-/// </para>
 /// </remarks>
 public sealed class RedisCache(
     ISerializer serializer,
@@ -37,10 +34,7 @@ public sealed class RedisCache(
     ILogger<RedisCache>? logger = null
 ) : IRemoteCache, IDisposable
 {
-    /// <summary>
-    /// Sentinel value used to distinguish null from missing keys in Redis.
-    /// WARNING: The literal string "@@NULL" cannot be stored as a cache value.
-    /// </summary>
+    /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
 
@@ -150,11 +144,15 @@ public sealed class RedisCache(
         // Validate keys and serialize values upfront
         var pairs = new KeyValuePair<RedisKey, RedisValue>[value.Count];
         var index = 0;
+        var now = timeProvider.GetUtcNow();
 
         foreach (var kvp in value)
         {
             Argument.IsNotNullOrEmpty(kvp.Key);
-            pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(_GetKey(kvp.Key), _ToRedisValue(kvp.Value));
+            pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(
+                _GetKey(kvp.Key),
+                _ToFramedRedisValue(kvp.Value, expiration, now)
+            );
         }
 
         if (IsCluster)
@@ -219,22 +217,27 @@ public sealed class RedisCache(
             return false;
         }
 
-        var redisValue = _ToRedisValue(value);
+        var now = timeProvider.GetUtcNow();
+        var normalizedExpiration = _NormalizeExpiration(expiration);
+        var redisValue = _ToFramedRedisValue(value, normalizedExpiration, now);
         var expectedValue = _ToRedisValue(expected);
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, now);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var redisResult = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                ReplaceIfEqualScriptDefinition.Instance,
+                CacheReplaceIfEqualScriptDefinition.Instance,
                 new
                 {
                     key = (RedisKey)_GetKey(key),
                     value = redisValue,
                     expected = expectedValue,
+                    expectedIsNull = expected is null ? 1 : 0,
                     expires = expiresArg,
+                    headerLen = RedisCacheEntryFrame.HeaderLength,
+                    nullValue = _NullValue,
                 },
                 cancellationToken
             )
@@ -260,7 +263,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -297,7 +300,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -334,7 +337,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -371,7 +374,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -408,7 +411,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -445,7 +448,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -779,8 +782,15 @@ public sealed class RedisCache(
         var redisResult = await scriptsLoader
             .EvaluateAsync(
                 _database,
-                RemoveIfEqualScriptDefinition.Instance,
-                new { key = (RedisKey)_GetKey(key), expected = expectedValue },
+                CacheRemoveIfEqualScriptDefinition.Instance,
+                new
+                {
+                    key = (RedisKey)_GetKey(key),
+                    expected = expectedValue,
+                    expectedIsNull = expected is null ? 1 : 0,
+                    headerLen = RedisCacheEntryFrame.HeaderLength,
+                    nullValue = _NullValue,
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -957,6 +967,12 @@ public sealed class RedisCache(
         return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
     }
 
+    /// <summary>Encodes a value to its bare wire bytes (the value codec) without any envelope framing.</summary>
+    /// <remarks>
+    /// This output must stay frame-free: the CAS scripts (<see cref="CacheRemoveIfEqualScriptDefinition"/>,
+    /// <see cref="CacheReplaceIfEqualScriptDefinition"/>) pass it as the bare <c>expected</c> operand and compare
+    /// it against the framed value's sliced value segment. Adding a header here would break that comparison.
+    /// </remarks>
     private RedisValue _ToRedisValue<T>(T? value)
     {
         if (value is null)
@@ -972,14 +988,14 @@ public sealed class RedisCache(
         return serializer.SerializeToBytes(value);
     }
 
-    private T? _FromRedisValue<T>(RedisValue redisValue)
+    private T? _FromRedisValue<T>(RedisValue redisValue, bool treatNullSentinel = true)
     {
         if (!redisValue.HasValue)
         {
             return default;
         }
 
-        if (redisValue == _NullValue)
+        if (treatNullSentinel && redisValue == _NullValue)
         {
             return default;
         }
@@ -999,13 +1015,26 @@ public sealed class RedisCache(
             return CacheValue<T>.NoValue;
         }
 
-        if (redisValue == _NullValue)
-        {
-            return CacheValue<T>.Null;
-        }
-
         try
         {
+            var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+            if (frame.IsFramed)
+            {
+                if (frame.IsNull)
+                {
+                    return CacheValue<T>.Null;
+                }
+
+                var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
+                return new CacheValue<T>(framedValue, true);
+            }
+
+            if (redisValue == _NullValue)
+            {
+                return CacheValue<T>.Null;
+            }
+
             var value = _FromRedisValue<T>(redisValue);
             return new CacheValue<T>(value, true);
         }
@@ -1048,7 +1077,7 @@ public sealed class RedisCache(
 
     private async Task<bool> _SetInternalAsync<T>(
         string key,
-        T value,
+        T? value,
         TimeSpan? expiresIn = null,
         When when = When.Always
     )
@@ -1060,9 +1089,34 @@ public sealed class RedisCache(
         }
 
         expiresIn = _NormalizeExpiration(expiresIn);
-        var redisValue = _ToRedisValue(value);
+        var redisValue = _ToFramedRedisValue(value, expiresIn, timeProvider.GetUtcNow());
 
         return await _database.StringSetAsync(key, redisValue, expiresIn, when).ConfigureAwait(false);
+    }
+
+    private RedisValue _ToFramedRedisValue<T>(T? value, TimeSpan? expiresIn, DateTimeOffset now)
+    {
+        var expiresAt = _GetExpirationDateTime(expiresIn, now);
+        var valueSegment = value is null ? RedisValue.EmptyString : _ToRedisValue(value);
+
+        return RedisCacheEntryFrame.Encode(
+            valueSegment,
+            isNull: value is null,
+            logicalExpiresAt: expiresAt,
+            physicalExpiresAt: expiresAt
+        );
+    }
+
+    private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
+    {
+        // Deserialize the framed value segment off the raw bytes; an empty non-null segment yields the
+        // empty value (e.g. "") rather than default, since the frame already proved the value is present.
+        if (typeof(T) == typeof(string))
+        {
+            return (T?)(object)Encoding.UTF8.GetString(segment.Span);
+        }
+
+        return serializer.Deserialize<T>(segment.ToArray());
     }
 
     private async Task<int> _SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)
@@ -1149,14 +1203,14 @@ public sealed class RedisCache(
         return expiresAt == DateTime.MaxValue ? null : expiresIn;
     }
 
-    private long? _GetExpirationMilliseconds(TimeSpan? expiresIn)
+    private static long? _GetExpirationMilliseconds(TimeSpan? expiresIn, DateTimeOffset now)
     {
         if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
         {
             return null;
         }
 
-        var expiresAt = timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        var expiresAt = now.UtcDateTime.SafeAdd(expiresIn.Value);
 
         if (expiresAt == DateTime.MaxValue)
         {
@@ -1166,7 +1220,16 @@ public sealed class RedisCache(
         return (long)expiresIn.Value.TotalMilliseconds;
     }
 
-    private const long _MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
+    private static DateTime? _GetExpirationDateTime(TimeSpan? expiresIn, DateTimeOffset now)
+    {
+        if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
+        {
+            return null;
+        }
+
+        var expiresAt = now.UtcDateTime.SafeAdd(expiresIn.Value);
+        return expiresAt == DateTime.MaxValue ? null : expiresAt;
+    }
 
     private async Task _SetListExpirationAsync(string key)
     {
@@ -1181,7 +1244,7 @@ public sealed class RedisCache(
 
         var highestExpirationInMs = (long)items.Single().Score;
 
-        if (highestExpirationInMs >= _MaxUnixEpochMilliseconds)
+        if (highestExpirationInMs >= RedisCacheEntryFrame.MaxUnixEpochMilliseconds)
         {
             await _database.KeyPersistAsync(key).ConfigureAwait(false);
             return;

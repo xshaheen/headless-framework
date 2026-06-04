@@ -8,7 +8,8 @@ namespace Microsoft.EntityFrameworkCore;
 /// <summary>
 /// Extension methods for <see cref="DbContext"/>.
 /// </summary>
-internal static class DbContextExtensions
+[PublicAPI]
+public static class DbContextExtensions
 {
     public static T? GetServiceOrDefault<T>(this IInfrastructure<IServiceProvider> infrastructure)
         where T : class

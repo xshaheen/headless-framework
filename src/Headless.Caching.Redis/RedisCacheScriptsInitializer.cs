@@ -13,8 +13,8 @@ internal sealed class RedisCacheScriptsInitializer(
     private static readonly IReadOnlyList<RedisScriptDefinition> _Definitions =
     [
         IncrementWithExpireScriptDefinition.Instance,
-        RemoveIfEqualScriptDefinition.Instance,
-        ReplaceIfEqualScriptDefinition.Instance,
+        CacheRemoveIfEqualScriptDefinition.Instance,
+        CacheReplaceIfEqualScriptDefinition.Instance,
         SetIfHigherScriptDefinition.Instance,
         SetIfLowerScriptDefinition.Instance,
     ];

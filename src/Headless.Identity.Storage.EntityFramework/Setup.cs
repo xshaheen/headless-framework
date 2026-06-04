@@ -222,6 +222,11 @@ public static class SetupIdentityEntityFramework
                 optionsLifetime
             );
 
+            // Parity with plain HeadlessDbContext registration: expose IDbContextFactory<TDbContext> so
+            // background work / IInitializer / BackgroundService can resolve a detached, scope-owning
+            // context without a separate AddDbContextFactory call.
+            services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
+
             return services;
         }
     }

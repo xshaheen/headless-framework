@@ -60,6 +60,7 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 - `Headless.Hosting`
 - `Headless.Redis`
 - `StackExchange.Redis`
+- Redis server **6.2+** (semaphore lease extension uses grow-only `ZADD GT`, which never shortens a live holder's TTL).
 
 ## Side Effects
 

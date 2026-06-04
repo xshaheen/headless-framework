@@ -11,6 +11,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

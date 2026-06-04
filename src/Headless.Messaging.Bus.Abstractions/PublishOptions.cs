@@ -21,7 +21,7 @@ namespace Headless.Messaging;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed record PublishOptions : MessagePublishOptionsBase
+public sealed record PublishOptions : MessageOptions
 {
     /// <summary>
     /// Gets the delay applied before the persisted message is dispatched.

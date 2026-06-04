@@ -8,6 +8,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />

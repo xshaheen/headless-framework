@@ -101,7 +101,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_store_published_message_with_maximum_supported_message_id_length()
     {
         // given
-        var msgId = new string('m', MessagePublishOptionsBase.MessageIdMaxLength);
+        var msgId = new string('m', MessageOptions.MessageIdMaxLength);
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
 
@@ -110,7 +110,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // then
         stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
-        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(MessagePublishOptionsBase.MessageIdMaxLength);
+        stored.Origin.Headers[Headers.MessageId].Should().HaveLength(MessageOptions.MessageIdMaxLength);
     }
 
     [Fact]

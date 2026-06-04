@@ -5,6 +5,8 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Messaging.Core" />
+    <!-- Grants Tests.Unit access to internal ConsumeContext.Response/ResponseType/ResponseCallbackName and MarkCompleted() for callback-capture unit assertions. -->
+    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

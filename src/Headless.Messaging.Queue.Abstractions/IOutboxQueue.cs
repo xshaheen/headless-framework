@@ -35,16 +35,16 @@ public interface IOutboxQueue
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A task representing the persistence operation.</returns>
     /// <exception cref="ArgumentException">
-    /// Thrown when <see cref="MessagePublishOptionsBase.TenantId"/> is set to an empty or whitespace value.
+    /// Thrown when <see cref="MessageOptions.TenantId"/> is set to an empty or whitespace value.
     /// </exception>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <see cref="MessagePublishOptionsBase.MessageId"/> exceeds <see cref="MessagePublishOptionsBase.MessageIdMaxLength"/>
-    /// or <see cref="MessagePublishOptionsBase.TenantId"/> exceeds <see cref="MessagePublishOptionsBase.TenantIdMaxLength"/>.
+    /// Thrown when <see cref="MessageOptions.MessageId"/> exceeds <see cref="MessageOptions.MessageIdMaxLength"/>
+    /// or <see cref="MessageOptions.TenantId"/> exceeds <see cref="MessageOptions.TenantIdMaxLength"/>.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <see cref="MessagePublishOptionsBase.Headers"/> contains a reserved messaging header
-    /// (use <see cref="MessagePublishOptionsBase"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
-    /// header is supplied without setting <see cref="MessagePublishOptionsBase.TenantId"/>, or when both are
+    /// Thrown when <see cref="MessageOptions.Headers"/> contains a reserved messaging header
+    /// (use <see cref="MessageOptions"/> overrides instead), when a raw <see cref="Headers.TenantId"/>
+    /// header is supplied without setting <see cref="MessageOptions.TenantId"/>, or when both are
     /// supplied with disagreeing values.
     /// </exception>
     Task EnqueueAsync<T>(T? contentObj, EnqueueOptions? options = null, CancellationToken cancellationToken = default);

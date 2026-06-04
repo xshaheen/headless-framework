@@ -9,6 +9,7 @@ Provides a feature-rich DbContext base class with automatic auditing, soft delet
 ## Key Features
 
 - `HeadlessDbContext` - Base DbContext with framework integration
+- Application-generated keys: every `IEntity<Guid>` and `IEntity<long>` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side as the entity transitions to `Added` (via `Add`, a direct state change, or attach-then-promote) — never database-generated. Guid keys come from `IGuidGenerator` (sequential, index-friendly); long keys from `ILongIdGenerator` (snowflake). The id is known before `SaveChanges` (usable for foreign keys, outbox, and domain events in the same unit of work) and is provider-portable. A `[DatabaseGenerated]` attribute on the `Id` opts that entity back into store generation; other key types are left to their own configuration
 - Automatic auditing for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended`, plus `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` for `UserId` and `AccountId` audits)
 - Soft delete (`IDeleteAudit.IsDeleted`) and suspend (`ISuspendAudit.IsSuspended`) global filters
 - Multi-tenancy filter for `IMultiTenant` entities driven by `ICurrentTenant.Id`
@@ -121,7 +122,7 @@ var everything = await dbContext.Products
 
 The default processor chain runs in registration order against every tracked entity:
 
-1. `HeadlessEntitySaveEntryProcessor` — stamps `Guid` IDs, tenant IDs, concurrency stamps
+1. `HeadlessEntitySaveEntryProcessor` — stamps tenant IDs and concurrency stamps (keys are produced earlier, at add time, by the EF Core value generators)
 2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields
 3. `HeadlessLocalEventSaveEntryProcessor` — emits `EntityCreated/Updated/Deleted/Changed` lifecycle domain events on `IDomainEventEmitter` entities
 4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending domain + integration events onto the save context
@@ -236,6 +237,6 @@ var result = await dbContext.ExecuteTransactionAsync<int>(async (ctx, ct) =>
 - Registers `HeadlessDbContextServices`, the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`), and `IHeadlessSaveChangesPipeline`
 - `.AddDomainEvents()` registers `ILocalEventBus` (via `services.AddHeadlessLocalEventBus()`); `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`. Neither is registered by default — emitting events without the matching tier throws at save
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
-- Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
+- Registers framework defaults via `TryAddSingleton`: `IClock` (`Clock`), `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ILongIdGenerator` (`SnowflakeIdLongIdGenerator`), `ICurrentTenantAccessor` (`AsyncLocalCurrentTenantAccessor`), `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider` (`ActivityCorrelationIdProvider`), and `TimeProvider.System`
 - Registers `ICurrentTenant` as `CurrentTenant` by default, replacing only the framework fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
 - Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries can share compiled plans safely

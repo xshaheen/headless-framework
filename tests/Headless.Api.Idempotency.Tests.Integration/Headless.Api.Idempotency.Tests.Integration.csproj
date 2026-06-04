@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Caching.Memory\Headless.Caching.Memory.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
   </ItemGroup>

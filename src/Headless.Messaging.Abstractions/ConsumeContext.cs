@@ -15,7 +15,7 @@ namespace Headless.Messaging;
 public record ConsumeContext
 {
     private CancellationToken _cancellationToken;
-    private bool _isCompleted;
+    private volatile bool _isCompleted;
 
     /// <summary>
     /// Gets the deserialized message object. May be <see langword="null"/> only for invalid custom construction.
@@ -40,6 +40,12 @@ public record ConsumeContext
         internal init => _cancellationToken = value;
     }
 
+    internal object? Response { get; private set; }
+
+    internal Type? ResponseType { get; private set; }
+
+    internal string? ResponseCallbackName { get; private set; }
+
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
@@ -47,10 +53,62 @@ public record ConsumeContext
     {
         if (_isCompleted)
         {
-            throw new InvalidOperationException("ConsumeContext is read-only after next() returned (R10).");
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
         _cancellationToken = cancellationToken;
+    }
+
+    /// <summary>
+    /// Captures a typed response payload to publish to the current message callback.
+    /// </summary>
+    /// <typeparam name="TResponse">
+    /// The response contract type to stamp on the callback message. Must be a reference type
+    /// (<c>where TResponse : class</c>); wrap value types in a record if needed.
+    /// </typeparam>
+    /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
+    /// <remarks>
+    /// The callback rides the durable bus path, which is <strong>at-least-once</strong>: if the process crashes
+    /// — or the success-mark write transiently fails — after the response is written to the outbox but before the
+    /// request is marked succeeded, the request is redelivered and the response is published again. Make response
+    /// consumers idempotent (e.g. dedupe on
+    /// <c>(CorrelationId, CorrelationSequence)</c> — <c>CorrelationId</c> alone is ambiguous across hops because
+    /// it is set to the immediate parent message id per hop, not the chain root); the framework does not
+    /// deduplicate callback deliveries.
+    /// </remarks>
+    public void SetResponse<TResponse>(TResponse value)
+        where TResponse : class
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        Response = value;
+        ResponseType = typeof(TResponse);
+    }
+
+    /// <summary>
+    /// Stamps the response callback name that the published response message will carry, routing the captured
+    /// response to the next hop in a callback chain.
+    /// </summary>
+    /// <remarks>
+    /// This is the first-class way to chain to a callback that the originating message did not declare.
+    /// It targets the reserved <c>Headers.CallbackName</c> through a typed surface so the value is mapped
+    /// to <see cref="MessageOptions.CallbackName"/> on the response publish, rather than being
+    /// pushed through <see cref="MessageHeader.AddResponseHeader"/> (which the publish pipeline rejects for
+    /// reserved keys). The framework does not cap callback hops, so callback chains must be kept acyclic and
+    /// bounded by the consumer — a self-referential or cyclic chain produces an unbounded callback storm.
+    /// </remarks>
+    /// <param name="callbackName">The response callback name to attach to the published response.</param>
+    public void SetResponseCallbackName(string callbackName)
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        ResponseCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
     }
 
     internal void MarkCompleted()
@@ -139,9 +197,9 @@ public record ConsumeContext
     /// </summary>
     /// <value>
     /// The tenant identifier carried on the <c>Headers.TenantId</c> wire header
-    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessagePublishOptionsBase.TenantId"/> at publish time.
+    /// (<c>"headless-tenant-id"</c>), populated from <see cref="MessageOptions.TenantId"/> at publish time.
     /// Returns <see langword="null"/> when the header is absent, empty, whitespace, or longer than
-    /// <see cref="MessagePublishOptionsBase.TenantIdMaxLength"/> (lenient consume-side handling).
+    /// <see cref="MessageOptions.TenantIdMaxLength"/> (lenient consume-side handling).
     /// </value>
     /// <exception cref="ArgumentException">
     /// Thrown when attempting to set an empty or whitespace string.

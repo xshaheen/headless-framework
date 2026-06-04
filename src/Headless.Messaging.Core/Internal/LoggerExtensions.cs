@@ -434,7 +434,7 @@ internal static partial class LoggerExtensions
         EventId = 63,
         EventName = "TenantIdHeaderRejected",
         Level = LogLevel.Warning,
-        Message = "Inbound tenant header was rejected because its length ({Length}) exceeds MessagePublishOptionsBase.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
+        Message = "Inbound tenant header was rejected because its length ({Length}) exceeds MessageOptions.TenantIdMaxLength. The consume context will observe a null tenant; investigate the producer if this repeats."
     )]
     public static partial void TenantIdHeaderRejected(this ILogger logger, int length);
 
@@ -455,7 +455,7 @@ internal static partial class LoggerExtensions
         EventId = 65,
         EventName = "AmbientTenantPropagationDropped",
         Level = LogLevel.Warning,
-        Message = "Ambient ICurrentTenant.Id was rejected by tenant propagation middleware because its length ({Length}) exceeds MessagePublishOptionsBase.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
+        Message = "Ambient ICurrentTenant.Id was rejected by tenant propagation middleware because its length ({Length}) exceeds MessageOptions.TenantIdMaxLength or it is whitespace. The publish proceeds without a stamped tenant; investigate the ambient tenant source if this repeats."
     )]
     public static partial void AmbientTenantPropagationDropped(this ILogger logger, int length);
 

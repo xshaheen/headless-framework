@@ -279,7 +279,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage();
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload { Value = "ok" };
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
@@ -345,7 +345,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage(id: "ctx-id-7", name: "ctx-messageName");
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "ctx-id-7", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "ctx-id-7", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
@@ -365,7 +365,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage(correlationId: "corr-abc");
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
@@ -383,7 +383,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage();
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
@@ -401,7 +401,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage();
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when
@@ -419,7 +419,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var medium = _MakeMediumMessage(); // no correlationId
         var context = _MakeConsumerContext(medium);
         var payload = new SimplePayload();
-        var inner = new FakePipeline(new ConsumerExecutedResult(null, "msg-1", null, null));
+        var inner = new FakePipeline(new ConsumerExecutedResult(null, null, "msg-1", null, null));
         var pipeline = new RecordingConsumeMiddlewarePipeline(inner, store);
 
         // when

@@ -16,6 +16,23 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 - Lua scripts for atomic multi-key operations
 - Redis Cluster support
 
+## Design Notes
+
+Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte header followed by the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is still mapped to the Redis key TTL; logical expiration rides in the payload so later fail-safe and refresh features can diverge logical staleness from physical eviction without changing the wire format. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
+
+The envelope byte layout is:
+
+| Offset | Field | Description |
+| --- | --- | --- |
+| 0 | Magic | `0xFF` — marks a framed entry |
+| 1 | Version | `0x01` — current envelope version |
+| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt` |
+| 3–10 | LogicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit1 is set) |
+| 11–18 | PhysicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit2 is set) |
+| 19+ | ValueSegment | raw codec bytes; empty when `isNull` is set |
+
+Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is now a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
+
 ## Installation
 
 ```bash

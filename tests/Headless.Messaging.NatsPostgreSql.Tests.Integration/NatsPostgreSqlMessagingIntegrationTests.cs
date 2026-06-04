@@ -83,6 +83,42 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     public override Task should_bootstrap_messaging_system() => base.should_bootstrap_messaging_system();
 
     [Fact]
+    public override Task should_publish_callback_response_for_bus_request() =>
+        base.should_publish_callback_response_for_bus_request();
+
+    [Fact]
+    public override Task should_publish_callback_response_for_queue_request() =>
+        base.should_publish_callback_response_for_queue_request();
+
+    [Fact]
+    public override Task should_rewrite_callback_when_response_is_set() =>
+        base.should_rewrite_callback_when_response_is_set();
+
+    [Fact]
+    public override Task should_remove_callback_even_when_response_is_set() =>
+        base.should_remove_callback_even_when_response_is_set();
+
+    [Fact]
+    public override Task should_drop_set_response_when_callback_name_is_absent() =>
+        base.should_drop_set_response_when_callback_name_is_absent();
+
+    [Fact]
+    public override Task should_publish_one_callback_response_per_fanout_subscriber() =>
+        base.should_publish_one_callback_response_per_fanout_subscriber();
+
+    [Fact]
+    public override Task should_isolate_callback_controls_between_fanout_subscribers() =>
+        base.should_isolate_callback_controls_between_fanout_subscribers();
+
+    [Fact]
+    public override Task should_chain_callback_when_response_sets_next_callback_header() =>
+        base.should_chain_callback_when_response_sets_next_callback_header();
+
+    [Fact]
+    public override Task should_fail_consume_when_callback_response_cannot_serialize() =>
+        base.should_fail_consume_when_callback_response_cannot_serialize();
+
+    [Fact]
     public async Task should_deliver_direct_publish_without_creating_outbox_record()
     {
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();

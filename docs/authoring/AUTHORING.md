@@ -32,7 +32,7 @@ Templates:
   ```yaml
   ---
   domain: <Human-readable domain name>
-  packages: <comma-separated package suffixes, e.g., Caching.Abstractions, Caching.Memory>
+  packages: <comma-separated package suffixes, e.g., Caching.Abstractions, Caching.InMemory>
   ---
   ```
 

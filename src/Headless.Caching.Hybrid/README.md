@@ -10,7 +10,7 @@ dotnet add package Headless.Caching.Hybrid
 
 ## Prerequisites
 
-- In-memory cache: `Headless.Caching.Memory`
+- In-memory cache: `Headless.Caching.InMemory`
 - Distributed cache: `Headless.Caching.Redis`
 - Messaging: Any messaging provider (e.g., `Headless.Messaging.Redis`)
 

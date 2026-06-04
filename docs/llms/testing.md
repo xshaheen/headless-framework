@@ -328,7 +328,7 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 `App.ResetDatabaseAsync()` (Respawner) truncates configured database tables only. Tests that touch state outside the database must clear it themselves, otherwise observations from a previous test bleed into the next:
 
-- **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.Memory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
+- **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.InMemory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
 - **In-process singletons.** Any state held on singleton services (caches, registries, schedulers) survives DB reset. Either reset them explicitly or design the test to seed them via the public API rather than relying on a pristine state.
 - **`MessagingTestHarness` observation buffers.** Call `App.ResetMessagingHarness()` in `ResetStateAsync()` -- otherwise `WaitForPublished<T>()` may match a message from a prior test.
 - **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.

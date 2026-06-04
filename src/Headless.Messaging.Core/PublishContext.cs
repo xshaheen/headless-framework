@@ -17,7 +17,7 @@ public abstract class PublishContext
         object? content,
         Type messageType,
         IntentType intentType,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         TimeSpan? delayTime,
         CancellationToken cancellationToken
     )
@@ -61,12 +61,12 @@ public abstract class PublishContext
     /// Gets the current publish options for this operation.
     /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
     /// </summary>
-    public MessagePublishOptionsBase? Options => OptionsCore;
+    public MessageOptions? Options => OptionsCore;
 
     /// <summary>Gets the scheduled delay for this operation. <see langword="null"/> means immediate publish.</summary>
     public TimeSpan? DelayTime => DelayTimeCore;
 
-    private protected MessagePublishOptionsBase? OptionsCore { get; set; }
+    private protected MessageOptions? OptionsCore { get; set; }
 
     private protected TimeSpan? DelayTimeCore { get; set; }
 
@@ -78,7 +78,7 @@ public abstract class PublishContext
     }
 
     /// <summary>Replaces the active publish options before the inner publisher runs.</summary>
-    public void WithOptions(MessagePublishOptionsBase? options)
+    public void WithOptions(MessageOptions? options)
     {
         _ThrowIfCompleted();
         OptionsCore = options;
@@ -92,7 +92,7 @@ public abstract class PublishContext
         DelayTimeCore = delayTime;
     }
 
-    private protected void RefreshOptionSnapshot(MessagePublishOptionsBase? options)
+    private protected void RefreshOptionSnapshot(MessageOptions? options)
     {
         Headers = new MessageHeader(
             options?.Headers is null
@@ -127,7 +127,7 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     public PublishingContext(
         TMessage? content,
         IntentType intentType,
-        MessagePublishOptionsBase? options,
+        MessageOptions? options,
         TimeSpan? delayTime,
         bool isTransactional = false,
         CancellationToken cancellationToken = default
@@ -144,7 +144,7 @@ public sealed class PublishingContext<TMessage> : PublishContext, ICompletablePu
     /// Gets or sets the current publish options before the inner publisher runs.
     /// Cast to <see cref="PublishOptions"/> for bus operations or <see cref="EnqueueOptions"/> for queue operations.
     /// </summary>
-    public new MessagePublishOptionsBase? Options
+    public new MessageOptions? Options
     {
         get => OptionsCore;
         set { WithOptions(value); }

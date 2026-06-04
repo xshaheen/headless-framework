@@ -125,7 +125,7 @@ Multi-tier caching with a clean abstraction layer. Supports in-memory, Redis, an
 |---------|-------------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid caching (L1/L2) |
-| [Headless.Caching.Memory](src/Headless.Caching.Memory/README.md) | In-memory caching |
+| [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | In-memory caching |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
 
 ### Email
@@ -289,6 +289,7 @@ Coordinate access to shared resources across distributed services.
 |---------|-------------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
 | [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
+| [Headless.DistributedLocks.InMemory](src/Headless.DistributedLocks.InMemory/README.md) | In-process locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
 
 ### Serialization

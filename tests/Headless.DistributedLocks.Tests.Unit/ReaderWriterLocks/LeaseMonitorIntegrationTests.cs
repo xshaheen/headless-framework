@@ -2,19 +2,24 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.ReaderWriterLocks;
 
 public sealed class LeaseMonitorIntegrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeReaderWriterLockStorage _storage = new();
+    private readonly InMemoryDistributedReaderWriterLockStorage _storage;
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
     private long _lockIdCounter = 7000;
+
+    public LeaseMonitorIntegrationTests()
+    {
+        _storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+    }
 
     [Fact]
     public async Task should_renew_read_lease_when_auto_extend_succeeds()
@@ -120,7 +125,15 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
 
         // when - flip the writer id so extend AND validate both fail -> Lost.
-        _storage.SetWrite(scopedResource, "foreign-writer");
+        await _storage.ReleaseWriteAsync(scopedResource, handle.LockId, AbortToken);
+        await _storage.TryAcquireWriteAsync(
+            scopedResource,
+            "foreign-writer",
+            DistributedLockCoreHelpers.GetWriterWaitingId("foreign-writer"),
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(2),
+            AbortToken
+        );
         for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
@@ -205,7 +218,15 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
 
         // when
-        _storage.SetWrite(scopedResource, "foreign-writer");
+        await _storage.ReleaseWriteAsync(scopedResource, handle.LockId, AbortToken);
+        await _storage.TryAcquireWriteAsync(
+            scopedResource,
+            "foreign-writer",
+            DistributedLockCoreHelpers.GetWriterWaitingId("foreign-writer"),
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromSeconds(2),
+            AbortToken
+        );
         for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
@@ -380,7 +401,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
     private sealed class CountingStorage : IDistributedReaderWriterLockStorage
     {
-        private readonly FakeReaderWriterLockStorage _inner = new();
+        private readonly InMemoryDistributedReaderWriterLockStorage _inner = new(TimeProvider.System);
         private TaskCompletionSource _extendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int ExtendCalls;
@@ -422,8 +443,11 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             return await _inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken).ConfigureAwait(false);
         }
 
-        public ValueTask ReleaseReadAsync(string resource, string lockId, CancellationToken cancellationToken = default)
-            => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
+        public ValueTask ReleaseReadAsync(
+            string resource,
+            string lockId,
+            CancellationToken cancellationToken = default
+        ) => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
@@ -441,8 +465,11 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         ) => _inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
 
-        public ValueTask ReleaseWriteAsync(string resource, string lockId, CancellationToken cancellationToken = default)
-            => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        public ValueTask ReleaseWriteAsync(
+            string resource,
+            string lockId,
+            CancellationToken cancellationToken = default
+        ) => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
@@ -456,19 +483,19 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             CancellationToken cancellationToken = default
         ) => _inner.ValidateWriteAsync(resource, lockId, cancellationToken);
 
-        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.IsReadLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.IsReadLockedAsync(resource, cancellationToken);
 
-        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.IsWriteLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.IsWriteLockedAsync(resource, cancellationToken);
 
-        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.GetReaderCountAsync(resource, cancellationToken);
+        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.GetReaderCountAsync(resource, cancellationToken);
     }
 
     private sealed class TransientFaultStorage : IDistributedReaderWriterLockStorage
     {
-        private readonly FakeReaderWriterLockStorage _inner = new();
+        private readonly InMemoryDistributedReaderWriterLockStorage _inner = new(TimeProvider.System);
 
         public bool FaultProbes { get; set; }
 
@@ -484,12 +511,16 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             string lockId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => FaultProbes
-            ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-            : _inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken);
+        ) =>
+            FaultProbes
+                ? ValueTask.FromException<bool>(new TimeoutException("transient"))
+                : _inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken);
 
-        public ValueTask ReleaseReadAsync(string resource, string lockId, CancellationToken cancellationToken = default)
-            => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
+        public ValueTask ReleaseReadAsync(
+            string resource,
+            string lockId,
+            CancellationToken cancellationToken = default
+        ) => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
@@ -505,36 +536,42 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             string lockId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => FaultProbes
-            ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-            : _inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
+        ) =>
+            FaultProbes
+                ? ValueTask.FromException<bool>(new TimeoutException("transient"))
+                : _inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
 
-        public ValueTask ReleaseWriteAsync(string resource, string lockId, CancellationToken cancellationToken = default)
-            => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        public ValueTask ReleaseWriteAsync(
+            string resource,
+            string lockId,
+            CancellationToken cancellationToken = default
+        ) => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
             string lockId,
             CancellationToken cancellationToken = default
-        ) => FaultProbes
-            ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-            : _inner.ValidateReadAsync(resource, lockId, cancellationToken);
+        ) =>
+            FaultProbes
+                ? ValueTask.FromException<bool>(new TimeoutException("transient"))
+                : _inner.ValidateReadAsync(resource, lockId, cancellationToken);
 
         public ValueTask<bool> ValidateWriteAsync(
             string resource,
             string lockId,
             CancellationToken cancellationToken = default
-        ) => FaultProbes
-            ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-            : _inner.ValidateWriteAsync(resource, lockId, cancellationToken);
+        ) =>
+            FaultProbes
+                ? ValueTask.FromException<bool>(new TimeoutException("transient"))
+                : _inner.ValidateWriteAsync(resource, lockId, cancellationToken);
 
-        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.IsReadLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.IsReadLockedAsync(resource, cancellationToken);
 
-        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.IsWriteLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.IsWriteLockedAsync(resource, cancellationToken);
 
-        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
-            => _inner.GetReaderCountAsync(resource, cancellationToken);
+        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default) =>
+            _inner.GetReaderCountAsync(resource, cancellationToken);
     }
 }

@@ -2,18 +2,30 @@
 
 namespace Headless.Messaging.Internal;
 
-public class ConsumerExecutedResult(
+internal sealed class ConsumerExecutedResult(
     object? result,
+    Type? resultType,
     string msgId,
     string? callbackName,
-    IDictionary<string, string?>? callbackHeader
+    IDictionary<string, string?>? callbackHeader,
+    string? responseCallbackName = null
 )
 {
-    public object? Result { get; set; } = result;
+    public object? Result { get; init; } = result;
 
-    public string MessageId { get; set; } = msgId;
+    public Type? ResultType { get; init; } = resultType;
 
-    public string? CallbackName { get; set; } = callbackName;
+    public string MessageId { get; init; } = msgId;
+
+    /// <summary>The message name the captured response is published to (the current message's callback destination).</summary>
+    public string? CallbackName { get; init; } = callbackName;
 
     public IDictionary<string, string?>? CallbackHeader { get; set; } = callbackHeader;
+
+    /// <summary>
+    /// The callback name to stamp on the published response so the next hop in a callback chain can
+    /// react to it. Captured from <c>ConsumeContext.SetResponseCallbackName</c>; maps to
+    /// <c>PublishOptions.CallbackName</c> on the response publish.
+    /// </summary>
+    public string? ResponseCallbackName { get; init; } = responseCallbackName;
 }

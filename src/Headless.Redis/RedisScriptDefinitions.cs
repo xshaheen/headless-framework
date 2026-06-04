@@ -80,10 +80,16 @@ public sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
             local expiryMs = nowMs + tonumber(@expires)
-            local changed = redis.call('zadd', @holdersKey, 'XX', 'CH', expiryMs, @lockId)
-            if changed == 0 then
+            -- GT: a shorter extend must never shorten a live lease. An "extend" that moves expiry
+            -- earlier is incoherent (it would prematurely surrender capacity), so only grow the score.
+            -- This matches the in-memory provider's GREATEST semantics. XX still gates on existence so a
+            -- non-holder cannot create a slot; existence is reasserted via zscore because GT suppresses the
+            -- CH "changed" signal when the new score is not greater, which we must not read as "missing".
+            local existing = redis.call('zscore', @holdersKey, @lockId)
+            if existing == false then
               return 0
             end
+            redis.call('zadd', @holdersKey, 'XX', 'GT', expiryMs, @lockId)
 
             local safetyTtl = tonumber(@expires) * 2
             local currentTtl = redis.call('pttl', @holdersKey)

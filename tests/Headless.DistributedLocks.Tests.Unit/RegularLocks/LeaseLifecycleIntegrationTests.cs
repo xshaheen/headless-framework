@@ -2,22 +2,22 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
 public sealed class LeaseLifecycleIntegrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeDistributedLockStorage _storage;
+    private readonly InMemoryDistributedLockStorage _storage;
 
     public LeaseLifecycleIntegrationTests()
     {
-        _storage = new FakeDistributedLockStorage(_timeProvider);
+        _storage = new InMemoryDistributedLockStorage(_timeProvider);
     }
 
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
@@ -86,7 +86,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             AbortToken
         );
         handle.Should().NotBeNull();
-        _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+        await _storage.ReplaceIfEqualAsync(
+            options.KeyPrefix + resource,
+            handle!.LockId,
+            "foreign-lock",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var lostRegistration = handle!.HandleLostToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetResult(),
@@ -324,7 +330,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
                 disposalDone.TrySetResult(true);
             });
         });
-        _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+        await _storage.ReplaceIfEqualAsync(
+            options.KeyPrefix + resource,
+            handle!.LockId,
+            "foreign-lock",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
 
         // when - trigger validation
         ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, "foreign-lock"));
@@ -412,7 +424,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
 
         // when - foreign party takes over the row; advance the clock past cadence intervals.
-        _storage.SetLock(options.KeyPrefix + resource, "foreign-lock", TimeSpan.FromSeconds(10));
+        await _storage.ReplaceIfEqualAsync(
+            options.KeyPrefix + resource,
+            handle!.LockId,
+            "foreign-lock",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
 
         for (var i = 0; i < 10 && !handle!.HandleLostToken.IsCancellationRequested; i++)
         {

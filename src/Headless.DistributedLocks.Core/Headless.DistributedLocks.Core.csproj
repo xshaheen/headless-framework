@@ -5,6 +5,9 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.DistributedLocks.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.InMemory.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Core.Database" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Redis" />
     <InternalsVisibleTo Include="Headless.DistributedLocks.Redis.Tests.Integration" />
   </ItemGroup>

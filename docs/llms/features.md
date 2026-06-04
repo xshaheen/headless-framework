@@ -70,7 +70,7 @@ Core requires `ICache`, `IDistributedLock`, `IGuidGenerator`, and `TimeProvider`
 - Define features by implementing `IFeatureDefinitionProvider` and calling `context.AddGroup()` / `group.AddChild()`.
 - Value resolution order: Tenant > Edition > Default. Custom providers via `AddFeatureValueProvider<T>()`.
 - `AddHeadlessFeatures(...)` is the single entry point — it registers the management core automatically alongside the storage provider. To tune management options, call `setup.ConfigureManagement(options => ...)` inside the setup block (an `(options, IServiceProvider)` overload also exists); `services.Configure<FeatureManagementOptions>(...)` works too and composes regardless of order.
-- Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(options)` in `OnModelCreating`, then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
+- Storage registration: register `AddDbContextFactory<TContext>()`, call `modelBuilder.AddHeadlessFeatures(this)` in `OnModelCreating` (resolves `FeaturesStorageOptions` from the context's service provider — no `IOptions<>` constructor injection needed; an `(options)` overload exists when you already hold them), then use `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())`.
 - Raw storage registration: use `AddHeadlessFeatures(setup => setup.UsePostgreSql(connectionString))` or `UseSqlServer(connectionString)`.
 - Feature caching is automatic; invalidation is handled via `CacheInvalidationMessage`. Ensure caching and distributed lock infrastructure is registered.
 - `FeaturesInitializationBackgroundService` runs at startup — do not manually initialize features.
@@ -235,7 +235,7 @@ Provides EF Core repository implementations for feature values, feature definiti
 ## Key Features
 
 - `AddHeadlessFeatures(setup => setup.UseEntityFramework<TContext>())` storage registration
-- `modelBuilder.AddHeadlessFeatures(options)` entity mapping for shared contexts
+- `modelBuilder.AddHeadlessFeatures(this)` entity mapping for shared contexts (resolves `FeaturesStorageOptions` from the context's service provider; an `(options)` overload exists for when you already hold the options)
 - EF repositories for feature definitions and values
 - `FeaturesStorageOptions` for schema and table-name configuration
 
@@ -248,15 +248,14 @@ dotnet add package Headless.Features.Storage.EntityFramework
 ## Quick Start
 
 ```csharp
-public sealed class AppDbContext(
-    DbContextOptions<AppDbContext> options,
-    IOptions<FeaturesStorageOptions> featuresStorage
-) : DbContext(options)
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessFeatures(featuresStorage.Value);
+        // Resolves FeaturesStorageOptions from the context's service provider —
+        // no need to inject IOptions<FeaturesStorageOptions> into the constructor.
+        modelBuilder.AddHeadlessFeatures(this);
     }
 }
 

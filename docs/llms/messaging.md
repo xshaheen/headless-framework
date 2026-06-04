@@ -309,7 +309,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **Dashboard.K8s requires RBAC** permissions to read pods/endpoints in the Kubernetes API.
-- **Callback headers enable async response routing**: Set `PublishOptions.CallbackName` to a response message name. The consumer's return value is automatically published to that message name through the durable bus path with correlation headers. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response.
+- **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (bus) **or** `EnqueueOptions` (queue) to a response message name. When the consumer completes, a correlated response message is automatically published to that name through the durable bus path — regardless of which intent delivered the request. The consumer calls `context.SetResponse<TResponse>(value)` to publish a typed response body; if it does not, the callback still goes out as a headers-only message when response headers are present. This is **not** request/reply — the caller does not `await` the response. A separate consumer must handle the response message. Use `context.Headers.RemoveCallback()` to suppress, `RewriteCallback()` to redirect, or `AddResponseHeader()` to attach extra headers to the response. Callback delivery is **at-least-once** — a crash, or a transient failure of the success-mark write after the response outbox row is written, redelivers the request and republishes the response, so make response consumers idempotent (dedupe on `(CorrelationId, CorrelationSequence)`; `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root). **Footgun on the bus path:** a published (pub/sub) request is delivered to *every* matching subscriber, so each one fires its own callback — N subscribers produce N response messages. Point-to-point (`IQueue` / `IOutboxQueue`) delivers to one consumer and produces exactly one response; prefer it for command→result chaining unless you intend scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
 - **Retry behavior is configured via `MessagingOptions.RetryPolicy`** (`MaxInlineRetries`, `MaxPersistedRetries`, `InitialDispatchGrace`, `BackoffStrategy`, `OnExhausted`, `OnExhaustedTimeout`). `OnExhausted` fires **only** on `RetryDecision.Exhausted` — not on permanent exceptions or cancellation (`RetryDecision.Stop`). The 5 removed pre-1.0 primitives — `FailedRetryCount`, `FailedRetryInterval`, `FallbackWindowLookbackSeconds`, `RetryBackoffStrategy`, `FailedThresholdCallback` — have direct replacements in `RetryPolicy` / `RetryProcessorOptions`; see the [Retry Policy](#retry-policy) section for the migration table.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
@@ -430,7 +430,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 | `Type`              | `headless-msg-type`            | yes      | framework    | .NET type name of the payload, used for deserialization.                                                 |
 | `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
 | `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
-| `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Subscriber callback handler for request/response. Set via `PublishOptions.CallbackName`.                 |
+| `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Response message name for async response routing. Set via `PublishOptions.CallbackName` (bus) or `EnqueueOptions.CallbackName` (queue). |
 | `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
 | `DelayTime`         | `headless-delaytime`           | yes      | framework    | `TimeSpan` duration string (e.g., `00:05:00`) for delayed delivery, set from `PublishOptions.Delay` or `EnqueueOptions.Delay`. The publish-at moment is carried in `SentTime`; this header is the requested delay. Present only for scheduled messages. |
 | `TenantId`          | `headless-tenant-id`           | rule     | publisher    | Multi-tenancy identifier. **Set only via `PublishOptions.TenantId`** — enforced by its own four-case rule, NOT the reserved-set rejection. See Strict Publish Tenancy below. |
@@ -728,18 +728,56 @@ Legacy publisher contracts remain as compatibility shims. Move old direct publis
 
 ### Callback Headers (Async Response Routing)
 
-Callback headers enable asynchronous message chaining — a consumer processes a message and the framework automatically publishes its return value to a designated response message name. This is **not** request/reply; the publisher does not await a response. A separate consumer must listen on the response message name.
+Callbacks enable asynchronous message chaining — a consumer processes a message and can call `context.SetResponse<TResponse>(value)` to publish a typed response body to a designated response message name. This is **not** request/reply; the publisher does not await a response. A separate consumer must listen on the response message name.
 
-**Publishing with a callback:**
+> **Setting a response body is optional.** The consumer publishes a typed response *body* by calling `context.SetResponse<TResponse>(value)`; the framework stamps `Headers.Type` for `TResponse` alongside the correlation headers. If the consumer never calls `SetResponse`, the callback is still published — as a headers-only message — when response *headers* are present (`context.Headers.AddResponseHeader(...)`). If the consumer calls `SetResponse` but the request carried no `CallbackName`, the captured value is dropped.
+
+`CallbackName` lives on the shared `MessageOptions` base, so it is available on **both** intents — `PublishOptions` (bus / pub-sub) and `EnqueueOptions` (queue / point-to-point). The mechanism is transport-agnostic: the consume pipeline reads the inbound callback header and republishes the correlated response the same way for either intent. The response leg always goes out through the durable bus path (`IOutboxBus`), independent of how the request arrived.
+
+**Publishing with a callback (bus):**
 
 ```csharp
-await publisher.PublishAsync(
+await bus.PublishAsync(
     new GetOrderStatus { OrderId = orderId },
     new PublishOptions { CallbackName = "order.status.result" },
     ct);
 ```
 
-When `CallbackName` is set, the consumer's return value is automatically published to that message name. The response message carries `CorrelationId` (set to the original message ID), an incremented `CorrelationSequence`, and any `TraceParent` header for tracing continuity.
+**Enqueuing with a callback (queue):**
+
+```csharp
+await queue.EnqueueAsync(
+    new GetOrderStatus { OrderId = orderId },
+    new EnqueueOptions { CallbackName = "order.status.result" },
+    ct);
+```
+
+**Consumer setting a typed response:**
+
+```csharp
+public sealed class GetOrderStatusConsumer : IConsume<GetOrderStatus>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<GetOrderStatus> context, CancellationToken ct)
+    {
+        var response = new OrderStatusResult(context.Message.OrderId, "accepted");
+        context.SetResponse<OrderStatusResult>(response);
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+When `CallbackName` is set and the consumer calls `SetResponse<TResponse>`, the captured value is published to that name once the consumer completes. The response message carries `Headers.Type` for `TResponse`, `CorrelationId` (set to the original message ID), an incremented `CorrelationSequence`, any `TraceParent` header for tracing continuity, and any headers the consumer attached via `AddResponseHeader(...)`. If the consumer does not call `SetResponse`, the callback is still published as a headers-only message when response headers are present; if it calls `SetResponse` but the request has no `CallbackName`, the value is dropped.
+
+**Callbacks are at-least-once — make response consumers idempotent.** The response rides the durable bus path. The outbox write and the request's success mark are not a single transaction, so a crash — or a transient failure of the success-mark write after the response outbox row is written — redelivers the request and republishes the response. Deduplicate on `(CorrelationId, CorrelationSequence)` in the response consumer — `CorrelationId` alone is ambiguous across hops because it is set to the immediate parent message id per hop, not the chain root; the framework does not deduplicate callback deliveries. Multi-hop chains (`context.SetResponseCallbackName(...)`) multiply this — every intermediate consumer must be idempotent too. The framework does not cap callback hops: callback chains must be kept acyclic and bounded by the consumer, because a self-referential or cyclic chain produces an unbounded callback storm.
+
+**Choosing an intent — one response vs. fan-out:**
+
+| Intent | Delivery | Callbacks produced | Use when |
+| --- | --- | --- | --- |
+| `IQueue` / `IOutboxQueue` (queue) | one consumer | exactly one response | command → single result chaining (the well-behaved case) |
+| `IBus` / `IOutboxBus` (bus) | every matching subscriber | one response **per subscriber** | scatter-gather — fan a request to N services and aggregate the correlated responses |
+
+The bus path is a footgun for callers that expect a single response: a pub/sub request reaches every subscriber, so N subscribers emit N response messages. That is intentional for scatter-gather (correlate the fan-in via `CorrelationId` / `CorrelationSequence`), but for plain command→result chaining prefer a queue, which yields exactly one response.
 
 **Consumer-side header manipulation:**
 
@@ -750,12 +788,15 @@ Consumers can modify callback behavior during handling via `context.Headers`:
 | `AddResponseHeader(key, value)` | Attach custom headers to the response message    |
 | `RemoveCallback()`              | Suppress response — no message is published back |
 | `RewriteCallback(callbackName)` | Redirect response to a different message name    |
+| `context.SetResponseCallbackName(callbackName)` | Stamp the response callback name the published response will carry, enabling explicit multi-hop chaining (typed alternative to `AddResponseHeader` on the reserved `CallbackName` key). |
 
 **Constraints:**
 
-- `CallbackName` is a reserved header — cannot be set via `PublishOptions.Headers`
+- `CallbackName` is a reserved header — set it via the `CallbackName` property, never through `PublishOptions.Headers` / `EnqueueOptions.Headers` (a raw write of the reserved key is rejected)
 - Response delivery uses the durable bus path, so a storage provider must be configured
+- Response serialization is eager in the outbox write. If serialization fails, the original consume fails and is not marked succeeded.
 - The caller does NOT await the response — this is async message chaining, not RPC
+- A bus request callbacks once per subscriber; use a queue when you need exactly one response
 
 ## Configuration
 

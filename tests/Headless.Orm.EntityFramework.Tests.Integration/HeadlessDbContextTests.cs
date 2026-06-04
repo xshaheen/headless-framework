@@ -19,6 +19,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
         await db.Tests.IgnoreQueryFilters().ExecuteDeleteAsync(AbortToken);
         await db.Basics.ExecuteDeleteAsync(AbortToken);
+        await db.LongKeyed.ExecuteDeleteAsync(AbortToken);
     }
 
     [Fact]
@@ -77,6 +78,61 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         createdMessage.Entity.Should().Be(entity);
         var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
+    }
+
+    [Fact]
+    public async Task add_should_stamp_guid_id_at_track_time_so_many_empty_keyed_entities_can_be_added_before_save()
+    {
+        // given
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var a = new TestEntity { Name = "a", TenantId = "T1" };
+        var b = new TestEntity { Name = "b", TenantId = "T1" };
+        var c = new TestEntity { Name = "c", TenantId = "T1" };
+
+        // when - EF Core's value generator produces the Guid as each entity transitions to Added, not at
+        // SaveChanges. Adding several empty-keyed entities therefore does not collide in the identity map.
+        db.Tests.Add(a);
+        db.Tests.Add(b);
+        db.Tests.Add(c);
+
+        // then - each entity already carries a distinct, non-empty key before SaveChanges is ever called.
+        a.Id.Should().NotBe(Guid.Empty);
+        b.Id.Should().NotBe(Guid.Empty);
+        c.Id.Should().NotBe(Guid.Empty);
+        new[] { a.Id, b.Id, c.Id }.Distinct().Should().HaveCount(3);
+
+        await db.SaveChangesAsync(AbortToken);
+
+        var persisted = await db.Tests.IgnoreQueryFilters().CountAsync(AbortToken);
+        persisted.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task add_should_stamp_long_id_from_snowflake_generator_at_track_time()
+    {
+        // given
+        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
+        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
+
+        var a = new LongKeyedEntity { Name = "a" };
+        var b = new LongKeyedEntity { Name = "b" };
+
+        // when - long keys are application-generated (snowflake) by EF Core's value generator as each entity
+        // transitions to Added, so EF never asks the database for an identity value and the adds do not collide.
+        db.LongKeyed.Add(a);
+        db.LongKeyed.Add(b);
+
+        // then
+        a.Id.Should().NotBe(0);
+        b.Id.Should().NotBe(0);
+        a.Id.Should().NotBe(b.Id);
+
+        await db.SaveChangesAsync(AbortToken);
+
+        var persisted = await db.LongKeyed.CountAsync(AbortToken);
+        persisted.Should().Be(2);
     }
 
     // Update

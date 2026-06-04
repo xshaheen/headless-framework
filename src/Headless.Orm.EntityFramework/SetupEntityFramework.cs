@@ -4,8 +4,8 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Domain;
+using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
-using Headless.EntityFramework.GlobalFilters;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -120,6 +120,7 @@ public static class SetupEntityFramework
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IClock, Clock>();
             services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+            services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
@@ -216,17 +217,6 @@ public static class SetupEntityFramework
 
         return options;
     }
-}
-
-/// <summary>Options for the opt-in EF tenant write guard.</summary>
-[PublicAPI]
-public sealed class TenantWriteGuardOptions
-{
-    /// <summary>
-    /// Gets or sets a value indicating whether tenant-owned writes require an ambient tenant
-    /// unless a scoped bypass is active.
-    /// </summary>
-    public bool IsEnabled { get; set; }
 }
 
 /// <summary>Sentinel marker for one-shot tenant-write-guard PostConfigure registration.</summary>
