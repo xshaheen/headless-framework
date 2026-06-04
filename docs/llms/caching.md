@@ -31,6 +31,7 @@ packages: Caching.Abstractions, Caching.Memory, Caching.Redis, Caching.Hybrid
 - [Headless.Caching.Redis](#headlesscachingredis)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
+    - [Design Notes](#design-notes-2)
     - [Installation](#installation-2)
     - [Quick Start](#quick-start-2)
     - [Configuration](#configuration-2)
@@ -77,6 +78,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - Key length validation is the consumer's responsibility. The framework does not enforce key length limits for DoS protection — validate at your application boundary.
 - StackExchange.Redis does not support `CancellationToken` — timeouts are configured via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`. Cancellation is checked at the start of operations only.
 - For Redis, SCAN-based operations (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) are cancellable during iteration; single-key and batch operations complete atomically once started.
+- Redis scalar entries use a versioned binary envelope. Do not parse Redis string bytes as the application payload directly; strip the envelope first unless the key is a raw counter.
 - Use `options.KeyPrefix` to namespace cache keys per application or module.
 - Memory cache supports `CloneValues = true` for value isolation between callers — useful when cached objects are mutated after retrieval.
 - Hybrid cache `DefaultLocalExpiration` controls L1 TTL independently of L2. Set to shorter durations than L2 for freshness.
@@ -253,6 +255,23 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 - Set/list operations with pagination
 - Lua scripts for atomic multi-key operations
 - Redis Cluster support
+
+## Design Notes
+
+Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte header followed by the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is still mapped to the Redis key TTL; logical expiration rides in the payload so later fail-safe and refresh features can diverge logical staleness from physical eviction without changing the wire format. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
+
+The envelope byte layout is:
+
+| Offset | Field | Description |
+| --- | --- | --- |
+| 0 | Magic | `0xFF` — marks a framed entry |
+| 1 | Version | `0x01` — current envelope version |
+| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt` |
+| 3–10 | LogicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit1 is set) |
+| 11–18 | PhysicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit2 is set) |
+| 19+ | ValueSegment | raw codec bytes; empty when `isNull` is set |
+
+Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is now a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
 ## Installation
 
