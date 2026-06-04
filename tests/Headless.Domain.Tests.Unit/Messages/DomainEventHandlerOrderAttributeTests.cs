@@ -4,12 +4,12 @@ using Headless.Domain;
 
 namespace Tests.Messages;
 
-public sealed class LocalEventHandlerOrderAttributeTests
+public sealed class DomainEventHandlerOrderAttributeTests
 {
     [Fact]
     public void should_store_order_value()
     {
-        var attribute = new LocalEventHandlerOrderAttribute(42);
+        var attribute = new DomainEventHandlerOrderAttribute(42);
 
         attribute.Order.Should().Be(42);
     }
@@ -17,7 +17,7 @@ public sealed class LocalEventHandlerOrderAttributeTests
     [Fact]
     public void should_support_negative_order_values()
     {
-        var attribute = new LocalEventHandlerOrderAttribute(-10);
+        var attribute = new DomainEventHandlerOrderAttribute(-10);
 
         attribute.Order.Should().Be(-10);
     }
@@ -25,7 +25,7 @@ public sealed class LocalEventHandlerOrderAttributeTests
     [Fact]
     public void should_be_applicable_to_class()
     {
-        var attributeUsage = typeof(LocalEventHandlerOrderAttribute)
+        var attributeUsage = typeof(DomainEventHandlerOrderAttribute)
             .GetCustomAttributes(typeof(AttributeUsageAttribute), false)
             .Cast<AttributeUsageAttribute>()
             .Single();

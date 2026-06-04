@@ -23,6 +23,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
         // ChangeTracker handlers, no observable state change).
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHeadlessDbContextServices();
         services.AddDbContext<RuntimeTestDbContext>(o =>
         {
@@ -158,16 +159,14 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IHeadlessMessageDispatcher*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*ILocalEventBus*");
     }
 
     [Fact]
     public async Task save_changes_should_use_registered_message_dispatcher_when_messages_are_emitted()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services =>
-            services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>()
-        );
+        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -181,7 +180,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle();
+        // Flat domain events: AggregateRoot emits EntityCreated + EntityChanged on add.
+        dispatcher.LocalEmitters.Should().HaveCount(2);
         dispatcher.DistributedEmitters.Should().BeEmpty();
     }
 
@@ -189,9 +189,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     public async Task save_changes_should_publish_messages_queued_on_unchanged_tracked_emitters()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services =>
-            services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>()
-        );
+        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -205,17 +203,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.LocalEmitters.Clear();
         dispatcher.DistributedEmitters.Clear();
 
-        entity.AddMessage(new RuntimeLocalMessage("local-later"));
-        entity.AddMessage(new RuntimeDistributedMessage("distributed-later"));
+        entity.AddDomainEvent(new RuntimeLocalMessage("local-later"));
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
 
         // when
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle();
-        dispatcher.LocalEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "local-later");
-        dispatcher.DistributedEmitters.Should().ContainSingle();
-        dispatcher.DistributedEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "distributed-later");
+        dispatcher.LocalEmitters.Should().ContainSingle(x => x.UniqueId == "local-later");
+        dispatcher.DistributedEmitters.Should().ContainSingle(x => x.UniqueId == "distributed-later");
     }
 
     [Fact]
@@ -223,7 +219,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(
-            services => services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>(),
+            services => _AddRuntimeRecorder(services),
             options => options.AddSaveEntryProcessor<RuntimeQueuedMessageSaveEntryProcessor>(ServiceLifetime.Singleton)
         );
         await using var _ = connection;
@@ -239,17 +235,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher
-            .LocalEmitters.Should()
-            .ContainSingle(x =>
-                ReferenceEquals(x.Emitter, entity) && x.Messages.Any(message => message.UniqueId == "custom-local")
-            );
-        dispatcher
-            .DistributedEmitters.Should()
-            .ContainSingle(x =>
-                ReferenceEquals(x.Emitter, entity)
-                && x.Messages.Any(message => message.UniqueId == "custom-distributed")
-            );
+        dispatcher.LocalEmitters.Should().ContainSingle(message => message.UniqueId == "custom-local");
+        dispatcher.DistributedEmitters.Should().ContainSingle(message => message.UniqueId == "custom-distributed");
     }
 
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
@@ -261,6 +248,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton(connection);
         // Recorder lifetime must match the processor lifetimes (singleton) so test queries observe
         // the same instance the processors write to.
@@ -323,49 +311,61 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         }
     }
 
-    private sealed class RuntimeRecordingMessageDispatcher : IHeadlessMessageDispatcher
+    private sealed class RuntimeRecordingMessageDispatcher : ILocalEventBus, IHeadlessOutboxDispatcher
     {
-        public List<EmitterLocalMessages> LocalEmitters { get; } = [];
+        public List<IDomainEvent> LocalEmitters { get; } = [];
 
-        public List<EmitterDistributedMessages> DistributedEmitters { get; } = [];
+        public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
-        public Task PublishLocalAsync(
-            IReadOnlyList<EmitterLocalMessages> emitters,
+        public void Publish<T>(T domainEvent)
+            where T : class, IDomainEvent => LocalEmitters.Add(domainEvent);
+
+        public void Publish(IDomainEvent domainEvent) => LocalEmitters.Add(domainEvent);
+
+        public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent
+        {
+            LocalEmitters.Add(domainEvent);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        {
+            LocalEmitters.Add(domainEvent);
+            return ValueTask.CompletedTask;
+        }
+
+        public Task DispatchAsync(
+            IReadOnlyList<IIntegrationEvent> integrationEvents,
             IDbContextTransaction currentTransaction,
             CancellationToken cancellationToken
         )
         {
-            LocalEmitters.AddRange(emitters);
+            DistributedEmitters.AddRange(integrationEvents);
             return Task.CompletedTask;
         }
 
-        public void PublishLocal(IReadOnlyList<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction)
-        {
-            LocalEmitters.AddRange(emitters);
-        }
-
-        public Task EnqueueDistributedAsync(
-            IReadOnlyList<EmitterDistributedMessages> emitters,
-            IDbContextTransaction currentTransaction,
-            CancellationToken cancellationToken
-        )
-        {
-            DistributedEmitters.AddRange(emitters);
-            return Task.CompletedTask;
-        }
-
-        public void EnqueueDistributed(
-            IReadOnlyList<EmitterDistributedMessages> emitters,
+        public void Dispatch(
+            IReadOnlyList<IIntegrationEvent> integrationEvents,
             IDbContextTransaction currentTransaction
         )
         {
-            DistributedEmitters.AddRange(emitters);
+            DistributedEmitters.AddRange(integrationEvents);
         }
     }
 
-    private sealed record RuntimeLocalMessage(string UniqueId) : ILocalMessage;
+    private static IServiceCollection _AddRuntimeRecorder(IServiceCollection services)
+    {
+        services.AddScoped<RuntimeRecordingMessageDispatcher>();
+        services.AddScoped<ILocalEventBus>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
+        services.AddScoped<IHeadlessOutboxDispatcher>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
 
-    private sealed record RuntimeDistributedMessage(string UniqueId) : IDistributedMessage;
+        return services;
+    }
+
+    private sealed record RuntimeLocalMessage(string UniqueId) : IDomainEvent;
+
+    private sealed record RuntimeDistributedMessage(string UniqueId) : IIntegrationEvent;
 
     private sealed class RuntimeQueuedMessageSaveEntryProcessor : IHeadlessSaveEntryProcessor
     {
@@ -376,8 +376,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
                 return;
             }
 
-            entity.AddMessage(new RuntimeLocalMessage("custom-local"));
-            entity.AddMessage(new RuntimeDistributedMessage("custom-distributed"));
+            entity.AddDomainEvent(new RuntimeLocalMessage("custom-local"));
+            entity.AddIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
         }
     }
 

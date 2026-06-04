@@ -4,11 +4,11 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
-public interface ILocalMessageHandler<in TMessage>
-    where TMessage : class, ILocalMessage
+public interface IDomainEventHandler<in TEvent>
+    where TEvent : class, IDomainEvent
 {
     /// <summary>Handler handles the event by implementing this method.</summary>
-    /// <param name="message">Message data</param>
+    /// <param name="domainEvent">Event data</param>
     /// <param name="cancellationToken">Abort token</param>
-    ValueTask HandleAsync(TMessage message, CancellationToken cancellationToken = default);
+    ValueTask HandleAsync(TEvent domainEvent, CancellationToken cancellationToken = default);
 }

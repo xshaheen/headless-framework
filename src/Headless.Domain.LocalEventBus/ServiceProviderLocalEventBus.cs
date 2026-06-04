@@ -1,0 +1,173 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using Microsoft.Extensions.DependencyInjection;
+using Nito.AsyncEx.Synchronous;
+
+namespace Headless.Domain;
+
+public sealed class ServiceProviderLocalEventBus(IServiceProvider services) : ILocalEventBus
+{
+    private readonly ConditionalWeakTable<Type, StrongBox<int>> _handlerOrderCache = [];
+
+    private static readonly ConditionalWeakTable<Type, StrongBox<int>>.CreateValueCallback _ComputeHandlerOrder =
+        static type =>
+        {
+            var attribute = type.GetCustomAttribute<DomainEventHandlerOrderAttribute>();
+            return new StrongBox<int>(attribute?.Order ?? 0);
+        };
+
+    public void Publish<T>(T domainEvent)
+        where T : class, IDomainEvent
+    {
+        var handlers = services.GetServices<IDomainEventHandler<T>>();
+        var exceptions = new List<Exception>();
+
+        foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
+        {
+            try
+            {
+                handler.HandleAsync(domainEvent).AsTask().WaitAndUnwrapException();
+            }
+            catch (TargetInvocationException e)
+            {
+                exceptions.Add(e.InnerException!);
+            }
+            catch (Exception e)
+            {
+                exceptions.Add(e);
+            }
+        }
+
+        if (exceptions.Count > 0)
+        {
+            _ThrowOriginalExceptions(typeof(T), exceptions);
+        }
+    }
+
+    public async ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
+        where T : class, IDomainEvent
+    {
+        var handlers = services.GetServices<IDomainEventHandler<T>>();
+        var exceptions = new List<Exception>();
+
+        foreach (var handler in handlers.OrderBy(handler => _GetHandlerOrder(handler.GetType())))
+        {
+            try
+            {
+                await handler.HandleAsync(domainEvent, cancellationToken);
+            }
+            catch (TargetInvocationException e)
+            {
+                exceptions.Add(e.InnerException!);
+            }
+            catch (Exception e)
+            {
+                exceptions.Add(e);
+            }
+        }
+
+        if (exceptions.Count > 0)
+        {
+            _ThrowOriginalExceptions(typeof(T), exceptions);
+        }
+    }
+
+    // Non-generic overloads dispatch to the exact runtime type (no contravariant base-type traversal),
+    // matching the generic path. A compiled per-type invoker avoids per-call reflection cost.
+    public void Publish(IDomainEvent domainEvent)
+    {
+        var invoker = _SyncInvokers.GetOrAdd(domainEvent.GetType(), _CreateSyncInvoker);
+        invoker(this, domainEvent);
+    }
+
+    public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+    {
+        var invoker = _AsyncInvokers.GetOrAdd(domainEvent.GetType(), _CreateAsyncInvoker);
+        return invoker(this, domainEvent, cancellationToken);
+    }
+
+    #region Helpers
+
+    private int _GetHandlerOrder(Type handlerType)
+    {
+        return _handlerOrderCache.GetValue(handlerType, _ComputeHandlerOrder).Value;
+    }
+
+    private static void _ThrowOriginalExceptions(Type eventType, List<Exception> exceptions)
+    {
+        if (exceptions.Count == 1)
+        {
+            exceptions[0].ReThrow();
+        }
+
+        throw new AggregateException(
+            "More than one error has occurred while triggering the event: " + eventType,
+            exceptions
+        );
+    }
+
+    #endregion
+
+    #region Runtime-typed invoker cache
+
+    private static readonly ConcurrentDictionary<
+        Type,
+        Func<ServiceProviderLocalEventBus, IDomainEvent, CancellationToken, ValueTask>
+    > _AsyncInvokers = new();
+
+    private static readonly ConcurrentDictionary<
+        Type,
+        Action<ServiceProviderLocalEventBus, IDomainEvent>
+    > _SyncInvokers = new();
+
+    private static readonly MethodInfo _GenericPublishAsync = typeof(ServiceProviderLocalEventBus)
+        .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+        .Single(m => m is { Name: nameof(PublishAsync), IsGenericMethodDefinition: true });
+
+    private static readonly MethodInfo _GenericPublish = typeof(ServiceProviderLocalEventBus)
+        .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+        .Single(m => m is { Name: nameof(Publish), IsGenericMethodDefinition: true });
+
+    private static Func<ServiceProviderLocalEventBus, IDomainEvent, CancellationToken, ValueTask> _CreateAsyncInvoker(
+        Type eventType
+    )
+    {
+        var self = Expression.Parameter(typeof(ServiceProviderLocalEventBus), "self");
+        var domainEvent = Expression.Parameter(typeof(IDomainEvent), "domainEvent");
+        var cancellationToken = Expression.Parameter(typeof(CancellationToken), "cancellationToken");
+        var call = Expression.Call(
+            self,
+            _GenericPublishAsync.MakeGenericMethod(eventType),
+            Expression.Convert(domainEvent, eventType),
+            cancellationToken
+        );
+
+        return Expression
+            .Lambda<Func<ServiceProviderLocalEventBus, IDomainEvent, CancellationToken, ValueTask>>(
+                call,
+                self,
+                domainEvent,
+                cancellationToken
+            )
+            .Compile();
+    }
+
+    private static Action<ServiceProviderLocalEventBus, IDomainEvent> _CreateSyncInvoker(Type eventType)
+    {
+        var self = Expression.Parameter(typeof(ServiceProviderLocalEventBus), "self");
+        var domainEvent = Expression.Parameter(typeof(IDomainEvent), "domainEvent");
+        var call = Expression.Call(
+            self,
+            _GenericPublish.MakeGenericMethod(eventType),
+            Expression.Convert(domainEvent, eventType)
+        );
+
+        return Expression.Lambda<Action<ServiceProviderLocalEventBus, IDomainEvent>>(call, self, domainEvent).Compile();
+    }
+
+    #endregion
+}

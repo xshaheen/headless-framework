@@ -4,11 +4,7 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
-public interface IDistributedMessageEmitter
+public interface IDomainEvent
 {
-    void AddMessage(IDistributedMessage message);
-
-    void ClearDistributedMessages();
-
-    IReadOnlyList<IDistributedMessage> GetDistributedMessages();
+    string UniqueId { get; }
 }

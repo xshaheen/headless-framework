@@ -9,7 +9,7 @@ namespace Headless.Features;
 
 public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalMessagePublisher localPublisher
+    ILocalEventBus localPublisher
 ) : IFeatureValueRecordRepository
     where TContext : DbContext
 {
@@ -22,8 +22,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<FeatureValueRecord>()
+        return await db.Set<FeatureValueRecord>()
             .AsNoTracking()
             .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(
@@ -64,8 +63,7 @@ public sealed class EfFeatureValueRecordRecordRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<FeatureValueRecord>()
+        return await db.Set<FeatureValueRecord>()
             .AsNoTracking()
             .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);

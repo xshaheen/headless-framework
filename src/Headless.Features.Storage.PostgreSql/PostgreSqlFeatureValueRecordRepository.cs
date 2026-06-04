@@ -190,7 +190,7 @@ internal sealed class PostgreSqlFeatureValueRecordRepository(
     {
         // Resolve the scoped publisher inside a fresh scope to avoid capturing it from the singleton's root provider.
         await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
 
         if (publisher is not null)
         {

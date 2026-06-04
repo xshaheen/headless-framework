@@ -9,7 +9,7 @@ namespace Headless.Settings;
 
 public sealed class EfSettingValueRecordRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalMessagePublisher localPublisher
+    ILocalEventBus localPublisher
 ) : ISettingValueRecordRepository
     where TContext : DbContext
 {
@@ -22,8 +22,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<SettingValueRecord>()
+        return await db.Set<SettingValueRecord>()
             .AsNoTracking()
             .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(
@@ -64,12 +63,9 @@ public sealed class EfSettingValueRecordRepository<TContext>(
     )
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        return await db
-            .Set<SettingValueRecord>()
+        return await db.Set<SettingValueRecord>()
             .AsNoTracking()
-            .Where(s =>
-                names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
-            )
+            .Where(s => names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);
     }
 
@@ -81,8 +77,7 @@ public sealed class EfSettingValueRecordRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<SettingValueRecord>()
+        return await db.Set<SettingValueRecord>()
             .AsNoTracking()
             .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);

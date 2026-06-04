@@ -3,6 +3,7 @@
 using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
+using Headless.Domain;
 using Headless.EntityFramework.Contexts.Processors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -60,11 +61,21 @@ public interface IHeadlessSaveChangesPipeline
 internal sealed partial class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
-    IHeadlessMessageDispatcher messageDispatcher,
     IHeadlessAuditPersistence auditPersistence,
+    ILocalEventBus? localEventBus = null,
+    IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
 ) : IHeadlessSaveChangesPipeline
 {
+    private const string _MissingLocalEventBusMessage =
+        "Headless EF collected domain events to publish, but no ILocalEventBus is registered. "
+        + "Call AddHeadlessDbContextServices(...).AddDomainEvents() (or services.AddHeadlessLocalEventBus()).";
+
+    private const string _MissingOutboxDispatcherMessage =
+        "Headless EF collected integration events to enqueue, but no IHeadlessOutboxDispatcher is registered. "
+        + "Reference the Headless.Orm.EntityFramework.Messaging package and call "
+        + "AddHeadlessDbContextServices(...).AddIntegrationEventOutbox().";
+
     private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
         serviceProvider
     );
@@ -217,11 +228,17 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.LocalEmitters.Count > 0)
+            if (state.SaveContext.DomainEventEmitters.Count > 0)
             {
-                await messageDispatcher
-                    .PublishLocalAsync(state.SaveContext.LocalEmitters, transaction, state.CancellationToken)
-                    .ConfigureAwait(false);
+                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+
+                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                {
+                    foreach (var domainEvent in emitter.Events)
+                    {
+                        await bus.PublishAsync(domainEvent, state.CancellationToken).ConfigureAwait(false);
+                    }
+                }
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
@@ -241,14 +258,17 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                 )
                 .ConfigureAwait(false);
 
-            if (state.SaveContext.DistributedEmitters.Count > 0)
+            if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
-                await messageDispatcher
-                    .EnqueueDistributedAsync(
-                        state.SaveContext.DistributedEmitters,
-                        transaction,
-                        state.CancellationToken
-                    )
+                var dispatcher =
+                    outboxDispatcher ?? throw new InvalidOperationException(_MissingOutboxDispatcherMessage);
+
+                var integrationEvents = state
+                    .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .ToArray();
+
+                await dispatcher
+                    .DispatchAsync(integrationEvents, transaction, state.CancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -291,18 +311,33 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.LocalEmitters.Count > 0)
+            if (state.SaveContext.DomainEventEmitters.Count > 0)
             {
-                messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
+                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+
+                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                {
+                    foreach (var domainEvent in emitter.Events)
+                    {
+                        bus.Publish(domainEvent);
+                    }
+                }
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
             auditSave = auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
 
-            if (state.SaveContext.DistributedEmitters.Count > 0)
+            if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
-                messageDispatcher.EnqueueDistributed(state.SaveContext.DistributedEmitters, transaction);
+                var dispatcher =
+                    outboxDispatcher ?? throw new InvalidOperationException(_MissingOutboxDispatcherMessage);
+
+                var integrationEvents = state
+                    .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .ToArray();
+
+                dispatcher.Dispatch(integrationEvents, transaction);
             }
 
             if (commitTransaction)
@@ -338,8 +373,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         HeadlessSaveEntryContext saveContext
     ) =>
         _HasAuditEntries(auditEntries)
-        || saveContext.DistributedEmitters.Count > 0
-        || saveContext.LocalEmitters.Count > 0;
+        || saveContext.IntegrationEventEmitters.Count > 0
+        || saveContext.DomainEventEmitters.Count > 0;
 
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)
     {

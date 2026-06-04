@@ -3,7 +3,7 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
-public interface IDistributedMessage
+public interface IIntegrationEvent
 {
     string UniqueId { get; }
 }

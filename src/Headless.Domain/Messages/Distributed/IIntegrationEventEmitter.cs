@@ -4,11 +4,11 @@
 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
-public interface ILocalMessageEmitter
+public interface IIntegrationEventEmitter
 {
-    void AddMessage(ILocalMessage messages);
+    void AddIntegrationEvent(IIntegrationEvent integrationEvent);
 
-    void ClearLocalMessages();
+    void ClearIntegrationEvents();
 
-    IReadOnlyList<ILocalMessage> GetLocalMessages();
+    IReadOnlyList<IIntegrationEvent> GetIntegrationEvents();
 }

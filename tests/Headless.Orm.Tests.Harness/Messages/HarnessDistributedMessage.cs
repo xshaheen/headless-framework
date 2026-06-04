@@ -7,7 +7,7 @@ namespace Tests.Messages;
 /// <summary>
 /// Test distributed message for verifying message enqueue behavior.
 /// </summary>
-public sealed record HarnessDistributedMessage(string Text) : IDistributedMessage
+public sealed record HarnessDistributedMessage(string Text) : IIntegrationEvent
 {
     public string UniqueId { get; } = Guid.NewGuid().ToString();
 }

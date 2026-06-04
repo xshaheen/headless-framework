@@ -6,16 +6,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class ServiceProviderLocalMessagePublisherTests
+public sealed class ServiceProviderLocalEventBusTests
 {
     #region Test Infrastructure
 
-    private sealed record TestLocalMessage(string Value) : ILocalMessage
+    private sealed record TestLocalMessage(string Value) : IDomainEvent
     {
         public string UniqueId => Value;
     }
 
-    private sealed class TrackingHandler : ILocalMessageHandler<TestLocalMessage>
+    private sealed class TrackingHandler : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> ReceivedMessages { get; } = [];
         public List<CancellationToken> ReceivedTokens { get; } = [];
@@ -28,8 +28,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    [LocalEventHandlerOrder(-10)]
-    private sealed class OrderedHandlerNegative10(List<string> invocationOrder) : ILocalMessageHandler<TestLocalMessage>
+    [DomainEventHandlerOrder(-10)]
+    private sealed class OrderedHandlerNegative10(List<string> invocationOrder) : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
@@ -40,7 +40,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    private sealed class OrderedHandlerDefault(List<string> invocationOrder) : ILocalMessageHandler<TestLocalMessage>
+    private sealed class OrderedHandlerDefault(List<string> invocationOrder) : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
@@ -51,8 +51,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    [LocalEventHandlerOrder(10)]
-    private sealed class OrderedHandlerPositive10(List<string> invocationOrder) : ILocalMessageHandler<TestLocalMessage>
+    [DomainEventHandlerOrder(10)]
+    private sealed class OrderedHandlerPositive10(List<string> invocationOrder) : IDomainEventHandler<TestLocalMessage>
     {
         public List<string> InvocationOrder { get; } = invocationOrder;
 
@@ -64,7 +64,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
     }
 
     private sealed class FailingHandler(string exceptionMessage = "Handler failed")
-        : ILocalMessageHandler<TestLocalMessage>
+        : IDomainEventHandler<TestLocalMessage>
     {
         public bool WasInvoked { get; private set; }
 
@@ -77,7 +77,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    private sealed class TargetInvocationExceptionHandler : ILocalMessageHandler<TestLocalMessage>
+    private sealed class TargetInvocationExceptionHandler : IDomainEventHandler<TestLocalMessage>
     {
         public ValueTask HandleAsync(TestLocalMessage message, CancellationToken cancellationToken = default)
         {
@@ -85,7 +85,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    private sealed class TrackingAfterFailureHandler : ILocalMessageHandler<TestLocalMessage>
+    private sealed class TrackingAfterFailureHandler : IDomainEventHandler<TestLocalMessage>
     {
         public bool WasInvoked { get; private set; }
 
@@ -96,10 +96,10 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         }
     }
 
-    private static ServiceProviderLocalMessagePublisher _CreatePublisher(IServiceCollection services)
+    private static ServiceProviderLocalEventBus _CreatePublisher(IServiceCollection services)
     {
         var serviceProvider = services.BuildServiceProvider();
-        return new ServiceProviderLocalMessagePublisher(serviceProvider);
+        return new ServiceProviderLocalEventBus(serviceProvider);
     }
 
     #endregion
@@ -113,8 +113,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var handler1 = new TrackingHandler();
         var handler2 = new TrackingHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler1);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler2);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler1);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler2);
         var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("test-value");
 
@@ -133,9 +133,9 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var invocationOrder = new List<string>();
         var services = new ServiceCollection();
         // Register in wrong order intentionally
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
         var publisher = _CreatePublisher(services);
 
         // when
@@ -152,8 +152,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var invocationOrder = new List<string>();
         var services = new ServiceCollection();
         // Two handlers with default order (0) - should maintain registration order
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
         var publisher = _CreatePublisher(services);
 
         // when
@@ -169,7 +169,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
         var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("expected-value");
 
@@ -186,7 +186,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var failingHandler = new FailingHandler("Single failure");
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -203,8 +203,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler1 = new FailingHandler("Failure 1");
         var failingHandler2 = new FailingHandler("Failure 2");
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler1);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler2);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler1);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler2);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -224,8 +224,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler = new FailingHandler();
         var trackingHandler = new TrackingAfterFailureHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(trackingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(trackingHandler);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -242,7 +242,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
     {
         // given
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new TargetInvocationExceptionHandler());
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new TargetInvocationExceptionHandler());
         var publisher = _CreatePublisher(services);
 
         // when
@@ -277,8 +277,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var handler1 = new TrackingHandler();
         var handler2 = new TrackingHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler1);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler2);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler1);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler2);
         var publisher = _CreatePublisher(services);
         var message = new TestLocalMessage("test-value");
 
@@ -296,9 +296,9 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var invocationOrder = new List<string>();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
         var publisher = _CreatePublisher(services);
 
         // when
@@ -314,7 +314,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var handler = new TrackingHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(handler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(handler);
         var publisher = _CreatePublisher(services);
         using var cts = new CancellationTokenSource();
         var token = cts.Token;
@@ -332,7 +332,7 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var failingHandler = new FailingHandler("Async failure");
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -349,8 +349,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler1 = new FailingHandler("Async failure 1");
         var failingHandler2 = new FailingHandler("Async failure 2");
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler1);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler2);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler1);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler2);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -369,8 +369,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         var failingHandler = new FailingHandler();
         var trackingHandler = new TrackingAfterFailureHandler();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(failingHandler);
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(trackingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(failingHandler);
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(trackingHandler);
         var publisher = _CreatePublisher(services);
 
         // when
@@ -406,8 +406,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given
         var invocationOrder = new List<string>();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerNegative10(invocationOrder));
         var publisher = _CreatePublisher(services);
 
         // when - publish multiple times
@@ -425,8 +425,8 @@ public sealed class ServiceProviderLocalMessagePublisherTests
         // given - use same publisher instance for multiple calls
         var invocationOrder = new List<string>();
         var services = new ServiceCollection();
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
-        services.AddSingleton<ILocalMessageHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerPositive10(invocationOrder));
+        services.AddSingleton<IDomainEventHandler<TestLocalMessage>>(new OrderedHandlerDefault(invocationOrder));
         var publisher = _CreatePublisher(services);
 
         // when - mix sync and async calls

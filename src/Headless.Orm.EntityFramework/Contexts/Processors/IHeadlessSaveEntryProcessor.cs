@@ -34,37 +34,29 @@ public sealed class HeadlessSaveEntryContext(DbContext dbContext, string? tenant
     public string? TenantId { get; } = tenantId;
 
     /// <summary>
-    /// Local message emitters collected during processing.
+    /// Domain-event emitters collected during processing. Internal plumbing between the terminal
+    /// collector processor and the save pipeline; the pipeline publishes the events within the active
+    /// transaction and then clears them via <see cref="ClearEmitterMessages"/>.
     /// </summary>
-    /// <remarks>
-    /// Processors append to this list during <see cref="IHeadlessSaveEntryProcessor.Process"/>; framework
-    /// terminal processors consume the collected contents to publish messages within the active
-    /// transaction. Replacing entries from a custom processor is permitted but signals an unusual
-    /// contract.
-    /// </remarks>
-    public List<EmitterLocalMessages> LocalEmitters { get; } = [];
+    internal List<EmitterDomainEvents> DomainEventEmitters { get; } = [];
 
     /// <summary>
-    /// Distributed message emitters collected during processing.
+    /// Integration-event emitters collected during processing. Internal plumbing consumed by the save
+    /// pipeline to enqueue events into the outbox for post-commit delivery.
     /// </summary>
-    /// <remarks>
-    /// Processors append to this list during <see cref="IHeadlessSaveEntryProcessor.Process"/>; framework
-    /// terminal processors consume the collected contents to enqueue messages for post-commit delivery.
-    /// Replacing entries from a custom processor is permitted but signals an unusual contract.
-    /// </remarks>
-    public List<EmitterDistributedMessages> DistributedEmitters { get; } = [];
+    internal List<EmitterIntegrationEvents> IntegrationEventEmitters { get; } = [];
 
-    /// <summary>Clears the message buffers on each captured emitter once they have been dispatched.</summary>
-    public void ClearEmitterMessages()
+    /// <summary>Clears the event buffers on each captured emitter once they have been dispatched.</summary>
+    internal void ClearEmitterMessages()
     {
-        foreach (var emitter in DistributedEmitters)
+        foreach (var emitter in IntegrationEventEmitters)
         {
-            emitter.Emitter.ClearDistributedMessages();
+            emitter.Emitter.ClearIntegrationEvents();
         }
 
-        foreach (var emitter in LocalEmitters)
+        foreach (var emitter in DomainEventEmitters)
         {
-            emitter.Emitter.ClearLocalMessages();
+            emitter.Emitter.ClearDomainEvents();
         }
     }
 }

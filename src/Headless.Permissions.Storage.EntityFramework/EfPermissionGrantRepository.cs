@@ -9,7 +9,7 @@ namespace Headless.Permissions;
 
 public sealed class EfPermissionGrantRepository<TContext>(
     IDbContextFactory<TContext> dbFactory,
-    ILocalMessagePublisher localPublisher
+    ILocalEventBus localPublisher
 ) : IPermissionGrantRepository
     where TContext : DbContext
 {
@@ -22,8 +22,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<PermissionGrantRecord>()
+        return await db.Set<PermissionGrantRecord>()
             .AsNoTracking()
             .OrderBy(x => x.Id)
             .FirstOrDefaultAsync(
@@ -40,8 +39,7 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<PermissionGrantRecord>()
+        return await db.Set<PermissionGrantRecord>()
             .AsNoTracking()
             .Where(s => s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);
@@ -56,12 +54,9 @@ public sealed class EfPermissionGrantRepository<TContext>(
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-        return await db
-            .Set<PermissionGrantRecord>()
+        return await db.Set<PermissionGrantRecord>()
             .AsNoTracking()
-            .Where(s =>
-                names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey
-            )
+            .Where(s => names.Contains(s.Name) && s.ProviderName == providerName && s.ProviderKey == providerKey)
             .ToListAsync(cancellationToken);
     }
 

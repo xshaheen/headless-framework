@@ -204,7 +204,7 @@ internal sealed class PostgreSqlPermissionGrantRepository(
     private async ValueTask _PublishAsync(PermissionGrantRecord permissionGrant, CancellationToken cancellationToken)
     {
         await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
 
         if (publisher is not null)
         {

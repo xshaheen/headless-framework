@@ -129,7 +129,7 @@ public static class SetupCoreSettings
         services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
 
         services.TryAddTransient<
-            ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>,
+            IDomainEventHandler<EntityChangedEventData<SettingValueRecord>>,
             SettingValueCacheItemInvalidator
         >();
 
