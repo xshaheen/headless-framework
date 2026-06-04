@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.ObjectModel;
+using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
@@ -143,13 +144,14 @@ public sealed class RedisCache(
         // Validate keys and serialize values upfront
         var pairs = new KeyValuePair<RedisKey, RedisValue>[value.Count];
         var index = 0;
+        var now = timeProvider.GetUtcNow();
 
         foreach (var kvp in value)
         {
             Argument.IsNotNullOrEmpty(kvp.Key);
             pairs[index++] = new KeyValuePair<RedisKey, RedisValue>(
                 _GetKey(kvp.Key),
-                _ToFramedRedisValue(kvp.Value, expiration)
+                _ToFramedRedisValue(kvp.Value, expiration, now)
             );
         }
 
@@ -215,11 +217,12 @@ public sealed class RedisCache(
             return false;
         }
 
+        var now = timeProvider.GetUtcNow();
         var normalizedExpiration = _NormalizeExpiration(expiration);
-        var redisValue = _ToFramedRedisValue(value, normalizedExpiration);
+        var redisValue = _ToFramedRedisValue(value, normalizedExpiration, now);
         var expectedValue = _ToRedisValue(expected);
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, now);
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var redisResult = await scriptsLoader
@@ -260,7 +263,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -297,7 +300,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -334,7 +337,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -371,7 +374,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -408,7 +411,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -445,7 +448,7 @@ public sealed class RedisCache(
             return 0;
         }
 
-        var expiresMs = _GetExpirationMilliseconds(expiration);
+        var expiresMs = _GetExpirationMilliseconds(expiration, timeProvider.GetUtcNow());
         var expiresArg = expiresMs ?? RedisValue.EmptyString;
 
         var result = await scriptsLoader
@@ -964,6 +967,12 @@ public sealed class RedisCache(
         return string.IsNullOrEmpty(_keyPrefix) ? key : string.Concat(_keyPrefix, key);
     }
 
+    /// <summary>Encodes a value to its bare wire bytes (the value codec) without any envelope framing.</summary>
+    /// <remarks>
+    /// This output must stay frame-free: the CAS scripts (<see cref="CacheRemoveIfEqualScriptDefinition"/>,
+    /// <see cref="CacheReplaceIfEqualScriptDefinition"/>) pass it as the bare <c>expected</c> operand and compare
+    /// it against the framed value's sliced value segment. Adding a header here would break that comparison.
+    /// </remarks>
     private RedisValue _ToRedisValue<T>(T? value)
     {
         if (value is null)
@@ -1017,7 +1026,7 @@ public sealed class RedisCache(
                     return CacheValue<T>.Null;
                 }
 
-                var framedValue = _FromRedisValue<T>(_ToRedisValue(frame.ValueSegment), treatNullSentinel: false);
+                var framedValue = _DeserializeValueSegment<T>(frame.ValueSegment);
                 return new CacheValue<T>(framedValue, true);
             }
 
@@ -1080,14 +1089,14 @@ public sealed class RedisCache(
         }
 
         expiresIn = _NormalizeExpiration(expiresIn);
-        var redisValue = _ToFramedRedisValue(value, expiresIn);
+        var redisValue = _ToFramedRedisValue(value, expiresIn, timeProvider.GetUtcNow());
 
         return await _database.StringSetAsync(key, redisValue, expiresIn, when).ConfigureAwait(false);
     }
 
-    private RedisValue _ToFramedRedisValue<T>(T? value, TimeSpan? expiresIn)
+    private RedisValue _ToFramedRedisValue<T>(T? value, TimeSpan? expiresIn, DateTimeOffset now)
     {
-        var expiresAt = _GetExpirationDateTime(expiresIn);
+        var expiresAt = _GetExpirationDateTime(expiresIn, now);
         var valueSegment = value is null ? RedisValue.EmptyString : _ToRedisValue(value);
 
         return RedisCacheEntryFrame.Encode(
@@ -1098,7 +1107,17 @@ public sealed class RedisCache(
         );
     }
 
-    private static RedisValue _ToRedisValue(ReadOnlyMemory<byte> value) => value.ToArray();
+    private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
+    {
+        // Deserialize the framed value segment off the raw bytes; an empty non-null segment yields the
+        // empty value (e.g. "") rather than default, since the frame already proved the value is present.
+        if (typeof(T) == typeof(string))
+        {
+            return (T?)(object)Encoding.UTF8.GetString(segment.Span);
+        }
+
+        return serializer.Deserialize<T>(segment.ToArray());
+    }
 
     private async Task<int> _SetAllInternalAsync(KeyValuePair<RedisKey, RedisValue>[] pairs, TimeSpan? expiresIn)
     {
@@ -1184,14 +1203,14 @@ public sealed class RedisCache(
         return expiresAt == DateTime.MaxValue ? null : expiresIn;
     }
 
-    private long? _GetExpirationMilliseconds(TimeSpan? expiresIn)
+    private static long? _GetExpirationMilliseconds(TimeSpan? expiresIn, DateTimeOffset now)
     {
         if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
         {
             return null;
         }
 
-        var expiresAt = timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        var expiresAt = now.UtcDateTime.SafeAdd(expiresIn.Value);
 
         if (expiresAt == DateTime.MaxValue)
         {
@@ -1201,18 +1220,16 @@ public sealed class RedisCache(
         return (long)expiresIn.Value.TotalMilliseconds;
     }
 
-    private DateTime? _GetExpirationDateTime(TimeSpan? expiresIn)
+    private static DateTime? _GetExpirationDateTime(TimeSpan? expiresIn, DateTimeOffset now)
     {
         if (!expiresIn.HasValue || expiresIn.Value == TimeSpan.MaxValue)
         {
             return null;
         }
 
-        var expiresAt = timeProvider.GetUtcNow().UtcDateTime.SafeAdd(expiresIn.Value);
+        var expiresAt = now.UtcDateTime.SafeAdd(expiresIn.Value);
         return expiresAt == DateTime.MaxValue ? null : expiresAt;
     }
-
-    private const long _MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
 
     private async Task _SetListExpirationAsync(string key)
     {
@@ -1227,7 +1244,7 @@ public sealed class RedisCache(
 
         var highestExpirationInMs = (long)items.Single().Score;
 
-        if (highestExpirationInMs >= _MaxUnixEpochMilliseconds)
+        if (highestExpirationInMs >= RedisCacheEntryFrame.MaxUnixEpochMilliseconds)
         {
             await _database.KeyPersistAsync(key).ConfigureAwait(false);
             return;

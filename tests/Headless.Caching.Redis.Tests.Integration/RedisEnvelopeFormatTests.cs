@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers.Binary;
 using System.Text;
 using StackExchange.Redis;
 
@@ -102,6 +103,53 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         (stored[2] & _HasPhysicalExpiresAtFlag).Should().Be(0);
         var ttl = await _Database().KeyTimeToLiveAsync(key);
         ttl.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_store_upsert_all_members_as_framed_payloads()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var stringKey = Faker.Random.AlphaNumeric(10);
+        var nullKey = Faker.Random.AlphaNumeric(10);
+        var stringValue = Faker.Lorem.Word();
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [stringKey] = stringValue,
+            [nullKey] = null,
+        };
+
+        await cache.UpsertAllAsync(values, TimeSpan.FromMinutes(5), AbortToken);
+
+        var storedString = await _GetRawBytesAsync(stringKey);
+        storedString[0].Should().Be(_Magic);
+        storedString[1].Should().Be(_Version);
+        storedString.AsSpan(_HeaderLength).ToArray().Should().Equal(Encoding.UTF8.GetBytes(stringValue));
+
+        var storedNull = await _GetRawBytesAsync(nullKey);
+        storedNull[0].Should().Be(_Magic);
+        storedNull[1].Should().Be(_Version);
+        (storedNull[2] & _NullFlag).Should().Be(_NullFlag);
+    }
+
+    [Fact]
+    public async Task should_encode_logical_expiration_header_as_now_plus_duration()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+        var before = DateTimeOffset.UtcNow;
+
+        await cache.UpsertAsync(key, "value", duration, AbortToken);
+
+        var after = DateTimeOffset.UtcNow;
+        var stored = await _GetRawBytesAsync(key);
+        var logicalMs = BinaryPrimitives.ReadInt64LittleEndian(stored.AsSpan(3, sizeof(long)));
+        var logical = DateTimeOffset.FromUnixTimeMilliseconds(logicalMs);
+
+        logical.Should().BeOnOrAfter(before + duration - TimeSpan.FromSeconds(5));
+        logical.Should().BeOnOrBefore(after + duration + TimeSpan.FromSeconds(5));
     }
 
     [Fact]

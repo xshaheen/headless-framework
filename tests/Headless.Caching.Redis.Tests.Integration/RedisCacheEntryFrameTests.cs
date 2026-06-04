@@ -94,6 +94,32 @@ public sealed class RedisCacheEntryFrameTests
         BinaryPrimitives.ReadInt64LittleEndian(encoded.AsSpan(3, sizeof(long))).Should().Be(expected);
     }
 
+    [Fact]
+    public void should_encode_physical_expiration_as_little_endian_unix_milliseconds()
+    {
+        var logical = new DateTime(2026, 06, 03, 12, 34, 56, 789, DateTimeKind.Utc);
+        var physical = logical.AddMinutes(7);
+        var expectedPhysical = new DateTimeOffset(physical).ToUnixTimeMilliseconds();
+
+        var encoded = _Encode("value", isNull: false, logical, physical);
+        var decoded = _Decode(encoded);
+
+        BinaryPrimitives.ReadInt64LittleEndian(encoded.AsSpan(11, sizeof(long))).Should().Be(expectedPhysical);
+        decoded.PhysicalExpiresAt.Should().Be(physical);
+    }
+
+    [Fact]
+    public void should_throw_for_unsupported_frame_version()
+    {
+        var bytes = new byte[_HeaderLength];
+        bytes[0] = 0xFF;
+        bytes[1] = 0x02;
+
+        var act = () => _Decode(_RedisValue(bytes));
+
+        act.Should().Throw<TargetInvocationException>().WithInnerException<NotSupportedException>();
+    }
+
     private static byte[] _Encode(
         RedisValue value,
         bool isNull,

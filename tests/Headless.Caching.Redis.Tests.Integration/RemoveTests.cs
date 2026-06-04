@@ -113,6 +113,24 @@ public sealed class RemoveTests(RedisCacheFixture fixture) : RedisCacheTestBase(
     }
 
     [Fact]
+    public async Task should_remove_if_equal_on_raw_unframed_counter_value()
+    {
+        // given — counters are stored raw/unframed, exercising the Lua else branch
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.IncrementAsync(key, 5L, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var result = await cache.RemoveIfEqualAsync(key, 5L, AbortToken);
+
+        // then
+        result.Should().BeTrue();
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        exists.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_remove_all_keys()
     {
         // given

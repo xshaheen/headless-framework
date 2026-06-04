@@ -53,6 +53,21 @@ public abstract class CacheConformanceTestsBase : TestBase
         sentinelValue.Value.Should().Be("@@NULL");
     }
 
+    public virtual async Task should_round_trip_empty_string_value()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+
+        await cache.UpsertAsync(key, "", TimeSpan.FromMinutes(5), AbortToken);
+
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        cached.HasValue.Should().BeTrue();
+        cached.IsNull.Should().BeFalse();
+        cached.Value.Should().Be("");
+    }
+
     public virtual async Task should_expire_values_after_duration()
     {
         await ResetAsync();

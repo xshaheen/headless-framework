@@ -28,6 +28,9 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
         base.should_round_trip_null_and_null_sentinel_string();
 
     [Fact]
+    public override Task should_round_trip_empty_string_value() => base.should_round_trip_empty_string_value();
+
+    [Fact]
     public override Task should_expire_values_after_duration() => base.should_expire_values_after_duration();
 
     [Fact]
