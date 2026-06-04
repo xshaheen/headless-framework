@@ -163,6 +163,33 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     }
 
     [Fact]
+    public async Task save_changes_should_throw_when_integration_events_emitted_without_outbox_dispatcher()
+    {
+        // given — ILocalEventBus is registered (so the AggregateRoot lifecycle domain events drained
+        // by the first save are satisfied), but no IHeadlessOutboxDispatcher. The second save queues an
+        // integration event on the tracked entity; collecting it must fail naming the missing dispatcher.
+        var (provider, connection) = await _CreateProviderAsync(services =>
+            services.AddScoped<ILocalEventBus, RuntimeRecordingMessageDispatcher>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "integration-emits" };
+
+        db.Entities.Add(entity);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IHeadlessOutboxDispatcher*");
+    }
+
+    [Fact]
     public async Task save_changes_should_use_registered_message_dispatcher_when_messages_are_emitted()
     {
         // given
