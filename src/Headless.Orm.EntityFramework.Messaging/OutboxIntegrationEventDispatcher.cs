@@ -56,9 +56,13 @@ internal sealed class OutboxIntegrationEventDispatcher(
         }
         finally
         {
-            // Detach without disposing: the EF pipeline owns currentTransaction's commit/dispose lifecycle.
-            // Nulling DbTransaction also clears the ambient accessor so it never points at a committed
-            // transaction after this dispatch returns.
+            // Detach WITHOUT disposing outboxTransaction here — this is deliberate, do not "fix" it with
+            // `await using`/`Dispose`. On SQL Server the provider registers the same outboxTransaction instance
+            // in the diagnostic TransBuffer and the connection-commit diagnostic flushes + disposes it AFTER the
+            // EF transaction commits; disposing it now would tear it down before the post-commit flush and drop
+            // the integration events. The EF pipeline owns currentTransaction's commit/dispose lifecycle, and the
+            // transient outboxTransaction is released at DI scope end. Nulling DbTransaction also clears the
+            // ambient accessor so it never points at a committed transaction after this dispatch returns.
             outboxTransaction.DbTransaction = null;
         }
     }
