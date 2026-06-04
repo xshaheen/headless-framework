@@ -824,6 +824,10 @@ public abstract class MessagingIntegrationTestsBase : TestBase
             )
             .ConfigureAwait(false);
 
+        // MessageQuery has no MessageId predicate, so we page by status and filter in memory. Guard against
+        // silent truncation: if more rows than a page exist, the target could be paged out, yielding a false empty.
+        page.TotalItems.Should().BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk silent truncation");
+
         return page.Items.Where(message => message.MessageId == messageId).ToArray();
     }
 }

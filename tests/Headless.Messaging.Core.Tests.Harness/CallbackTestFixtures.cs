@@ -108,6 +108,7 @@ public sealed record ChainFinalResponse(string RequestId);
 public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
 {
     private readonly Lock _lock = new();
+    private bool _attempted;
     private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ValueTask ConsumeAsync(ConsumeContext<CallbackRequestMessage> context, CancellationToken cancellationToken)
@@ -129,6 +130,7 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
 
         lock (_lock)
         {
+            _attempted = true;
             _attemptTcs.TrySetResult(true);
             _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -147,6 +149,13 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
 
             lock (_lock)
             {
+                // Observe-before-subscribe guard: if the attempt already fired (and swapped the TCS) before
+                // the caller entered, return immediately instead of awaiting the fresh, never-signaled TCS.
+                if (_attempted)
+                {
+                    return true;
+                }
+
                 waitTask = _attemptTcs.Task;
             }
 
@@ -163,6 +172,7 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
     {
         lock (_lock)
         {
+            _attempted = false;
             _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
@@ -180,12 +190,14 @@ public sealed class CallbackQueueRequestConsumer : IConsume<CallbackQueueRequest
 public sealed class CallbackFailureRequestConsumer : IConsume<CallbackFailureRequestMessage>
 {
     private readonly Lock _lock = new();
+    private bool _attempted;
     private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public ValueTask ConsumeAsync(ConsumeContext<CallbackFailureRequestMessage> context, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
+            _attempted = true;
             _attemptTcs.TrySetResult(true);
             _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
@@ -205,6 +217,13 @@ public sealed class CallbackFailureRequestConsumer : IConsume<CallbackFailureReq
 
             lock (_lock)
             {
+                // Observe-before-subscribe guard: if the attempt already fired (and swapped the TCS) before
+                // the caller entered, return immediately instead of awaiting the fresh, never-signaled TCS.
+                if (_attempted)
+                {
+                    return true;
+                }
+
                 waitTask = _attemptTcs.Task;
             }
 
@@ -221,6 +240,7 @@ public sealed class CallbackFailureRequestConsumer : IConsume<CallbackFailureReq
     {
         lock (_lock)
         {
+            _attempted = false;
             _attemptTcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         }
     }
@@ -267,7 +287,7 @@ public sealed class ChainRequestConsumer : IConsume<ChainRequestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<ChainRequestMessage> context, CancellationToken cancellationToken)
     {
-        context.SetNextCallback("chain-final-callback");
+        context.SetResponseCallbackName("chain-final-callback");
         context.SetResponse(new ChainIntermediateResponse(context.Message.Id));
         return ValueTask.CompletedTask;
     }

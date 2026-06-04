@@ -15,7 +15,7 @@ namespace Headless.Messaging;
 public record ConsumeContext
 {
     private CancellationToken _cancellationToken;
-    private bool _isCompleted;
+    private volatile bool _isCompleted;
 
     /// <summary>
     /// Gets the deserialized message object. May be <see langword="null"/> only for invalid custom construction.
@@ -44,7 +44,7 @@ public record ConsumeContext
 
     internal Type? ResponseType { get; private set; }
 
-    internal string? NextCallbackName { get; private set; }
+    internal string? ResponseCallbackName { get; private set; }
 
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
@@ -69,8 +69,9 @@ public record ConsumeContext
     /// <param name="value">The response value. May be <see langword="null"/> for typed-null responses.</param>
     /// <remarks>
     /// The callback rides the durable bus path, which is <strong>at-least-once</strong>: if the process crashes
-    /// after the response is written to the outbox but before the request is marked succeeded, the request is
-    /// redelivered and the response is published again. Make response consumers idempotent (e.g. dedupe on
+    /// — or the success-mark write transiently fails — after the response is written to the outbox but before the
+    /// request is marked succeeded, the request is redelivered and the response is published again. Make response
+    /// consumers idempotent (e.g. dedupe on
     /// <c>(CorrelationId, CorrelationSequence)</c> — <c>CorrelationId</c> alone is ambiguous across hops because
     /// it is set to the immediate parent message id per hop, not the chain root); the framework does not
     /// deduplicate callback deliveries.
@@ -88,24 +89,26 @@ public record ConsumeContext
     }
 
     /// <summary>
-    /// Routes the captured response to a new callback message for the next hop in a callback chain.
+    /// Stamps the response callback name that the published response message will carry, routing the captured
+    /// response to the next hop in a callback chain.
     /// </summary>
     /// <remarks>
     /// This is the first-class way to chain to a callback that the originating message did not declare.
     /// It targets the reserved <c>Headers.CallbackName</c> through a typed surface so the value is mapped
     /// to <see cref="MessagePublishOptionsBase.CallbackName"/> on the response publish, rather than being
     /// pushed through <see cref="MessageHeader.AddResponseHeader"/> (which the publish pipeline rejects for
-    /// reserved keys).
+    /// reserved keys). The framework does not cap callback hops, so callback chains must be kept acyclic and
+    /// bounded by the consumer — a self-referential or cyclic chain produces an unbounded callback storm.
     /// </remarks>
-    /// <param name="callbackName">The callback message name to attach to the published response.</param>
-    public void SetNextCallback(string callbackName)
+    /// <param name="callbackName">The response callback name to attach to the published response.</param>
+    public void SetResponseCallbackName(string callbackName)
     {
         if (_isCompleted)
         {
             throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
         }
 
-        NextCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
+        ResponseCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
     }
 
     internal void MarkCompleted()

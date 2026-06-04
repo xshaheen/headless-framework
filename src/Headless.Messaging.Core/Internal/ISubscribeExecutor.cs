@@ -446,15 +446,6 @@ internal sealed class SubscribeExecutor(
         {
             var ret = await invoker.InvokeAsync(consumerContext, cancellationToken).ConfigureAwait(false);
 
-            _TracingAfter(
-                tracingTimestamp,
-                message.Origin,
-                message.IntentType,
-                descriptor.MethodInfo,
-                message.Retries,
-                cancellationToken
-            );
-
             if (!string.IsNullOrEmpty(ret.CallbackName))
             {
                 // TraceParent is NOT a reserved header, so it rides in PublishOptions.Headers alongside
@@ -480,13 +471,24 @@ internal sealed class SubscribeExecutor(
                             CorrelationSequence = message.Origin.GetCorrelationSequence() + 1,
                             // Chain the next hop: the published response carries this callback name so its
                             // consumer can react and publish a further response.
-                            CallbackName = ret.NextCallbackName,
+                            CallbackName = ret.ResponseCallbackName,
                         },
                         // callback response write must not be interrupted by shutdown — mirrors _SetSuccessfulState
                         CancellationToken.None
                     )
                     .ConfigureAwait(false);
             }
+
+            // Fire AfterSubscriberInvoke only after the callback response publish completes so the success
+            // event also reflects a successful callback publish; still fires on the no-callback path above.
+            _TracingAfter(
+                tracingTimestamp,
+                message.Origin,
+                message.IntentType,
+                descriptor.MethodInfo,
+                message.Retries,
+                cancellationToken
+            );
         }
         catch (OperationCanceledException oce)
         {

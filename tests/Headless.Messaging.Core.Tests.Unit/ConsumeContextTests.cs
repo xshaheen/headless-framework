@@ -83,10 +83,10 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // when
-        context.SetNextCallback("chain-final");
+        context.SetResponseCallbackName("chain-final");
 
         // then
-        context.NextCallbackName.Should().Be("chain-final");
+        context.ResponseCallbackName.Should().Be("chain-final");
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // then
-        context.NextCallbackName.Should().BeNull();
+        context.ResponseCallbackName.Should().BeNull();
     }
 
     [Fact]
@@ -106,11 +106,11 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // when
-        context.SetNextCallback("chain-first");
-        context.SetNextCallback("chain-final");
+        context.SetResponseCallbackName("chain-first");
+        context.SetResponseCallbackName("chain-final");
 
         // then
-        context.NextCallbackName.Should().Be("chain-final");
+        context.ResponseCallbackName.Should().Be("chain-final");
     }
 
     [Theory]
@@ -123,7 +123,7 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // when
-        var act = () => context.SetNextCallback(callbackName!);
+        var act = () => context.SetResponseCallbackName(callbackName!);
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -137,7 +137,7 @@ public sealed class ConsumeContextTests
         context.MarkCompleted();
 
         // when
-        var act = () => context.SetNextCallback("too-late");
+        var act = () => context.SetResponseCallbackName("too-late");
 
         // then
         act.Should().Throw<InvalidOperationException>();

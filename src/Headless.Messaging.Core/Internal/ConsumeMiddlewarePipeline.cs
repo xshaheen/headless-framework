@@ -121,7 +121,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             context.MediumMessage.Origin.GetId(),
             string.IsNullOrEmpty(callbackName) ? null : callbackName,
             callbackHeaders,
-            consumeContext.NextCallbackName
+            consumeContext.ResponseCallbackName
         );
     }
 

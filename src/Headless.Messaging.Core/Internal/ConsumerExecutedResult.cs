@@ -8,7 +8,7 @@ internal sealed class ConsumerExecutedResult(
     string msgId,
     string? callbackName,
     IDictionary<string, string?>? callbackHeader,
-    string? nextCallbackName = null
+    string? responseCallbackName = null
 )
 {
     public object? Result { get; init; } = result;
@@ -24,8 +24,8 @@ internal sealed class ConsumerExecutedResult(
 
     /// <summary>
     /// The callback name to stamp on the published response so the next hop in a callback chain can
-    /// react to it. Captured from <c>ConsumeContext.SetNextCallback</c>; maps to
+    /// react to it. Captured from <c>ConsumeContext.SetResponseCallbackName</c>; maps to
     /// <c>PublishOptions.CallbackName</c> on the response publish.
     /// </summary>
-    public string? NextCallbackName { get; init; } = nextCallbackName;
+    public string? ResponseCallbackName { get; init; } = responseCallbackName;
 }

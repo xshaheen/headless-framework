@@ -511,7 +511,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var result = await invoker.InvokeAsync(context, AbortToken);
 
         // then
-        result.NextCallbackName.Should().Be("chain-final");
+        result.ResponseCallbackName.Should().Be("chain-final");
     }
 
     [Fact]
@@ -542,7 +542,7 @@ public sealed class SubscribeInvokerTests : TestBase
         var result = await invoker.InvokeAsync(context, AbortToken);
 
         // then
-        result.NextCallbackName.Should().BeNull();
+        result.ResponseCallbackName.Should().BeNull();
     }
 
     [Fact]
@@ -871,7 +871,7 @@ public sealed class NextCallbackConsumer : IConsume<InvokerTestMessage>
 {
     public ValueTask ConsumeAsync(ConsumeContext<InvokerTestMessage> context, CancellationToken cancellationToken)
     {
-        context.SetNextCallback("chain-final");
+        context.SetResponseCallbackName("chain-final");
         return ValueTask.CompletedTask;
     }
 }

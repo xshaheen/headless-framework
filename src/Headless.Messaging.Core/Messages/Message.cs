@@ -113,12 +113,13 @@ public static class MessageExtensions
         /// This number is used for ordering and tracking correlated message sequences.
         /// </summary>
         /// <returns>
-        /// The correlation sequence number, or 0 if the header is not present.
+        /// The correlation sequence number, or 0 if the header is absent or malformed.
         /// </returns>
         public int GetCorrelationSequence()
         {
             return message.Headers.TryGetValue(Headers.CorrelationSequence, out var value)
-                ? int.Parse(value!, CultureInfo.InvariantCulture)
+                && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence)
+                ? sequence
                 : 0;
         }
 
