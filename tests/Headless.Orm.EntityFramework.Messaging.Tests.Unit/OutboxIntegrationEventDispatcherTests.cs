@@ -158,11 +158,20 @@ public sealed class OutboxIntegrationEventDispatcherTests
         var transaction = Substitute.For<IDbContextTransaction>();
         IReadOnlyList<IIntegrationEvent> events = [new OrderPlaced("order-1")];
 
-        // when
-        var act = () => dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
+        // when — await directly so the task completes before the provider is disposed (CA2025).
+        InvalidOperationException? caught = null;
+        try
+        {
+            await dispatcher.DispatchAsync(events, transaction, TestContext.Current.CancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            caught = exception;
+        }
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Publish failed");
+        caught.Should().NotBeNull();
+        caught.Message.Should().Be("Publish failed");
         outboxTransaction.Received(1).DbTransaction = transaction;
         outboxTransaction.Received(1).DbTransaction = null;
     }
