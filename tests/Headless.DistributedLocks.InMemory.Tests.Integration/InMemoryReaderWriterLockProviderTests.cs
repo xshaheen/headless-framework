@@ -2,54 +2,44 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
-using Headless.DistributedLocks.Redis;
-using Headless.Redis;
-using Headless.Testing.Tests;
+using Headless.DistributedLocks.InMemory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
 
-namespace Tests.ReaderWriterLocks;
+namespace Tests;
 
-[Collection<RedisTestFixture>]
-public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
-    : DistributedReaderWriterLockProviderTestsBase
+public sealed class InMemoryReaderWriterLockProviderTests : DistributedReaderWriterLockProviderTestsBase
 {
-    public override async ValueTask InitializeAsync()
-    {
-        await base.InitializeAsync();
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
-    }
+    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly SnowflakeIdLongIdGenerator _idGenerator = new(1);
 
     protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {
         return new DistributedReaderWriterLockProvider(
-            fixture.ReaderWriterLockStorage,
+            new InMemoryDistributedReaderWriterLockStorage(_timeProvider),
             outboxBus: null,
             options ?? new DistributedLockOptions(),
-            new SnowflakeIdLongIdGenerator(),
-            TimeProvider.System,
+            _idGenerator,
+            _timeProvider,
             LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
         );
     }
 
-    protected override TimeProvider TimeProvider => TimeProvider.System;
+    protected override TimeProvider TimeProvider => _timeProvider;
 
     protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
     {
-        await Task.Delay(amount + TimeSpan.FromMilliseconds(50), TimeProvider.System, cancellationToken);
-    }
+        var step = TimeSpan.FromMilliseconds(100);
+        var remaining = amount;
 
-    protected override async Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken)
-    {
-        await EventuallyAsync(
-            async () =>
-            {
-                var db = fixture.ConnectionMultiplexer.GetDatabase();
-                var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
+        while (remaining > TimeSpan.Zero)
+        {
+            var currentStep = remaining < step ? remaining : step;
+            _timeProvider.Advance(currentStep);
+            remaining -= currentStep;
 
-                return writerKeyValue.HasValue;
-            },
-            cancellationToken: cancellationToken
-        );
+            await DrainUntilAsync(() => false, cancellationToken);
+        }
     }
 
     [Fact]
@@ -93,30 +83,4 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
 
     [Fact]
     public override Task should_auto_extend_write_lock() => base.should_auto_extend_write_lock();
-
-    // Redis-specific key-inspection guard: the shared cancel scenario asserts the marker is cleared via the
-    // public API; this variant additionally inspects the raw writer-waiting key as a backend guard. Not
-    // load-bearing — kept to catch Redis Lua/key regressions that the public-API assertion could not localize.
-    [Fact]
-    public async Task should_clear_writer_waiting_redis_key_when_try_acquire_write_is_cancelled()
-    {
-        var provider = GetReaderWriterLockProvider();
-        var resource = $"rw:{Faker.Random.AlphaNumeric(10)}";
-        await using var reader = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken);
-        using var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromMilliseconds(300));
-
-        var act = async () =>
-            await provider.TryAcquireWriteLockAsync(
-                resource,
-                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(5) },
-                cts.Token
-            );
-
-        await act.Should().ThrowAsync<OperationCanceledException>();
-
-        var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
-        writerKeyValue.HasValue.Should().BeFalse();
-    }
 }

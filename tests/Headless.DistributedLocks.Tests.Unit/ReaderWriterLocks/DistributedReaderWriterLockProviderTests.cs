@@ -2,11 +2,11 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.ReaderWriterLocks;
 
@@ -25,7 +25,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
         return new DistributedReaderWriterLockProvider(
-            storage ?? new FakeReaderWriterLockStorage(),
+            storage ?? new InMemoryDistributedReaderWriterLockStorage(_timeProvider),
             outboxBus,
             options ?? new DistributedLockOptions(),
             _longIdGenerator,
@@ -38,7 +38,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_acquire_multiple_readers_for_same_resource()
     {
         // given
-        var storage = new FakeReaderWriterLockStorage();
+        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
 
@@ -121,10 +121,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_cleanup_writer_waiting_marker_when_try_write_times_out()
     {
         // given
-        var storage = new FakeReaderWriterLockStorage();
+        var storage = new ReleaseObservingReaderWriterLockStorage(
+            new InMemoryDistributedReaderWriterLockStorage(_timeProvider)
+        );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
-        storage.SetRead($"distributed-lock:{resource}", "reader-1");
+        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
 
         // when
         var result = await provider.TryAcquireWriteLockAsync(
@@ -143,10 +145,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_return_null_when_non_zero_write_acquire_timeout_elapses()
     {
         // given
-        var storage = new FakeReaderWriterLockStorage();
+        var storage = new ReleaseObservingReaderWriterLockStorage(
+            new InMemoryDistributedReaderWriterLockStorage(_timeProvider)
+        );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
-        storage.SetRead($"distributed-lock:{resource}", "reader-1");
+        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
 
         // when
         var acquireTask = provider.TryAcquireWriteLockAsync(
@@ -169,11 +173,11 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         // given - try-once path; storage observes caller cancellation mid-call, so the Lua may
         // have planted the writer-waiting marker before the OCE surfaced. The fix in
         // _TryAcquireOnceAsync MUST issue the idempotent cleanup before rethrowing.
-        var storage = new FakeReaderWriterLockStorage();
+        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
         var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
         var provider = _CreateProvider(releaseObserver);
         var resource = Faker.Random.AlphaNumeric(10);
-        storage.SetRead($"distributed-lock:{resource}", "reader-1");
+        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
 
         using var cts = new CancellationTokenSource();
         releaseObserver.OnTryAcquireWriteCancellation = () => cts.Cancel();
@@ -188,7 +192,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
         // then - OCE propagated AND cleanup ran
         await act.Should().ThrowAsync<OperationCanceledException>();
-        storage.WriteReleaseCount.Should().Be(1);
+        releaseObserver.WriteReleaseCount.Should().Be(1);
     }
 
     [Fact]
@@ -214,10 +218,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    private sealed class ReleaseObservingReaderWriterLockStorage(FakeReaderWriterLockStorage inner)
+    private sealed class ReleaseObservingReaderWriterLockStorage(IDistributedReaderWriterLockStorage inner)
         : IDistributedReaderWriterLockStorage
     {
         public Action? OnTryAcquireWriteCancellation { get; set; }
+
+        public int WriteReleaseCount { get; private set; }
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,
@@ -266,7 +272,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
             string resource,
             string lockId,
             CancellationToken cancellationToken = default
-        ) => inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        )
+        {
+            WriteReleaseCount++;
+
+            return inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        }
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
