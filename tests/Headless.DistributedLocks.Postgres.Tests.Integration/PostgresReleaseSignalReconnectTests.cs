@@ -21,7 +21,7 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgresDistributedLockF
         // re-established (the NOTIFY is the only realistic wake source in this window).
         var keyPrefix = $"reconnect:{Faker.Random.AlphaNumeric(6)}:";
         await using var provider = _CreateProvider(keyPrefix, pollingFallback: TimeSpan.FromSeconds(30));
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         // Wait until the signal's listener backend is up so we have a baseline to detect the reconnect.

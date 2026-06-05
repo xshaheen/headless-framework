@@ -29,9 +29,10 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
         var lockResource = SqlServerResourceName.Encode($"{options.KeyPrefix}init:{schema}.{sequenceName}");
         var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";
-        var lockTimeoutMs = options.CommandTimeout.TotalMilliseconds >= int.MaxValue
-            ? int.MaxValue
-            : (int)Math.Ceiling(options.CommandTimeout.TotalMilliseconds);
+        var lockTimeoutMs =
+            options.CommandTimeout.TotalMilliseconds >= int.MaxValue
+                ? int.MaxValue
+                : (int)Math.Ceiling(options.CommandTimeout.TotalMilliseconds);
 
         await using var command = connection.CreateCommand();
         command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(options.CommandTimeout);

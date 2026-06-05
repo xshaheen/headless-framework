@@ -10,7 +10,7 @@ namespace Tests.DistributedLock;
 
 public sealed class DistributedLockTusLockProviderTests : TestBase
 {
-    private readonly IDistributedLockProvider _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
+    private readonly IDistributedLock _distributedLockProvider = Substitute.For<IDistributedLock>();
 
     [Fact]
     public async Task should_create_file_lock()
@@ -52,7 +52,7 @@ public sealed class DistributedLockTusLockProviderTests : TestBase
     {
         // given
         const string fileId = "test-file";
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(distributedLock);
@@ -82,7 +82,7 @@ public sealed class TusDistributedLockSetupTests : TestBase
     {
         // given
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        services.AddSingleton(Substitute.For<IDistributedLock>());
 
         // when
         services.AddDistributedLockTusLockProvider();

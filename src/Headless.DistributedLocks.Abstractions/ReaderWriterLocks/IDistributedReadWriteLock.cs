@@ -8,11 +8,11 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// Implementations may enforce writer-preference. Redis-backed locks block new readers while a writer is queued so writers
-/// cannot be starved by a steady stream of readers. Returned handles use the standard <see cref="IDistributedLock"/> shape,
-/// including <see cref="IDistributedLock.HandleLostToken"/> when lease monitoring is enabled.
+/// cannot be starved by a steady stream of readers. Returned handles use the standard <see cref="IDistributedLease"/> shape,
+/// including <see cref="IDistributedLease.LostToken"/> when lease monitoring is enabled.
 /// </remarks>
 [PublicAPI]
-public interface IDistributedReaderWriterLockProvider
+public interface IDistributedReadWriteLock
 {
     /// <summary>
     /// Default lease duration applied when <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/>
@@ -33,7 +33,7 @@ public interface IDistributedReaderWriterLockProvider
     /// Acquires a read lock for <paramref name="resource"/> and throws <see cref="LockAcquisitionTimeoutException"/>
     /// when it cannot be acquired before <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
-    Task<IDistributedLock> AcquireReadLockAsync(
+    Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -43,7 +43,7 @@ public interface IDistributedReaderWriterLockProvider
     /// Tries to acquire a read lock for <paramref name="resource"/> and returns <see langword="null"/> on contention
     /// or timeout.
     /// </summary>
-    Task<IDistributedLock?> TryAcquireReadLockAsync(
+    Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -53,7 +53,7 @@ public interface IDistributedReaderWriterLockProvider
     /// Acquires a write lock for <paramref name="resource"/> and throws <see cref="LockAcquisitionTimeoutException"/>
     /// when it cannot be acquired before <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
-    Task<IDistributedLock> AcquireWriteLockAsync(
+    Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -63,7 +63,7 @@ public interface IDistributedReaderWriterLockProvider
     /// Tries to acquire a write lock for <paramref name="resource"/> and returns <see langword="null"/> on contention
     /// or timeout.
     /// </summary>
-    Task<IDistributedLock?> TryAcquireWriteLockAsync(
+    Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default

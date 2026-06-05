@@ -96,4 +96,42 @@ public sealed class WaiterCapRegistryTests : TestBase
         var overflow = () => registry.Enter("never-entered");
         overflow.Should().Throw<InvalidOperationException>();
     }
+
+    [Fact]
+    public void should_enforce_caps_when_both_limits_are_configured()
+    {
+        // given
+        var registry = new WaiterCapRegistry(maxConcurrentWaitingResources: 3, maxWaitersPerResource: 2);
+
+        // Fill resource "r1" to its cap (2 waiters)
+        registry.Enter("r1");
+        registry.Enter("r1");
+
+        // Next waiter on "r1" should be rejected
+        var actR1Overflow = () => registry.Enter("r1");
+        actR1Overflow.Should().Throw<InvalidOperationException>().WithMessage("*waiters per resource*");
+
+        // Fill distinct resources to the max resource cap (3 resources: r1, r2, r3)
+        registry.Enter("r2");
+        registry.Enter("r3");
+
+        // Next distinct resource "r4" should be rejected
+        var actR4Overflow = () => registry.Enter("r4");
+        actR4Overflow.Should().Throw<InvalidOperationException>().WithMessage("*concurrent waiting resources*");
+
+        // Leaving waiters frees capacity
+        registry.Exit("r1"); // r1 now has 1 waiter
+        registry.Exit("r1"); // r1 now has 0 waiters (removed)
+
+        // Now we only have r2 and r3 waiting (2 resources), so r4 can enter
+        var actR4Enter = () => registry.Enter("r4");
+        actR4Enter.Should().NotThrow();
+
+        // Exit r2 so we have r3 and r4 waiting (2 resources)
+        registry.Exit("r2");
+
+        // And since we now have capacity, we can enter r1 again
+        var actR1Enter = () => registry.Enter("r1");
+        actR1Enter.Should().NotThrow();
+    }
 }

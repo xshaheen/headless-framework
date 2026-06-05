@@ -33,7 +33,7 @@ public sealed class DynamicPermissionDefinitionStore(
     IStaticPermissionDefinitionStore staticStore,
     IPermissionDefinitionSerializer serializer,
     ICache distributedCache,
-    IDistributedLockProvider distributedLockProvider,
+    IDistributedLock distributedLockProvider,
     IBus messagePublisher,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,

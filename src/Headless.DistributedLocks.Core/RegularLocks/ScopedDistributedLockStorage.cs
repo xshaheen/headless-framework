@@ -20,12 +20,12 @@ public sealed class ScopedDistributedLockStorage : IDistributedLockStorage
 
     public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.InsertAsync(_NormalizeResource(key), lockId, ttl, cancellationToken);
+        return _inner.InsertAsync(_NormalizeResource(key), leaseId, ttl, cancellationToken);
     }
 
     public ValueTask<bool> ReplaceIfEqualAsync(
@@ -77,7 +77,7 @@ public sealed class ScopedDistributedLockStorage : IDistributedLockStorage
     }
 
     public async ValueTask<
-        IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>
+        IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>
     > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         var result = await _inner

@@ -136,7 +136,7 @@ public sealed class SetupIdempotencyTests
     public void di_validator_should_pass_for_wait_and_replay_with_lock_provider()
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IDistributedLockProvider>());
+        services.AddSingleton(Substitute.For<IDistributedLock>());
         var sp = services.BuildServiceProvider();
         var validator = new IdempotencyOptionsDIValidator(sp);
 
@@ -160,7 +160,7 @@ public sealed class SetupIdempotencyTests
         );
 
         result.Failed.Should().BeTrue();
-        result.FailureMessage.Should().Contain(nameof(IDistributedLockProvider));
+        result.FailureMessage.Should().Contain(nameof(IDistributedLock));
         result.FailureMessage.Should().Contain(nameof(InFlightStrategy.WaitAndReplay));
     }
 

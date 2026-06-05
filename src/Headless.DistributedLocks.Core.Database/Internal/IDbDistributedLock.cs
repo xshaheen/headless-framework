@@ -17,10 +17,10 @@ internal interface IDbDistributedLock
     /// already holds the outer lock.
     /// </summary>
     /// <typeparam name="TLockCookie">The strategy's opaque acquire/release state.</typeparam>
-    ValueTask<IDistributedLock?> TryAcquireAsync<TLockCookie>(
+    ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,
-        IDistributedLock? contextHandle,
+        IDistributedLease? contextHandle,
         CancellationToken cancellationToken
     )
         where TLockCookie : class;

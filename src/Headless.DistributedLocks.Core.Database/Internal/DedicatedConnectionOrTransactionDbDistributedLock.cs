@@ -38,15 +38,15 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
         _keepaliveCadence = keepaliveCadence;
     }
 
-    public async ValueTask<IDistributedLock?> TryAcquireAsync<TLockCookie>(
+    public async ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,
-        IDistributedLock? contextHandle,
+        IDistributedLease? contextHandle,
         CancellationToken cancellationToken
     )
         where TLockCookie : class
     {
-        IDistributedLock? result = null;
+        IDistributedLease? result = null;
         IAsyncDisposable? connectionResource = null;
 
         try
@@ -115,7 +115,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
         return result;
     }
 
-    private static DatabaseConnection _GetContextHandleConnection<TLockCookie>(IDistributedLock contextHandle)
+    private static DatabaseConnection _GetContextHandleConnection<TLockCookie>(IDistributedLease contextHandle)
         where TLockCookie : class
     {
         var connection = ((Handle<TLockCookie>)contextHandle).Connection;
@@ -124,7 +124,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
             ?? throw new ObjectDisposedException(nameof(contextHandle), "The provided handle is already disposed.");
     }
 
-    private sealed class Handle<TLockCookie> : IDistributedLock
+    private sealed class Handle<TLockCookie> : IDistributedLease
         where TLockCookie : class
     {
 #pragma warning disable CA2213 // Disposed via Interlocked.Exchange in DisposeAsync (the analyzer cannot see that path).
@@ -148,12 +148,12 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                 transactionScoped,
                 connectionResource
             );
-            LockId = Guid.NewGuid().ToString("N");
+            LeaseId = Guid.NewGuid().ToString("N");
             Resource = name;
             DateAcquired = connection.TimeProvider.GetUtcNow();
         }
 
-        public string LockId { get; }
+        public string LeaseId { get; }
 
         public long? FencingToken => null;
 
@@ -165,10 +165,10 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public bool IsMonitored => true;
+        public bool CanObserveLoss => true;
 
-        public CancellationToken HandleLostToken =>
-            Volatile.Read(ref _innerHandle)?.HandleLostToken
+        public CancellationToken LostToken =>
+            Volatile.Read(ref _innerHandle)?.LostToken
             ?? throw new ObjectDisposedException(nameof(Handle<TLockCookie>));
 
         public DatabaseConnection? Connection => Volatile.Read(ref _innerHandle)?.Connection;
@@ -218,7 +218,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
 
             public DatabaseConnection Connection { get; }
 
-            public CancellationToken HandleLostToken
+            public CancellationToken LostToken
             {
                 get
                 {

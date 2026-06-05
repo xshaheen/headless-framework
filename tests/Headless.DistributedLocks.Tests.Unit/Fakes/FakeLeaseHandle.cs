@@ -10,7 +10,7 @@ internal sealed class FakeLeaseHandle : LeaseMonitor.ILeaseHandle
 
     public string Resource { get; init; } = "test-resource";
 
-    public string LockId { get; init; } = "test-lock";
+    public string LeaseId { get; init; } = "test-lock";
 
     public TimeSpan LeaseDuration { get; init; } = TimeSpan.FromSeconds(10);
 

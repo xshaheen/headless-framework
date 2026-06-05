@@ -17,7 +17,9 @@ public static class SetupSqlServerDistributedLocks
     {
         public IServiceCollection AddSqlServerDistributedLocks(IConfiguration configuration)
         {
-            services.Configure<SqlServerDistributedLockOptions, SqlServerDistributedLockOptionsValidator>(configuration);
+            services.Configure<SqlServerDistributedLockOptions, SqlServerDistributedLockOptionsValidator>(
+                configuration
+            );
             services.Configure<DistributedLockOptions>(configuration.GetSection("Headless:DistributedLocks"));
 
             return services._AddSqlServerDistributedLocksCore();
@@ -52,7 +54,7 @@ public static class SetupSqlServerDistributedLocks
             services.TryAddSingleton<DistributedLockOptions>(sp =>
                 sp.GetRequiredService<IOptions<DistributedLockOptions>>().Value
             );
-            services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(sp => new ConnectionScopedDistributedLockProvider(
+            services.TryAddSingleton<ConnectionScopedDistributedLock>(sp => new ConnectionScopedDistributedLock(
                 sp.GetRequiredService<IConnectionScopedLockStorage>(),
                 // SQL Server blocks contended acquires server-side (BlocksServerSide), so the provider's wait loop and
                 // the release signal are unreachable; a no-op signal satisfies the constructor contract.
@@ -60,15 +62,13 @@ public static class SetupSqlServerDistributedLocks
                 sp.GetRequiredService<DistributedLockOptions>(),
                 sp.GetRequiredService<ILongIdGenerator>(),
                 sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<ILogger<ConnectionScopedDistributedLockProvider>>(),
+                sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
                 sp.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value.EnableFencing
                     ? sp.GetRequiredService<IFencingTokenSource>()
                     : null
             ));
-            services.TryAddSingleton<IDistributedLockProvider>(sp =>
-                sp.GetRequiredService<ConnectionScopedDistributedLockProvider>()
-            );
-            services.TryAddSingleton<IDistributedReaderWriterLockProvider, ConnectionScopedReaderWriterLockProvider>();
+            services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());
+            services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();
 
             return services;
         }

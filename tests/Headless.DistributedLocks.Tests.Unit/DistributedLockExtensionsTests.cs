@@ -5,16 +5,16 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class DistributedLockProviderExtensionsTests : TestBase
+public sealed class DistributedLockExtensionsTests : TestBase
 {
     [Fact]
     public async Task should_release_handle_through_provider()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
         distributedLock.Resource.Returns("resource");
-        distributedLock.LockId.Returns("lock-id");
+        distributedLock.LeaseId.Returns("lock-id");
         provider.ReleaseAsync("resource", "lock-id", AbortToken).Returns(Task.CompletedTask);
 
         // when
@@ -26,13 +26,29 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_provider_renewal_result_for_handle_renewal()
+    {
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        var timeUntilExpires = TimeSpan.FromMinutes(5);
+        distributedLock.Resource.Returns("resource");
+        distributedLock.LeaseId.Returns("lock-id");
+        provider.RenewAsync("resource", "lock-id", timeUntilExpires, AbortToken).Returns(Task.FromResult(false));
+
+        var result = await provider.RenewAsync(distributedLock, timeUntilExpires, AbortToken);
+
+        result.Should().BeFalse();
+        await provider.Received(1).RenewAsync("resource", "lock-id", timeUntilExpires, AbortToken);
+    }
+
+    [Fact]
     public async Task should_return_false_when_lock_not_acquired()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
+        var provider = Substitute.For<IDistributedLock>();
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(null));
+            .Returns(Task.FromResult<IDistributedLease?>(null));
 
         var workExecuted = false;
 
@@ -55,12 +71,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     public async Task should_return_true_and_execute_work_when_lock_acquired()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
 
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
 
         var workExecuted = false;
 
@@ -87,12 +103,12 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     public async Task should_pass_parameters_to_try_acquire()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
 
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
 
         const string resource = "test-resource";
         var timeUntilExpires = TimeSpan.FromMinutes(10);
@@ -127,11 +143,11 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     public async Task should_pass_options_to_sync_try_using_and_force_monitoring_off()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
         var workExecuted = false;
         var options = new DistributedLockAcquireOptions
         {
@@ -166,11 +182,11 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     public async Task should_pass_options_to_sync_state_try_using()
     {
         // given
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
         var observedState = 0;
 
         // when
@@ -202,19 +218,19 @@ public sealed class DistributedLockProviderExtensionsTests : TestBase
     [Fact]
     public async Task should_pass_monitor_flags_and_link_handle_lost_token_into_work()
     {
-        // given - a real provider-built handle is needed to flow IsMonitored/HandleLostToken.
-        // Stub with NSubstitute returning a Substitute-backed IDistributedLock whose IsMonitored
-        // is true and HandleLostToken is a CTS we control. Verify the work delegate receives a
-        // linked token that becomes cancelled when HandleLostToken fires.
-        var provider = Substitute.For<IDistributedLockProvider>();
-        var distributedLock = Substitute.For<IDistributedLock>();
+        // given - a real provider-built handle is needed to flow CanObserveLoss/LostToken.
+        // Stub with NSubstitute returning a Substitute-backed IDistributedLease whose CanObserveLoss
+        // is true and LostToken is a CTS we control. Verify the work delegate receives a
+        // linked token that becomes cancelled when LostToken fires.
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
         using var leaseLostCts = new CancellationTokenSource();
-        distributedLock.IsMonitored.Returns(true);
-        distributedLock.HandleLostToken.Returns(leaseLostCts.Token);
+        distributedLock.CanObserveLoss.Returns(true);
+        distributedLock.LostToken.Returns(leaseLostCts.Token);
 
         provider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(distributedLock));
+            .Returns(Task.FromResult<IDistributedLease?>(distributedLock));
 
         var observedToken = CancellationToken.None;
         var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);

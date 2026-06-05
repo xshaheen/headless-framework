@@ -8,15 +8,15 @@ namespace Headless.DistributedLocks;
 internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
 {
     private readonly ReaderWriterLockMode _mode;
-    private readonly DistributedReaderWriterLockProvider _provider;
+    private readonly DistributedReadWriteLock _provider;
 
     internal DisposableReaderWriterLock(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
-        DistributedReaderWriterLockProvider provider,
+        DistributedReadWriteLock provider,
         bool releaseOnDispose,
         bool autoExtend,
         DistributedLockOptions options,
@@ -26,7 +26,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
     )
         : base(
             resource,
-            lockId,
+            leaseId,
             // Reader-writer locks do not issue fencing tokens; FencingToken is always null.
             fencingToken: null,
             leaseDuration,
@@ -49,7 +49,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
     )
     {
         var result = await _provider
-            .RenewAsync(_mode, Resource, LockId, timeUntilExpires, cancellationToken)
+            .RenewAsync(_mode, Resource, LeaseId, timeUntilExpires, cancellationToken)
             .ConfigureAwait(false);
 
         if (result)
@@ -62,22 +62,22 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)
     {
-        return _provider.RenewAsync(_mode, Resource, LockId, LeaseDuration, cancellationToken);
+        return _provider.RenewAsync(_mode, Resource, LeaseId, LeaseDuration, cancellationToken);
     }
 
     protected override Task<bool> ValidateOwnershipAsync(CancellationToken cancellationToken)
     {
-        return _provider.ValidateAsync(_mode, Resource, LockId, cancellationToken);
+        return _provider.ValidateAsync(_mode, Resource, LeaseId, cancellationToken);
     }
 
     protected override Task ReleaseCoreAsync()
     {
-        return _provider.ReleaseAsync(_mode, Resource, LockId, CancellationToken.None);
+        return _provider.ReleaseAsync(_mode, Resource, LeaseId, CancellationToken.None);
     }
 
     protected override void OnMonitorDisposeFailed(Exception exception)
     {
-        Logger.LogDisposableLockMonitorDisposeFailed(exception, Resource, LockId);
+        Logger.LogDisposableLockMonitorDisposeFailed(exception, Resource, LeaseId);
     }
 
     // ---- Reader-writer lease-loss classification override ----
@@ -85,7 +85,7 @@ internal sealed class DisposableReaderWriterLock : DistributedLockHandleBase
     /// <summary>
     /// Reader-writer extend scripts return <see langword="false"/> ONLY for genuine loss (id no
     /// longer present) or writer-preference refusal (writer-waiting marker forces a queued writer to
-    /// drain the reader). Both must cancel HandleLostToken — there is no ambiguous transient-vs-loss
+    /// drain the reader). Both must cancel LostToken — there is no ambiguous transient-vs-loss
     /// case here, so the base's ownership-probe disambiguation is skipped: a false renew classifies
     /// directly as <see cref="LeaseMonitor.LeaseState.Lost"/>. Transient storage exceptions surface
     /// from the await and are caught at the deadline boundary as

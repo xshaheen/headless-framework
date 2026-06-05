@@ -15,7 +15,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
     public async Task should_acquire_release_and_issue_monotonic_fencing_tokens()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using var first = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
@@ -32,20 +32,46 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
     public async Task should_return_null_expiration_for_session_scoped_lock()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         (await locks.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
-        handle.IsMonitored.Should().BeTrue();
+        handle.CanObserveLoss.Should().BeFalse();
+        handle.LostToken.Should().Be(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_report_remote_holder_without_remote_lease_id_on_resource_targeted_inspection()
+    {
+        var keyPrefix = $"test:inspect:{Faker.Random.AlphaNumeric(6)}:";
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var ownerProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await using var observerProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+
+        var owner = ownerProvider.GetRequiredService<IDistributedLock>();
+        var observer = observerProvider.GetRequiredService<IDistributedLock>();
+
+        await using var handle = await owner.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        (await observer.GetLeaseIdAsync(resource, AbortToken)).Should().BeNull();
+        (await observer.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+
+        var info = await observer.GetLockInfoAsync(resource, AbortToken);
+
+        info.Should().NotBeNull();
+        info!.Resource.Should().Be(resource);
+        info.LeaseId.Should().BeNull();
+        info.TimeToLive.Should().BeNull();
     }
 
     [Fact]
     public async Task should_report_reader_and_writer_state_by_lock_mode()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedReadWriteLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using (var firstReader = await locks.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
@@ -102,7 +128,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         }
 
         await using var provider = _CreateProvider(options => options.EnablePushWakeup = false);
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 

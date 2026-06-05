@@ -18,21 +18,21 @@ public sealed class ConnectionScopedLockHandle : IAsyncDisposable
 
     /// <summary>Creates a handle for an acquired lock.</summary>
     /// <param name="resource">The locked resource name.</param>
-    /// <param name="lockId">The provider-assigned identifier for this acquisition.</param>
+    /// <param name="leaseId">The provider-assigned identifier for this acquisition.</param>
     /// <param name="release">Callback invoked exactly once to release the lock in the backing store.</param>
     /// <param name="connectionLostToken">
     /// Token cancelled when the underlying connection is lost; consumers observe it to learn the lock is no
-    /// longer held.
+    /// longer held. <see cref="CancellationToken.None"/> means acquire-time monitoring was disabled.
     /// </param>
     public ConnectionScopedLockHandle(
         string resource,
-        string lockId,
+        string leaseId,
         Func<ConnectionScopedLockHandle, CancellationToken, ValueTask> release,
         CancellationToken connectionLostToken
     )
     {
         Resource = resource;
-        LockId = lockId;
+        LeaseId = leaseId;
         ConnectionLostToken = connectionLostToken;
         _release = release;
     }
@@ -49,7 +49,7 @@ public sealed class ConnectionScopedLockHandle : IAsyncDisposable
     public string Resource { get; }
 
     /// <summary>The provider-assigned identifier for this acquisition.</summary>
-    public string LockId { get; }
+    public string LeaseId { get; }
 
     /// <summary>Cancelled when the underlying connection is lost, signalling that the lock is no longer held.</summary>
     public CancellationToken ConnectionLostToken { get; }

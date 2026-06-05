@@ -12,13 +12,13 @@ namespace Tests.ReaderWriterLocks;
 public sealed class LeaseMonitorIntegrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly InMemoryDistributedReaderWriterLockStorage _storage;
+    private readonly InMemoryDistributedReadWriteLockStorage _storage;
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
     private long _lockIdCounter = 7000;
 
     public LeaseMonitorIntegrationTests()
     {
-        _storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        _storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         // then
         handle.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -68,15 +68,15 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         // when - drop the reader from storage so the next extend returns false AND validate also
         // returns false (no reader id present) — that combination dispatches to Lost.
-        await _storage.ReleaseReadAsync($"distributed-lock:{resource}", handle.LockId, AbortToken);
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        await _storage.ReleaseReadAsync($"distributed-lock:{resource}", handle.LeaseId, AbortToken);
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
         }
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -104,7 +104,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         // then
         handle.RenewalCount.Should().BeGreaterThanOrEqualTo(3);
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
 
         // when - flip the writer id so extend AND validate both fail -> Lost.
-        await _storage.ReleaseWriteAsync(scopedResource, handle.LockId, AbortToken);
+        await _storage.ReleaseWriteAsync(scopedResource, handle.LeaseId, AbortToken);
         await _storage.TryAcquireWriteAsync(
             scopedResource,
             "foreign-writer",
@@ -134,14 +134,14 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             TimeSpan.FromSeconds(2),
             AbortToken
         );
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
-            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
         }
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         // then - no renewals (monitor-only mode), no loss.
         handle.RenewalCount.Should().Be(0);
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -189,15 +189,15 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
 
         // when - flip storage so the validate probe returns false.
-        await _storage.ReleaseReadAsync($"distributed-lock:{resource}", handle.LockId, AbortToken);
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        await _storage.ReleaseReadAsync($"distributed-lock:{resource}", handle.LeaseId, AbortToken);
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
         }
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -218,7 +218,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         );
 
         // when
-        await _storage.ReleaseWriteAsync(scopedResource, handle.LockId, AbortToken);
+        await _storage.ReleaseWriteAsync(scopedResource, handle.LeaseId, AbortToken);
         await _storage.TryAcquireWriteAsync(
             scopedResource,
             "foreign-writer",
@@ -227,14 +227,14 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             TimeSpan.FromSeconds(2),
             AbortToken
         );
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(3));
-            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
         }
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -263,8 +263,8 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             await Task.Yield();
         }
 
-        // then - transient failures alone don't fire HandleLostToken before the safety net.
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        // then - transient failures alone don't fire LostToken before the safety net.
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -272,7 +272,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
     {
         // given - AutoExtend path. Renew throws transiently; the handle MUST treat that as
         // Unknown (per-iteration deadline) and let the lease-duration safety net self-promote
-        // if failures persist. A single transient blip must NOT fire HandleLostToken.
+        // if failures persist. A single transient blip must NOT fire LostToken.
         var faulty = new TransientFaultStorage();
         var provider = _CreateProvider(faulty);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -296,7 +296,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         }
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -340,9 +340,9 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         // when
         await using var handle = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken);
 
-        // then - monitoring disabled by default; HandleLostToken stays at CancellationToken.None
-        handle.HandleLostToken.Should().Be(CancellationToken.None);
-        handle.IsMonitored.Should().BeFalse();
+        // then - monitoring disabled by default; LostToken stays at CancellationToken.None
+        handle.LostToken.Should().Be(CancellationToken.None);
+        handle.CanObserveLoss.Should().BeFalse();
     }
 
     [Fact]
@@ -361,26 +361,26 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             AbortToken
         );
 
-        // when - dispose before any failure occurs. HandleLostToken MUST remain unfired because
+        // when - dispose before any failure occurs. LostToken MUST remain unfired because
         // disposal is the consumer-driven shutdown path, not a lease loss.
         await handle.DisposeAsync();
 
         // then
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
         provider.GetActiveMonitorCount(resource).Should().Be(0);
     }
 
-    private DistributedReaderWriterLockProvider _CreateProvider(IDistributedReaderWriterLockStorage? storage = null)
+    private DistributedReadWriteLock _CreateProvider(IDistributedReadWriteLockStorage? storage = null)
     {
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
-        return new DistributedReaderWriterLockProvider(
+        return new DistributedReadWriteLock(
             storage ?? _storage,
             outboxBus: null,
             new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+            LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
 
@@ -399,9 +399,9 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
         }
     }
 
-    private sealed class CountingStorage : IDistributedReaderWriterLockStorage
+    private sealed class CountingStorage : IDistributedReadWriteLockStorage
     {
-        private readonly InMemoryDistributedReaderWriterLockStorage _inner = new(TimeProvider.System);
+        private readonly InMemoryDistributedReadWriteLockStorage _inner = new(TimeProvider.System);
         private TaskCompletionSource _extendGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int ExtendCalls;
@@ -426,62 +426,62 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => _inner.TryAcquireReadAsync(resource, lockId, ttl, cancellationToken);
+        ) => _inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
 
         public async ValueTask<bool> TryExtendReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
         )
         {
             Interlocked.Increment(ref ExtendCalls);
             await _extendGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
-            return await _inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken).ConfigureAwait(false);
+            return await _inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken).ConfigureAwait(false);
         }
 
         public ValueTask ReleaseReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
+        ) => _inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             string waitingId,
             TimeSpan? ttl = null,
             TimeSpan? markerTtl = null,
             CancellationToken cancellationToken = default
-        ) => _inner.TryAcquireWriteAsync(resource, lockId, waitingId, ttl, markerTtl, cancellationToken);
+        ) => _inner.TryAcquireWriteAsync(resource, leaseId, waitingId, ttl, markerTtl, cancellationToken);
 
         public ValueTask<bool> TryExtendWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => _inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
+        ) => _inner.TryExtendWriteAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask ReleaseWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        ) => _inner.ReleaseWriteAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ValidateReadAsync(resource, lockId, cancellationToken);
+        ) => _inner.ValidateReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> ValidateWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ValidateWriteAsync(resource, lockId, cancellationToken);
+        ) => _inner.ValidateWriteAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
             _inner.IsReadLockedAsync(resource, cancellationToken);
@@ -493,77 +493,77 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
             _inner.GetReaderCountAsync(resource, cancellationToken);
     }
 
-    private sealed class TransientFaultStorage : IDistributedReaderWriterLockStorage
+    private sealed class TransientFaultStorage : IDistributedReadWriteLockStorage
     {
-        private readonly InMemoryDistributedReaderWriterLockStorage _inner = new(TimeProvider.System);
+        private readonly InMemoryDistributedReadWriteLockStorage _inner = new(TimeProvider.System);
 
         public bool FaultProbes { get; set; }
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => _inner.TryAcquireReadAsync(resource, lockId, ttl, cancellationToken);
+        ) => _inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask<bool> TryExtendReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
         ) =>
             FaultProbes
                 ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-                : _inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken);
+                : _inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask ReleaseReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ReleaseReadAsync(resource, lockId, cancellationToken);
+        ) => _inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             string waitingId,
             TimeSpan? ttl = null,
             TimeSpan? markerTtl = null,
             CancellationToken cancellationToken = default
-        ) => _inner.TryAcquireWriteAsync(resource, lockId, waitingId, ttl, markerTtl, cancellationToken);
+        ) => _inner.TryAcquireWriteAsync(resource, leaseId, waitingId, ttl, markerTtl, cancellationToken);
 
         public ValueTask<bool> TryExtendWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
         ) =>
             FaultProbes
                 ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-                : _inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
+                : _inner.TryExtendWriteAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask ReleaseWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => _inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+        ) => _inner.ReleaseWriteAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
         ) =>
             FaultProbes
                 ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-                : _inner.ValidateReadAsync(resource, lockId, cancellationToken);
+                : _inner.ValidateReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> ValidateWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
         ) =>
             FaultProbes
                 ? ValueTask.FromException<bool>(new TimeoutException("transient"))
-                : _inner.ValidateWriteAsync(resource, lockId, cancellationToken);
+                : _inner.ValidateWriteAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
             _inner.IsReadLockedAsync(resource, cancellationToken);

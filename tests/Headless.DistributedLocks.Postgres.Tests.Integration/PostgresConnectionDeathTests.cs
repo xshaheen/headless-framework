@@ -15,18 +15,18 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
     public async Task should_cancel_handle_lost_token_when_backend_connection_dies()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         // ReleaseOnDispose is false: terminating the backend frees the advisory lock server-side, so
         // disposing the handle must not attempt an explicit release against the now-dead connection.
         await using var handle = await locks.AcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            new DistributedLockAcquireOptions { ReleaseOnDispose = false, Monitoring = LockMonitoringMode.Monitor },
             AbortToken
         );
 
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
 
         // Find and terminate the backend that holds the advisory lock from a separate connection.
         await _TerminateLockHoldingBackendAsync(resource);
@@ -37,7 +37,7 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         // cancellation rather than a wall-clock poll slipping past to assert on stale state), the
         // handle-lost cancellation ends the wait immediately, and a genuine 10s timeout falls through
         // to the assertion so it fails loudly.
-        using var detection = CancellationTokenSource.CreateLinkedTokenSource(AbortToken, handle.HandleLostToken);
+        using var detection = CancellationTokenSource.CreateLinkedTokenSource(AbortToken, handle.LostToken);
         detection.CancelAfter(TimeSpan.FromSeconds(10));
 
         try
@@ -54,7 +54,7 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
             // both fall through to the assertion below, which decides the outcome.
         }
 
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     private const string _KeyPrefix = "death:";

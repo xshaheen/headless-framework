@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 /// engine's finalizer queue was intentionally dropped in favor of requiring explicit disposal. Always dispose the
 /// handle (an <c>await using</c> is the intended usage).
 /// </summary>
-internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLock
+internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
 {
     private readonly ConnectionScopedLockHandle _handle;
     private readonly Func<ConnectionScopedLockHandle, CancellationToken, ValueTask> _release;
@@ -45,7 +45,7 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLock
 
     private ILogger Logger { get; }
 
-    public string LockId => _handle.LockId;
+    public string LeaseId => _handle.LeaseId;
 
     public long? FencingToken { get; }
 
@@ -57,9 +57,9 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLock
 
     public TimeSpan TimeWaitedForLock { get; }
 
-    public CancellationToken HandleLostToken => _handle.ConnectionLostToken;
+    public CancellationToken LostToken => _handle.ConnectionLostToken;
 
-    public bool IsMonitored => true;
+    public bool CanObserveLoss => _handle.ConnectionLostToken.CanBeCanceled;
 
     public async Task ReleaseAsync()
     {
@@ -82,7 +82,7 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLock
             }
             catch (Exception exception)
             {
-                Logger.LogConnectionScopedLockReleaseFailed(exception, Resource, LockId);
+                Logger.LogConnectionScopedLockReleaseFailed(exception, Resource, LeaseId);
                 throw;
             }
         }

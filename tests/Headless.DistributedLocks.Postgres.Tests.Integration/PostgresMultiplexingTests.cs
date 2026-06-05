@@ -23,7 +23,7 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
     {
         var keyPrefix = $"mux-share:{Faker.Random.AlphaNumeric(8)}:";
         await using var provider = _CreateProvider(keyPrefix);
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
 
         var resourceA = Faker.Random.AlphaNumeric(12);
         var resourceB = Faker.Random.AlphaNumeric(12);
@@ -50,7 +50,7 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
     {
         var keyPrefix = $"mux-collide:{Faker.Random.AlphaNumeric(8)}:";
         await using var provider = _CreateProvider(keyPrefix);
-        var locks = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedReadWriteLock>();
 
         // Two read (shared) locks on the SAME resource resolve to one advisory key. The first lands on a multiplexed
         // connection; the second collides on that connection's held-identity set (guard #1) and is forced onto a
@@ -80,7 +80,7 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
         var resourceB = Faker.Random.AlphaNumeric(12);
 
         var provider = _CreateProvider(keyPrefix);
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
 
         // Acquire two locks and DELIBERATELY never dispose the handles. Connection-scoped advisory locks have no TTL and
         // no GC finalizer reclaim, so disposing the provider is what must release them — this pins the documented

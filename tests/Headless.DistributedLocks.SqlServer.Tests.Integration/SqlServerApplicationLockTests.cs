@@ -79,7 +79,10 @@ public sealed class SqlServerApplicationLockTests : TestBase
     [Fact]
     public void should_not_let_command_timeout_undercut_finite_lock_wait()
     {
-        var timeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(TimeSpan.FromMinutes(2), TimeSpan.FromSeconds(30));
+        var timeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(
+            TimeSpan.FromMinutes(2),
+            TimeSpan.FromSeconds(30)
+        );
 
         timeout.Should().BeGreaterThan(120);
     }

@@ -4,20 +4,20 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// <see cref="IDistributedReaderWriterLockProvider"/> implementation that maps read/write locks onto the
-/// shared/exclusive modes of a <see cref="ConnectionScopedDistributedLockProvider"/>: read locks acquire in
+/// <see cref="IDistributedReadWriteLock"/> implementation that maps read/write locks onto the
+/// shared/exclusive modes of a <see cref="ConnectionScopedDistributedLock"/>: read locks acquire in
 /// shared mode, write locks in exclusive mode. Reader-writer handles never carry a fencing token.
 /// </summary>
 /// <param name="mutexProvider">The connection-scoped mutex provider whose shared/exclusive storage backs this.</param>
 [PublicAPI]
-public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDistributedLockProvider mutexProvider)
-    : IDistributedReaderWriterLockProvider
+public sealed class ConnectionScopedReadWriteLock(ConnectionScopedDistributedLock mutexProvider)
+    : IDistributedReadWriteLock
 {
     public TimeSpan DefaultTimeUntilExpires => mutexProvider.DefaultTimeUntilExpires;
 
     public TimeSpan DefaultAcquireTimeout => mutexProvider.DefaultAcquireTimeout;
 
-    public async Task<IDistributedLock> AcquireReadLockAsync(
+    public async Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -26,7 +26,7 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
         return await _AcquireAsync(resource, isShared: true, options, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<IDistributedLock?> TryAcquireReadLockAsync(
+    public Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -35,7 +35,7 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
         return mutexProvider.TryAcquireAsync(resource, isShared: true, options, cancellationToken);
     }
 
-    public async Task<IDistributedLock> AcquireWriteLockAsync(
+    public async Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -44,7 +44,7 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
         return await _AcquireAsync(resource, isShared: false, options, cancellationToken).ConfigureAwait(false);
     }
 
-    public Task<IDistributedLock?> TryAcquireWriteLockAsync(
+    public Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -70,7 +70,7 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
             .ConfigureAwait(false);
     }
 
-    private async Task<IDistributedLock> _AcquireAsync(
+    private async Task<IDistributedLease> _AcquireAsync(
         string resource,
         bool isShared,
         DistributedLockAcquireOptions? options,

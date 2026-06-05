@@ -11,7 +11,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests.RegularLocks;
 
 // ReSharper disable AccessToDisposedClosure
-public sealed class DistributedLockProviderTests : TestBase
+public sealed class DistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedLockStorage _storage;
@@ -20,29 +20,29 @@ public sealed class DistributedLockProviderTests : TestBase
 
     private long _lockIdCounter = 1000;
 
-    public DistributedLockProviderTests()
+    public DistributedLockTests()
     {
         _storage = new InMemoryDistributedLockStorage(_timeProvider);
     }
 
-    private DistributedLockProvider _CreateProvider(
+    private DistributedLock _CreateProvider(
         DistributedLockOptions? options = null,
         IDistributedLockStorage? storage = null,
         IOutboxBus? outboxBus = null,
-        ILogger<DistributedLockProvider>? logger = null,
+        ILogger<DistributedLock>? logger = null,
         bool useNullOutboxBus = false
     )
     {
         options ??= new DistributedLockOptions();
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
-        return new DistributedLockProvider(
+        return new DistributedLock(
             storage ?? _storage,
             useNullOutboxBus ? null : outboxBus ?? _outboxBus,
             options,
             _longIdGenerator,
             _timeProvider,
-            logger ?? LoggerFactory.CreateLogger<DistributedLockProvider>()
+            logger ?? LoggerFactory.CreateLogger<DistributedLock>()
         );
     }
 
@@ -90,6 +90,68 @@ public sealed class DistributedLockProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_throw_when_acquire_timeout_is_negative_except_infinite()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(-5) },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Fact]
+    public async Task should_throw_when_acquire_timeout_is_extremely_large()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions
+                {
+                    AcquireTimeout = TimeSpan.FromMilliseconds((double)int.MaxValue + 1),
+                },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Theory]
+    [InlineData(LockMonitoringMode.Monitor)]
+    [InlineData(LockMonitoringMode.AutoExtend)]
+    public async Task should_throw_when_time_until_expires_is_infinite_and_monitoring_requested(LockMonitoringMode mode)
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { TimeUntilExpires = Timeout.InfiniteTimeSpan, Monitoring = mode },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("timeUntilExpires");
+    }
+
+    [Fact]
     public async Task should_acquire_lock_when_not_held()
     {
         // given
@@ -102,7 +164,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // then
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
-        result.LockId.Should().NotBeNullOrEmpty();
+        result.LeaseId.Should().NotBeNullOrEmpty();
         result.FencingToken.Should().Be(1);
     }
 
@@ -216,7 +278,7 @@ public sealed class DistributedLockProviderTests : TestBase
         {
             // then
             result.Resource.Should().Be(resource);
-            result.LockId.Should().NotBeNullOrEmpty();
+            result.LeaseId.Should().NotBeNullOrEmpty();
             result.RenewalCount.Should().Be(0);
         }
 
@@ -304,7 +366,7 @@ public sealed class DistributedLockProviderTests : TestBase
         (await provider.IsLockedAsync(resource, AbortToken))
             .Should()
             .BeTrue();
-        await provider.ReleaseAsync(resource, handle.LockId, AbortToken);
+        await provider.ReleaseAsync(resource, handle.LeaseId, AbortToken);
     }
 
     [Fact]
@@ -353,7 +415,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // then - handle must be returned; Zero is "no wait", not "no attempt"
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
-        result.LockId.Should().NotBeNullOrEmpty();
+        result.LeaseId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
@@ -624,7 +686,7 @@ public sealed class DistributedLockProviderTests : TestBase
     // lock-store call cannot hang the caller indefinitely, even when the caller's
     // CancellationToken does not fire.
 
-    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLockProvider.
+    private const int _SafetyDeadlineSeconds = 10; // Mirrors _NonBlockingAcquireDeadline in DistributedLock.
 
     private static Func<NSubstitute.Core.CallInfo, ValueTask<DistributedLockAcquireResult>> _HangForeverInsert =>
         ci => new ValueTask<DistributedLockAcquireResult>(_HangUntilCancelledAsync(ci.ArgAt<CancellationToken>(3)));
@@ -891,7 +953,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var act = async () => await provider.ReleaseAsync("resource", null!, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("lockId");
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("leaseId");
     }
 
     [Fact]
@@ -905,7 +967,7 @@ public sealed class DistributedLockProviderTests : TestBase
         acquiredLock.Should().NotBeNull();
 
         // when
-        await provider.ReleaseAsync(resource, acquiredLock!.LockId, AbortToken);
+        await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
 
         // then
         var isLocked = await provider.IsLockedAsync(resource, AbortToken);
@@ -931,13 +993,13 @@ public sealed class DistributedLockProviderTests : TestBase
                 return ValueTask.FromResult(true);
             });
 
-        var provider = new DistributedLockProvider(
+        var provider = new DistributedLock(
             storage,
             _outboxBus,
             new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedLockProvider>()
+            LoggerFactory.CreateLogger<DistributedLock>()
         );
 
         // when - run release task and advance time through backoff delays
@@ -982,7 +1044,7 @@ public sealed class DistributedLockProviderTests : TestBase
         handle.Should().NotBeNull();
 
         // when
-        var act = async () => await provider.ReleaseAsync(resource, handle!.LockId, AbortToken);
+        var act = async () => await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>();
@@ -1002,13 +1064,13 @@ public sealed class DistributedLockProviderTests : TestBase
         acquiredLock.Should().NotBeNull();
 
         // when
-        await provider.ReleaseAsync(resource, acquiredLock!.LockId, AbortToken);
+        await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
 
         // then
         await _outboxBus
             .Received(1)
             .PublishAsync(
-                Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LockId == acquiredLock.LockId),
+                Arg.Is<DistributedLockReleased>(m => m.Resource == resource && m.LeaseId == acquiredLock.LeaseId),
                 Arg.Is<PublishOptions?>(options => options == null),
                 Arg.Any<CancellationToken>()
             );
@@ -1023,7 +1085,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var acquiredLock = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
 
         // when
-        await provider.ReleaseAsync(resource, acquiredLock!.LockId, AbortToken);
+        await provider.ReleaseAsync(resource, acquiredLock!.LeaseId, AbortToken);
 
         // then
         (await provider.IsLockedAsync(resource, AbortToken))
@@ -1065,7 +1127,7 @@ public sealed class DistributedLockProviderTests : TestBase
     public void should_log_warning_when_outbox_bus_is_absent()
     {
         // given
-        var logger = Substitute.For<ILogger<DistributedLockProvider>>();
+        var logger = Substitute.For<ILogger<DistributedLock>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<(LogLevel Level, int Id)>();
         logger
@@ -1091,7 +1153,7 @@ public sealed class DistributedLockProviderTests : TestBase
     public void should_not_log_warning_when_outbox_bus_is_present()
     {
         // given
-        var logger = Substitute.For<ILogger<DistributedLockProvider>>();
+        var logger = Substitute.For<ILogger<DistributedLock>>();
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
         var captured = new List<int>();
         logger
@@ -1140,7 +1202,7 @@ public sealed class DistributedLockProviderTests : TestBase
         var act = async () => await provider.RenewAsync("resource", null!, cancellationToken: AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("lockId");
+        await act.Should().ThrowAsync<ArgumentNullException>().WithParameterName("leaseId");
     }
 
     [Fact]
@@ -1160,7 +1222,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         var result = await provider.RenewAsync(
             resource,
-            acquiredLock!.LockId,
+            acquiredLock!.LeaseId,
             timeUntilExpires: TimeSpan.FromMinutes(10),
             cancellationToken: AbortToken
         );
@@ -1207,7 +1269,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // when
         await provider.RenewAsync(
             resource,
-            acquiredLock!.LockId,
+            acquiredLock!.LeaseId,
             timeUntilExpires: TimeSpan.FromMinutes(30),
             cancellationToken: AbortToken
         );
@@ -1332,7 +1394,7 @@ public sealed class DistributedLockProviderTests : TestBase
         // then
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
-        result.LockId.Should().Be(acquiredLock!.LockId);
+        result.LeaseId.Should().Be(acquiredLock!.LeaseId);
         result.TimeToLive.Should().NotBeNull();
     }
 

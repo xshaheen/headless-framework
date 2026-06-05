@@ -144,19 +144,19 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             AbortToken
         );
         slot.Should().NotBeNull();
-        slot!.HandleLostToken.Should().NotBe(CancellationToken.None);
+        slot!.LostToken.Should().NotBe(CancellationToken.None);
 
         // when — advance the fake clock past TTL so storage evicts the holder entry
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         // drive multiple cadence intervals so the monitor probe fires
-        for (var i = 0; i < 10 && !slot.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !slot.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await _DrainUntilAsync(() => slot.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => slot.LostToken.IsCancellationRequested);
         }
 
         // then
-        slot.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        slot.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -182,8 +182,8 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
             await Task.Yield();
         }
 
-        // then — HandleLostToken NOT fired; slot is still valid
-        slot!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        // then — LostToken NOT fired; slot is still valid
+        slot!.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
         // when — release the slot and immediately send the push wake-up signal
         await holder.ReleaseAsync();
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LockId));
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, holder.LeaseId));
 
         // then — waiter is unblocked faster than the polling budget
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();

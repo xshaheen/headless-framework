@@ -10,21 +10,21 @@ namespace Tests.RegularLocks;
 public sealed class DisposableDistributedLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly IDistributedLockProvider _lockProvider = Substitute.For<IDistributedLockProvider>();
+    private readonly IDistributedLock _lockProvider = Substitute.For<IDistributedLock>();
 
     [Fact]
     public void should_store_resource_and_lock_id()
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
 
         // when
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
 
         // then
         sut.Resource.Should().Be(resource);
-        sut.LockId.Should().Be(lockId);
+        sut.LeaseId.Should().Be(leaseId);
     }
 
     [Fact]
@@ -32,11 +32,11 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var fencingToken = Faker.Random.Long(1);
 
         // when
-        var sut = _CreateLock(resource, lockId, fencingToken: fencingToken);
+        var sut = _CreateLock(resource, leaseId, fencingToken: fencingToken);
 
         // then
         sut.FencingToken.Should().Be(fencingToken);
@@ -49,10 +49,10 @@ public sealed class DisposableDistributedLockTests : TestBase
         var expectedTime = new DateTimeOffset(2025, 6, 15, 10, 30, 0, TimeSpan.Zero);
         _timeProvider.SetUtcNow(expectedTime);
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
 
         // when
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
 
         // then
         sut.DateAcquired.Should().Be(expectedTime);
@@ -63,11 +63,11 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var timeWaited = TimeSpan.FromSeconds(5);
 
         // when
-        var sut = _CreateLock(resource, lockId, timeWaited);
+        var sut = _CreateLock(resource, leaseId, timeWaited);
 
         // then
         sut.TimeWaitedForLock.Should().Be(timeWaited);
@@ -78,14 +78,14 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, lockId);
+        var leaseId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, leaseId);
 
         // when
         await sut.DisposeAsync();
 
         // then
-        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -93,14 +93,14 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, lockId, releaseOnDispose: false);
+        var leaseId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
 
         // when
         await sut.DisposeAsync();
 
         // then
-        await _lockProvider.DidNotReceive().ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.DidNotReceive().ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -110,11 +110,11 @@ public sealed class DisposableDistributedLockTests : TestBase
         var sut = _CreateLock(Faker.Random.AlphaNumeric(10), Faker.Random.Guid().ToString());
 
         // when
-        var token = sut.HandleLostToken;
+        var token = sut.LostToken;
 
         // then
         token.Should().Be(CancellationToken.None);
-        sut.IsMonitored.Should().BeFalse();
+        sut.CanObserveLoss.Should().BeFalse();
     }
 
     [Fact]
@@ -122,15 +122,15 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, lockId, releaseOnDispose: false);
+        var leaseId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, leaseId, releaseOnDispose: false);
 
         // when
         await sut.ReleaseAsync();
         await sut.DisposeAsync();
 
         // then
-        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -138,8 +138,8 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, lockId);
+        var leaseId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, leaseId);
 
         // when
         await sut.DisposeAsync();
@@ -147,7 +147,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         await sut.ReleaseAsync();
 
         // then
-        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -155,33 +155,33 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var deregisterCount = 0;
         var sut = _CreateLock(
             resource,
-            lockId,
+            leaseId,
             deregisterMonitor: (actualResource, actualLockId) =>
             {
                 actualResource.Should().Be(resource);
-                actualLockId.Should().Be(lockId);
+                actualLockId.Should().Be(leaseId);
                 Interlocked.Increment(ref deregisterCount);
             }
         );
         var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         sut.AttachMonitor(monitor);
-        sut.IsMonitored.Should().BeTrue();
-        var handleLostToken = sut.HandleLostToken;
+        sut.CanObserveLoss.Should().BeTrue();
+        var lostToken = sut.LostToken;
 
         // when
         await sut.ReleaseAsync();
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
 
         // then
-        sut.IsMonitored.Should().BeFalse();
+        sut.CanObserveLoss.Should().BeFalse();
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
-        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
-        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -189,9 +189,9 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
-        var sut = _CreateLock(resource, lockId, autoExtend: true);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(true);
+        var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -201,19 +201,19 @@ public sealed class DisposableDistributedLockTests : TestBase
         sut.RenewalCount.Should().Be(1);
         await _lockProvider
             .Received(1)
-            .RenewAsync(resource, lockId, TimeSpan.FromSeconds(10), Arg.Any<CancellationToken>());
+            .RenewAsync(resource, leaseId, TimeSpan.FromSeconds(10), Arg.Any<CancellationToken>());
     }
 
     [Fact]
     public async Task should_treat_renew_false_with_matching_lock_id_as_unknown_under_auto_extend()
     {
         // given - autoExtend handle whose RenewAsync returns false (transient retry-exhaustion),
-        // but ownership probe via GetLockIdAsync still shows our LockId — i.e., we still own it.
+        // but ownership probe via GetLeaseIdAsync still shows our LeaseId — i.e., we still own it.
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
-        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
-        var sut = _CreateLock(resource, lockId, autoExtend: true);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
+        _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
+        var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -227,10 +227,10 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given - autoExtend handle whose RenewAsync returns false and probe shows a different owner.
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
-        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
-        var sut = _CreateLock(resource, lockId, autoExtend: true);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
+        _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns("foreign-lock");
+        var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -244,10 +244,10 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given - autoExtend handle whose RenewAsync returns false and probe shows nothing.
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.RenewAsync(resource, lockId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
-        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
-        var sut = _CreateLock(resource, lockId, autoExtend: true);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.RenewAsync(resource, leaseId, Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(false);
+        _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns((string?)null);
+        var sut = _CreateLock(resource, leaseId, autoExtend: true);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
@@ -261,16 +261,16 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
-        var sut = _CreateLock(resource, lockId);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
+        var sut = _CreateLock(resource, leaseId);
 
         // when
         var result = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(AbortToken);
 
         // then
         result.Should().Be(LeaseMonitor.LeaseState.Held);
-        await _lockProvider.Received(1).GetLockIdAsync(resource, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).GetLeaseIdAsync(resource, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -278,9 +278,9 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given - acquire a monitor-backed handle and dispose it (which disposes the inner CTS).
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        _lockProvider.GetLockIdAsync(resource, Arg.Any<CancellationToken>()).Returns(lockId);
-        var sut = _CreateLock(resource, lockId);
+        var leaseId = Faker.Random.Guid().ToString();
+        _lockProvider.GetLeaseIdAsync(resource, Arg.Any<CancellationToken>()).Returns(leaseId);
+        var sut = _CreateLock(resource, leaseId);
         await using var monitor = new LeaseMonitor(
             sut,
             _timeProvider,
@@ -291,10 +291,10 @@ public sealed class DisposableDistributedLockTests : TestBase
         // when - dispose (which disposes the monitor's _handleLostSource CTS).
         await sut.DisposeAsync();
 
-        // then - reading HandleLostToken after dispose must not throw ObjectDisposedException.
+        // then - reading LostToken after dispose must not throw ObjectDisposedException.
         var act = () =>
         {
-            var token = sut.HandleLostToken;
+            var token = sut.LostToken;
             _ = token.IsCancellationRequested;
         };
         act.Should().NotThrow();
@@ -309,9 +309,9 @@ public sealed class DisposableDistributedLockTests : TestBase
         // storage call is cancelled, RenewOrValidateLeaseAsync catches and classifies as
         // Unknown so DisposeAsync does not wedge waiting on a stuck storage round-trip.
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         _lockProvider
-            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .GetLeaseIdAsync(resource, Arg.Any<CancellationToken>())
             .Returns(ci =>
             {
                 var ct = ci.Arg<CancellationToken>();
@@ -319,7 +319,7 @@ public sealed class DisposableDistributedLockTests : TestBase
                 ct.Register(() => tcs.TrySetCanceled(ct));
                 return tcs.Task;
             });
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
 
         // when - call the iteration with an uncancellable caller token, then advance fake time
         // past the per-iteration deadline.
@@ -338,10 +338,10 @@ public sealed class DisposableDistributedLockTests : TestBase
         // given - storage operation never completes and ignores the provided token. DisposeAsync
         // must still drain the monitor after the TimeProvider-backed deadline fires.
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var validationStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _lockProvider
-            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .GetLeaseIdAsync(resource, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 validationStarted.TrySetResult();
@@ -349,7 +349,7 @@ public sealed class DisposableDistributedLockTests : TestBase
 
                 return blocked.Task;
             });
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
         var monitor = new LeaseMonitor(sut, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         sut.AttachMonitor(monitor);
         monitor.TriggerImmediateValidation();
@@ -370,10 +370,10 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var callCount = 0;
         _lockProvider
-            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .GetLeaseIdAsync(resource, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 Interlocked.Increment(ref callCount);
@@ -381,7 +381,7 @@ public sealed class DisposableDistributedLockTests : TestBase
 
                 return blocked.Task;
             });
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
 
         // when
         var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
@@ -405,17 +405,17 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
         var probe = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var callCount = 0;
         _lockProvider
-            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .GetLeaseIdAsync(resource, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 Interlocked.Increment(ref callCount);
                 return probe.Task;
             });
-        var sut = _CreateLock(resource, lockId);
+        var sut = _CreateLock(resource, leaseId);
 
         // when - first iteration times out before storage replies.
         var first = ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
@@ -423,7 +423,7 @@ public sealed class DisposableDistributedLockTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(10));
         var firstResult = await first.WaitAsync(TimeSpan.FromSeconds(5));
 
-        probe.SetResult(lockId);
+        probe.SetResult(leaseId);
         var secondResult = await ((LeaseMonitor.ILeaseHandle)sut)
             .RenewOrValidateLeaseAsync(CancellationToken.None)
             .WaitAsync(TimeSpan.FromSeconds(5));
@@ -439,17 +439,17 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var currentLockId = lockId;
+        var leaseId = Faker.Random.Guid().ToString();
+        var currentLockId = leaseId;
         var callCount = 0;
         _lockProvider
-            .GetLockIdAsync(resource, Arg.Any<CancellationToken>())
+            .GetLeaseIdAsync(resource, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 Interlocked.Increment(ref callCount);
                 return Task.FromResult<string?>(currentLockId);
             });
-        await using var sut = _CreateLock(resource, lockId);
+        await using var sut = _CreateLock(resource, leaseId);
 
         // when
         var firstResult = await ((LeaseMonitor.ILeaseHandle)sut).RenewOrValidateLeaseAsync(CancellationToken.None);
@@ -467,8 +467,8 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
-        var sut = _CreateLock(resource, lockId);
+        var leaseId = Faker.Random.Guid().ToString();
+        var sut = _CreateLock(resource, leaseId);
         var expectedDuration = TimeSpan.FromSeconds(30);
 
         // when
@@ -478,12 +478,12 @@ public sealed class DisposableDistributedLockTests : TestBase
         // then - verify the elapsed time was captured (logged)
         // The lock calculates duration using timeProvider.GetElapsedTime(_timestamp)
         // We verify indirectly by checking that the lock was released after the time elapsed
-        await _lockProvider.Received(1).ReleaseAsync(resource, lockId, Arg.Any<CancellationToken>());
+        await _lockProvider.Received(1).ReleaseAsync(resource, leaseId, Arg.Any<CancellationToken>());
     }
 
     private DisposableDistributedLock _CreateLock(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeWaitedForLock = null,
         bool releaseOnDispose = true,
         bool autoExtend = false,
@@ -493,7 +493,7 @@ public sealed class DisposableDistributedLockTests : TestBase
     {
         return new DisposableDistributedLock(
             resource,
-            lockId,
+            leaseId,
             fencingToken,
             TimeSpan.FromSeconds(10),
             timeWaitedForLock ?? TimeSpan.Zero,

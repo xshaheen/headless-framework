@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Microsoft.Extensions.Options;
 using Npgsql;
-using System.Data.Common;
 
 namespace Headless.DistributedLocks.Postgres;
 
@@ -32,7 +32,9 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
         // source, so the optional handle connection is intentionally ignored here.
         _ = connection;
 
-        await using var pooledConnection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var pooledConnection = await _dataSource
+            .OpenConnectionAsync(cancellationToken)
+            .ConfigureAwait(false);
         await _EnsureSequenceAsync(pooledConnection, cancellationToken).ConfigureAwait(false);
 
         await using var command = pooledConnection.CreateCommand();

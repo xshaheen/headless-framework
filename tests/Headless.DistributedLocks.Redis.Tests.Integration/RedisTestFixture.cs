@@ -16,7 +16,7 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
     public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
-    public RedisDistributedReaderWriterLockStorage ReaderWriterLockStorage { get; private set; } = null!;
+    public RedisDistributedReadWriteLockStorage ReaderWriterLockStorage { get; private set; } = null!;
 
     public RedisDistributedSemaphoreStorage SemaphoreStorage { get; private set; } = null!;
 
