@@ -597,9 +597,13 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         var canceledSignals = new[]
         {
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
         };
@@ -659,17 +663,23 @@ public sealed class NatsConsumerClientTests : TestBase
         try
         {
             await startedSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
             await client.PauseAsync(AbortToken);
             await canceledSignals[0].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
 
             await client.ResumeAsync(AbortToken);
-            await startedSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await startedSignals[2].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await startedSignals[3].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
             await client.PauseAsync(AbortToken);
-            await canceledSignals[1].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await canceledSignals[2].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+            await canceledSignals[3].Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
             // then
-            seenTokens.Should().HaveCountGreaterThanOrEqualTo(2);
-            seenTokens[0].Should().NotBe(seenTokens[1]);
+            seenTokens.Should().HaveCountGreaterThanOrEqualTo(4);
+            seenTokens[0].Should().Be(seenTokens[1]);
+            seenTokens[2].Should().Be(seenTokens[3]);
+            seenTokens[0].Should().NotBe(seenTokens[2]);
         }
         finally
         {

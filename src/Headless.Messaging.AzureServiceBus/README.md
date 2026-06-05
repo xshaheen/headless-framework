@@ -46,7 +46,14 @@ options.UseAzureServiceBus(asb =>
     asb.EnableSessions = true; // Required for ordered delivery
     asb.TokenCredential = credential; // Azure.Core.TokenCredential when not using ConnectionString
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())));
 ```
+
+`PartitionKey(...)` stamps `AzureServiceBusHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusHeaders.SessionId`. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ## Message Ordering
 
@@ -79,6 +86,8 @@ await publisher.PublishAsync(
         Headers = new Dictionary<string, string?> { [AzureServiceBusHeaders.SessionId] = order.CustomerId.ToString() }
     });
 ```
+
+When you also configure `PartitionKey(...)`, return the same value as `AzureServiceBusHeaders.SessionId` while sessions are enabled.
 
 ### Consumer Configuration
 

@@ -52,7 +52,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogNatsStreamMessagePublished(subject, ack.Seq);
+                logger.LogNatsStreamMessagePublished(message.GetName(), ack.Seq);
             }
 
             return OperateResult.Success;

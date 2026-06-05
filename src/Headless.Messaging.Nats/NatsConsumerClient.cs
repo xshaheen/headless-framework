@@ -183,7 +183,7 @@ internal sealed class NatsConsumerClient(
         {
             var groupName = Helper.Normalized(name);
 
-            foreach (var subject in streamGroup)
+            foreach (var subject in BuildConsumerSubjects(streamGroup))
             {
                 var durableName = BuildDurableName(groupName, subject, intentType);
 

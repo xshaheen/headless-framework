@@ -304,6 +304,8 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 - **Ordering depends on transport**: Kafka orders by partition key. Azure Service Bus orders by session. RabbitMQ has no ordering with multiple consumers. Set `ConsumerThreadCount = 1` for strict ordering.
 - **RabbitMQ credentials**: The framework rejects default `guest`/`guest` credentials. Always configure explicit username/password.
 - **Message-name mapping**: Map message types to logical message names via `setup.ForMessage<TMessage>(x => x.MessageName("message.name"))` (primary) or conventions. `IMessagingBuilder.WithMessageNameMapping<TMessage>("message.name")` remains available inside the `AddHeadlessMessaging` callback for standalone/publisher-only overrides.
+- **Correlation mapping**: Use `setup.ForMessage<TMessage>(x => x.CorrelationFrom(message => ...))` to derive `headless-corr-id` from the outgoing payload. Correlation precedence is explicit publish option, message selector, ambient consume context, then framework message ID. This path is separate from W3C `traceparent`.
+- **Provider hatches are physical routing only**: Kafka `PartitionBy`, RabbitMQ `RoutingKeyFromMessage`, Azure Service Bus `PartitionKey`, AWS `MessageGroupId`, and NATS `SubjectShard` live under provider-specific `UseXxx(...)` calls. Do not model partition affinity as a universal Core knob; broker semantics differ.
 - **Fail-fast defaults**: Duplicate consumer or runtime registrations are rejected by default. Anonymous runtime delegates must provide `HandlerId`.
 - **Telemetry parity**: Existing diagnostic listener and metric names stay stable across direct publish, outbox publish, and runtime subscriptions.
 - **Consumer lifecycle semantics**: `IConsumerLifecycle` runs per delivery on the scoped consumer instance. Do not treat it as application startup or shutdown.
@@ -421,14 +423,14 @@ Outbox rows carry `IntentType.Bus` or `IntentType.Queue`, so retry drainers, das
 
 ### Reserved Wire Headers
 
-Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through options headers is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use typed options properties such as `PublishOptions.Delay` or `EnqueueOptions.Delay`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
+Every published message carries metadata headers defined in `Headless.Messaging.Headers`. Eight of these keys are enforced as **reserved**: writing them directly through options headers is rejected with `InvalidOperationException`. The reserved set is `MessageId`, `CorrelationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, and `DelayTime` — use typed options properties such as `PublishOptions.Delay` or `EnqueueOptions.Delay`, or message registration APIs such as `CorrelationFrom(...)`. `TenantId` is enforced separately via its own four-case integrity rule (see [Tenant Header Integrity](#tenant-header-integrity) below). All other framework headers (`Group`, `ExecutionInstanceId`, `Exception`, `TraceParent`) are written by the framework but are NOT in the rejection set.
 
 | Header constant     | Wire key                       | Reserved | Source       | Purpose                                                                                                  |
 |---------------------|--------------------------------|----------|--------------|----------------------------------------------------------------------------------------------------------|
 | `MessageId`         | `headless-msg-id`              | yes      | mixed        | Logical message identifier. Set explicitly via `PublishOptions.MessageId` or assigned by the framework.  |
 | `MessageName`       | `headless-msg-name`            | yes      | framework    | Logical message name used for subscriber routing.                                                        |
 | `Type`              | `headless-msg-type`            | yes      | framework    | .NET type name of the payload, used for deserialization.                                                 |
-| `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Set via `PublishOptions.CorrelationId`.                                 |
+| `CorrelationId`     | `headless-corr-id`             | yes      | mixed        | Saga / message-flow correlation. Resolved from `PublishOptions.CorrelationId`, `CorrelationFrom(...)`, ambient consume context, then message ID. |
 | `CorrelationSequence` | `headless-corr-seq`          | yes      | publisher    | Position in a correlated sequence. Set via `PublishOptions.CorrelationSequence`.                         |
 | `CallbackName`      | `headless-callback-name`       | yes      | publisher    | Response message name for async response routing. Set via `PublishOptions.CallbackName` (bus) or `EnqueueOptions.CallbackName` (queue). |
 | `SentTime`          | `headless-senttime`            | yes      | framework    | UTC ISO 8601 timestamp of publish (set from `publishAt.UtcDateTime`, invariant culture).                 |
@@ -450,7 +452,7 @@ Every published message carries metadata headers defined in `Headless.Messaging.
 | `MessageName`         | `string?`                           | Explicit message-name override. When `null`, the message name resolves from `WithMessageNameMapping<T>` or convention.      |
 | `Headers`             | `IDictionary<string, string?>?`     | Custom application headers. Reserved keys (see table above) are rejected at publish time.                             |
 | `MessageId`           | `string?`                           | Logical message identifier override. Bounded by `PublishOptions.MessageIdMaxLength` (200 chars) for durable outbox columns. |
-| `CorrelationId`       | `string?`                           | Saga / flow correlation identifier.                                                                                   |
+| `CorrelationId`       | `string?`                           | Saga / flow correlation identifier. Highest-precedence source for `headless-corr-id`; otherwise `CorrelationFrom(...)`, ambient consume context, then message ID are used. |
 | `CorrelationSequence` | `int?`                              | Position within a correlated sequence.                                                                                |
 | `CallbackName`        | `string?`                           | Callback handler message name for response routing.                                                                   |
 | `TenantId`            | `string?`                           | Multi-tenancy identifier. Source of truth for tenant-side wire header (see Strict Publish Tenancy). Bounded by `PublishOptions.TenantIdMaxLength` (200 chars); whitespace-only values are rejected at publish time. |
@@ -1586,7 +1588,7 @@ Enables bus fan-out through SNS topics and queue work delivery through SQS queue
 
 The package registers both bus and queue capabilities. Bus publishes use SNS and subscribes SQS queues to topics. Queue sends bypass SNS and write directly to the SQS queue named by the message.
 
-Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from the `headless-msg-group` header when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
+Standard AWS entities remain the default. If a message name ends with `.fifo`, the provider preserves that suffix, creates FIFO SNS/SQS entities with content-based deduplication, and sends `MessageGroupId` from `AwsMessagingHeaders.MessageGroupId` when present, then `headless-msg-group` when present, otherwise `default`. When `headless-msg-id` is present, it is used as the AWS deduplication ID.
 
 SQS message attributes are limited by AWS to 10 entries. Queue sends fail before the AWS call when non-null headers exceed that limit so headers are not silently dropped.
 
@@ -1622,7 +1624,14 @@ options.UseAws(sqs =>
     sqs.SnsServiceUrl = "https://sns.us-east-1.amazonaws.com";
     sqs.SqsServiceUrl = "https://sqs.us-east-1.amazonaws.com";
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events.fifo")
+        .UseAws(aws => aws.MessageGroupId(order => order.CustomerId.ToString())));
 ```
+
+`MessageGroupId(...)` stamps `AwsMessagingHeaders.MessageGroupId` (`headless-aws-message-group-id`) during publish and is limited to 128 characters. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ### Dependencies
 
@@ -1685,9 +1694,16 @@ options.UseAzureServiceBus(asb =>
     asb.ConnectionString = "connection_string";
     asb.TopicPath = "myapp-topic";
     asb.EnableSessions = true; // Required for ordered delivery
-    asb.ManagementTokenProvider = tokenProvider;
+    asb.TokenCredential = credential; // Azure.Core.TokenCredential when not using ConnectionString
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())));
 ```
+
+`PartitionKey(...)` stamps `AzureServiceBusHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusHeaders.SessionId`. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ## Message Ordering
 
@@ -1723,6 +1739,8 @@ await publisher.PublishAsync(
         }
     });
 ```
+
+When you also configure `PartitionKey(...)`, return the same value as `AzureServiceBusHeaders.SessionId` while sessions are enabled.
 
 ### Consumer Configuration
 
@@ -1794,13 +1812,21 @@ options.UseKafka(kafka =>
 {
     kafka.Servers = "localhost:9092,localhost:9093";
     kafka.ConnectionPoolSize = 10;
-    kafka.CustomHeaders = headers => headers.Add("app", "myapp");
+    kafka.CustomHeadersBuilder = (consumeResult, services) =>
+        [new KeyValuePair<string, string>("app", "myapp")];
 
     // Kafka-specific producer settings for ordering
     kafka.MainConfig["enable.idempotence"] = "true";
     kafka.MainConfig["max.in.flight.requests.per.connection"] = "1"; // Strict ordering
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
 ```
+
+`PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ## Message Ordering
 
@@ -1808,20 +1834,13 @@ Kafka provides **strict FIFO ordering within partitions**:
 
 ### Partition-Based Ordering
 
-Messages sent to the same partition are delivered in order. Use message keys to route related messages to the same partition:
+Messages sent to the same partition are delivered in order. Use `UseKafka(...).PartitionBy(...)` to route related messages to the same partition:
 
 ```csharp
-// Publish with partition key for ordered delivery
-await publisher.PublishAsync(
-    order,
-    new PublishOptions
-    {
-        MessageName = "orders.events",
-        Headers = new Dictionary<string, string?>
-        {
-            ["PartitionKey"] = order.CustomerId.ToString()
-        }
-    });
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseKafka(kafka => kafka.PartitionBy(order => order.CustomerId.ToString())));
 ```
 
 ### Configuration for Strict Ordering
@@ -1915,7 +1934,14 @@ options.UseNats(nats =>
         ConnectTimeout = TimeSpan.FromSeconds(10),
     };
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString())));
 ```
+
+`SubjectShard(...)` stamps `NatsMessagingHeaders.SubjectShard` (`headless-nats-subject-shard`) during publish. The provider appends it as one safe subject token, producing subjects such as `orders.events.42`; `.`/`*`/`>`/whitespace/control characters are rejected. Stream auto-creation and durable consumer filters include wildcard coverage for sharded descendants. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ### Stream Auto-Creation
 
@@ -2061,7 +2087,14 @@ options.UseRabbitMQ(rmq =>
         factory.NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
     };
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .UseRabbitMq(rabbit => rabbit.RoutingKeyFromMessage(order => $"customer.{order.CustomerId}")));
 ```
+
+`RoutingKeyFromMessage(...)` stamps `RabbitMqHeaders.RoutingKey` (`headless-rabbitmq-routing-key`) during publish. The RabbitMQ transport uses that value as the AMQP routing key and keeps `MessageName(...)` as the logical framework message name. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ### Security Best Practices
 
@@ -2108,6 +2141,7 @@ setup.Options.EnableSubscriberParallelExecute = false; // No parallel execution
 - Creates exchanges and queues if they don't exist
 - Establishes persistent connections to RabbitMQ
 - Configures dead-letter exchanges for failed messages
+- Message-level `RoutingKeyFromMessage(...)` can override the AMQP publish routing key without changing `headless-msg-name`.
 
 ---
 
