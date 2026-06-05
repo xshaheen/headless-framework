@@ -208,17 +208,27 @@ public sealed class LeaseMonitorTests : TestBase
         };
         var monitoringTask = _CreateMonitorAndDropReference(handle);
 
-        // when - force GC then drive a cadence so the loop's WeakReference.TryGetTarget fails.
-        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-        GC.WaitForPendingFinalizers();
-        GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+        // when - drive GC + a cadence advance repeatedly until the loop observes the dead
+        // WeakReference and exits. Two non-determinisms make a single pass flaky: (1) GC need not
+        // reclaim an object parked behind an in-flight async continuation on the first collection,
+        // and (2) FakeTimeProvider.Advance only fires timers already registered at advance time,
+        // so an advance can race the loop re-parking on its next cadence wait and be silently lost.
+        // Retrying both — bounded — is deterministic without depending on collection or scheduler
+        // timing. In production real time always advances, so neither race exists.
+        for (var attempt = 0; attempt < 50 && !monitoringTask.IsCompleted; attempt++)
+        {
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, blocking: true);
 
-        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+            _timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-        // then - the loop exits within a bounded wall-clock budget. Generous timeout because
-        // FakeTimeProvider advances do not synchronously resume the loop; it still relies on
-        // the awaiter scheduling. 5 seconds is plenty without making the test flake-prone.
-        await monitoringTask.WaitAsync(TimeSpan.FromSeconds(5));
+            // Yield real wall-clock time so the loop's continuation can resume on the thread pool
+            // and re-check the WeakReference before the next attempt.
+            await Task.WhenAny(monitoringTask, Task.Delay(TimeSpan.FromMilliseconds(100), TestContext.Current.CancellationToken));
+        }
+
+        // then
         monitoringTask.IsCompleted.Should().BeTrue();
     }
 
