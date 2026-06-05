@@ -110,11 +110,21 @@ internal sealed class NatsConsumerClient(
             }
 
             subjects.Add(topicName);
+
+            var shardedSubject = $"{topicName}.>";
+            if (seen.Add(shardedSubject))
+            {
+                subjects.Add(shardedSubject);
+            }
         }
 
         if (hasHierarchicalSubjects)
         {
-            subjects.Add($"{streamName}.>");
+            var streamWildcard = $"{streamName}.>";
+            if (seen.Add(streamWildcard))
+            {
+                subjects.Add(streamWildcard);
+            }
         }
 
         return subjects;
@@ -125,6 +135,30 @@ internal sealed class NatsConsumerClient(
         return intentType == IntentType.Queue
             ? Helper.Normalized("queue-" + subject)
             : Helper.Normalized(groupName + "-" + subject);
+    }
+
+    internal static IReadOnlyList<string> BuildConsumerSubjects(IEnumerable<string> messageNames)
+    {
+        Argument.IsNotNull(messageNames);
+
+        var subjects = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var messageName in messageNames)
+        {
+            if (seen.Add(messageName))
+            {
+                subjects.Add(messageName);
+            }
+
+            var shardedSubject = $"{messageName}.>";
+            if (seen.Add(shardedSubject))
+            {
+                subjects.Add(shardedSubject);
+            }
+        }
+
+        return subjects;
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames)

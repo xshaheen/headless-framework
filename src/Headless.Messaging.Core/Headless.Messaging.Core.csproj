@@ -32,6 +32,9 @@
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Kafka.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.RabbitMq.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.AzureServiceBus.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Aws.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="FastExpressionCompiler" />

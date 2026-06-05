@@ -23,6 +23,25 @@ internal static class AzureServiceBusMessageBuilder
         }
 
         if (
+            transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var partitionKey)
+            && !string.IsNullOrWhiteSpace(partitionKey)
+        )
+        {
+            if (
+                enableSessions
+                && !string.IsNullOrWhiteSpace(message.SessionId)
+                && !string.Equals(message.SessionId, partitionKey, StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Azure Service Bus requires PartitionKey to match SessionId when sessions are enabled."
+                );
+            }
+
+            message.PartitionKey = partitionKey;
+        }
+
+        if (
             transportMessage.Headers.TryGetValue(
                 AzureServiceBusHeaders.ScheduledEnqueueTimeUtc,
                 out var scheduledEnqueueTimeUtcString

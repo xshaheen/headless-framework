@@ -6,6 +6,8 @@ public static class AzureServiceBusHeaders
 {
     public const string SessionId = "headless-session-id";
 
+    public const string PartitionKey = "headless-asb-partition-key";
+
     /// <summary>
     /// The scheduled enqueue time as DateTimeOffset. This value is for delayed message sending.
     /// It is utilized to delay messages sending to a specific time in the future.

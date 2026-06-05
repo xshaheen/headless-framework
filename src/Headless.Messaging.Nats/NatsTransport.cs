@@ -24,8 +24,10 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
             // NatsJSContext is a stateless wrapper around the connection, so it's safe to create per call.
             var js = new NatsJSContext(connection);
 
+            var subject = ResolveSubject(message);
+
             var ack = await js.PublishAsync(
-                    subject: message.GetName(),
+                    subject: subject,
                     data: message.Body,
                     serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
                     opts: CreatePublishOpts(message),
@@ -50,7 +52,7 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
 
             if (logger.IsEnabled(LogLevel.Debug))
             {
-                logger.LogNatsStreamMessagePublished(message.GetName(), ack.Seq);
+                logger.LogNatsStreamMessagePublished(subject, ack.Seq);
             }
 
             return OperateResult.Success;
@@ -86,6 +88,19 @@ internal sealed class NatsTransport(ILogger<NatsTransport> logger, INatsConnecti
     internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
     {
         return new NatsJSPubOpts { MsgId = message.GetId() };
+    }
+
+    internal static string ResolveSubject(TransportMessage message)
+    {
+        if (
+            !message.Headers.TryGetValue(NatsMessagingHeaders.SubjectShard, out var shard)
+            || string.IsNullOrWhiteSpace(shard)
+        )
+        {
+            return message.GetName();
+        }
+
+        return $"{message.GetName()}.{NatsSubjectShard.Validate(shard)}";
     }
 }
 

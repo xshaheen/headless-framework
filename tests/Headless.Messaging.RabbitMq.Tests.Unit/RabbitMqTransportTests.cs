@@ -109,6 +109,38 @@ public sealed class RabbitMqTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_publish_with_configured_routing_key_when_header_is_present()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool);
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                { MessagingHeaders.MessageId, "msg-123" },
+                { MessagingHeaders.MessageName, "TestMessage" },
+                { RabbitMqHeaders.RoutingKey, "tenant.a.orders" },
+            },
+            body: "test-body"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await _channel
+            .Received(1)
+            .BasicPublishAsync(
+                "test.exchange",
+                "tenant.a.orders",
+                false,
+                Arg.Any<BasicProperties>(),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_return_channel_to_pool_after_publish()
     {
         // given

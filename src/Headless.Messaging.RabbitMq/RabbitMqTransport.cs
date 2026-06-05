@@ -40,8 +40,14 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
 
+            var routingKey =
+                message.Headers.TryGetValue(RabbitMqHeaders.RoutingKey, out var configuredRoutingKey)
+                && !string.IsNullOrWhiteSpace(configuredRoutingKey)
+                    ? configuredRoutingKey
+                    : message.GetName();
+
             await channel
-                .BasicPublishAsync(_exchange, message.GetName(), false, props, message.Body, cancellationToken)
+                .BasicPublishAsync(_exchange, routingKey, false, props, message.Body, cancellationToken)
                 .ConfigureAwait(false);
 
             var messageName = message.GetName();

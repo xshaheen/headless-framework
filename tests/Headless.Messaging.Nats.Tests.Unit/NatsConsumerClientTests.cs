@@ -89,7 +89,7 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public void BuildStreamSubjects_should_use_exact_subject_for_single_token_topic()
     {
-        NatsConsumerClient.BuildStreamSubjects("orders", ["orders"]).Should().BeEquivalentTo(["orders"]);
+        NatsConsumerClient.BuildStreamSubjects("orders", ["orders"]).Should().BeEquivalentTo(["orders", "orders.>"]);
     }
 
     [Fact]
@@ -122,7 +122,16 @@ public sealed class NatsConsumerClientTests : TestBase
         NatsConsumerClient
             .BuildStreamSubjects("events", ["orders.created"])
             .Should()
-            .BeEquivalentTo(["orders.created"]);
+            .BeEquivalentTo(["orders.created", "orders.created.>"]);
+    }
+
+    [Fact]
+    public void BuildConsumerSubjects_should_include_exact_and_sharded_descendant_subjects()
+    {
+        NatsConsumerClient
+            .BuildConsumerSubjects(["orders"])
+            .Should()
+            .BeEquivalentTo(["orders", "orders.>"]);
     }
 
     [Fact]
