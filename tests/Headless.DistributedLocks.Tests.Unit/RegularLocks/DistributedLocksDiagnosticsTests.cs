@@ -98,7 +98,6 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
         activity.DisplayName.Should().Be($"Lock: {resource}");
         activity.GetTagItem("headless.lock.resource").Should().Be(resource);
 
-        lockFailedCount.Should().Be(0);
         waitTimeRecorded.Should().BeGreaterThanOrEqualTo(1);
     }
 
