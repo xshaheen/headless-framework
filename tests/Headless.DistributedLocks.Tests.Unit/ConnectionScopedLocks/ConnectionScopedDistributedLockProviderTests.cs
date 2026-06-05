@@ -450,7 +450,11 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
 
     private sealed class ThrowingFencingTokenSource : IFencingTokenSource
     {
-        public ValueTask<long?> NextAsync(string resource, CancellationToken cancellationToken = default)
+        public ValueTask<long?> NextAsync(
+            string resource,
+            System.Data.Common.DbConnection? connection = null,
+            CancellationToken cancellationToken = default
+        )
         {
             cancellationToken.ThrowIfCancellationRequested();
 

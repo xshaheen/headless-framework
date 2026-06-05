@@ -35,7 +35,7 @@ internal static class SqlServerApplicationLock
                 )
                 .ConfigureAwait(false);
 
-            return MapAcquireResult(resource, result, acquireTimeout);
+            return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -58,27 +58,38 @@ internal static class SqlServerApplicationLock
                 "The transaction has no associated open connection (already committed, rolled back, or disposed)."
             );
 
-        var result = await _ExecuteAcquireAsync(
-                connection,
-                transaction,
-                resource,
-                isShared,
-                lockOwner: "Transaction",
-                acquireTimeout,
-                commandTimeout,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        try
+        {
+            var result = await _ExecuteAcquireAsync(
+                    connection,
+                    transaction,
+                    resource,
+                    isShared,
+                    lockOwner: "Transaction",
+                    acquireTimeout,
+                    commandTimeout,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
 
-        return MapAcquireResult(resource, result, acquireTimeout);
+            return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            await _ReleaseTransactionAsync(connection, transaction, resource, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
 
-    internal static bool MapAcquireResult(string resource, int result, TimeSpan acquireTimeout)
+    internal static bool MapAcquireResult(string resource, int result, TimeSpan acquireTimeout, CancellationToken cancellationToken = default)
     {
         return result switch
         {
             -1 => false,
-            -2 => throw new OperationCanceledException($"SQL Server cancelled distributed lock acquisition for '{resource}'."),
+            -2 => throw new OperationCanceledException(
+                $"SQL Server cancelled distributed lock acquisition for '{resource}'.",
+                cancellationToken
+            ),
             -3 => throw new DistributedLockDeadlockException(resource),
             -999 => throw new ArgumentException(
                 $"SQL Server rejected distributed lock resource '{resource}' or lock mode parameters.",
@@ -113,6 +124,28 @@ internal static class SqlServerApplicationLock
         command.CommandText = """
             IF APPLOCK_MODE(N'public', @resource, N'Session') <> N'NoLock'
                 EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'Session', @DbPrincipal = N'public';
+            """;
+        command.Parameters.AddWithValue("resource", resource);
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask _ReleaseTransactionAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string resource,
+        CancellationToken cancellationToken
+    )
+    {
+        if (connection.State != System.Data.ConnectionState.Open || transaction.Connection is null)
+        {
+            return;
+        }
+
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            IF APPLOCK_MODE(N'public', @resource, N'Transaction') <> N'NoLock'
+                EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'Transaction', @DbPrincipal = N'public';
             """;
         command.Parameters.AddWithValue("resource", resource);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -153,6 +186,17 @@ internal static class SqlServerApplicationLock
         command.Parameters.AddWithValue("lockTimeout", _ToLockTimeoutMilliseconds(acquireTimeout));
 
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Converts a plain command timeout to ADO's whole-second budget, clamping sub-second values up to 1 so they do
+    /// not collapse to 0 (ADO's infinite-wait sentinel).
+    /// </summary>
+    internal static int GetCommandTimeoutSeconds(TimeSpan commandTimeout)
+    {
+        return commandTimeout.TotalSeconds >= int.MaxValue
+            ? int.MaxValue
+            : Math.Max(1, (int)Math.Ceiling(commandTimeout.TotalSeconds));
     }
 
     internal static int GetCommandTimeoutSeconds(TimeSpan acquireTimeout, TimeSpan commandTimeout)

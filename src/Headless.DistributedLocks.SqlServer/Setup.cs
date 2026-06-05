@@ -47,7 +47,6 @@ public static class SetupSqlServerDistributedLocks
             services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
                 sp.GetRequiredService<SqlServerConnectionScopedLockStorage>()
             );
-            services.TryAddSingleton<IReleaseSignal, PollingReleaseSignal>();
             services.TryAddSingleton<IFencingTokenSource, SqlServerFencingTokenSource>();
             services.AddInitializerHostedService<SqlServerDistributedLocksStorageInitializer>();
             services.TryAddSingleton<DistributedLockOptions>(sp =>
@@ -55,7 +54,9 @@ public static class SetupSqlServerDistributedLocks
             );
             services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(sp => new ConnectionScopedDistributedLockProvider(
                 sp.GetRequiredService<IConnectionScopedLockStorage>(),
-                sp.GetRequiredService<IReleaseSignal>(),
+                // SQL Server blocks contended acquires server-side (BlocksServerSide), so the provider's wait loop and
+                // the release signal are unreachable; a no-op signal satisfies the constructor contract.
+                new NullReleaseSignal(),
                 sp.GetRequiredService<DistributedLockOptions>(),
                 sp.GetRequiredService<ILongIdGenerator>(),
                 sp.GetRequiredService<TimeProvider>(),

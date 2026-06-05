@@ -69,7 +69,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
                 resource,
                 contenderTransaction,
                 TimeSpan.Zero,
-                AbortToken
+                cancellationToken: AbortToken
             ))
             .Should()
             .BeFalse();
@@ -79,7 +79,12 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         await using var nextConnection = await _OpenAsync();
         await using var nextTransaction = (SqlTransaction)await nextConnection.BeginTransactionAsync(AbortToken);
 
-        (await SqlServerDistributedLock.TryAcquireWithTransactionAsync(resource, nextTransaction, TimeSpan.Zero, AbortToken))
+        (await SqlServerDistributedLock.TryAcquireWithTransactionAsync(
+                resource,
+                nextTransaction,
+                TimeSpan.Zero,
+                cancellationToken: AbortToken
+            ))
             .Should()
             .BeTrue();
     }
@@ -143,7 +148,67 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         await using var handle = await firstLocks.AcquireReadLockAsync(resource, cancellationToken: AbortToken);
 
         (await secondLocks.IsReadLockedAsync(resource, AbortToken)).Should().BeTrue();
+
+        // Cross-process reader counts are presence-only on SQL Server: APPLOCK_TEST reports the lock mode but not a
+        // holder count, so a remotely-held read lock reads as 1 regardless of how many remote readers hold it. This
+        // asserts presence (held by another process), not an exact remote count.
         (await secondLocks.GetReaderCountAsync(resource, AbortToken)).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_mutually_exclude_provider_and_transaction_apis_on_same_resource()
+    {
+        var keyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
+        await using var provider = _CreateProvider(options =>
+        {
+            options.EnableFencing = false;
+            options.KeyPrefix = keyPrefix;
+        });
+        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        // Hold the lock via the provider (session-scoped, KeyPrefix-encoded).
+        await using var providerLock = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // A same-resource transaction acquire must observe the conflict because both APIs encode KeyPrefix + resource.
+        await using var contenderConnection = await _OpenAsync();
+        await using var contenderTransaction = (SqlTransaction)await contenderConnection.BeginTransactionAsync(AbortToken);
+
+        var acquired = await SqlServerDistributedLock.TryAcquireWithTransactionAsync(
+            resource,
+            contenderTransaction,
+            TimeSpan.Zero,
+            keyPrefix: keyPrefix,
+            cancellationToken: AbortToken
+        );
+
+        acquired.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_report_transaction_owned_lock_as_locked_from_separate_connection()
+    {
+        var keyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
+        await using var provider = _CreateProvider(options =>
+        {
+            options.EnableFencing = false;
+            options.KeyPrefix = keyPrefix;
+        });
+        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var holderConnection = await _OpenAsync();
+        await using var holderTransaction = (SqlTransaction)await holderConnection.BeginTransactionAsync(AbortToken);
+        await SqlServerDistributedLock.AcquireWithTransactionAsync(
+            resource,
+            holderTransaction,
+            keyPrefix: keyPrefix,
+            cancellationToken: AbortToken
+        );
+
+        // The probe (APPLOCK_TEST on a separate connection) must see the transaction-owned exclusive lock as a
+        // conflict, even though it is held under the Transaction owner.
+        (await locks.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
     }
 
     private ServiceProvider _CreateProvider(Action<SqlServerDistributedLockOptions>? configure = null)

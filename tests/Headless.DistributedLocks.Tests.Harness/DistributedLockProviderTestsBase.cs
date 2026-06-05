@@ -16,6 +16,20 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
     protected abstract IDistributedLockProvider GetLockProvider();
 
+    /// <summary>
+    /// Kills the backing session/connection that holds <paramref name="handle"/> from a separate admin connection,
+    /// simulating a silent connection death (no clean close, no client-side RST). Connection-scoped providers
+    /// (SQL Server <c>KILL</c>, PostgreSQL <c>pg_terminate_backend</c>) override this so the cross-provider
+    /// connection-death scenario runs against them; lease-based or in-process providers leave it unsupported.
+    /// </summary>
+    protected virtual Task KillLockHoldingConnectionAsync(IDistributedLock handle, CancellationToken cancellationToken)
+    {
+        throw new NotSupportedException(
+            "This provider does not back its lock with a killable connection; "
+                + $"override {nameof(KillLockHoldingConnectionAsync)} to run the connection-death scenario."
+        );
+    }
+
     public virtual async Task should_lock_with_try_acquire()
     {
         var lockProvider = GetLockProvider();
@@ -571,6 +585,38 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
         handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Connection-scoped providers back the lock with a dedicated session. When that session dies silently
+    /// (network drop with no RST, or an out-of-band <c>KILL</c>), the provider's active liveness probe must
+    /// surface the loss by cancelling the handle's <see cref="IDistributedLock.HandleLostToken"/>. The probe
+    /// runs on a bounded cadence, so the wait here is generous on purpose. Only wired by providers that
+    /// override <see cref="KillLockHoldingConnectionAsync"/>.
+    /// </summary>
+    public virtual async Task should_fire_handle_lost_token_when_lock_holding_connection_dies()
+    {
+        var locker = GetLockProvider();
+        var resource = Faker.Random.String2(3, 20);
+
+        await using var handle = await locker.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        handle.HandleLostToken.CanBeCanceled.Should().BeTrue();
+        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+
+        // Kill the lock-holding session out-of-band; the provider's probe should observe the dead connection.
+        await KillLockHoldingConnectionAsync(handle, AbortToken);
+
+        // Probe cadence is ~30s; poll generously (independent of AbortToken so we observe the lost token itself).
+        var lostToken = handle.HandleLostToken;
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
+
+        while (!lostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
+        }
+
+        lostToken.IsCancellationRequested.Should().BeTrue("the lock-holding connection died and the probe should detect it");
     }
 
     #endregion

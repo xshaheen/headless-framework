@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.SqlServer;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
@@ -16,9 +18,12 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockPr
 {
     private readonly ServiceProvider _services;
     private readonly IDistributedLockProvider _provider;
+    private readonly string _connectionString;
 
     public SqlServerDistributedLockConformanceTests(SqlServerDistributedLockFixture fixture)
     {
+        _connectionString = fixture.ConnectionString;
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSqlServerDistributedLocks(options =>
@@ -33,6 +38,41 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockPr
     }
 
     protected override IDistributedLockProvider GetLockProvider() => _provider;
+
+    /// <summary>
+    /// Simulates silent connection death for the SQL Server provider by discovering the SPID of the session that
+    /// holds the application lock and issuing <c>KILL</c> from a separate admin connection. The held session has no
+    /// in-flight command at this point, so only the provider's active liveness probe can surface the loss.
+    /// </summary>
+    protected override async Task KillLockHoldingConnectionAsync(
+        IDistributedLock handle,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var admin = new SqlConnection(_connectionString);
+        await admin.OpenAsync(cancellationToken);
+
+        // The conformance collection disables parallelization and each test holds a single application lock, so the
+        // only granted APPLICATION lock (other than this admin connection) belongs to the handle under test.
+        await using var lookup = admin.CreateCommand();
+        lookup.CommandText = """
+            SELECT TOP (1) request_session_id
+            FROM sys.dm_tran_locks
+            WHERE resource_type = 'APPLICATION'
+              AND request_status = 'GRANT'
+              AND request_session_id <> @@SPID;
+            """;
+
+        var spidResult = await lookup.ExecuteScalarAsync(cancellationToken);
+        spidResult.Should().NotBeNull("the lock-holding session must hold a granted application lock");
+
+        var spid = Convert.ToInt32(spidResult, CultureInfo.InvariantCulture);
+
+        await using var kill = admin.CreateCommand();
+        // KILL does not accept a parameter; the spid is an int read from the server, so it is safe to inline.
+        kill.CommandText = string.Create(CultureInfo.InvariantCulture, $"KILL {spid};");
+        await kill.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -95,4 +135,8 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockPr
 
     [Fact]
     public override Task should_get_active_locks_count() => base.should_get_active_locks_count();
+
+    [Fact]
+    public override Task should_fire_handle_lost_token_when_lock_holding_connection_dies() =>
+        base.should_fire_handle_lost_token_when_lock_holding_connection_dies();
 }

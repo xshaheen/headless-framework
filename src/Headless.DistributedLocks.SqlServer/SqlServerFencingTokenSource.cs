@@ -3,6 +3,7 @@
 using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Data.Common;
 using System.Globalization;
 
 namespace Headless.DistributedLocks.SqlServer;
@@ -15,19 +16,45 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
 
-    public async ValueTask<long?> NextAsync(string resource, CancellationToken cancellationToken = default)
+    public async ValueTask<long?> NextAsync(
+        string resource,
+        DbConnection? connection = null,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!options.Value.EnableFencing)
         {
             return null;
         }
 
-        await using var connection = options.Value.CreateConnection();
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await _EnsureSequenceAsync(connection, cancellationToken).ConfigureAwait(false);
+        // The HostedInitializer pre-warms the sequence on hosted startup; the lazy ensure-path is the self-heal for
+        // consumers that resolve the provider without starting the host (the same pattern the Postgres source uses).
+        // It runs on its own short-lived connection so its applock-guarded DDL never shares the held lock's session.
+        // Gated by _sequenceEnsured so the once-per-source IF-NOT-EXISTS check runs at most once.
+        if (!Volatile.Read(ref _sequenceEnsured))
+        {
+            await using var ensureConnection = options.Value.CreateConnection();
+            await ensureConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+            await _EnsureSequenceAsync(ensureConnection, cancellationToken).ConfigureAwait(false);
+        }
 
+        // Reuse the lock handle's own open SqlConnection when the provider lends it, avoiding a second connection per
+        // exclusive acquire. Otherwise (incompatible handle or none) open our own.
+        if (connection is SqlConnection sqlConnection && sqlConnection.State == System.Data.ConnectionState.Open)
+        {
+            return await _NextAsync(sqlConnection, cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var ownedConnection = options.Value.CreateConnection();
+        await ownedConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _NextAsync(ownedConnection, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async ValueTask<long?> _NextAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
         await using var command = connection.CreateCommand();
-        command.CommandTimeout = (int)options.Value.CommandTimeout.TotalSeconds;
+        command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(options.Value.CommandTimeout);
         command.CommandText =
             $"SELECT NEXT VALUE FOR {SqlServerIdentifier.Quote(options.Value.Schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(options.Value.KeyPrefix))}";
 

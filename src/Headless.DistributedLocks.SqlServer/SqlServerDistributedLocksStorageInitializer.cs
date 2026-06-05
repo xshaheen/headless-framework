@@ -19,7 +19,7 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
         await EnsureSequenceAsync(connection, options.Value, cancellationToken).ConfigureAwait(false);
     }
 
-    public static async ValueTask EnsureSequenceAsync(
+    internal static async ValueTask EnsureSequenceAsync(
         SqlConnection connection,
         SqlServerDistributedLockOptions options,
         CancellationToken cancellationToken = default
@@ -29,16 +29,19 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
         var sequenceName = SqlServerIdentifier.FenceSequenceName(options.KeyPrefix);
         var lockResource = SqlServerResourceName.Encode($"{options.KeyPrefix}init:{schema}.{sequenceName}");
         var qualifiedSequence = $"{SqlServerIdentifier.Quote(schema)}.{SqlServerIdentifier.Quote(sequenceName)}";
+        var lockTimeoutMs = options.CommandTimeout.TotalMilliseconds >= int.MaxValue
+            ? int.MaxValue
+            : (int)Math.Ceiling(options.CommandTimeout.TotalMilliseconds);
 
         await using var command = connection.CreateCommand();
-        command.CommandTimeout = (int)options.CommandTimeout.TotalSeconds;
+        command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(options.CommandTimeout);
         command.CommandText = $$"""
             DECLARE @lockResult int;
             EXEC @lockResult = sys.sp_getapplock
                 @Resource = @lockResource,
                 @LockMode = N'Exclusive',
                 @LockOwner = N'Session',
-                @LockTimeout = 30000,
+                @LockTimeout = @lockTimeout,
                 @DbPrincipal = N'public';
 
             IF @lockResult < 0
@@ -79,6 +82,7 @@ internal sealed class SqlServerDistributedLocksStorageInitializer(IOptions<SqlSe
         command.Parameters.AddWithValue("lockResource", lockResource);
         command.Parameters.AddWithValue("schema", schema);
         command.Parameters.AddWithValue("sequenceName", sequenceName);
+        command.Parameters.AddWithValue("lockTimeout", lockTimeoutMs);
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 }

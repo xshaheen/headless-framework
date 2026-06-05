@@ -161,7 +161,9 @@ public sealed class ConnectionScopedDistributedLockProvider(
                     {
                         fencingToken = isShared || fencingTokenSource is null
                             ? null
-                            : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
+                            : await fencingTokenSource
+                                .NextAsync(resource, handle.HeldConnection, cancellationToken)
+                                .ConfigureAwait(false);
                     }
                     catch
                     {
@@ -196,6 +198,8 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
                 if (storage.BlocksServerSide)
                 {
+                    recordFailedAcquisition();
+
                     if (!throwOnTimeout)
                     {
                         return null;

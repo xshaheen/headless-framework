@@ -58,6 +58,14 @@ public sealed class SqlServerApplicationLockTests : TestBase
     }
 
     [Fact]
+    public void should_reject_update_mode_result_with_invalid_operation_exception()
+    {
+        var act = () => SqlServerApplicationLock.MapAcquireResult("resource", 104, TimeSpan.FromSeconds(1));
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
     public void should_use_infinite_command_timeout_for_infinite_lock_wait()
     {
         var timeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(
