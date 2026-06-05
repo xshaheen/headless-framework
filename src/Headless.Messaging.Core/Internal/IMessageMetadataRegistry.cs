@@ -35,7 +35,7 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
         }
 
         var candidates = _metadataByType
-            .Where(pair => pair.Key.IsAssignableFrom(messageType) || messageType.IsAssignableFrom(pair.Key))
+            .Where(pair => pair.Key.IsAssignableFrom(messageType))
             .Select(static pair => pair.Value)
             .ToArray();
 
