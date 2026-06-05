@@ -15,7 +15,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
     public async Task should_acquire_release_and_issue_monotonic_fencing_tokens()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using var first = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
@@ -32,20 +32,20 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
     public async Task should_return_null_expiration_for_session_scoped_lock()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         (await locks.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
-        handle.IsMonitored.Should().BeTrue();
+        handle.CanObserveLoss.Should().BeTrue();
     }
 
     [Fact]
     public async Task should_report_reader_and_writer_state_by_lock_mode()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedReadWriteLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         await using (var firstReader = await locks.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
@@ -102,7 +102,7 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         }
 
         await using var provider = _CreateProvider(options => options.EnablePushWakeup = false);
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 

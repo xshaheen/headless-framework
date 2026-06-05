@@ -16,7 +16,7 @@ namespace Headless.DistributedLocks.Postgres;
 /// acquisition and, on a dedicated connection, attaches a <see cref="ConnectionMonitor"/> whose active probe backs the
 /// handle's connection-lost token. This adapter keeps the observability queries (<c>pg_locks</c> counts/listing) on the
 /// owned <see cref="NpgsqlDataSource"/> directly, and bridges the engine handle's
-/// <see cref="IDistributedLock.HandleLostToken"/> onto <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// <see cref="IDistributedLease.LostToken"/> onto <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
 /// </summary>
 internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLockStorage, IAsyncDisposable
 {
@@ -68,7 +68,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         bool isShared,
         CancellationToken cancellationToken = default
     )
@@ -104,18 +104,18 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         {
             // Read the engine handle's lost token now so the ConnectionMonitor registers its monitoring handle (and
             // starts the active probe) at acquire time rather than lazily on first consumer read.
-            var connectionLostToken = engineHandle.HandleLostToken;
+            var connectionLostToken = engineHandle.LostToken;
 
             // Close the dispose race: if teardown has begun, the just-acquired lock would be missed by the
             // teardown snapshot of _heldByLockId, leaking its connection and advisory lock under No Reset On
             // Close. Drop it explicitly instead of registering it.
             ObjectDisposedException.ThrowIf(_disposed, this);
 
-            var held = new HeldLock(resource, lockId, engineHandle);
-            _heldByLockId[lockId] = held;
+            var held = new HeldLock(resource, leaseId, engineHandle);
+            _heldByLockId[leaseId] = held;
             ownershipTransferred = true;
 
-            return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, connectionLostToken);
+            return new ConnectionScopedLockHandle(resource, leaseId, ReleaseAsync, connectionLostToken);
         }
         finally
         {
@@ -128,12 +128,12 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
     public async ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
     {
-        await ReleaseAsync(handle.Resource, handle.LockId, cancellationToken).ConfigureAwait(false);
+        await ReleaseAsync(handle.Resource, handle.LeaseId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
-        if (!_heldByLockId.TryRemove(lockId, out var held))
+        if (!_heldByLockId.TryRemove(leaseId, out var held))
         {
             return;
         }
@@ -185,23 +185,23 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0L);
     }
 
-    public ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var lockId = _heldByLockId.Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))?.LockId;
+        var leaseId = _heldByLockId.Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))?.LeaseId;
 
-        return ValueTask.FromResult(lockId);
+        return ValueTask.FromResult(leaseId);
     }
 
-    public ValueTask<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        IReadOnlyList<LockInfo> locks = _heldByLockId
-            .Values.Select(x => new LockInfo
+        IReadOnlyList<DistributedLockInfo> locks = _heldByLockId
+            .Values.Select(x => new DistributedLockInfo
             {
                 Resource = x.Resource,
-                LockId = x.LockId,
+                LeaseId = x.LeaseId,
                 TimeToLive = null,
                 FencingToken = null,
             })
@@ -280,13 +280,13 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     /// A single held lock: owns the engine handle (which owns the connection lifecycle, the advisory unlock, and the
     /// connection-monitoring registration). Disposal is idempotent and delegates entirely to the engine handle.
     /// </summary>
-    private sealed class HeldLock(string resource, string lockId, IDistributedLock engineHandle) : IAsyncDisposable
+    private sealed class HeldLock(string resource, string leaseId, IDistributedLease engineHandle) : IAsyncDisposable
     {
         private int _disposed;
 
         public string Resource { get; } = resource;
 
-        public string LockId { get; } = lockId;
+        public string LeaseId { get; } = leaseId;
 
         public async ValueTask DisposeAsync()
         {

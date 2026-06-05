@@ -7,16 +7,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockProviderTestsBase"/>)
+/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockTestsBase"/>)
 /// against the PostgreSQL advisory-lock provider. Backend-specific behavior (advisory keys,
 /// LISTEN/NOTIFY, fencing sequence, transaction coupling, connection death) lives in the sibling
 /// test classes; this class only wires the provider and exposes the portable scenarios as facts.
 /// </summary>
 [Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresDistributedLockConformanceTests : DistributedLockProviderTestsBase
+public sealed class PostgresDistributedLockConformanceTests : DistributedLockTestsBase
 {
     private readonly ServiceProvider _services;
-    private readonly IDistributedLockProvider _provider;
+    private readonly IDistributedLock _provider;
 
     public PostgresDistributedLockConformanceTests(PostgresDistributedLockFixture fixture)
     {
@@ -29,10 +29,10 @@ public sealed class PostgresDistributedLockConformanceTests : DistributedLockPro
         });
 
         _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedLockProvider>();
+        _provider = _services.GetRequiredService<IDistributedLock>();
     }
 
-    protected override IDistributedLockProvider GetLockProvider() => _provider;
+    protected override IDistributedLock GetLockProvider() => _provider;
 
     protected override async ValueTask DisposeAsyncCore()
     {

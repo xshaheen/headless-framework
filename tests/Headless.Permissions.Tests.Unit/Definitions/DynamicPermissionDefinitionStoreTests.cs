@@ -18,7 +18,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
 {
     private readonly IPermissionDefinitionRecordRepository _repository;
     private readonly ICache _cache;
-    private readonly IDistributedLockProvider _distributedLockProvider;
+    private readonly IDistributedLock _distributedLockProvider;
     private readonly PermissionManagementOptions _options;
     private readonly FakeTimeProvider _timeProvider;
     private readonly DynamicPermissionDefinitionStore _sut;
@@ -29,7 +29,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
         var staticStore = Substitute.For<IStaticPermissionDefinitionStore>();
         var serializer = Substitute.For<IPermissionDefinitionSerializer>();
         _cache = Substitute.For<ICache>();
-        _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
+        _distributedLockProvider = Substitute.For<IDistributedLock>();
         var messagePublisher = Substitute.For<IBus>();
         var guidGenerator = Substitute.For<IGuidGenerator>();
         var application = Substitute.For<IApplicationInformationAccessor>();
@@ -226,7 +226,7 @@ public sealed class DynamicPermissionDefinitionStoreTests : TestBase
             .GetAsync<string>(_options.CommonPermissionsUpdatedStampCacheKey, Arg.Any<CancellationToken>())
             .Returns(new CacheValue<string>(null, false), new CacheValue<string>(stamp, true));
 
-        var lockHandle = Substitute.For<IDistributedLock>();
+        var lockHandle = Substitute.For<IDistributedLease>();
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(lockHandle);

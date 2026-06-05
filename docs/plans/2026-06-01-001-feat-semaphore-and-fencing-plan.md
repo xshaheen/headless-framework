@@ -33,7 +33,7 @@ These are sequenced together because the semaphore's acquire path should issue f
 
 Traceability to the origin issues:
 
-- **R1 (#364)** — Add `long? FencingToken` to `IDistributedLock` (and `LockInfo`), populated on successful acquire. `null` where a backend provides no fence.
+- **R1 (#364)** — Add `long? FencingToken` to `IDistributedLock` (and `DistributedLockInfo`), populated on successful acquire. `null` where a backend provides no fence.
 - **R2 (#364)** — `LockId` semantics unchanged: it stays the opaque ownership token (equality-checked in release/renew). Fencing is a *separate* per-resource monotonic counter, not a repurposing of `LockId`.
 - **R3 (#364)** — Redis fence via a per-resource `INCR`, incremented atomically with a successful acquire (only a granted acquire issues a token). Best-effort grade: the fence key carries no TTL; monotonicity holds only while the key is not evicted — document the operational contract (avoid `allkeys-*` eviction).
 - **R4 (#291)** — Define `IDistributedSemaphore` (per-resource handle-factory, binds `maxCount`) and `IDistributedSemaphoreProvider` with `CreateSemaphore(resource, maxCount)`. `maxCount` is bound at creation, **not** per acquire call.
@@ -56,7 +56,7 @@ Traceability to the origin issues:
 
 **KTD5 — Semaphore `maxCount` bound at creation (factory).** `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` returns an `IDistributedSemaphore` whose `AcquireAsync`/`TryAcquireAsync` take no count. Per-call inconsistency is impossible by construction (matches `madelson/DistributedLock: src/DistributedLock.SqlServer/SqlDistributedSemaphore.cs`). Cross-process agreement on `maxCount` remains a documented contract; optional runtime guard deferred.
 
-**KTD6 — Semaphore reuses ZSET + server-`TIME` + LeaseMonitor + outbox.** The expiration-scored ZSET algorithm mirrors the existing reader-writer storage's server-clock pattern (`redis.call('TIME')` inside Lua — `src/Headless.DistributedLocks.Redis/RedisDistributedReaderWriterLockStorage.cs`), avoiding client clock skew. The semaphore handle implements `LeaseMonitor.ILeaseHandle` exactly as `DisposableDistributedLock` does, and slot release publishes `DistributedLockReleased` like the mutex.
+**KTD6 — Semaphore reuses ZSET + server-`TIME` + LeaseMonitor + outbox.** The expiration-scored ZSET algorithm mirrors the existing reader-writer storage's server-clock pattern (`redis.call('TIME')` inside Lua — `src/Headless.DistributedLocks.Redis/RedisDistributedReadWriteLockStorage.cs`), avoiding client clock skew. The semaphore handle implements `LeaseMonitor.ILeaseHandle` exactly as `DisposableDistributedLock` does, and slot release publishes `DistributedLockReleased` like the mutex.
 
 **KTD7 — `FencingToken` is nullable on the interface; RW handles return `null`.** Mutex and semaphore populate it. Reader-writer lock handles return `null` (reader-side fencing is undefined; writer fencing deferred). This keeps the interface change additive and honest.
 
@@ -76,7 +76,7 @@ Directional guidance, not implementation spec.
 
 ```mermaid
 sequenceDiagram
-    participant P as DistributedLockProvider
+    participant P as DistributedLock
     participant S as RedisDistributedLockStorage
     participant R as Redis (Lua, atomic)
     P->>P: lockId = snowflake (ownership token)
@@ -123,17 +123,17 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
 
 ### U1. Add `FencingToken` to the public lock surface
 
-- **Goal:** Additive, nullable `long? FencingToken` on the handle and `LockInfo`, implemented across all `IDistributedLock` producers.
+- **Goal:** Additive, nullable `long? FencingToken` on the handle and `DistributedLockInfo`, implemented across all `IDistributedLock` producers.
 - **Requirements:** R1, R2, R7-quality.
 - **Dependencies:** none.
 - **Files:**
   - `src/Headless.DistributedLocks.Abstractions/RegularLocks/IDistributedLock.cs` (add property + XML doc distinguishing it from `LockId`)
-  - `src/Headless.DistributedLocks.Abstractions/RegularLocks/LockInfo.cs` (add `long? FencingToken { get; init; }`)
+  - `src/Headless.DistributedLocks.Abstractions/RegularLocks/DistributedLockInfo.cs` (add `long? FencingToken { get; init; }`)
   - `src/Headless.DistributedLocks.Core/RegularLocks/DisposableDistributedLock.cs` (field + property + ctor param)
-  - `src/Headless.DistributedLocks.Abstractions/RegularLocks/NullDistributedLockProvider.cs` (inner handle returns `null`)
+  - `src/Headless.DistributedLocks.Abstractions/RegularLocks/NullDistributedLock.cs` (inner handle returns `null`)
   - `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DisposableReaderWriterLock.cs` (returns `null` — KTD7)
 - **Approach:** Pure surface addition; no behavior yet (token wired in U3). XML doc must state: `FencingToken` is a per-resource monotonic grant counter for stale-write rejection; `null` when unsupported; distinct from `LockId`.
-- **Patterns to follow:** existing nullable handle members and `LockInfo` init-only record style.
+- **Patterns to follow:** existing nullable handle members and `DistributedLockInfo` init-only record style.
 - **Test suite design:** unit only — compile-level surface + null defaults. Behavior tested in U2/U3.
 - **Test scenarios:**
   - Null handle exposes `FencingToken == null`.
@@ -175,16 +175,16 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - Fake storage mirrors monotonic-per-resource behavior (unit).
 - **Verification:** unit + integration tests above pass; `InsertAsync` callers updated; no client-side clock used for the token.
 
-### U3. Thread the fence token through the provider to the handle and `LockInfo`
+### U3. Thread the fence token through the provider to the handle and `DistributedLockInfo`
 
 - **Goal:** Populate `FencingToken` on the acquired handle and surface it via `GetLockInfoAsync`.
 - **Requirements:** R1, R2.
 - **Dependencies:** U1, U2.
 - **Files:**
-  - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs` (capture token from `InsertAsync`; pass into `_CreateLockHandle`; include in `LockInfo`)
+  - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs` (capture token from `InsertAsync`; pass into `_CreateLockHandle`; include in `DistributedLockInfo`)
   - `src/Headless.DistributedLocks.Core/RegularLocks/DisposableDistributedLock.cs` (ctor stores token)
-- **Approach:** `_CreateLockHandle` gains a `long? fencingToken` param threaded from the acquire result (`DistributedLockProvider.cs:182` acquire → `:372-408` handle creation). `RenewAsync` does **not** change the token (renewal is not a new grant — the token is grant-stable). `GetLockInfoAsync` reports the stored token where available (note: `GetAsync`/`GetLockInfoAsync` read paths may not have a token for locks they did not grant — return `null` there, documented).
-- **Patterns to follow:** existing `_CreateLockHandle` parameter threading and `LockInfo` construction.
+- **Approach:** `_CreateLockHandle` gains a `long? fencingToken` param threaded from the acquire result (`DistributedLock.cs:182` acquire → `:372-408` handle creation). `RenewAsync` does **not** change the token (renewal is not a new grant — the token is grant-stable). `GetLockInfoAsync` reports the stored token where available (note: `GetAsync`/`GetLockInfoAsync` read paths may not have a token for locks they did not grant — return `null` there, documented).
+- **Patterns to follow:** existing `_CreateLockHandle` parameter threading and `DistributedLockInfo` construction.
 - **Test suite design:** harness conformance (provider-level) + Redis integration.
 - **Test scenarios:**
   - Covers AE (fencing): acquire → handle exposes the same token storage issued.
@@ -208,7 +208,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - `src/Headless.DistributedLocks.Abstractions/RegularLocks/IDistributedSemaphoreProvider.cs` (new)
   - `src/Headless.DistributedLocks.Abstractions/RegularLocks/NullDistributedSemaphoreProvider.cs` (new — parity with null lock provider)
 - **Approach:** `IDistributedSemaphoreProvider.CreateSemaphore(resource, maxCount)` → `IDistributedSemaphore` exposing `Resource`, `MaxCount`, `TryAcquireAsync(options?, ct)`, `AcquireAsync(options?, ct)` returning the unified `IDistributedLock`. `[PublicAPI]`. Argument validation via `Argument.*` (`maxCount` positive).
-- **Patterns to follow:** `IDistributedLockProvider` / `IDistributedReaderWriterLockProvider` shapes; `madelson/DistributedLock: src/DistributedLock.Core/IDistributedSemaphore.cs` for the `MaxCount` member and factory binding.
+- **Patterns to follow:** `IDistributedLock` / `IDistributedReadWriteLock` shapes; `madelson/DistributedLock: src/DistributedLock.Core/IDistributedSemaphore.cs` for the `MaxCount` member and factory binding.
 - **Test suite design:** unit — contract + guard clauses; null provider behavior.
 - **Test scenarios:**
   - `CreateSemaphore` with `maxCount < 1` throws (guard).
@@ -223,7 +223,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
 - **Dependencies:** U4.
 - **Files:** `src/Headless.DistributedLocks.Core/RegularLocks/IDistributedSemaphoreStorage.cs` (new)
 - **Approach:** Define pure backend-neutral behavioral methods: `TryAcquireAsync(resource, lockId, maxCount, ttl)`, `TryExtendAsync(resource, lockId, ttl)`, and `ReleaseAsync(resource, lockId)`. Keep all ZSET-specific nomenclature (scores, ZADD/ZREM equivalent semantics) fully encapsulated inside the Redis provider to avoid leakage and ensure clean compatibility with SQL Server and Postgres backends.
-- **Patterns to follow:** `IDistributedLockStorage` and `IDistributedReaderWriterLockStorage` high-level method styles.
+- **Patterns to follow:** `IDistributedLockStorage` and `IDistributedReadWriteLockStorage` high-level method styles.
 - **Test suite design:** none directly — exercised via the fake (U7 tests) and Redis impl (U6).
 - **Test scenarios:** `Test expectation: none -- interface definition; behavior covered by U6 (Redis) and U7 (provider/fake).`
 - **Verification:** compiles; shape supports the acquire/extend/release/count Lua operations.
@@ -239,7 +239,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
   - `src/Headless.Redis/HeadlessRedisScriptsLoader.cs` (register script properties, static selectors, and integrate concurrent tasks in LoadScriptsAsync)
 - **Approach:** Acquire Lua = prune (`ZREMRANGEBYSCORE … -inf nowMs`) → `ZCARD < maxCount` → `ZADD` + `INCR fence` + increase holders TTL to at least `ttl*2`; uses server `TIME` for `nowMs` (no client clock). Extend = `ZADD` with new score **using the 'XX' modifier** (`redis.call('ZADD', KEYS[1], 'XX', ARGV[1], ARGV[2])`) so a pruned/expired member cannot be accidentally re-added to breach the concurrency limit. Key is hash-tagged (`{resource}:holders`) for cluster slot affinity, consistent with RW storage; the fence key reuses the same hash-tag (`fence:{resource}`) for CROSSSLOT safety and carries **no TTL** (KTD4). Note the holders ZSET *does* get a safety TTL (at least `ttl*2`, never shrunk by shorter later holders) — distinct from the fence counter, which must persist.
 - **Technical design (directional):** see the Semaphore acquire flowchart in High-Level Technical Design. Ensure extend Lua uses 'XX'.
-- **Patterns to follow:** `RedisDistributedReaderWriterLockStorage` server-`TIME` + hash-tag + multi-key Lua; `madelson/DistributedLock: src/DistributedLock.Redis` semaphore (loosely based on "Redis in Action" 6.3) as the algorithm reference.
+- **Patterns to follow:** `RedisDistributedReadWriteLockStorage` server-`TIME` + hash-tag + multi-key Lua; `madelson/DistributedLock: src/DistributedLock.Redis` semaphore (loosely based on "Redis in Action" 6.3) as the algorithm reference.
 - **Test suite design:** Redis integration (Testcontainers) — the bulk of coverage lives here.
 - **Test scenarios:**
   - `maxCount=5`: 5 concurrent acquires succeed; the 6th fails until one releases.
@@ -258,9 +258,9 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
 - **Files:**
   - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedSemaphoreProvider.cs` (new — implements `IDistributedSemaphoreProvider`; `CreateSemaphore` returns an internal `RedisDistributedSemaphore` handle-factory)
   - `src/Headless.DistributedLocks.Core/RegularLocks/DisposableSemaphoreSlot.cs` (new — `IDistributedLock` + `LeaseMonitor.ILeaseHandle`, models `DisposableDistributedLock`)
-  - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs` (reuse outbox publish + `LeaseMonitorRegistry`; extract shared release-publish helper if needed)
+  - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs` (reuse outbox publish + `LeaseMonitorRegistry`; extract shared release-publish helper if needed)
 - **Approach:** Slot handle's `RenewOrValidateLeaseAsync` calls storage extend (auto-extend) or count-validate (monitor). Release `ZREM`s and publishes `DistributedLockReleased` for the resource so waiters wake; acquire wait loop consumes the same outbox signal + poll backoff used by the mutex. `maxCount` is captured by the handle-factory at `CreateSemaphore`. Cadences reuse `DistributedLockOptions.AutoExtensionCadenceFraction` / `PollingCadenceFraction`.
-- **Patterns to follow:** `DisposableDistributedLock` lease wiring (`:19-102`, `:214-257`); `DistributedLockProvider` acquire/retry/outbox flow (`:87-284`, `:484-600`); `LeaseMonitorRegistry`.
+- **Patterns to follow:** `DisposableDistributedLock` lease wiring (`:19-102`, `:214-257`); `DistributedLock` acquire/retry/outbox flow (`:87-284`, `:484-600`); `LeaseMonitorRegistry`.
 - **Test suite design:** harness conformance for semaphore semantics + Redis integration for crash/extend/push; unit for the wait-loop using the fake.
 - **Test scenarios:**
   - Covers AE: `maxCount=5` — 5 holders concurrent; 6th waits or returns null per `acquireTimeout`.
@@ -358,7 +358,7 @@ Auto-extension ZADDs the holder's entry with a new expiry score (semaphore) / `R
 ## Test-Suite Design (cross-unit)
 
 - **Unit (`tests/Headless.DistributedLocks.Tests.Unit`)** — fencing contract + monotonicity via the `Fakes/` storage; semaphore provider wait-loop, guards, setup/DI; null providers. Reserved for logic that does not need Redis.
-- **Harness (`tests/Headless.DistributedLocks.Tests.Harness`)** — extend `DistributedLockProviderTestsBase` (or a new `DistributedSemaphoreProviderTestsBase`) with provider-level conformance both the fake and Redis impls must pass (fencing monotonicity, semaphore capacity, lease loss).
+- **Harness (`tests/Headless.DistributedLocks.Tests.Harness`)** — extend `DistributedLockTestsBase` (or a new `DistributedSemaphoreProviderTestsBase`) with provider-level conformance both the fake and Redis impls must pass (fencing monotonicity, semaphore capacity, lease loss).
 - **Integration (`tests/Headless.DistributedLocks.Redis.Tests.Integration`)** — the bulk: real Lua atomicity, ZSET expiry/crash recovery, auto-extend, outbox push wake-up, fence-key TTL inspection, concurrency at `maxCount`.
 
 Coverage targets per `CLAUDE.md` (≥85% line, ≥80% branch). The fencing return-shape change must keep existing mutex/RW suites green.
@@ -369,6 +369,6 @@ Coverage targets per `CLAUDE.md` (≥85% line, ≥80% branch). The fencing retur
 
 - **Origin issues:** #364 (fencing — separate `FencingToken`, Redis INCR best-effort + DB sequence durable), #291 (semaphore — creation-time `maxCount`, ZSET, LeaseMonitor reuse, outbox push). Tracking #287.
 - **Reference repo (read-only, MIT, clean-room):** `madelson/DistributedLock` — `src/DistributedLock.Redis` (semaphore ZSET, "Redis in Action" 6.3), `src/DistributedLock.SqlServer/SqlDistributedSemaphore.cs` (creation-time `maxCount` binding), `src/DistributedLock.MongoDB/MongoDistributedLockHandle.cs` (monotonic fencing token prior art).
-- **Current impl (grounding):** `RedisDistributedLockStorage.cs` (mutex acquire via `StringSet NX`, to become Lua), `HeadlessRedisScriptsLoader.cs:223-240,473-512` (script load/execute), `RedisDistributedReaderWriterLockStorage.cs` (ZSET/HASH + server-`TIME` + hash-tag), `DistributedLockProvider.cs:127,182,372-408` (lockId gen, acquire, handle creation), `DisposableDistributedLock.cs:19-102,214-257` (handle + LeaseMonitor wiring), `DistributedLockOptions.cs` (cadence + guardrails).
+- **Current impl (grounding):** `RedisDistributedLockStorage.cs` (mutex acquire via `StringSet NX`, to become Lua), `HeadlessRedisScriptsLoader.cs:223-240,473-512` (script load/execute), `RedisDistributedReadWriteLockStorage.cs` (ZSET/HASH + server-`TIME` + hash-tag), `DistributedLock.cs:127,182,372-408` (lockId gen, acquire, handle creation), `DisposableDistributedLock.cs:19-102,214-257` (handle + LeaseMonitor wiring), `DistributedLockOptions.cs` (cadence + guardrails).
 - **Concept:** Kleppmann, "How to do distributed locking" (fencing tokens).
 - **Docs to keep in lockstep:** `docs/llms/distributed-locks.md`, `docs/llms/rate-limiting.md` (concurrency-vs-rate), `docs/authoring/AUTHORING.md`.

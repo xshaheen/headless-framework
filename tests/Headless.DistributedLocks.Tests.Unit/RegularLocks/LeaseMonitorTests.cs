@@ -22,10 +22,10 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
 
         // then
-        sut.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
         handle.InvocationCount.Should().Be(1);
     }
 
@@ -49,14 +49,14 @@ public sealed class LeaseMonitorTests : TestBase
         await _DrainUntilAsync(() => handle.InvocationCount == 3);
 
         // then - still alive after Unknown → Renewed.
-        sut.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
 
         // and - convert the negative assertion into a positive observation: enqueue Lost and
         // confirm the monitor DOES react when storage subsequently confirms loss.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
-        sut.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -72,10 +72,10 @@ public sealed class LeaseMonitorTests : TestBase
         await _DrainUntilAsync(() => handle.InvocationCount == 1);
         _timeProvider.Advance(handle.LeaseDuration);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
 
         // then
-        sut.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
         handle.InvocationCount.Should().Be(1);
     }
 
@@ -139,13 +139,13 @@ public sealed class LeaseMonitorTests : TestBase
         await _DrainUntilAsync(() => handle.InvocationCount >= 7);
 
         // then - storage repeatedly confirmed ownership; monitor must not declare Lost.
-        sut.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
 
         // and - positive observation: when storage subsequently confirms loss, the monitor DOES react.
         handle.Enqueue(LeaseMonitor.LeaseState.Lost);
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
-        sut.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public sealed class LeaseMonitorTests : TestBase
         // given - a logger that throws on Log calls. The first state transition logs via
         // LogLeaseMonitorStateChanged; the throw escapes _SetState → _RunIterationAsync →
         // _MonitoringLoopAsync, faulting MonitoringTask. The OnlyOnFaulted continuation MUST
-        // cancel HandleLostToken as a fail-safe.
+        // cancel LostToken as a fail-safe.
         var handle = new FakeLeaseHandle();
         handle.Enqueue(LeaseMonitor.LeaseState.Renewed);
         var logger = Substitute.For<ILogger>();
@@ -174,10 +174,10 @@ public sealed class LeaseMonitorTests : TestBase
 
         // when
         sut.TriggerImmediateValidation();
-        await _DrainUntilAsync(() => sut.HandleLostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => sut.LostToken.IsCancellationRequested);
 
         // then
-        sut.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        sut.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -301,7 +301,7 @@ public sealed class LeaseMonitorTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         await _RunIterationAndWait(sut, handle, expectedCount: 4);
 
-        sut.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        sut.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     private static async Task _RunIterationAndWait(LeaseMonitor sut, FakeLeaseHandle handle, int expectedCount)
@@ -324,7 +324,7 @@ public sealed class LeaseMonitorTests : TestBase
     {
         private readonly CancellationToken _externalAbort;
         public string Resource => "blocking-resource";
-        public string LockId => "blocking-lock";
+        public string LeaseId => "blocking-lock";
         public TimeSpan LeaseDuration => TimeSpan.FromSeconds(10);
         public TimeSpan MonitoringCadence => TimeSpan.FromSeconds(5);
         public bool IsBlocking { get; private set; }
@@ -365,7 +365,7 @@ public sealed class LeaseMonitorTests : TestBase
 
         var callbackInvoked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var callbackCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        sut.HandleLostToken.Register(() =>
+        sut.LostToken.Register(() =>
         {
             callbackInvoked.TrySetResult();
             sut.DisposeAsync().AsTask().GetAwaiter().GetResult();

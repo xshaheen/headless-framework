@@ -24,7 +24,7 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
     public async Task should_cancel_every_multiplexed_handle_when_their_shared_backend_dies()
     {
         await using var provider = _CreateProvider();
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
 
         var resourceA = Faker.Random.AlphaNumeric(12);
         var resourceB = Faker.Random.AlphaNumeric(12);
@@ -38,8 +38,8 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
 
         // Reading both lost tokens now forces the engine to register a monitoring handle per lock, switching the
         // ConnectionMonitor from keepalive to its active probe. Both tokens must start uncancelled.
-        first.HandleLostToken.IsCancellationRequested.Should().BeFalse();
-        second.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        first.LostToken.IsCancellationRequested.Should().BeFalse();
+        second.LostToken.IsCancellationRequested.Should().BeFalse();
 
         // The fan-out claim only holds if both locks genuinely ride one physical backend; assert that precondition at
         // the DB level before killing it, otherwise the test could pass by killing two independent connections.
@@ -51,16 +51,16 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
         // Wait for BOTH tokens to fire, bounded by a 15s deadline and linked to AbortToken. The active monitoring
         // probe (a server-side sleep with a bounded command timeout) is what surfaces the death on an otherwise-idle
         // holder — not a fixed sleep here. A genuine timeout falls through to the assertions so the test fails loudly.
-        using var both = CancellationTokenSource.CreateLinkedTokenSource(first.HandleLostToken, second.HandleLostToken);
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(first.LostToken, second.LostToken);
 
         await _WaitUntilAsync(
-            () => first.HandleLostToken.IsCancellationRequested && second.HandleLostToken.IsCancellationRequested,
+            () => first.LostToken.IsCancellationRequested && second.LostToken.IsCancellationRequested,
             timeout: TimeSpan.FromSeconds(15),
             wake: both.Token
         );
 
-        first.HandleLostToken.IsCancellationRequested.Should().BeTrue("the first multiplexed handle must observe the backend death");
-        second.HandleLostToken.IsCancellationRequested.Should().BeTrue("the second multiplexed handle must observe the backend death");
+        first.LostToken.IsCancellationRequested.Should().BeTrue("the first multiplexed handle must observe the backend death");
+        second.LostToken.IsCancellationRequested.Should().BeTrue("the second multiplexed handle must observe the backend death");
     }
 
     /// <summary>

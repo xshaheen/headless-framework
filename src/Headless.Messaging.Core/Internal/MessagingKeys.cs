@@ -4,7 +4,7 @@ namespace Headless.Messaging.Internal;
 
 internal static class MessagingKeys
 {
-    /// <summary>Keyed-DI service key for messaging's isolated <see cref="Headless.DistributedLocks.IDistributedLockProvider"/>.</summary>
+    /// <summary>Keyed-DI service key for messaging's isolated <see cref="Headless.DistributedLocks.IDistributedLock"/>.</summary>
     public const string LockProvider = "headless.messaging";
 
     /// <summary>

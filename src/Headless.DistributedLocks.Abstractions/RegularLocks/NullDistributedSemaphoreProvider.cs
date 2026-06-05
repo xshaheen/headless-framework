@@ -41,7 +41,7 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
 
         public int MaxCount { get; } = maxCount;
 
-        public Task<IDistributedLock> AcquireAsync(
+        public Task<IDistributedLease> AcquireAsync(
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
@@ -49,10 +49,10 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
             cancellationToken.ThrowIfCancellationRequested();
             _ValidateAcquireOptions(options);
 
-            return Task.FromResult<IDistributedLock>(new NullSemaphoreSlot(Resource, timeProvider));
+            return Task.FromResult<IDistributedLease>(new NullSemaphoreSlot(Resource, timeProvider));
         }
 
-        public Task<IDistributedLock?> TryAcquireAsync(
+        public Task<IDistributedLease?> TryAcquireAsync(
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
@@ -60,7 +60,7 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
             cancellationToken.ThrowIfCancellationRequested();
             _ValidateAcquireOptions(options);
 
-            return Task.FromResult<IDistributedLock?>(new NullSemaphoreSlot(Resource, timeProvider));
+            return Task.FromResult<IDistributedLease?>(new NullSemaphoreSlot(Resource, timeProvider));
         }
 
         private static void _ValidateAcquireOptions(DistributedLockAcquireOptions? options)
@@ -75,11 +75,11 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
         }
     }
 
-    private sealed class NullSemaphoreSlot(string resource, TimeProvider timeProvider) : IDistributedLock
+    private sealed class NullSemaphoreSlot(string resource, TimeProvider timeProvider) : IDistributedLease
     {
         private int _renewalCount;
 
-        public string LockId { get; } = Guid.NewGuid().ToString("N");
+        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
         public long? FencingToken => null;
 
@@ -91,9 +91,9 @@ public sealed class NullDistributedSemaphoreProvider(TimeProvider timeProvider) 
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken HandleLostToken => CancellationToken.None;
+        public CancellationToken LostToken => CancellationToken.None;
 
-        public bool IsMonitored => false;
+        public bool CanObserveLoss => false;
 
         public Task ReleaseAsync()
         {

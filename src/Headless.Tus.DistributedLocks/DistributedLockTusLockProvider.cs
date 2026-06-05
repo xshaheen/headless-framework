@@ -3,7 +3,7 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus;
 
-public sealed class DistributedLockTusLockProvider(IDistributedLockProvider distributedLockProvider)
+public sealed class DistributedLockTusLockProvider(IDistributedLock distributedLockProvider)
     : ITusFileLockProvider
 {
     public Task<ITusFileLock> AquireLock(string fileId)

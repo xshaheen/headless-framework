@@ -7,15 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// Runs the cross-provider lock conformance contract (<see cref="DistributedReaderWriterLockProviderTestsBase"/>)
+/// Runs the cross-provider lock conformance contract (<see cref="DistributedReadWriteLockTestsBase"/>)
 /// against the PostgreSQL advisory-lock provider. Backend-specific behavior lives in the sibling
 /// test classes; this class only wires the provider and exposes the portable scenarios as facts.
 /// </summary>
 [Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresReaderWriterLockConformanceTests : DistributedReaderWriterLockProviderTestsBase
+public sealed class PostgresReaderWriterLockConformanceTests : DistributedReadWriteLockTestsBase
 {
     private readonly ServiceProvider _services;
-    private readonly IDistributedReaderWriterLockProvider _provider;
+    private readonly IDistributedReadWriteLock _provider;
 
     public PostgresReaderWriterLockConformanceTests(PostgresDistributedLockFixture fixture)
     {
@@ -28,10 +28,10 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReader
         });
 
         _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        _provider = _services.GetRequiredService<IDistributedReadWriteLock>();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null) => _provider;
+    protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null) => _provider;
 
     protected override TimeProvider TimeProvider => TimeProvider.System;
 

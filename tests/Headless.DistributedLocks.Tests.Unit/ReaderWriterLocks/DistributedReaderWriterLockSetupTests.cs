@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.ReaderWriterLocks;
 
-public sealed class DistributedReaderWriterLockSetupTests : TestBase
+public sealed class DistributedReadWriteLockSetupTests : TestBase
 {
     [Fact]
     public void should_register_reader_writer_lock_provider_as_singleton()
@@ -20,15 +20,15 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
+        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<IDistributedReaderWriterLockProvider>().Should().NotBeNull();
+        provider.GetRequiredService<IDistributedReadWriteLock>().Should().NotBeNull();
         provider
-            .GetRequiredService<IDistributedReaderWriterLockProvider>()
+            .GetRequiredService<IDistributedReadWriteLock>()
             .Should()
-            .BeSameAs(provider.GetRequiredService<IDistributedReaderWriterLockProvider>());
+            .BeSameAs(provider.GetRequiredService<IDistributedReadWriteLock>());
     }
 
     [Fact]
@@ -39,12 +39,12 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
-        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
+        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
+        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
 
         // then
-        services.Count(x => x.ServiceType == typeof(IDistributedReaderWriterLockProvider)).Should().Be(1);
-        services.Count(x => x.ServiceType == typeof(DistributedReaderWriterLockProvider)).Should().Be(1);
+        services.Count(x => x.ServiceType == typeof(IDistributedReadWriteLock)).Should().Be(1);
+        services.Count(x => x.ServiceType == typeof(DistributedReadWriteLock)).Should().Be(1);
     }
 
     [Fact]
@@ -64,12 +64,12 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(configuration);
+        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(configuration);
         using var provider = services.BuildServiceProvider();
 
         // then
-        var resolved = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
-        resolved.Should().BeSameAs(provider.GetRequiredService<IDistributedReaderWriterLockProvider>());
+        var resolved = provider.GetRequiredService<IDistributedReadWriteLock>();
+        resolved.Should().BeSameAs(provider.GetRequiredService<IDistributedReadWriteLock>());
 
         var options = provider.GetRequiredService<IOptions<DistributedLockOptions>>().Value;
         options.KeyPrefix.Should().Be("rw-test:");
@@ -85,7 +85,7 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddSingleton(new MarkerService { Prefix = "custom-prefix:" });
 
         // when - the Action<TOption, IServiceProvider> overload lets options pull values from DI.
-        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(
+        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(
             (opts, sp) =>
             {
                 var marker = sp.GetRequiredService<MarkerService>();
@@ -95,7 +95,7 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // then
-        var resolved = provider.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        var resolved = provider.GetRequiredService<IDistributedReadWriteLock>();
         resolved.Should().NotBeNull();
 
         var options = provider.GetRequiredService<IOptions<DistributedLockOptions>>().Value;

@@ -9,10 +9,10 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 ## Key Features
 
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
-- `RedisDistributedReaderWriterLockStorage` implements `IDistributedReaderWriterLockStorage`.
+- `RedisDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
 - `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
 - `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
-- `AddRedisDistributedReaderWriterLock(...)` registers a Redis-backed reader-writer lock provider.
+- `AddRedisDistributedReadWriteLock(...)` registers a Redis-backed reader-writer lock provider.
 - `AddRedisDistributedSemaphore(...)` registers a Redis-backed semaphore provider.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
@@ -35,7 +35,7 @@ builder.Services.AddRedisDistributedLock(options =>
     options.MaxResourceNameLength = 512;
 });
 
-builder.Services.AddRedisDistributedReaderWriterLock(options =>
+builder.Services.AddRedisDistributedReadWriteLock(options =>
 {
     options.KeyPrefix = "distributed-lock:";
 });
@@ -50,9 +50,9 @@ builder.Services.AddRedisDistributedSemaphore(options =>
 
 No Redis-specific options. Configure `IConnectionMultiplexer` and `DistributedLockOptions`. Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per lock-acquire call. `LockMonitoringMode` (lease monitoring and auto-extension) is a storage-agnostic provider feature configured through `Headless.DistributedLocks.Core`.
 
-Redis mutex storage issues `IDistributedLock.FencingToken` with an atomic Lua acquire script: only a successful grant increments the no-TTL fence counter. Mutex storage maps logical lock names to internal hash-tagged Redis keys so the lock key and fence counter share a Redis Cluster slot. Redis semaphores use `{resource}:holders` (ZSET of `lockId → expiry-epoch-ms`) plus `fence:{resource}`. Fencing is best-effort and requires Redis to retain the counter key; avoid `allkeys-*` eviction policies when stale-write rejection depends on Redis fencing.
+Redis mutex storage issues `IDistributedLease.FencingToken` with an atomic Lua acquire script: only a successful grant increments the no-TTL fence counter. Mutex storage maps logical lock names to internal hash-tagged Redis keys so the lock key and fence counter share a Redis Cluster slot. Redis semaphores use `{resource}:holders` (ZSET of `leaseId → expiry-epoch-ms`) plus `fence:{resource}`. Fencing is best-effort and requires Redis to retain the counter key; avoid `allkeys-*` eviction policies when stale-write rejection depends on Redis fencing.
 
-Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed waiting marker) and `{resource}:readers` (HASH of `lockId → expiry-epoch-ms`, with per-entry expiry computed inside Lua via `redis.call('TIME')`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. Writer-preference blocks new readers while a writer is queued; readers running `Monitoring = AutoExtend` may see `HandleLostToken` fire when a writer queues — that signals the reader to drop and reacquire after the writer drains. Marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s).
+Reader-writer storage creates `{resource}:writer` (string holding the active writer id or the `:_WRITERWAITING`-suffixed waiting marker) and `{resource}:readers` (HASH of `leaseId → expiry-epoch-ms`, with per-entry expiry computed inside Lua via `redis.call('TIME')`) Redis keys internally. Resource names containing `{` or `}` are rejected so the storage-owned Redis cluster hash-tag remains deterministic. Writer-preference blocks new readers while a writer is queued; readers running `Monitoring = AutoExtend` may see `LostToken` fire when a writer queues — that signals the reader to drop and reacquire after the writer drains. Marker TTL is governed by `DistributedLockOptions.WriterWaitingMarkerTtl` (default 30s).
 
 ## Dependencies
 
@@ -66,7 +66,7 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
 - Registers hosted `IInitializer` warmup for only the Redis lock feature scripts that were registered:
-  mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReaderWriterLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
-- Registers `IDistributedLockProvider` through `Headless.DistributedLocks.Core`.
-- Registers `IDistributedReaderWriterLockProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReaderWriterLock(...)` is called.
+  mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReadWriteLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
+- Registers `IDistributedLock` through `Headless.DistributedLocks.Core`.
+- Registers `IDistributedReadWriteLock` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReadWriteLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedSemaphore(...)` is called.

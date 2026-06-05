@@ -26,10 +26,10 @@ public sealed class RedisConnectionFailureTests : TestBase
         var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
-        var lockId = Guid.NewGuid().ToString("N");
+        var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var act = () => storage.InsertAsync(key, lockId, TimeSpan.FromMinutes(5)).AsTask();
+        var act = () => storage.InsertAsync(key, leaseId, TimeSpan.FromMinutes(5)).AsTask();
 
         // then
         await act.Should().ThrowAsync<RedisConnectionException>();
@@ -51,10 +51,10 @@ public sealed class RedisConnectionFailureTests : TestBase
         var storage = new RedisDistributedLockStorage(multiplexer, scriptsLoader);
 
         var key = $"lock:{Faker.Random.AlphaNumeric(10)}";
-        var lockId = Guid.NewGuid().ToString("N");
+        var leaseId = Guid.NewGuid().ToString("N");
 
         // when
-        var act = () => storage.RemoveIfEqualAsync(key, lockId).AsTask();
+        var act = () => storage.RemoveIfEqualAsync(key, leaseId).AsTask();
 
         // then
         await act.Should().ThrowAsync<RedisException>();

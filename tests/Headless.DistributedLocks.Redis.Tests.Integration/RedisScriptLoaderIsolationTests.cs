@@ -78,7 +78,7 @@ public sealed class RedisScriptLoaderIsolationTests : IAsyncLifetime
         await using var provider = services.BuildServiceProvider();
 
         var cache = provider.GetRequiredService<ICache>();
-        var lockProvider = provider.GetRequiredService<IDistributedLockProvider>();
+        var lockProvider = provider.GetRequiredService<IDistributedLock>();
 
         // --- act: exercise cache against container A ---
         var upsertResult = await cache.UpsertAsync(cacheKey, cacheValue, TimeSpan.FromMinutes(5), ct);

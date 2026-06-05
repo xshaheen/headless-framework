@@ -99,27 +99,27 @@ public static class AddDistributedLockExtensions
             // AddDistributedLock(...) calls idempotent (matching the ICanReceiveLockReleased
             // registration below). Two AddSingleton calls would accumulate descriptors and
             // register two distinct lambdas resolving against the same concrete type.
-            services.TryAddSingleton<DistributedLockProvider>(provider => new DistributedLockProvider(
+            services.TryAddSingleton<DistributedLock>(provider => new DistributedLock(
                 storageFactory(provider),
                 provider.GetService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
                 provider.GetRequiredService<ILongIdGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
-                provider.GetRequiredService<ILogger<DistributedLockProvider>>()
+                provider.GetRequiredService<ILogger<DistributedLock>>()
             ));
 
-            services.TryAddSingleton<IDistributedLockProvider>(sp => sp.GetRequiredService<DistributedLockProvider>());
+            services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<DistributedLock>());
 
             // Register ICanReceiveLockReleased pointing at the same concrete instance so that a
-            // decorator wrapped around IDistributedLockProvider does not break the lock-release
-            // wake-up signal (the consumer always receives the real DistributedLockProvider).
+            // decorator wrapped around IDistributedLock does not break the lock-release
+            // wake-up signal (the consumer always receives the real DistributedLock).
             // TryAddEnumerable keeps repeated AddDistributedLock(...) calls idempotent — the same
             // implementation type is not added twice — and LockReleasedConsumer fans out over the
             // collected IEnumerable<ICanReceiveLockReleased> so mutex and semaphore providers share
             // one decoupled wake-up seam.
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLockProvider>(
-                    static sp => sp.GetRequiredService<DistributedLockProvider>()
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedLock>(
+                    static sp => sp.GetRequiredService<DistributedLock>()
                 )
             );
 

@@ -9,7 +9,7 @@ date: 2026-06-02
 
 ## Summary
 
-Add `Headless.DistributedLocks.Postgres` — the framework's first **cross-node DB-engine** lock backend — built on a new shared `Headless.DistributedLocks.Core.Database` package that both this provider and the future SQL Server provider (#294) consume. Postgres advisory locks are **connection-scoped** (no TTL, no server-stored lock value; the lock lives exactly as long as the holding session or transaction), so this work cannot reuse the existing TTL-based `DistributedLockProvider`. Instead it introduces a connection-scoped provider that maps `pg_advisory_lock`/`pg_advisory_xact_lock` onto the `IDistributedLockProvider` surface, with correctness-grade `HandleLostToken` driven by connection death (`ConnectionMonitor`), optimistic connection multiplexing, PG-native `LISTEN`/`NOTIFY` push wake-up, a durable sequence-backed fencing token, and reader-writer support.
+Add `Headless.DistributedLocks.Postgres` — the framework's first **cross-node DB-engine** lock backend — built on a new shared `Headless.DistributedLocks.Core.Database` package that both this provider and the future SQL Server provider (#294) consume. Postgres advisory locks are **connection-scoped** (no TTL, no server-stored lock value; the lock lives exactly as long as the holding session or transaction), so this work cannot reuse the existing TTL-based `DistributedLock`. Instead it introduces a connection-scoped provider that maps `pg_advisory_lock`/`pg_advisory_xact_lock` onto the `IDistributedLock` surface, with correctness-grade `HandleLostToken` driven by connection death (`ConnectionMonitor`), optimistic connection multiplexing, PG-native `LISTEN`/`NOTIFY` push wake-up, a durable sequence-backed fencing token, and reader-writer support.
 
 ---
 
@@ -22,7 +22,7 @@ Two backend properties make Postgres strategically valuable and shape the whole 
 - **Transaction-coupled locking** (`pg_advisory_xact_lock`) makes the lock and the data mutation atomic by construction — the safest primitive in the framework, needing no fencing in that mode.
 - **Connection-scoped locking** gives **correctness-grade** lost-handle detection: when the holding connection dies, Postgres releases the lock server-side and `ConnectionMonitor` fires `HandleLostToken` — a stronger guarantee than Redis's best-effort TTL lease.
 
-The existing `DistributedLockProvider` ([src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs)) is hard-wired to `IDistributedLockStorage` (TTL `InsertAsync`/`ReplaceIfEqualAsync`/`RemoveIfEqualAsync`) and `LeaseMonitor` (TTL-fraction polling). None of that maps to advisory locks. The reconciliation between connection-scoped semantics and the `IDistributedLockProvider` contract is the core design problem this plan solves.
+The existing `DistributedLock` ([src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs)) is hard-wired to `IDistributedLockStorage` (TTL `InsertAsync`/`ReplaceIfEqualAsync`/`RemoveIfEqualAsync`) and `LeaseMonitor` (TTL-fraction polling). None of that maps to advisory locks. The reconciliation between connection-scoped semantics and the `IDistributedLock` contract is the core design problem this plan solves.
 
 ---
 
@@ -32,9 +32,9 @@ The existing `DistributedLockProvider` ([src/Headless.DistributedLocks.Core/Regu
 
 - **Shared DB engine lives in a new `Headless.DistributedLocks.Core.Database` package, not in `.Core`.** The provider-agnostic ADO.NET engine (connection wrapper, command wrapper, `ConnectionMonitor`, multiplexing pool, dedicated-connection lock, `IConnectionScopedLockStorage`, the connection-scoped provider) is its own package referenced by `.Postgres` and `.SqlServer`. Rationale: `Headless.DistributedLocks.Core` is referenced by the Redis provider; putting ADO.NET engine internals there would force Redis to transitively carry DB-engine machinery it never uses. A dedicated package keeps the dependency graph honest. `Core.Database` depends on `.Abstractions` (and `.Core` only if it needs the shared `DistributedLockOptions`/diagnostics — see U3).
 
-- **No interface change for fencing — this PR only populates the existing `FencingToken` with a durable PG sequence.** #368 already shipped the `long? FencingToken` member on `IDistributedLock`, `LockInfo`, and `DistributedLockHandleBase`, the `DistributedLockAcquireResult(bool Acquired, long? FencingToken)` storage shape, and the best-effort Redis fence (Lua `INCR` of a no-TTL counter). #364 remains open for the **durable DB sequence** portion (Postgres + SQL Server) and the docs. This plan delivers the Postgres half: a `ConnectionScopedDistributedLockProvider` that threads a fence value from an `IFencingTokenSource` (Core.Database seam) into the existing handle, implemented for Postgres as a durable sequence. Follow the existing convention that **reader-writer locks issue no fence** (`FencingToken == null`, per `DisposableReaderWriterLock`). No public-surface change is needed; `IConnectionScopedLockStorage` mirrors the `DistributedLockAcquireResult` shape so the fence flows through the same path as Redis.
+- **No interface change for fencing — this PR only populates the existing `FencingToken` with a durable PG sequence.** #368 already shipped the `long? FencingToken` member on `IDistributedLock`, `DistributedLockInfo`, and `DistributedLockHandleBase`, the `DistributedLockAcquireResult(bool Acquired, long? FencingToken)` storage shape, and the best-effort Redis fence (Lua `INCR` of a no-TTL counter). #364 remains open for the **durable DB sequence** portion (Postgres + SQL Server) and the docs. This plan delivers the Postgres half: a `ConnectionScopedDistributedLock` that threads a fence value from an `IFencingTokenSource` (Core.Database seam) into the existing handle, implemented for Postgres as a durable sequence. Follow the existing convention that **reader-writer locks issue no fence** (`FencingToken == null`, per `DisposableReaderWriterLock`). No public-surface change is needed; `IConnectionScopedLockStorage` mirrors the `DistributedLockAcquireResult` shape so the fence flows through the same path as Redis.
 
-- **Connection-scoped semantics are reconciled onto `IDistributedLockProvider` with honest limitations, not faked TTLs.** `RenewAsync` is a no-op returning `true` (an advisory lock never expires while held); `GetExpirationAsync` returns `null`; `GetLockInfoAsync`/`ListActiveLocksAsync`/`GetActiveLocksCountAsync` query `pg_locks` filtered to advisory locks in the current database with `TimeToLive == null`; `GetLockIdAsync` returns `null` for resources not held in-process, because advisory locks carry no server-stored client lock-id (the Snowflake `LockId` is a client construct). These limitations are documented and drive harness-test overrides (U11). `LockId` remains the client-side ownership token for the local handle and the `NOTIFY` payload.
+- **Connection-scoped semantics are reconciled onto `IDistributedLock` with honest limitations, not faked TTLs.** `RenewAsync` is a no-op returning `true` (an advisory lock never expires while held); `GetExpirationAsync` returns `null`; `GetLockInfoAsync`/`ListActiveLocksAsync`/`GetActiveLocksCountAsync` query `pg_locks` filtered to advisory locks in the current database with `TimeToLive == null`; `GetLockIdAsync` returns `null` for resources not held in-process, because advisory locks carry no server-stored client lock-id (the Snowflake `LockId` is a client construct). These limitations are documented and drive harness-test overrides (U11). `LockId` remains the client-side ownership token for the local handle and the `NOTIFY` payload.
 
 - **`PostgresAdvisoryLockKey` is the resource→key mapping (OQ7).** A `readonly struct` with three constructors — `long`, `(int, int)`, and `FromString(name, allowHashing)` — porting madelson's encoding: short ASCII names pack losslessly, `16-hex` / `8,8-hex` strings round-trip to the `bigint` / `(int,int)` spaces, and `allowHashing: true` SHA-derives a `bigint` for long names. `ToString()` round-trips. The provider selects the `pg_advisory_lock(bigint)` vs `pg_advisory_lock(int, int)` overload from `HasSingleKey`.
 
@@ -49,11 +49,11 @@ The existing `DistributedLockProvider` ([src/Headless.DistributedLocks.Core/Regu
 ```mermaid
 flowchart TB
   subgraph App["Consumer app"]
-    C["IDistributedLockProvider / IDistributedReaderWriterLockProvider"]
+    C["IDistributedLock / IDistributedReadWriteLock"]
   end
 
   subgraph DbCore["Headless.DistributedLocks.Core.Database (new, shared)"]
-    P["ConnectionScopedDistributedLockProvider\n(try+notify loop, guardrails, observability)"]
+    P["ConnectionScopedDistributedLock\n(try+notify loop, guardrails, observability)"]
     S["IConnectionScopedLockStorage"]
     RS["IReleaseSignal (push + polling fallback)"]
     FT["IFencingTokenSource"]
@@ -149,8 +149,8 @@ src/
     IConnectionScopedLockStorage.cs
     IReleaseSignal.cs
     IFencingTokenSource.cs
-    ConnectionScopedDistributedLockProvider.cs
-    ConnectionScopedReaderWriterLockProvider.cs
+    ConnectionScopedDistributedLock.cs
+    ConnectionScopedReadWriteLock.cs
     ConnectionScopedDistributedLockHandle.cs
     LoggerExtensions.cs
     README.md
@@ -186,7 +186,7 @@ The tree is a scope declaration of the expected shape; the implementer may adjus
 - R1. New `Headless.DistributedLocks.Core.Database` package holds the provider-agnostic ADO.NET engine; no Npgsql dependency (works against `IDbConnection`/`DbConnection`/`DbDataSource`). (issue R4.1; shared with #294)
 - R2. Connection lifecycle + `ConnectionMonitor`: a held connection's death is detected (state-change event + cancellable keepalive probe) and fans `HandleLostToken` loss out to **all** locks multiplexed on that connection. (issue R4.2, R4.5)
 - R3. Optimistic connection multiplexing **day-one**: uncontended/held locks share idle connections; an acquire that must block falls back to a dedicated connection; transaction-scoped locks are never multiplexed. (issue R4.5; resolves former OQ6)
-- R4. `IConnectionScopedLockStorage` (acquire/release/validate by connection) plus a `ConnectionScopedDistributedLockProvider : IDistributedLockProvider` that reconciles connection-scoped semantics onto the provider surface (no-op renew, null TTL, `pg_locks`-style listing via the storage), carries the try-loop acquire with DoS guardrails and OTel/observability, and wires `HandleLostToken` from `ConnectionMonitor`. (issue R4.1, R4.2)
+- R4. `IConnectionScopedLockStorage` (acquire/release/validate by connection) plus a `ConnectionScopedDistributedLock : IDistributedLock` that reconciles connection-scoped semantics onto the provider surface (no-op renew, null TTL, `pg_locks`-style listing via the storage), carries the try-loop acquire with DoS guardrails and OTel/observability, and wires `HandleLostToken` from `ConnectionMonitor`. (issue R4.1, R4.2)
 
 ### Postgres provider (`Headless.DistributedLocks.Postgres`)
 
@@ -194,7 +194,7 @@ The tree is a scope declaration of the expected shape; the implementer may adjus
 - R6. Mutex provider end-to-end: `PostgresConnectionScopedLockStorage` over the advisory-lock strategy + multiplexing engine; `SetupPostgresDistributedLocks` with three overloads (`IConfiguration`, `Action<Options>`, `Action<Options, IServiceProvider>`), `NpgsqlDataSource` preferred over connection-string construction; dispose → `pg_advisory_unlock`; connection death auto-releases server-side. (issue R4.1, R4.2)
 - R7. `LISTEN`/`NOTIFY` push wake-up: release publishes `NOTIFY` on a channel; waiters `LISTEN` and wake immediately; polling backoff is the fallback when no notification arrives. (issue R4.6)
 - R8. Transaction-coupled static API `PostgresDistributedLock.AcquireWithTransactionAsync` using `pg_advisory_xact_lock`; the caller owns the transaction; commit/rollback releases; documented as the safest primitive (atomic with data mutation, no fencing needed in this mode). (issue R4.3)
-- R9. Reader-writer support via advisory shared/exclusive (`pg_advisory_lock_shared` / exclusive), exposed through `IDistributedReaderWriterLockProvider` with the same handle shape. (issue R4.4)
+- R9. Reader-writer support via advisory shared/exclusive (`pg_advisory_lock_shared` / exclusive), exposed through `IDistributedReadWriteLock` with the same handle shape. (issue R4.4)
 
 ### Fencing (durable DB half of #364)
 
@@ -212,7 +212,7 @@ The tree is a scope declaration of the expected shape; the implementer may adjus
 Coverage spans three suites:
 
 - **`Headless.DistributedLocks.Core.Database.Tests.Unit`** — pure/engine logic testable without a database: `PostgresAdvisoryLockKey` is Postgres-specific so it is tested in the Postgres integration project's unit-style tests; the multiplexing pool's share-vs-dedicate decision and `ConnectionMonitor` fanout are tested with a fake `DatabaseConnection`/`DbConnection` double where feasible. Connection-death fanout that needs a real socket lives in integration.
-- **`Headless.DistributedLocks.Postgres.Tests.Integration`** — the bulk. A `PostgresDistributedLockFixture` (Testcontainers `postgres`) consumes the existing `Headless.DistributedLocks.Tests.Harness` `DistributedLockProviderTestsBase` conformance suite, **overriding the TTL-coupled virtuals** (`should_get_expiration_for_locked_resource`, `should_get_lock_info_for_locked_resource`, `should_return_null_expiration_when_not_locked`) to assert connection-scoped semantics (null TTL; cross-caller `LockId` not resolvable). Backend-specific tests (advisory-key round-trip, connection-loss fanout, multiplexing share/fallback, transaction-coupled commit/rollback, `LISTEN`/`NOTIFY` latency, fencing monotonicity) have no harness sibling — they are non-portable by construction.
+- **`Headless.DistributedLocks.Postgres.Tests.Integration`** — the bulk. A `PostgresDistributedLockFixture` (Testcontainers `postgres`) consumes the existing `Headless.DistributedLocks.Tests.Harness` `DistributedLockTestsBase` conformance suite, **overriding the TTL-coupled virtuals** (`should_get_expiration_for_locked_resource`, `should_get_lock_info_for_locked_resource`, `should_return_null_expiration_when_not_locked`) to assert connection-scoped semantics (null TTL; cross-caller `LockId` not resolvable). Backend-specific tests (advisory-key round-trip, connection-loss fanout, multiplexing share/fallback, transaction-coupled commit/rollback, `LISTEN`/`NOTIFY` latency, fencing monotonicity) have no harness sibling — they are non-portable by construction.
 - **`Core.Database.Tests.Unit`** — covers R10's fence plumbing with a fake `IFencingTokenSource` (handle stamping, null when unregistered, null for RW); the `FencingToken` member itself already ships with its own coverage from #368.
 
 Harness reconciliation (overrides vs. a capability flag on the base class) is a decision for U11; prefer per-fixture overrides first and only add a base-class capability flag if SQL Server (#294) needs the same overrides, to avoid speculative generality.
@@ -257,15 +257,15 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
   - A release that throws while other locks are held on the shared connection poisons and closes that connection (does not return it to the pool); the other locks are observed released server-side.
 - **Verification:** Planned unit tests added and passing; pool never deadlocks a release behind an in-progress acquire on the same connection, and never leaks a lock on a poisoned connection.
 
-### U3. `IConnectionScopedLockStorage` + `ConnectionScopedDistributedLockProvider`
+### U3. `IConnectionScopedLockStorage` + `ConnectionScopedDistributedLock`
 
-- **Goal:** Define the connection-scoped storage contract and the provider that maps it onto `IDistributedLockProvider`, carrying the try-loop acquire, push/poll wake-up seam, guardrails, and observability.
+- **Goal:** Define the connection-scoped storage contract and the provider that maps it onto `IDistributedLock`, carrying the try-loop acquire, push/poll wake-up seam, guardrails, and observability.
 - **Requirements:** R4, R11
 - **Dependencies:** U1, U2
-- **Files:** `IConnectionScopedLockStorage.cs`, `IReleaseSignal.cs`, `ConnectionScopedDistributedLockHandle.cs`, `ConnectionScopedDistributedLockProvider.cs`; ref `..\Headless.DistributedLocks.Core` if reusing `DistributedLockOptions`/`DistributedLocksDiagnostics`/guardrail helpers (decide in this unit — reuse over duplication).
-- **Approach:** `IConnectionScopedLockStorage` exposes `TryAcquireAsync(resource, lockId, isShared, ct) -> handle?`, `ReleaseAsync(handle)`, `IsHeldAsync`/listing primitives over `pg_locks`-style queries, and exposes the acquired connection's `ConnectionLostToken`. The provider runs the non-blocking try in a backoff loop (model the structure on [DistributedLockProvider.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs) acquire loop and guardrails — `MaxResourceNameLength`, `MaxConcurrentWaitingResources`, `MaxWaitersPerResource`, the `_NonBlockingAcquireDeadline` zero-timeout fast path) but waits on `IReleaseSignal.WaitAsync(resource)` instead of the outbox auto-reset events. `HandleLostToken` comes from the storage handle's `ConnectionLostToken`; `IsMonitored` is `true` (connection monitoring is always on). Reconcile the surface: `RenewAsync` → `true` no-op; `GetExpirationAsync` → `null`; `GetLockIdAsync` → `null` when not held in-process; `GetLockInfoAsync`/`ListActiveLocksAsync`/`GetActiveLocksCountAsync` → via storage `pg_locks` query with `TimeToLive == null`. OTel activity + metrics mirroring `DistributedLockMetrics`/`DistributedLocksDiagnostics`.
+- **Files:** `IConnectionScopedLockStorage.cs`, `IReleaseSignal.cs`, `ConnectionScopedDistributedLockHandle.cs`, `ConnectionScopedDistributedLock.cs`; ref `..\Headless.DistributedLocks.Core` if reusing `DistributedLockOptions`/`DistributedLocksDiagnostics`/guardrail helpers (decide in this unit — reuse over duplication).
+- **Approach:** `IConnectionScopedLockStorage` exposes `TryAcquireAsync(resource, lockId, isShared, ct) -> handle?`, `ReleaseAsync(handle)`, `IsHeldAsync`/listing primitives over `pg_locks`-style queries, and exposes the acquired connection's `ConnectionLostToken`. The provider runs the non-blocking try in a backoff loop (model the structure on [DistributedLock.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs) acquire loop and guardrails — `MaxResourceNameLength`, `MaxConcurrentWaitingResources`, `MaxWaitersPerResource`, the `_NonBlockingAcquireDeadline` zero-timeout fast path) but waits on `IReleaseSignal.WaitAsync(resource)` instead of the outbox auto-reset events. `HandleLostToken` comes from the storage handle's `ConnectionLostToken`; `IsMonitored` is `true` (connection monitoring is always on). Reconcile the surface: `RenewAsync` → `true` no-op; `GetExpirationAsync` → `null`; `GetLockIdAsync` → `null` when not held in-process; `GetLockInfoAsync`/`ListActiveLocksAsync`/`GetActiveLocksCountAsync` → via storage `pg_locks` query with `TimeToLive == null`. OTel activity + metrics mirroring `DistributedLockMetrics`/`DistributedLocksDiagnostics`.
 - **Execution note:** Implement the surface-reconciliation behaviors test-first — the no-op renew and null-TTL contract are easy to get subtly wrong.
-- **Patterns to follow:** `DistributedLockProvider` (acquire loop, guardrails, observability, `LockAcquisitionTimeoutException` shape); `LockInfo`.
+- **Patterns to follow:** `DistributedLock` (acquire loop, guardrails, observability, `LockAcquisitionTimeoutException` shape); `DistributedLockInfo`.
 - **Test suite design:** Provider behavior covered by U11 integration (needs a real held connection for `HandleLostToken`); guardrail/reconciliation logic unit-tested with a fake `IConnectionScopedLockStorage` + a fake `IReleaseSignal`.
 - **Test scenarios:**
   - `AcquireTimeout == Zero` runs exactly one try and returns null on contention (no wait loop).
@@ -273,16 +273,16 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
   - Guardrails throw when max waiters per resource / max concurrent waiting resources are exceeded.
   - `RenewAsync` returns `true` without touching storage; `GetExpirationAsync` returns `null`; `GetLockIdAsync` returns `null` for a resource not held in-process.
   - `HandleLostToken` surfaces the storage handle's `ConnectionLostToken`; `IsMonitored` is `true`.
-- **Verification:** Planned unit tests added and passing; provider satisfies `IDistributedLockProvider` with documented connection-scoped semantics.
+- **Verification:** Planned unit tests added and passing; provider satisfies `IDistributedLock` with documented connection-scoped semantics.
 
 ### U4. `IFencingTokenSource` seam in `Core.Database`
 
 - **Goal:** Define the fence-source abstraction and thread its value through the connection-scoped provider into the **existing** `FencingToken` handle member (no public-interface change — that already shipped in #368).
 - **Requirements:** R10
 - **Dependencies:** U3
-- **Files:** `src/Headless.DistributedLocks.Core.Database/IFencingTokenSource.cs`; wire into `ConnectionScopedDistributedLockProvider.cs` + `ConnectionScopedDistributedLockHandle.cs` (U3).
-- **Approach:** `IFencingTokenSource.NextAsync(resource, connection, ct) -> long?`. On a successful acquire the connection-scoped provider stamps the handle's `FencingToken` from the source (mirroring how `DistributedLockProvider` passes `acquireResult.FencingToken` into `DistributedLockHandleBase`). When no source is registered, the token is `null`. Reader-writer acquires pass `null` (existing convention — `DisposableReaderWriterLock` issues no fence). The Postgres concrete source is U10; this unit only establishes the seam and the mutex provider's plumbing.
-- **Patterns to follow:** [DistributedLockProvider.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs) fence-passing (`acquireResult.FencingToken` → handle); `DistributedLockAcquireResult`; [DistributedLockHandleBase.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockHandleBase.cs) (`fencingToken` ctor param already present).
+- **Files:** `src/Headless.DistributedLocks.Core.Database/IFencingTokenSource.cs`; wire into `ConnectionScopedDistributedLock.cs` + `ConnectionScopedDistributedLockHandle.cs` (U3).
+- **Approach:** `IFencingTokenSource.NextAsync(resource, connection, ct) -> long?`. On a successful acquire the connection-scoped provider stamps the handle's `FencingToken` from the source (mirroring how `DistributedLock` passes `acquireResult.FencingToken` into `DistributedLockHandleBase`). When no source is registered, the token is `null`. Reader-writer acquires pass `null` (existing convention — `DisposableReaderWriterLock` issues no fence). The Postgres concrete source is U10; this unit only establishes the seam and the mutex provider's plumbing.
+- **Patterns to follow:** [DistributedLock.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs) fence-passing (`acquireResult.FencingToken` → handle); `DistributedLockAcquireResult`; [DistributedLockHandleBase.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockHandleBase.cs) (`fencingToken` ctor param already present).
 - **Test suite design:** Unit-tested with a fake `IFencingTokenSource` in `Core.Database.Tests.Unit`; PG durable-sequence behavior in U10/U11.
 - **Test scenarios:**
   - With a fake source returning increasing values, successive acquires stamp increasing `FencingToken` on the handle.
@@ -309,7 +309,7 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
 
 ### U6. Mutex provider end-to-end + `SetupPostgresDistributedLocks`
 
-- **Goal:** Implement `PostgresConnectionScopedLockStorage` and the DI registration so a registered `IDistributedLockProvider` acquires/releases real advisory locks.
+- **Goal:** Implement `PostgresConnectionScopedLockStorage` and the DI registration so a registered `IDistributedLock` acquires/releases real advisory locks.
 - **Requirements:** R6, R11
 - **Dependencies:** U2, U3, U5
 - **Files:** `PostgresConnectionScopedLockStorage.cs`, `PostgresDistributedLockOptions.cs` (+ `internal sealed PostgresDistributedLockOptionsValidator`), `Setup.cs`.
@@ -317,7 +317,7 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
 - **Patterns to follow:** [src/Headless.DistributedLocks.Redis/Setup.cs](../../src/Headless.DistributedLocks.Redis/Setup.cs) (overload shape, `_Add…Core` helper), the CLAUDE.md Setup-class contract.
 - **Test suite design:** End-to-end acquire/release in U11 integration; `Setup` overload registration in `Headless.DistributedLocks.Postgres.Tests.Integration` (DI resolves the provider) or a unit-style setup test mirroring `SetupTests`.
 - **Test scenarios:**
-  - All three `Setup` overloads register a resolvable `IDistributedLockProvider`.
+  - All three `Setup` overloads register a resolvable `IDistributedLock`.
   - Options validation rejects invalid cadence/guardrail values at startup (`ValidateOnStart`).
   - `NpgsqlDataSource` registration is preferred when present; connection-string path works otherwise.
   - (integration, U11) acquire→hold→release round-trip against Testcontainers Postgres; second acquirer is blocked while held, succeeds after release.
@@ -359,12 +359,12 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
 
 ### U9. Reader-writer provider
 
-- **Goal:** Advisory shared/exclusive reader-writer support via `IDistributedReaderWriterLockProvider`.
+- **Goal:** Advisory shared/exclusive reader-writer support via `IDistributedReadWriteLock`.
 - **Requirements:** R9
 - **Dependencies:** U6
-- **Files:** `PostgresReaderWriterLockStorage.cs`, `src/Headless.DistributedLocks.Core.Database/ConnectionScopedReaderWriterLockProvider.cs`, RW overloads in `Setup.cs`.
-- **Approach:** Route reads to `PostgresAdvisoryLock.SharedLock` and writes to `ExclusiveLock` through the same multiplexing engine. Because advisory shared/exclusive is enforced by Postgres natively (no reader-set marker, no writer-preference TTL machinery), the connection-scoped RW provider is far simpler than the TTL-based [DistributedReaderWriterLockProvider](../../src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReaderWriterLockProvider.cs) — it does not need the `IDistributedReaderWriterLockStorage` writer-marker contract. Same `IDistributedLock` handle shape. Upgradeable RW is **out of scope** (not expressible on PG advisory locks).
-- **Patterns to follow:** madelson `PostgresDistributedReaderWriterLock.cs`; existing `IDistributedReaderWriterLockProvider` surface.
+- **Files:** `PostgresReaderWriterLockStorage.cs`, `src/Headless.DistributedLocks.Core.Database/ConnectionScopedReadWriteLock.cs`, RW overloads in `Setup.cs`.
+- **Approach:** Route reads to `PostgresAdvisoryLock.SharedLock` and writes to `ExclusiveLock` through the same multiplexing engine. Because advisory shared/exclusive is enforced by Postgres natively (no reader-set marker, no writer-preference TTL machinery), the connection-scoped RW provider is far simpler than the TTL-based [DistributedReadWriteLock](../../src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReadWriteLock.cs) — it does not need the `IDistributedReadWriteLockStorage` writer-marker contract. Same `IDistributedLock` handle shape. Upgradeable RW is **out of scope** (not expressible on PG advisory locks).
+- **Patterns to follow:** madelson `PostgresDistributedReadWriteLock.cs`; existing `IDistributedReadWriteLock` surface.
 - **Test suite design:** Integration in U11 (and harness RW conformance if a connection-scoped RW base exists; otherwise PG-specific).
 - **Test scenarios:**
   - Multiple concurrent read locks on the same resource are granted simultaneously.
@@ -395,9 +395,9 @@ Harness reconciliation (overrides vs. a capability flag on the base class) is a 
 - **Requirements:** R6–R10, R12 (coverage)
 - **Dependencies:** U6, U7, U8, U9, U10
 - **Files:** `tests/Headless.DistributedLocks.Postgres.Tests.Integration/Headless.DistributedLocks.Postgres.Tests.Integration.csproj` (`Sdk="Headless.NET.Sdk.Test"`, refs `..\..\src\Headless.DistributedLocks.Postgres`, `..\Headless.DistributedLocks.Tests.Harness`, `..\..\src\Headless.Testing.Testcontainers`; `PackageReference Testcontainers.PostgreSql`), `PostgresDistributedLockFixture.cs`, `PostgresDistributedLockTests.cs`, `PostgresAdvisoryTests.cs`; optionally `tests/Headless.DistributedLocks.Core.Database.Tests.Unit/` for U1/U2 unit coverage; attach to slnx.
-- **Approach:** `PostgresDistributedLockFixture` boots a `postgres` container (mirror `RedisTestFixture` shape) and exposes `GetLockProvider()`. `PostgresDistributedLockTests : DistributedLockProviderTestsBase` runs the conformance virtuals, **overriding** `should_get_expiration_for_locked_resource`, `should_get_lock_info_for_locked_resource`, and `should_return_null_expiration_when_not_locked` to assert connection-scoped semantics (null TTL; `GetLockIdAsync`/cross-caller `LockId` not resolvable). `PostgresAdvisoryTests` carries the non-portable backend tests (connection-loss fanout, multiplexing share/fallback, `LISTEN`/`NOTIFY` latency, transaction-coupled, fencing) — many already enumerated in U7–U10; this unit assembles and de-duplicates them.
+- **Approach:** `PostgresDistributedLockFixture` boots a `postgres` container (mirror `RedisTestFixture` shape) and exposes `GetLockProvider()`. `PostgresDistributedLockTests : DistributedLockTestsBase` runs the conformance virtuals, **overriding** `should_get_expiration_for_locked_resource`, `should_get_lock_info_for_locked_resource`, and `should_return_null_expiration_when_not_locked` to assert connection-scoped semantics (null TTL; `GetLockIdAsync`/cross-caller `LockId` not resolvable). `PostgresAdvisoryTests` carries the non-portable backend tests (connection-loss fanout, multiplexing share/fallback, `LISTEN`/`NOTIFY` latency, transaction-coupled, fencing) — many already enumerated in U7–U10; this unit assembles and de-duplicates them.
 - **Execution note:** Add the connection-loss test first — killing the held connection and asserting `HandleLostToken` fires for all multiplexed locks is the highest-value, highest-risk scenario.
-- **Patterns to follow:** [tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisTestFixture.cs](../../tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisTestFixture.cs), `RedisConnectionFailureTests.cs`; [DistributedLockProviderTestsBase.cs](../../tests/Headless.DistributedLocks.Tests.Harness/DistributedLockProviderTestsBase.cs).
+- **Patterns to follow:** [tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisTestFixture.cs](../../tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisTestFixture.cs), `RedisConnectionFailureTests.cs`; [DistributedLockTestsBase.cs](../../tests/Headless.DistributedLocks.Tests.Harness/DistributedLockTestsBase.cs).
 - **Test scenarios:**
   - All non-TTL conformance virtuals pass unchanged (acquire/try/release/parallel/one-at-a-time).
   - Overridden TTL virtuals assert null expiration and connection-scoped info shape.
@@ -443,7 +443,7 @@ In scope: the `Core.Database` shared engine, the Postgres mutex + reader-writer 
 - **`NOTIFY` broadcast storm at scale.** A single release channel fans every release to every node. Mitigation: `EnablePushWakeup` toggle (U7) for polling-only operation; channel-sharding deferred.
 - **`LISTEN`/`NOTIFY` correctness surface.** Notification delivery is best-effort across connection drops. Mitigation: polling backoff is the correctness fallback (U7) — `NOTIFY` is strictly a latency optimization; tests assert acquisition still succeeds with the listener disabled.
 - **Fence value plumbing.** `FencingToken` already exists on the contract (#368); the only risk is the connection-scoped provider forgetting to stamp it. Mitigation: U4 establishes the seam test-first against a fake source before U10's PG sequence lands.
-- **Harness TTL-coupling.** `DistributedLockProviderTestsBase` assumes TTL semantics in three virtuals. Mitigation: per-fixture overrides (U11), documented as the reconciliation point.
+- **Harness TTL-coupling.** `DistributedLockTestsBase` assumes TTL semantics in three virtuals. Mitigation: per-fixture overrides (U11), documented as the reconciliation point.
 - **Dependencies:** #289 (Phase 2 — `HandleLostToken`, `LeaseMonitor.ILeaseHandle`) is **closed/done** — `HandleLostToken`/`IsMonitored` already on `IDistributedLock`. Packages `Npgsql 10.0.2`, `Dapper 2.1.79`, `Testcontainers.PostgreSql 4.12.0` are already pinned in [Directory.Packages.props](../../Directory.Packages.props). Coordinate the shared-engine seam with #294 and the fencing contract shape with #364.
 
 ---
@@ -451,7 +451,7 @@ In scope: the `Core.Database` shared engine, the Postgres mutex + reader-writer 
 ## Sources & Research
 
 - **Issue #293** (this plan's origin) and roadmap **#287** (capability matrix, DB-engine thesis, push-wake-up differentiation).
-- **#294** (SQL Server) — shares the `Core.Database` engine; **#364** (fencing tokens) — verified open, but the **interface + best-effort Redis fence already shipped via #368** (`FencingToken` is present on `IDistributedLock`/`LockInfo`/`DistributedLockHandleBase`, with `DistributedLockAcquireResult` carrying it). #364's open remainder is the durable DB sequence (this PR delivers Postgres; #294 delivers SQL Server) + docs.
-- **madelson/DistributedLock** at `/Users/xshaheen/Dev/oss/DistributedLock` (MIT, port reference): `src/DistributedLock.Postgres/{PostgresAdvisoryLock,PostgresAdvisoryLockKey,PostgresDatabaseConnection,PostgresDistributedLock.Transactions,PostgresDistributedReaderWriterLock}.cs`; `src/DistributedLock.Core/Internal/Data/{ConnectionMonitor,MultiplexedConnectionLockPool,MultiplexedConnectionLock,OptimisticConnectionMultiplexingDbDistributedLock,DedicatedConnectionOrTransactionDbDistributedLock,DatabaseConnection,DatabaseCommand,IDbDistributedLock,IDbSynchronizationStrategy}.cs`. **Note:** madelson uses server-side blocking and has **no** `LISTEN`/`NOTIFY` — this plan's try+notify model is a deliberate departure (see Key Technical Decisions).
-- Framework analogs: [DistributedLockProvider.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs) (acquire loop, guardrails, observability), [LeaseMonitor.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/LeaseMonitor.cs) (Headless `TimeProvider`/cancellation idioms), [Redis Setup.cs](../../src/Headless.DistributedLocks.Redis/Setup.cs) (DI overload shape), the Phase 3a plan [docs/plans/2026-05-24-001-feat-distributed-locks-phase-3a-reader-writer-plan.md](2026-05-24-001-feat-distributed-locks-phase-3a-reader-writer-plan.md).
+- **#294** (SQL Server) — shares the `Core.Database` engine; **#364** (fencing tokens) — verified open, but the **interface + best-effort Redis fence already shipped via #368** (`FencingToken` is present on `IDistributedLock`/`DistributedLockInfo`/`DistributedLockHandleBase`, with `DistributedLockAcquireResult` carrying it). #364's open remainder is the durable DB sequence (this PR delivers Postgres; #294 delivers SQL Server) + docs.
+- **madelson/DistributedLock** at `/Users/xshaheen/Dev/oss/DistributedLock` (MIT, port reference): `src/DistributedLock.Postgres/{PostgresAdvisoryLock,PostgresAdvisoryLockKey,PostgresDatabaseConnection,PostgresDistributedLock.Transactions,PostgresDistributedReadWriteLock}.cs`; `src/DistributedLock.Core/Internal/Data/{ConnectionMonitor,MultiplexedConnectionLockPool,MultiplexedConnectionLock,OptimisticConnectionMultiplexingDbDistributedLock,DedicatedConnectionOrTransactionDbDistributedLock,DatabaseConnection,DatabaseCommand,IDbDistributedLock,IDbSynchronizationStrategy}.cs`. **Note:** madelson uses server-side blocking and has **no** `LISTEN`/`NOTIFY` — this plan's try+notify model is a deliberate departure (see Key Technical Decisions).
+- Framework analogs: [DistributedLock.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs) (acquire loop, guardrails, observability), [LeaseMonitor.cs](../../src/Headless.DistributedLocks.Core/RegularLocks/LeaseMonitor.cs) (Headless `TimeProvider`/cancellation idioms), [Redis Setup.cs](../../src/Headless.DistributedLocks.Redis/Setup.cs) (DI overload shape), the Phase 3a plan [docs/plans/2026-05-24-001-feat-distributed-locks-phase-3a-reader-writer-plan.md](2026-05-24-001-feat-distributed-locks-phase-3a-reader-writer-plan.md).
 - Postgres advisory locks: https://www.postgresql.org/docs/current/explicit-locking.html#ADVISORY-LOCKS

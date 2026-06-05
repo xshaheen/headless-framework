@@ -6,7 +6,7 @@ namespace Headless.DistributedLocks;
 /// <summary>
 /// Backend seam for connection-scoped (session- or transaction-held) lock storage. A custom database
 /// lock provider implements this to map its native primitive (for example <c>pg_advisory_lock</c> or
-/// <c>sp_getapplock</c>) onto <see cref="ConnectionScopedDistributedLockProvider"/>. Locks live for the
+/// <c>sp_getapplock</c>) onto <see cref="ConnectionScopedDistributedLock"/>. Locks live for the
 /// lifetime of the underlying connection and have no TTL; loss of the connection releases the lock and is
 /// surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
 /// </summary>
@@ -24,11 +24,11 @@ public interface IConnectionScopedLockStorage
     /// block waiting for the lock — blocking-with-timeout is owned by the provider.
     /// </summary>
     /// <param name="resource">The resource name to lock.</param>
-    /// <param name="lockId">Provider-generated identifier stamped onto the handle for ownership tracking.</param>
+    /// <param name="leaseId">Provider-generated identifier stamped onto the handle for ownership tracking.</param>
     /// <param name="isShared"><see langword="true"/> for a shared (reader) lock; <see langword="false"/> for an exclusive lock.</param>
     ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         bool isShared,
         CancellationToken cancellationToken = default
     );
@@ -40,10 +40,10 @@ public interface IConnectionScopedLockStorage
     ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Releases the lock identified by <paramref name="resource"/> and <paramref name="lockId"/> without a
+    /// Releases the lock identified by <paramref name="resource"/> and <paramref name="leaseId"/> without a
     /// live handle (the out-of-band release path). A no-op if no matching lock is held.
     /// </summary>
-    ValueTask ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default);
+    ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Reports whether <paramref name="resource"/> is currently locked. When <paramref name="isShared"/> is
@@ -65,10 +65,10 @@ public interface IConnectionScopedLockStorage
     /// Returns the lock id held for <paramref name="resource"/> by this process/connection, or
     /// <see langword="null"/> if this process does not hold it.
     /// </summary>
-    ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default);
+    ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>Lists all locks currently observable in the backing store.</summary>
-    ValueTask<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
+    ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Returns the total count of locks currently observable in the backing store.</summary>
     ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);

@@ -10,7 +10,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 
 - `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
 - `DistributedLockTusLock` - Distributed file lock wrapper
-- Works with any IDistributedLockProvider (Redis, Cache)
+- Works with any IDistributedLock (Redis, Cache)
 
 ## Installation
 

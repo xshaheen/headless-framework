@@ -279,7 +279,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         // then — still owner: classify as Unknown so the safety net governs, not Lost; the handle is
         // not signalled lost.
         result.Should().Be(LeaseMonitor.LeaseState.Unknown);
-        slot.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        slot.LostToken.IsCancellationRequested.Should().BeFalse();
         await _storage.Received(1).ValidateAsync(
             Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
             Arg.Any<string>(),
@@ -305,7 +305,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
     }
 
     // -----------------------------------------------------------------------
-    // Monitor stop on dispose does not fire HandleLostToken
+    // Monitor stop on dispose does not fire LostToken
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -320,17 +320,17 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         );
         var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         slot.AttachMonitor(monitor);
-        slot.IsMonitored.Should().BeTrue();
-        var handleLostToken = slot.HandleLostToken;
+        slot.CanObserveLoss.Should().BeTrue();
+        var lostToken = slot.LostToken;
 
         // when
         await slot.DisposeAsync();
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
 
-        // then — monitor is stopped but HandleLostToken is not cancelled
-        slot.IsMonitored.Should().BeFalse();
+        // then — monitor is stopped but LostToken is not cancelled
+        slot.CanObserveLoss.Should().BeFalse();
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
-        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
     }
 
@@ -346,16 +346,16 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         );
         var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         slot.AttachMonitor(monitor);
-        var handleLostToken = slot.HandleLostToken;
+        var lostToken = slot.LostToken;
 
         // when
         await slot.ReleaseAsync();
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
 
         // then
-        slot.IsMonitored.Should().BeFalse();
+        slot.CanObserveLoss.Should().BeFalse();
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
-        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
         await _storage.Received(1).ReleaseAsync(
             Arg.Is<string>(r => r.EndsWith(resource, StringComparison.Ordinal)),
@@ -408,7 +408,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         {
             return new DisposableSemaphoreSlot(
                 resource,
-                slot.LockId,
+                slot.LeaseId,
                 slot.FencingToken,
                 TimeSpan.FromSeconds(10),
                 slot.TimeWaitedForLock,

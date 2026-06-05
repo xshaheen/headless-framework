@@ -8,7 +8,7 @@ public interface IDistributedSemaphoreStorage
 {
     ValueTask<DistributedLockAcquireResult> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         int maxCount,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
@@ -16,14 +16,14 @@ public interface IDistributedSemaphoreStorage
 
     ValueTask<bool> TryExtendAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<bool> ValidateAsync(string resource, string lockId, CancellationToken cancellationToken = default);
+    ValueTask<bool> ValidateAsync(string resource, string leaseId, CancellationToken cancellationToken = default);
 
-    ValueTask<bool> ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default);
+    ValueTask<bool> ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default);
 
     ValueTask<long> GetCountAsync(string resource, CancellationToken cancellationToken = default);
 }

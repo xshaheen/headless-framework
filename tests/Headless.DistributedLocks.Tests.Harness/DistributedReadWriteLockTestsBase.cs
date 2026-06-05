@@ -7,9 +7,9 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
+public abstract class DistributedReadWriteLockTestsBase : TestBase
 {
-    protected abstract IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null);
+    protected abstract IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null);
     protected abstract TimeProvider TimeProvider { get; }
     protected abstract Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken);
 
@@ -71,7 +71,7 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
         await using (var first = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
         await using (var second = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken))
         {
-            first.LockId.Should().NotBe(second.LockId);
+            first.LeaseId.Should().NotBe(second.LeaseId);
             (await provider.GetReaderCountAsync(resource, AbortToken)).Should().Be(2);
         }
 
@@ -221,7 +221,7 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
         }
     }
 
-    private async Task _AdvancePastAcquireTimeoutAsync(Task<IDistributedLock> acquireTask, TimeSpan acquireTimeout)
+    private async Task _AdvancePastAcquireTimeoutAsync(Task<IDistributedLease> acquireTask, TimeSpan acquireTimeout)
     {
         for (var i = 0; i < 20 && !acquireTask.IsCompleted; i++)
         {
@@ -331,13 +331,13 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
             AbortToken
         );
 
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             await AdvanceTimeAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested, AbortToken);
+            await DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     public virtual async Task should_fire_handle_lost_token_when_write_lock_ttl_expires()
@@ -354,13 +354,13 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
             AbortToken
         );
 
-        for (var i = 0; i < 10 && !handle.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !handle.LostToken.IsCancellationRequested; i++)
         {
             await AdvanceTimeAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested, AbortToken);
+            await DrainUntilAsync(() => handle.LostToken.IsCancellationRequested, AbortToken);
         }
 
-        handle.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     public virtual async Task should_auto_extend_write_lock()

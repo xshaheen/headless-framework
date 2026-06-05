@@ -7,7 +7,7 @@ public interface IDistributedLockStorage
 {
     ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     );
@@ -36,7 +36,7 @@ public interface IDistributedLockStorage
     );
 
     /// <summary>Gets all lock keys, their IDs, and their remaining TTL matching the given prefix.</summary>
-    ValueTask<IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
+    ValueTask<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     );

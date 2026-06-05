@@ -6,15 +6,15 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-public sealed class InMemoryDistributedLockProviderTests : DistributedLockProviderTestsBase
+public sealed class InMemoryDistributedLockTests : DistributedLockTestsBase
 {
-    protected override IDistributedLockProvider GetLockProvider()
+    protected override IDistributedLock GetLockProvider()
     {
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddInMemoryDistributedLock(static options => options.KeyPrefix = Options.KeyPrefix);
 
-        return services.BuildServiceProvider().GetRequiredService<IDistributedLockProvider>();
+        return services.BuildServiceProvider().GetRequiredService<IDistributedLock>();
     }
 
     [Fact]

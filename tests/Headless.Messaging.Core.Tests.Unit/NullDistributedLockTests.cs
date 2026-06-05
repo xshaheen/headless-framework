@@ -4,13 +4,13 @@ using Headless.DistributedLocks;
 
 namespace Tests;
 
-public sealed class NullDistributedLockProviderTests
+public sealed class NullDistributedLockTests
 {
     [Fact]
     public async Task should_return_non_null_handle_when_TryAcquireAsync_called()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
 
         // when
         var handle = await sut.TryAcquireAsync("test.resource");
@@ -18,14 +18,14 @@ public sealed class NullDistributedLockProviderTests
         // then
         handle.Should().NotBeNull();
         handle!.Resource.Should().Be("test.resource");
-        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.LeaseId.Should().NotBeNullOrEmpty();
     }
 
     [Fact]
     public async Task should_succeed_when_RenewAsync_called_on_handle()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -40,7 +40,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_increment_renewal_count_after_each_renew_async_call()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
@@ -58,7 +58,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_not_increment_renewal_count_when_RenewAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
         handle!.RenewalCount.Should().Be(0);
@@ -78,7 +78,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_be_safe_to_DisposeAsync_multiple_times()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         var handle = await sut.TryAcquireAsync("test.resource");
         handle.Should().NotBeNull();
 
@@ -97,7 +97,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_TryAcquireAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -112,7 +112,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_report_handle_as_unmonitored_when_monitoring_is_requested()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
 
         // when
         var handle = await sut.TryAcquireAsync(
@@ -122,15 +122,15 @@ public sealed class NullDistributedLockProviderTests
 
         // then
         handle.Should().NotBeNull();
-        handle!.IsMonitored.Should().BeFalse();
-        handle.HandleLostToken.Should().Be(CancellationToken.None);
+        handle!.CanObserveLoss.Should().BeFalse();
+        handle.LostToken.Should().Be(CancellationToken.None);
     }
 
     [Fact]
     public async Task should_reject_infinite_ttl_when_monitoring_is_enabled()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
 
         // when
         var act = async () =>
@@ -151,7 +151,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_provider_RenewAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -166,7 +166,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_throw_OperationCanceledException_when_provider_ReleaseAsync_token_is_already_cancelled()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
@@ -181,7 +181,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_return_empty_list_when_ListActiveLocksAsync_called()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when
@@ -196,7 +196,7 @@ public sealed class NullDistributedLockProviderTests
     public async Task should_return_zero_when_GetActiveLocksCountAsync_called()
     {
         // given
-        var sut = new NullDistributedLockProvider(TimeProvider.System);
+        var sut = new NullDistributedLock(TimeProvider.System);
         await sut.TryAcquireAsync("test.resource");
 
         // when

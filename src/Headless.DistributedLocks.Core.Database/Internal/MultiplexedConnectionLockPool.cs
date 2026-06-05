@@ -33,7 +33,7 @@ internal sealed class MultiplexedConnectionLockPool
 
     internal Func<string, DatabaseConnection> ConnectionFactory { get; }
 
-    public async ValueTask<IDistributedLock?> TryAcquireAsync<TLockCookie>(
+    public async ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         string connectionString,
         string name,
         TimeSpan timeout,

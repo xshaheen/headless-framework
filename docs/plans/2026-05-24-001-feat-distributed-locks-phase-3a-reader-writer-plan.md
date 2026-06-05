@@ -8,7 +8,7 @@ origin_issue: https://github.com/xshaheen/headless-framework/issues/290
 related_issues:
   - https://github.com/xshaheen/headless-framework/issues/287
   - https://github.com/xshaheen/headless-framework/issues/289
-reference_implementation: madelson/DistributedLock (RedisDistributedReaderWriterLock)
+reference_implementation: madelson/DistributedLock (RedisDistributedReadWriteLock)
 ---
 
 # feat: DistributedLocks Phase 3a — Redis-backed reader-writer lock
@@ -29,7 +29,7 @@ Non-upgradeable. No multi-instance RedLock variant. Cache backend is out of scop
 
 A regular distributed mutex over-serializes read-heavy workloads where concurrent readers are safe and a writer is the only operation requiring exclusion (cache rebuild, config hot-reload, admin write vs. fan-out read). Consumers need a primitive that mirrors `ReaderWriterLockSlim`'s semantics across processes, while composing with the existing lease-monitor + auto-extend flow shipped in Phase 2.
 
-The Redis backend is well understood (madelson's `RedisDistributedReaderWriterLock` is the reference for the Lua-script algorithm). Headless's contribution is the integration: provider/storage abstraction that fits the existing package layout, lease-monitor integration so RW handles surface `HandleLostToken` identically to mutex handles, and the same options/setup ergonomics.
+The Redis backend is well understood (madelson's `RedisDistributedReadWriteLock` is the reference for the Lua-script algorithm). Headless's contribution is the integration: provider/storage abstraction that fits the existing package layout, lease-monitor integration so RW handles surface `HandleLostToken` identically to mutex handles, and the same options/setup ergonomics.
 
 ---
 
@@ -37,15 +37,15 @@ The Redis backend is well understood (madelson's `RedisDistributedReaderWriterLo
 
 ### D1. Handle type — reuse `IDistributedLock`; no new handle interface.
 
-`IDistributedLock` already carries everything a read or write handle needs (`LockId`, `Resource`, `HandleLostToken`, `IsMonitored`, `RenewAsync`, `ReleaseAsync`, `DateAcquired`, `TimeWaitedForLock`, `RenewalCount`). Introducing a marker `IDistributedReaderWriterLock : IDistributedLock` adds API surface without behavioral value — consumers do not need to discriminate read vs. write from the handle (they already know which method they called). If a future need arises (e.g., callers receiving handles from a registry), it can be added non-breakingly.
+`IDistributedLock` already carries everything a read or write handle needs (`LockId`, `Resource`, `HandleLostToken`, `IsMonitored`, `RenewAsync`, `ReleaseAsync`, `DateAcquired`, `TimeWaitedForLock`, `RenewalCount`). Introducing a marker `IDistributedReadWriteLock : IDistributedLock` adds API surface without behavioral value — consumers do not need to discriminate read vs. write from the handle (they already know which method they called). If a future need arises (e.g., callers receiving handles from a registry), it can be added non-breakingly.
 
-The issue's phrase "`IDistributedReaderWriterLock` (handle interface)" is treated as loose phrasing — the rest of the issue ("returned handle is the same `IDistributedLock` shape") settles it.
+The issue's phrase "`IDistributedReadWriteLock` (handle interface)" is treated as loose phrasing — the rest of the issue ("returned handle is the same `IDistributedLock` shape") settles it.
 
 ### D2. Fairness — writer-preference via writer-waiting flag.
 
 Matches madelson. Without writer-preference, a steady stream of read acquires can starve writers indefinitely. The mechanism: when a writer call cannot acquire (readers present), it claims the writer key with its own lock id + a `:_WRITERWAITING` suffix; the read-acquire script checks for the writer key and refuses if present (whether the value is a real writer or a waiting marker). The waiting writer then re-runs the acquire loop on the standard retry cadence until readers drain.
 
-Documented in the `IDistributedReaderWriterLockProvider` XML doc and in `docs/llms/distributed-locks.md`.
+Documented in the `IDistributedReadWriteLock` XML doc and in `docs/llms/distributed-locks.md`.
 
 ### D3. Storage shape — two Redis keys per resource (writer string + readers set).
 
@@ -72,7 +72,7 @@ Consistent with `IDistributedLockStorage`, which lives in `Headless.DistributedL
 
 ### D6. Reuse `DistributedLockAcquireOptions` for both modes.
 
-Read and write acquires share semantics for `TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, and `Monitoring`. A separate `DistributedReaderWriterLockAcquireOptions` would duplicate the type for no behavioral delta. If mode-specific options appear later (e.g., max reader count cap), introduce a derived/specialized type then.
+Read and write acquires share semantics for `TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, and `Monitoring`. A separate `DistributedReadWriteLockAcquireOptions` would duplicate the type for no behavioral delta. If mode-specific options appear later (e.g., max reader count cap), introduce a derived/specialized type then.
 
 ### D7. Read renewal extends TTL on the readers set only; write renewal extends the writer key.
 
@@ -83,19 +83,19 @@ The lease monitor's `RenewOrValidateLeaseAsync` dispatches based on which mode t
 ## High-Level Technical Design
 
 ```
-Provider (IDistributedReaderWriterLockProvider)
+Provider (IDistributedReadWriteLock)
   AcquireReadLockAsync / TryAcquireReadLockAsync
   AcquireWriteLockAsync / TryAcquireWriteLockAsync
       |
       v
-DistributedReaderWriterLockProvider (Core)
+DistributedReadWriteLock (Core)
   - retry loop (driven by DistributedLockOptions.AcquireRetryDelay; identical cadence to mutex)
   - on each iteration: invokes storage TryAcquireRead / TryAcquireWrite
   - on success: builds DisposableReaderWriterLock handle, attaches LeaseMonitor (when Monitoring != None)
   - publishes "released" wake-up via outbox (when configured) on release — same channel as mutex
       |
       v
-IDistributedReaderWriterLockStorage (Core)
+IDistributedReadWriteLockStorage (Core)
   TryAcquireReadAsync(resource, lockId, ttl, ct)        -> bool
   TryExtendReadAsync(resource, lockId, ttl, ct)         -> bool
   ReleaseReadAsync(resource, lockId, ct)                -> ValueTask
@@ -145,11 +145,11 @@ LUA SCRIPTS (directional sketch — illustrates intent, not the final source):
 
 In scope:
 
-- `IDistributedReaderWriterLockProvider` in `Headless.DistributedLocks.Abstractions`
-- `IDistributedReaderWriterLockStorage` in `Headless.DistributedLocks.Core`
-- `DistributedReaderWriterLockProvider` (concrete) in `Headless.DistributedLocks.Core`
-- `RedisDistributedReaderWriterLockStorage` in `Headless.DistributedLocks.Redis` with Lua scripts (acquire/extend/release × read/write + validate)
-- DI Setup: `RedisDistributedReaderWriterLockSetup` (three overloads — `IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`) and a core `AddDistributedReaderWriterLock<TStorage>` registration triad
+- `IDistributedReadWriteLock` in `Headless.DistributedLocks.Abstractions`
+- `IDistributedReadWriteLockStorage` in `Headless.DistributedLocks.Core`
+- `DistributedReadWriteLock` (concrete) in `Headless.DistributedLocks.Core`
+- `RedisDistributedReadWriteLockStorage` in `Headless.DistributedLocks.Redis` with Lua scripts (acquire/extend/release × read/write + validate)
+- DI Setup: `RedisDistributedReadWriteLockSetup` (three overloads — `IConfiguration`, `Action<TOptions>`, `Action<TOptions, IServiceProvider>`) and a core `AddDistributedReadWriteLock<TStorage>` registration triad
 - Lease-monitor integration so `HandleLostToken` and `Monitoring = AutoExtend` work for both read and write handles
 - Integration tests against Testcontainers Redis covering acceptance criteria from the issue
 - Documentation sync: `docs/llms/distributed-locks.md`, `src/Headless.DistributedLocks.Abstractions/README.md`, `src/Headless.DistributedLocks.Core/README.md`, `src/Headless.DistributedLocks.Redis/README.md`
@@ -181,7 +181,7 @@ In scope:
 | R3.1 | Returned handle exposes `HandleLostToken` (Phase 2) | U4, U6 |
 | R3.1 | Auto-extension flows through both modes | U4, U6 |
 | R3.2 | Lua-based atomic state transitions for read/write acquire/release/extend | U3 |
-| R3.2 | New `IDistributedReaderWriterLockStorage` in Core | U2 |
+| R3.2 | New `IDistributedReadWriteLockStorage` in Core | U2 |
 | R3.2 | Redis implementation in `Headless.DistributedLocks.Redis` | U3, U5 |
 | OQ4 | Cache backend spike conclusion | D4, U8 (docs) |
 | AC | Multiple concurrent readers | U7 |
@@ -191,15 +191,15 @@ In scope:
 | AC | Auto-extension works on both modes | U6, U7 |
 | AC | Coverage targets per CLAUDE.md (≥85% line / ≥80% branch) | U7 |
 | AC | Docs sync | U8 |
-| Setup | `Setup{Provider}RedisDistributedReaderWriterLock` with three overloads | U5 |
+| Setup | `Setup{Provider}RedisDistributedReadWriteLock` with three overloads | U5 |
 
 ---
 
 ## Implementation Units
 
-### U1. Define `IDistributedReaderWriterLockProvider` interface
+### U1. Define `IDistributedReadWriteLock` interface
 
-**Goal:** Public API surface for acquiring read/write handles, mirroring `IDistributedLockProvider`'s ergonomics.
+**Goal:** Public API surface for acquiring read/write handles, mirroring `IDistributedLock`'s ergonomics.
 
 **Requirements:** R3.1.
 
@@ -207,24 +207,24 @@ In scope:
 
 **Files:**
 
-- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/IDistributedReaderWriterLockProvider.cs` (new)
-- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/NullDistributedReaderWriterLockProvider.cs` (new — mirror of `NullDistributedLockProvider`)
-- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/DistributedReaderWriterLockProviderExtensions.cs` (new — string-only acquire overloads if needed)
+- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/IDistributedReadWriteLock.cs` (new)
+- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/NullDistributedReadWriteLock.cs` (new — mirror of `NullDistributedLock`)
+- `src/Headless.DistributedLocks.Abstractions/ReaderWriterLocks/DistributedReadWriteLockExtensions.cs` (new — string-only acquire overloads if needed)
 
 **Approach:**
 
-- Mirror `IDistributedLockProvider` shape: 4 acquire methods (`AcquireReadLockAsync`, `TryAcquireReadLockAsync`, `AcquireWriteLockAsync`, `TryAcquireWriteLockAsync`) each taking `(string resource, DistributedLockAcquireOptions?, CancellationToken)`.
+- Mirror `IDistributedLock` shape: 4 acquire methods (`AcquireReadLockAsync`, `TryAcquireReadLockAsync`, `AcquireWriteLockAsync`, `TryAcquireWriteLockAsync`) each taking `(string resource, DistributedLockAcquireOptions?, CancellationToken)`.
 - Return type is `IDistributedLock` (D1) — `Try*` returns `IDistributedLock?`.
 - Expose `DefaultTimeUntilExpires` and `DefaultAcquireTimeout` properties (parity with mutex provider).
 - Inspection methods (`IsReadLockedAsync(resource)`, `IsWriteLockedAsync(resource)`, `GetReaderCountAsync(resource)`) — minimal observability surface, callers should not rely on these for correctness. Document this in XML docs.
 - `[PublicAPI]` on the interface and the null impl.
 - XML docs reference D2 (writer-preference) and Phase 2's lease-monitor behavior.
-- `NullDistributedReaderWriterLockProvider`: every acquire succeeds immediately and returns a no-op handle (matching the null mutex provider's "tests-only / no contention" behavior).
+- `NullDistributedReadWriteLock`: every acquire succeeds immediately and returns a no-op handle (matching the null mutex provider's "tests-only / no contention" behavior).
 
 **Patterns to follow:**
 
-- `src/Headless.DistributedLocks.Abstractions/RegularLocks/IDistributedLockProvider.cs` (signature shape, XML doc style, `[PublicAPI]` placement).
-- `src/Headless.DistributedLocks.Abstractions/RegularLocks/NullDistributedLockProvider.cs` (no-op impl).
+- `src/Headless.DistributedLocks.Abstractions/RegularLocks/IDistributedLock.cs` (signature shape, XML doc style, `[PublicAPI]` placement).
+- `src/Headless.DistributedLocks.Abstractions/RegularLocks/NullDistributedLock.cs` (no-op impl).
 - Namespace convention: `Headless.DistributedLocks` (single namespace via `#pragma warning disable IDE0130`).
 
 **Test suite design:** No tests for this unit alone — interface-only, contract verified through U4 and U7.
@@ -239,7 +239,7 @@ In scope:
 
 ---
 
-### U2. Define `IDistributedReaderWriterLockStorage` interface
+### U2. Define `IDistributedReadWriteLockStorage` interface
 
 **Goal:** Provider-agnostic storage contract for RW lock atomic ops.
 
@@ -249,7 +249,7 @@ In scope:
 
 **Files:**
 
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/IDistributedReaderWriterLockStorage.cs` (new)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/IDistributedReadWriteLockStorage.cs` (new)
 
 **Approach:**
 
@@ -282,9 +282,9 @@ In scope:
 
 ---
 
-### U3. Implement `RedisDistributedReaderWriterLockStorage` with Lua scripts
+### U3. Implement `RedisDistributedReadWriteLockStorage` with Lua scripts
 
-**Goal:** Atomic Redis-backed implementation of `IDistributedReaderWriterLockStorage`. Owns the algorithmic correctness of RW lock semantics.
+**Goal:** Atomic Redis-backed implementation of `IDistributedReadWriteLockStorage`. Owns the algorithmic correctness of RW lock semantics.
 
 **Requirements:** R3.2, D2, D3, D7.
 
@@ -292,7 +292,7 @@ In scope:
 
 **Files:**
 
-- `src/Headless.DistributedLocks.Redis/RedisDistributedReaderWriterLockStorage.cs` (new)
+- `src/Headless.DistributedLocks.Redis/RedisDistributedReadWriteLockStorage.cs` (new)
 - `src/Headless.Redis/HeadlessRedisScriptsLoader.cs` (modify — register the new RW Lua scripts and expose typed methods following the existing `ReplaceIfEqualAsync` / `RemoveIfEqualAsync` pattern)
 - `tests/Headless.DistributedLocks.Redis.Tests.Integration/RedisReaderWriterLockStorageTests.cs` (new — storage-level Lua-script behavior, before the provider integration)
 
@@ -326,13 +326,13 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 - `src/Headless.DistributedLocks.Redis/RedisDistributedLockStorage.cs` for constructor shape, `IDatabase Db => multiplexer.GetDatabase()`, `ConfigureAwait(false)`, `Argument.IsNotNullOrEmpty`.
 - `/Users/xshaheen/Dev/oss/DistributedLock/src/DistributedLock.Redis/Primitives/RedisReaderWriterLockPrimitives.cs` (reference — algorithmic source).
 - Script loading: study existing `HeadlessRedisScriptsLoader` script registration to mirror the typed accessor method pattern (`scriptsLoader.TryAcquireReadAsync(Db, writerKey, readerKey, lockId, expiryMs, ct)`).
-- Naming: `Headless.DistributedLocks.Redis.RedisDistributedReaderWriterLockStorage` (sealed class, no interfaces other than `IDistributedReaderWriterLockStorage`).
+- Naming: `Headless.DistributedLocks.Redis.RedisDistributedReadWriteLockStorage` (sealed class, no interfaces other than `IDistributedReadWriteLockStorage`).
 
 **Test suite design:**
 
 - New integration test project: **none new** — extend `Headless.DistributedLocks.Redis.Tests.Integration` (confirm it exists; if not, create it mirroring the regular-lock integration test project).
 - Fixture: existing Testcontainers Redis fixture in the Redis integration tests. Tests must be independent — each test generates a unique resource name (Bogus or `Guid`-suffixed) to avoid cross-test interference.
-- Storage-level tests use `RedisDistributedReaderWriterLockStorage` directly (not through the provider) — keeps Lua-script behavior covered even if provider-level retries mask bugs.
+- Storage-level tests use `RedisDistributedReadWriteLockStorage` directly (not through the provider) — keeps Lua-script behavior covered even if provider-level retries mask bugs.
 
 **Test scenarios:**
 
@@ -359,12 +359,12 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 **Verification:**
 
 - `make test-project TEST_PROJECT=tests/Headless.DistributedLocks.Redis.Tests.Integration/...csproj` passes.
-- Coverage on `RedisDistributedReaderWriterLockStorage.cs` ≥85% line, ≥80% branch.
+- Coverage on `RedisDistributedReadWriteLockStorage.cs` ≥85% line, ≥80% branch.
 - No new build warnings.
 
 ---
 
-### U4. Implement `DistributedReaderWriterLockProvider` (Core)
+### U4. Implement `DistributedReadWriteLock` (Core)
 
 **Goal:** Concrete provider that wraps the storage, runs the acquire-retry loop, generates lock ids, integrates with `LeaseMonitor`/`LeaseMonitorRegistry`, and constructs `DisposableReaderWriterLock` handles.
 
@@ -374,16 +374,16 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 **Files:**
 
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReaderWriterLockProvider.cs` (new)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReadWriteLock.cs` (new)
 - `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DisposableReaderWriterLock.cs` (new — handle implementing `IDistributedLock` + `LeaseMonitor.ILeaseHandle`)
 - `src/Headless.DistributedLocks.Core/ReaderWriterLocks/ReaderWriterLockMode.cs` (new — internal enum: `Read` / `Write`)
 - `src/Headless.DistributedLocks.Core/ReaderWriterLocks/LoggerExtensions.cs` (new — `[LoggerMessage]` partial class for RW-specific log events; place at bottom of file or in its own file per the codebase pattern)
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReaderWriterLockMetrics.cs` (new — metrics for read/write acquire counts, wait time, contention)
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/ScopedDistributedReaderWriterLockStorage.cs` (new — mirrors `ScopedDistributedLockStorage` for prefix scoping if the regular lock has it; if scoping does not apply, drop this file)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReadWriteLockMetrics.cs` (new — metrics for read/write acquire counts, wait time, contention)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/ScopedDistributedReadWriteLockStorage.cs` (new — mirrors `ScopedDistributedLockStorage` for prefix scoping if the regular lock has it; if scoping does not apply, drop this file)
 
 **Approach:**
 
-- `DistributedReaderWriterLockProvider` constructor: `(IDistributedReaderWriterLockStorage storage, IOutboxPublisher? publisher, DistributedLockOptions options, ILongIdGenerator idGenerator, TimeProvider timeProvider, ILogger<DistributedReaderWriterLockProvider> logger)`.
+- `DistributedReadWriteLock` constructor: `(IDistributedReadWriteLockStorage storage, IOutboxPublisher? publisher, DistributedLockOptions options, ILongIdGenerator idGenerator, TimeProvider timeProvider, ILogger<DistributedReadWriteLock> logger)`.
 - Shared acquire flow:
   1. Generate lock id (`idGenerator.Create()` returning a stable string; reuse the regular provider's id generator).
   2. Compute effective TTL and acquire deadline from options + defaults.
@@ -391,7 +391,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
      - Read: pass `(resource, lockId, ttl)`.
      - Write: pass `(resource, lockId, $"{lockId}:_WRITERWAITING", ttl)`. (Waiting marker derivation lives in the provider.)
   4. On success: stop timer, build `DisposableReaderWriterLock`, attach `LeaseMonitor` if `Monitoring != None`, return.
-  5. On failure: await retry delay (using `TimeProvider.Delay`, **never** `Task.Delay`) or short-circuit if `AcquireTimeout == TimeSpan.Zero` (single-shot, matching the mutex provider's existing semantic — see `IDistributedLockProvider.TryAcquireAsync` XML doc).
+  5. On failure: await retry delay (using `TimeProvider.Delay`, **never** `Task.Delay`) or short-circuit if `AcquireTimeout == TimeSpan.Zero` (single-shot, matching the mutex provider's existing semantic — see `IDistributedLock.TryAcquireAsync` XML doc).
   6. On deadline: `AcquireAsync` throws `LockAcquisitionTimeoutException`; `TryAcquireAsync` returns null.
 - On writer-preference cleanup (D8): when a write acquire fails permanently (deadline hit) or the caller's `CancellationToken` fires AND the provider planted the waiting marker, the provider calls `storage.ReleaseWriteAsync(resource, waitingId)` to clear it. This reuses the same Lua script that clears a fully-acquired writer; the script's "delete if value equals expected" semantic handles both cases. No new storage method.
 - `DisposableReaderWriterLock`:
@@ -407,7 +407,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 **Patterns to follow:**
 
-- `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockProvider.cs` — overall provider shape, options resolution, retry loop, outbox integration, `LeaseMonitorRegistry` use.
+- `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLock.cs` — overall provider shape, options resolution, retry loop, outbox integration, `LeaseMonitorRegistry` use.
 - `src/Headless.DistributedLocks.Core/RegularLocks/DisposableDistributedLock.cs` — handle shape, `LeaseMonitor.ILeaseHandle` impl.
 - `src/Headless.DistributedLocks.Core/RegularLocks/LoggerExtensions.cs` — log message style (`[LoggerMessage]` with stable `EventId`s; pick IDs that do not collide with the regular lock's range).
 - `src/Headless.DistributedLocks.Core/RegularLocks/DistributedLockMetrics.cs` — metric naming convention. Reuse the existing mutex metric names (acquire-count, wait-time, contention) with a first-class `mode` tag (`read` | `write`) rather than introducing `rw.`-prefixed parallel metrics — keeps dashboards consistent.
@@ -442,7 +442,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 ---
 
-### U5. DI Setup — `RedisDistributedReaderWriterLockSetup` + core `AddDistributedReaderWriterLock<TStorage>`
+### U5. DI Setup — `RedisDistributedReadWriteLockSetup` + core `AddDistributedReadWriteLock<TStorage>`
 
 **Goal:** Idiomatic DI registration matching the three-overload pattern used elsewhere.
 
@@ -452,23 +452,23 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 **Files:**
 
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/AddDistributedReaderWriterLockExtensions.cs` (new — core triad of overloads)
-- `src/Headless.DistributedLocks.Redis/RedisDistributedReaderWriterLockSetup.cs` (new — Redis-specific triad delegating to core)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/AddDistributedReadWriteLockExtensions.cs` (new — core triad of overloads)
+- `src/Headless.DistributedLocks.Redis/RedisDistributedReadWriteLockSetup.cs` (new — Redis-specific triad delegating to core)
 
 **Approach:**
 
-- Core `AddDistributedReaderWriterLock<TStorage>` — three overloads: `(Action<DistributedLockOptions, IServiceProvider>)`, `(Action<DistributedLockOptions>)`, `(IConfiguration)`.
+- Core `AddDistributedReadWriteLock<TStorage>` — three overloads: `(Action<DistributedLockOptions, IServiceProvider>)`, `(Action<DistributedLockOptions>)`, `(IConfiguration)`.
   - Use `Configure<DistributedLockOptions, DistributedLockOptionsValidator>(...)` for options + validation.
-  - Core helper `_AddDistributedReaderWriterLockCore<TStorage>` performs shared wiring:
+  - Core helper `_AddDistributedReadWriteLockCore<TStorage>` performs shared wiring:
     - `services.TryAddSingleton<TStorage>()`.
-    - `services.TryAddSingleton<DistributedReaderWriterLockProvider>(...)` with explicit factory (mirrors the mutex provider's factory shape).
-    - `services.TryAddSingleton<IDistributedReaderWriterLockProvider>(sp => sp.GetRequiredService<DistributedReaderWriterLockProvider>())`.
+    - `services.TryAddSingleton<DistributedReadWriteLock>(...)` with explicit factory (mirrors the mutex provider's factory shape).
+    - `services.TryAddSingleton<IDistributedReadWriteLock>(sp => sp.GetRequiredService<DistributedReadWriteLock>())`.
     - Reuse `DistributedLockOptions` (D6) — no new options type.
     - Reuse `TimeProvider`, `ILongIdGenerator` (already registered by the mutex `AddDistributedLock`, idempotent via `TryAddSingleton`).
     - Do **not** re-register the `LockReleasedConsumer` here — the mutex provider already owns that registration when messaging is wired; the RW provider participates in the same release channel.
-- Redis `RedisDistributedReaderWriterLockSetup`:
-  - Three overloads `AddRedisDistributedReaderWriterLock(...)` mirroring `AddRedisDistributedLock`.
-  - Each calls `services.TryAddSingleton<HeadlessRedisScriptsLoader>()` then delegates to the core `AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>`.
+- Redis `RedisDistributedReadWriteLockSetup`:
+  - Three overloads `AddRedisDistributedReadWriteLock(...)` mirroring `AddRedisDistributedLock`.
+  - Each calls `services.TryAddSingleton<HeadlessRedisScriptsLoader>()` then delegates to the core `AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>`.
 - Use C# 14 extension members (matching existing setup classes).
 
 **Patterns to follow:**
@@ -478,14 +478,14 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 **Test suite design:**
 
-- DI registration tests in `tests/Headless.DistributedLocks.Tests.Unit/ReaderWriterLocks/SetupTests.cs`. Build a `ServiceCollection`, register, resolve `IDistributedReaderWriterLockProvider`, assert concrete type and singleton lifetime.
+- DI registration tests in `tests/Headless.DistributedLocks.Tests.Unit/ReaderWriterLocks/SetupTests.cs`. Build a `ServiceCollection`, register, resolve `IDistributedReadWriteLock`, assert concrete type and singleton lifetime.
 
 **Test scenarios:**
 
-- All three core overloads register `IDistributedReaderWriterLockProvider` as singleton.
-- Idempotent: calling `AddDistributedReaderWriterLock<...>` twice yields one `DistributedReaderWriterLockProvider` registration.
-- Calling `AddRedisDistributedReaderWriterLock` registers `HeadlessRedisScriptsLoader` exactly once even if called alongside `AddRedisDistributedLock`.
-- Resolving `IDistributedReaderWriterLockProvider` after only `AddRedisDistributedLock` (no RW setup) returns the null impl OR is unresolvable — pick one and document. **Decision:** unresolvable (consumers must opt in explicitly; the null provider is for testing only and not auto-registered).
+- All three core overloads register `IDistributedReadWriteLock` as singleton.
+- Idempotent: calling `AddDistributedReadWriteLock<...>` twice yields one `DistributedReadWriteLock` registration.
+- Calling `AddRedisDistributedReadWriteLock` registers `HeadlessRedisScriptsLoader` exactly once even if called alongside `AddRedisDistributedLock`.
+- Resolving `IDistributedReadWriteLock` after only `AddRedisDistributedLock` (no RW setup) returns the null impl OR is unresolvable — pick one and document. **Decision:** unresolvable (consumers must opt in explicitly; the null provider is for testing only and not auto-registered).
 - Options validation: `DistributedLockOptions` with monitoring on + infinite TTL surfaces a validator error at startup.
 
 **Verification:**
@@ -506,7 +506,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 **Files:**
 
 - `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DisposableReaderWriterLock.cs` (modify — finalize `LeaseMonitor.ILeaseHandle` impl)
-- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReaderWriterLockProvider.cs` (modify — attach `LeaseMonitor` via `LeaseMonitorRegistry` when options enable monitoring)
+- `src/Headless.DistributedLocks.Core/ReaderWriterLocks/DistributedReadWriteLock.cs` (modify — attach `LeaseMonitor` via `LeaseMonitorRegistry` when options enable monitoring)
 
 **Approach:**
 
@@ -591,7 +591,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 **Verification:**
 
 - All integration tests pass under `make test-integration`.
-- Combined Phase 3a coverage hits the targets: ≥85% line / ≥80% branch on `Headless.DistributedLocks.Core/ReaderWriterLocks/*` and `Headless.DistributedLocks.Redis/RedisDistributedReaderWriterLockStorage.cs`.
+- Combined Phase 3a coverage hits the targets: ≥85% line / ≥80% branch on `Headless.DistributedLocks.Core/ReaderWriterLocks/*` and `Headless.DistributedLocks.Redis/RedisDistributedReadWriteLockStorage.cs`.
 - `make coverage-json` reports no regression on existing mutex coverage.
 
 ---
@@ -607,9 +607,9 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 **Files:**
 
 - `docs/llms/distributed-locks.md` (modify — add RW lock section: concept, when to use, writer-preference, cache-backend caveat per D4, lease-monitor parity)
-- `src/Headless.DistributedLocks.Abstractions/README.md` (modify — add `IDistributedReaderWriterLockProvider` to the public surface section)
-- `src/Headless.DistributedLocks.Core/README.md` (modify — add provider concrete + `IDistributedReaderWriterLockStorage`)
-- `src/Headless.DistributedLocks.Redis/README.md` (modify — add `AddRedisDistributedReaderWriterLock` registration example and key-shape note)
+- `src/Headless.DistributedLocks.Abstractions/README.md` (modify — add `IDistributedReadWriteLock` to the public surface section)
+- `src/Headless.DistributedLocks.Core/README.md` (modify — add provider concrete + `IDistributedReadWriteLockStorage`)
+- `src/Headless.DistributedLocks.Redis/README.md` (modify — add `AddRedisDistributedReadWriteLock` registration example and key-shape note)
 - `src/Headless.DistributedLocks.Cache/README.md` (modify — explicit "RW lock is Redis-only; cache backend does not implement RW per D4")
 
 **Approach:**
@@ -633,12 +633,12 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 
 ## System-Wide Impact
 
-- **`Headless.DistributedLocks.Abstractions`** — new public surface (`IDistributedReaderWriterLockProvider`, null impl, extensions). Additive; no existing API changes.
+- **`Headless.DistributedLocks.Abstractions`** — new public surface (`IDistributedReadWriteLock`, null impl, extensions). Additive; no existing API changes.
 - **`Headless.DistributedLocks.Core`** — new internal types under `ReaderWriterLocks/`; new public storage interface; new public DI extensions. Existing mutex code under `RegularLocks/` untouched.
 - **`Headless.DistributedLocks.Redis`** — new storage class; new setup overloads; `HeadlessRedisScriptsLoader` gains 6 new typed script accessors.
 - **`Headless.Redis`** — `HeadlessRedisScriptsLoader` modified (additive; existing scripts unchanged).
 - **`Headless.DistributedLocks.Cache`** — no code change; README annotated with the Redis-only caveat.
-- **Consumers** — Phase 3a is purely additive. Existing mutex callers see no API change. Consumers wanting RW must call `AddRedisDistributedReaderWriterLock(...)` in addition to (or instead of) `AddRedisDistributedLock(...)`.
+- **Consumers** — Phase 3a is purely additive. Existing mutex callers see no API change. Consumers wanting RW must call `AddRedisDistributedReadWriteLock(...)` in addition to (or instead of) `AddRedisDistributedLock(...)`.
 - **Lease-monitor channel** — both mutex and RW providers participate in the same `DistributedLockReleased` outbox channel when messaging is configured. No new channel.
 - **Greenfield framework** — no migration risk; consumers will adopt as they need RW semantics.
 
@@ -649,9 +649,9 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 | Risk | Mitigation |
 |---|---|
 | Lua script bug deadlocks readers/writers under load | Integration tests cover concurrent reader fan-out, writer queueing, two-writer contention, stale-release idempotency. Algorithm tracks madelson (battle-tested). |
-| Writer-waiting marker leaks (writer cancelled mid-wait) | Explicit cleanup in `DistributedReaderWriterLockProvider` on acquire-failure and cancellation paths. Integration test "Cancellation clears the waiting marker" enforces this. |
+| Writer-waiting marker leaks (writer cancelled mid-wait) | Explicit cleanup in `DistributedReadWriteLock` on acquire-failure and cancellation paths. Integration test "Cancellation clears the waiting marker" enforces this. |
 | Redis cluster slot fragmentation between writer/readers keys | Storage layer builds keys as `"{" + resource + "}:writer"` and `"{" + resource + "}:readers"` so the `{resource}` brace-delimited hash tag co-locates both keys on the same Redis slot. Consumers pass plain resource names; the storage owns the wrapping. Verified by an integration test (gated on cluster mode availability). |
-| Lock-id collision with `:_WRITERWAITING` suffix | `ILongIdGenerator` (snowflake-based) emits numeric ids that cannot contain `:` — collision is impossible by construction. Add an assertion in `DistributedReaderWriterLockProvider` constructor that the generated id contains no `:` to fail loud if the id generator is ever swapped for one that breaks this invariant. |
+| Lock-id collision with `:_WRITERWAITING` suffix | `ILongIdGenerator` (snowflake-based) emits numeric ids that cannot contain `:` — collision is impossible by construction. Add an assertion in `DistributedReadWriteLock` constructor that the generated id contains no `:` to fail loud if the id generator is ever swapped for one that breaks this invariant. |
 | `HeadlessRedisScriptsLoader` script-version churn from adding 6 scripts | Scripts loader pre-loads on first use; integration tests exercise every script at least once. |
 | Auto-extend race: extend script fires while another caller is releasing | Extend scripts check membership (read) or identity (write) before extending — a release-then-extend race naturally yields `Lost` on the next extend, which the lease monitor handles. |
 | Lease loss on a writer leaves a stale writer key for full TTL | Default TTL is finite (20 min per `DistributedLockOptions` default); consumers needing faster recovery configure shorter TTL + monitoring. Documented in the new RW section of `docs/llms/distributed-locks.md`. |
@@ -663,7 +663,7 @@ For the `TryAcquireWrite` script, the writer-waiting claim must use `SET writer 
 These are non-blocking; resolve in `dev-code`:
 
 - Exact `[LoggerMessage] EventId` range for RW provider logs (must not collide with existing mutex log IDs in `LoggerExtensions.cs`).
-- Whether `ScopedDistributedReaderWriterLockStorage.cs` is needed — depends on whether the regular provider's scoping has any RW analogue. If not, drop the file.
+- Whether `ScopedDistributedReadWriteLockStorage.cs` is needed — depends on whether the regular provider's scoping has any RW analogue. If not, drop the file.
 - Final shape of `HeadlessRedisScriptsLoader` accessor methods (parameter order, return type) — settle to match the existing `ReplaceIfEqualAsync` / `RemoveIfEqualAsync` shape.
 - Whether `Validate{Read,Write}Async` storage methods are needed or whether `GetReaderCountAsync` + `IsWriteLockedAsync` suffice for polling-mode validation.
 - Whether the writer-waiting marker is best derived in the provider (`$"{lockId}:_WRITERWAITING"`) or returned from the storage layer — coordinate when implementing U3 and U4.
@@ -680,7 +680,7 @@ These are non-blocking; resolve in `dev-code`:
 - [ ] Coverage targets met on the new packages (≥85% line, ≥80% branch).
 - [ ] All acceptance criteria in the origin issue have at least one covering integration test.
 - [ ] OQ4 conclusion is explicit in `docs/llms/distributed-locks.md` and `Headless.DistributedLocks.Cache/README.md`.
-- [ ] Writer-preference choice is documented in `IDistributedReaderWriterLockProvider` XML doc and `docs/llms/distributed-locks.md`.
+- [ ] Writer-preference choice is documented in `IDistributedReadWriteLock` XML doc and `docs/llms/distributed-locks.md`.
 - [ ] No `Task.Delay` without `TimeProvider`; no `DateTime.UtcNow` — all time access via injected `TimeProvider`.
 - [ ] No use of `ArgumentNullException.ThrowIfNull` — all validation via `Headless.Checks`.
 - [ ] No `Dto` suffix on new types.

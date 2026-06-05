@@ -8,20 +8,20 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-public sealed class InMemoryReaderWriterLockProviderTests : DistributedReaderWriterLockProviderTestsBase
+public sealed class InMemoryReaderWriterLockProviderTests : DistributedReadWriteLockTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly SnowflakeIdLongIdGenerator _idGenerator = new(1);
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null)
+    protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {
-        return new DistributedReaderWriterLockProvider(
-            new InMemoryDistributedReaderWriterLockStorage(_timeProvider),
+        return new DistributedReadWriteLock(
+            new InMemoryDistributedReadWriteLockStorage(_timeProvider),
             outboxBus: null,
             options ?? new DistributedLockOptions(),
             _idGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+            LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
 

@@ -13,10 +13,10 @@ tags: ["keyed-di", "distributed-lock", "messaging", "service-isolation", "dotnet
 `Setup.cs` registered the NoOp fallback as an unkeyed singleton:
 
 ```csharp
-services.TryAddSingleton<IDistributedLockProvider, NullDistributedLockProvider>();
+services.TryAddSingleton<IDistributedLock, NullDistributedLock>();
 ```
 
-`TryAdd*` loses when a prior registration already exists — but it also loses when the *consumer app* registers its own `IDistributedLockProvider` for a completely unrelated purpose (e.g., a Redis lock provider for its own business logic). That app-level provider silently shadows messaging's fallback. The Bootstrapper's `_WarnIfNoOpProvider` resolved the unkeyed service, so it saw the app's real provider, suppressed EventId 77, and messaging's retry processor ran with no mutual exclusion and no warning.
+`TryAdd*` loses when a prior registration already exists — but it also loses when the *consumer app* registers its own `IDistributedLock` for a completely unrelated purpose (e.g., a Redis lock provider for its own business logic). That app-level provider silently shadows messaging's fallback. The Bootstrapper's `_WarnIfNoOpProvider` resolved the unkeyed service, so it saw the app's real provider, suppressed EventId 77, and messaging's retry processor ran with no mutual exclusion and no warning.
 
 The same pattern recurs whenever a framework module needs a service the consumer might independently register for unrelated purposes.
 
@@ -28,14 +28,14 @@ Register framework-internal service instances under a named key rather than as u
 
 ```csharp
 // Setup.cs — falls back to NoOp; yields to any AddKeyedSingleton call with the same key
-services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(MessagingKeys.LockProvider);
+services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(MessagingKeys.LockProvider);
 ```
 
 **Real provider** — `UseDistributedLock` explicitly removes the keyed fallback, then registers the real provider under the same key (an explicit remove-then-add, not DI registration-order last-wins):
 
 ```csharp
 // MessagingBuilder.UseDistributedLock — _RemoveExistingMessagingLockProvider() first, then add
-Services.AddKeyedSingleton<IDistributedLockProvider>(MessagingKeys.LockProvider, provider);
+Services.AddKeyedSingleton<IDistributedLock>(MessagingKeys.LockProvider, provider);
 Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
 ```
 
@@ -44,7 +44,7 @@ Services.Configure<MessagingOptions>(o => o.UseStorageLock = true);
 ```csharp
 // MessageNeedToRetryProcessor
 public MessageNeedToRetryProcessor(
-    [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLockProvider lockProvider,
+    [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
     ...
 )
 ```
@@ -53,17 +53,17 @@ public MessageNeedToRetryProcessor(
 
 ```csharp
 // MessagingBuilder.cs
-public MessagingBuilder UseDistributedLock(IDistributedLockProvider provider) { ... }
-public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLockProvider> factory) { ... }
+public MessagingBuilder UseDistributedLock(IDistributedLock provider) { ... }
+public MessagingBuilder UseDistributedLock(Func<IServiceProvider, IDistributedLock> factory) { ... }
 ```
 
-Callers configure the provider through the builder API. They cannot accidentally collide with the internal key and cannot suppress the EventId 77 diagnostic by registering an unkeyed `IDistributedLockProvider` elsewhere.
+Callers configure the provider through the builder API. They cannot accidentally collide with the internal key and cannot suppress the EventId 77 diagnostic by registering an unkeyed `IDistributedLock` elsewhere.
 
 ## Why It Matters
 
 Unkeyed fallbacks are invisible and fragile:
 
-- App registers `IDistributedLockProvider` → messaging silently picks it up → retry mutual exclusion runs with a provider built for something else.
+- App registers `IDistributedLock` → messaging silently picks it up → retry mutual exclusion runs with a provider built for something else.
 - Worse: app registers a real provider via the unkeyed path → `_WarnIfNoOpProvider` resolves that real provider → EventId 77 is suppressed even though messaging was never explicitly configured.
 
 Keyed isolation makes the coupling explicit. The framework owns its slice of the DI container, and the app owns its own. Misconfiguration now requires affirmative action (calling `UseDistributedLock`), and the warning fires whenever that affirmative step is missing.
@@ -72,7 +72,7 @@ Keyed isolation makes the coupling explicit. The framework owns its slice of the
 
 Use keyed DI isolation whenever:
 
-1. A framework module registers a service interface that is broadly recognized (e.g., `IDistributedLockProvider`, `IMemoryCache`, `IHttpClientFactory` specializations).
+1. A framework module registers a service interface that is broadly recognized (e.g., `IDistributedLock`, `IMemoryCache`, `IHttpClientFactory` specializations).
 2. There is a meaningful NoOp or degraded fallback that should not silently accept an unrelated app-level registration.
 3. The framework controls when the "real" provider is swapped in — the swap should be explicit (builder API), not implicit (registration order).
 
@@ -84,10 +84,10 @@ Not needed for interfaces that are framework-specific and have no plausible app-
 
 ```csharp
 // Setup.cs
-services.TryAddSingleton<IDistributedLockProvider, NullDistributedLockProvider>();
+services.TryAddSingleton<IDistributedLock, NullDistributedLock>();
 
 // App registers its own provider for unrelated use:
-services.AddSingleton<IDistributedLockProvider, RedisDistributedLockProvider>();
+services.AddSingleton<IDistributedLock, RedisDistributedLock>();
 // ↑ This silently replaces messaging's fallback.
 // _WarnIfNoOpProvider resolves the Redis provider → no warning → no real messaging lock.
 ```
@@ -96,15 +96,15 @@ services.AddSingleton<IDistributedLockProvider, RedisDistributedLockProvider>();
 
 ```csharp
 // Setup.cs — NoOp under messaging's private key
-services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(
+services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(
     MessagingKeys.LockProvider
 );
 
 // App registers its own unkeyed provider — has no effect on messaging.
-services.AddSingleton<IDistributedLockProvider, RedisDistributedLockProvider>();
+services.AddSingleton<IDistributedLock, RedisDistributedLock>();
 
 // Messaging's bootstrapper resolves the keyed service → NoOp detected → EventId 77 fires.
-var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(
+var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(
     MessagingKeys.LockProvider
 );
 ```

@@ -10,27 +10,27 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.ReaderWriterLocks;
 
-public sealed class DistributedReaderWriterLockProviderTests : TestBase
+public sealed class DistributedReadWriteLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
     private long _lockIdCounter = 1000;
 
-    private DistributedReaderWriterLockProvider _CreateProvider(
-        IDistributedReaderWriterLockStorage? storage = null,
+    private DistributedReadWriteLock _CreateProvider(
+        IDistributedReadWriteLockStorage? storage = null,
         IOutboxBus? outboxBus = null,
         DistributedLockOptions? options = null
     )
     {
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
-        return new DistributedReaderWriterLockProvider(
-            storage ?? new InMemoryDistributedReaderWriterLockStorage(_timeProvider),
+        return new DistributedReadWriteLock(
+            storage ?? new InMemoryDistributedReadWriteLockStorage(_timeProvider),
             outboxBus,
             options ?? new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+            LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
 
@@ -38,7 +38,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_acquire_multiple_readers_for_same_resource()
     {
         // given
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
 
@@ -56,7 +56,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_dispatch_read_renew_and_release_to_read_storage_methods()
     {
         // given
-        var storage = Substitute.For<IDistributedReaderWriterLockStorage>();
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
         storage
             .TryAcquireReadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(true);
@@ -74,8 +74,8 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
         // then
         renewed.Should().BeTrue();
-        await storage.Received(1).TryExtendReadAsync(scopedResource, handle.LockId, Arg.Any<TimeSpan?>(), AbortToken);
-        await storage.Received(1).ReleaseReadAsync(scopedResource, handle.LockId, Arg.Any<CancellationToken>());
+        await storage.Received(1).TryExtendReadAsync(scopedResource, handle.LeaseId, Arg.Any<TimeSpan?>(), AbortToken);
+        await storage.Received(1).ReleaseReadAsync(scopedResource, handle.LeaseId, Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
             .TryExtendWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -85,7 +85,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     public async Task should_dispatch_write_renew_and_release_to_write_storage_methods()
     {
         // given
-        var storage = Substitute.For<IDistributedReaderWriterLockStorage>();
+        var storage = Substitute.For<IDistributedReadWriteLockStorage>();
         storage
             .TryAcquireWriteAsync(
                 Arg.Any<string>(),
@@ -110,8 +110,8 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
         // then
         renewed.Should().BeTrue();
-        await storage.Received(1).TryExtendWriteAsync(scopedResource, handle.LockId, Arg.Any<TimeSpan?>(), AbortToken);
-        await storage.Received(1).ReleaseWriteAsync(scopedResource, handle.LockId, Arg.Any<CancellationToken>());
+        await storage.Received(1).TryExtendWriteAsync(scopedResource, handle.LeaseId, Arg.Any<TimeSpan?>(), AbortToken);
+        await storage.Received(1).ReleaseWriteAsync(scopedResource, handle.LeaseId, Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
             .TryExtendReadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -122,7 +122,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     {
         // given
         var storage = new ReleaseObservingReaderWriterLockStorage(
-            new InMemoryDistributedReaderWriterLockStorage(_timeProvider)
+            new InMemoryDistributedReadWriteLockStorage(_timeProvider)
         );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -146,7 +146,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
     {
         // given
         var storage = new ReleaseObservingReaderWriterLockStorage(
-            new InMemoryDistributedReaderWriterLockStorage(_timeProvider)
+            new InMemoryDistributedReadWriteLockStorage(_timeProvider)
         );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -173,7 +173,7 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         // given - try-once path; storage observes caller cancellation mid-call, so the Lua may
         // have planted the writer-waiting marker before the OCE surfaced. The fix in
         // _TryAcquireOnceAsync MUST issue the idempotent cleanup before rethrowing.
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
         var provider = _CreateProvider(releaseObserver);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -218,8 +218,8 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         await act.Should().ThrowAsync<ArgumentException>();
     }
 
-    private sealed class ReleaseObservingReaderWriterLockStorage(IDistributedReaderWriterLockStorage inner)
-        : IDistributedReaderWriterLockStorage
+    private sealed class ReleaseObservingReaderWriterLockStorage(IDistributedReadWriteLockStorage inner)
+        : IDistributedReadWriteLockStorage
     {
         public Action? OnTryAcquireWriteCancellation { get; set; }
 
@@ -227,27 +227,27 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
 
         public ValueTask<bool> TryAcquireReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryAcquireReadAsync(resource, lockId, ttl, cancellationToken);
+        ) => inner.TryAcquireReadAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask<bool> TryExtendReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryExtendReadAsync(resource, lockId, ttl, cancellationToken);
+        ) => inner.TryExtendReadAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask ReleaseReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ReleaseReadAsync(resource, lockId, cancellationToken);
+        ) => inner.ReleaseReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> TryAcquireWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             string waitingId,
             TimeSpan? ttl = null,
             TimeSpan? markerTtl = null,
@@ -258,38 +258,38 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
             // OCE as Redis/StackExchange would when the token fires before the response lands.
             OnTryAcquireWriteCancellation?.Invoke();
             cancellationToken.ThrowIfCancellationRequested();
-            return inner.TryAcquireWriteAsync(resource, lockId, waitingId, ttl, markerTtl, cancellationToken);
+            return inner.TryAcquireWriteAsync(resource, leaseId, waitingId, ttl, markerTtl, cancellationToken);
         }
 
         public ValueTask<bool> TryExtendWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? ttl = null,
             CancellationToken cancellationToken = default
-        ) => inner.TryExtendWriteAsync(resource, lockId, ttl, cancellationToken);
+        ) => inner.TryExtendWriteAsync(resource, leaseId, ttl, cancellationToken);
 
         public ValueTask ReleaseWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
         )
         {
             WriteReleaseCount++;
 
-            return inner.ReleaseWriteAsync(resource, lockId, cancellationToken);
+            return inner.ReleaseWriteAsync(resource, leaseId, cancellationToken);
         }
 
         public ValueTask<bool> ValidateReadAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ValidateReadAsync(resource, lockId, cancellationToken);
+        ) => inner.ValidateReadAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> ValidateWriteAsync(
             string resource,
-            string lockId,
+            string leaseId,
             CancellationToken cancellationToken = default
-        ) => inner.ValidateWriteAsync(resource, lockId, cancellationToken);
+        ) => inner.ValidateWriteAsync(resource, leaseId, cancellationToken);
 
         public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
             => inner.IsReadLockedAsync(resource, cancellationToken);

@@ -16,14 +16,14 @@ Legacy "idempotency as a uniqueness guard" (409 on any duplicate key) makes the 
 ## Key Features
 
 - Byte-equivalent replay of cached responses with `Idempotent-Replayed: true`.
-- Two in-flight strategies: `Reject` (default, no extra dependencies) and `WaitAndReplay` (requires `IDistributedLockProvider`).
+- Two in-flight strategies: `Reject` (default, no extra dependencies) and `WaitAndReplay` (requires `IDistributedLock`).
 - Configurable body cap with `Reject` (413) or `PassThrough` behaviors.
 - Header allowlist filters `Set-Cookie`, `traceparent`, and other sensitive or per-request headers from cached responses.
 - Tenant-aware default cache key: `idem:{tenant}:{METHOD}:{path}:{key}`.
 - Per-endpoint overrides via `.WithIdempotency(o => ...)`.
 - Custom hooks: `KeyDeriver`, `RequestFingerprint`, `ShouldApply`, `ShouldCacheResponse`.
 - Default cache predicate: 2xx + selected 4xx; never 5xx, 1xx, 3xx, or transient 4xx (408/425/429).
-- Startup-time DI validation: `WaitAndReplay` without `IDistributedLockProvider` fails fast.
+- Startup-time DI validation: `WaitAndReplay` without `IDistributedLock` fails fast.
 
 ## Installation
 

@@ -12,9 +12,9 @@ public sealed class TryAcquireLockWithFenceScriptDefinition : RedisScriptDefinit
             """
             local result
             if (@expires ~= nil and @expires ~= '') then
-              result = redis.call('set', @key, @lockId, 'NX', 'PX', @expires)
+              result = redis.call('set', @key, @leaseId, 'NX', 'PX', @expires)
             else
-              result = redis.call('set', @key, @lockId, 'NX')
+              result = redis.call('set', @key, @leaseId, 'NX')
             end
 
             if result then
@@ -44,7 +44,7 @@ public sealed class TryAcquireSemaphoreWithFenceScriptDefinition : RedisScriptDe
             end
 
             local expiryMs = nowMs + tonumber(@expires)
-            redis.call('zadd', @holdersKey, expiryMs, @lockId)
+            redis.call('zadd', @holdersKey, expiryMs, @leaseId)
             local safetyTtl = tonumber(@expires) * 2
             local currentTtl = redis.call('pttl', @holdersKey)
             if currentTtl < safetyTtl then
@@ -85,11 +85,11 @@ public sealed class TryExtendSemaphoreScriptDefinition : RedisScriptDefinition
             -- This matches the in-memory provider's GREATEST semantics. XX still gates on existence so a
             -- non-holder cannot create a slot; existence is reasserted via zscore because GT suppresses the
             -- CH "changed" signal when the new score is not greater, which we must not read as "missing".
-            local existing = redis.call('zscore', @holdersKey, @lockId)
+            local existing = redis.call('zscore', @holdersKey, @leaseId)
             if existing == false then
               return 0
             end
-            redis.call('zadd', @holdersKey, 'XX', 'GT', expiryMs, @lockId)
+            redis.call('zadd', @holdersKey, 'XX', 'GT', expiryMs, @leaseId)
 
             local safetyTtl = tonumber(@expires) * 2
             local currentTtl = redis.call('pttl', @holdersKey)
@@ -115,7 +115,7 @@ public sealed class ValidateSemaphoreScriptDefinition : RedisScriptDefinition
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
 
-            local score = redis.call('zscore', @holdersKey, @lockId)
+            local score = redis.call('zscore', @holdersKey, @leaseId)
             if score ~= false and tonumber(score) > nowMs then
               return 1
             end
@@ -132,7 +132,7 @@ public sealed class ReleaseSemaphoreScriptDefinition : RedisScriptDefinition
     private ReleaseSemaphoreScriptDefinition()
         : base(
             """
-            return redis.call('zrem', @holdersKey, @lockId)
+            return redis.call('zrem', @holdersKey, @leaseId)
             """
         ) { }
 }
@@ -293,14 +293,14 @@ public sealed class TryAcquireReadLockScriptDefinition : RedisScriptDefinition
 
             if (@expires ~= nil and @expires ~= '') then
               local expiryMs = nowMs + tonumber(@expires)
-              redis.call('hset', @readerKey, @lockId, tostring(expiryMs))
+              redis.call('hset', @readerKey, @leaseId, tostring(expiryMs))
               local readerTtl = redis.call('pttl', @readerKey)
               local safetyTtl = tonumber(@expires) * 2
               if readerTtl < safetyTtl then
                 redis.call('pexpire', @readerKey, safetyTtl)
               end
             else
-              redis.call('hset', @readerKey, @lockId, '0')
+              redis.call('hset', @readerKey, @leaseId, '0')
             end
 
             return 1
@@ -316,7 +316,7 @@ public sealed class TryExtendReadLockScriptDefinition : RedisScriptDefinition
     private TryExtendReadLockScriptDefinition()
         : base(
             """
-            if redis.call('hexists', @readerKey, @lockId) == 0 then
+            if redis.call('hexists', @readerKey, @leaseId) == 0 then
               return 0
             end
 
@@ -333,7 +333,7 @@ public sealed class TryExtendReadLockScriptDefinition : RedisScriptDefinition
 
             if (@expires ~= nil and @expires ~= '') then
               local expiryMs = nowMs + tonumber(@expires)
-              redis.call('hset', @readerKey, @lockId, tostring(expiryMs))
+              redis.call('hset', @readerKey, @leaseId, tostring(expiryMs))
               local readerTtl = redis.call('pttl', @readerKey)
               local safetyTtl = tonumber(@expires) * 2
               if readerTtl < safetyTtl then
@@ -354,7 +354,7 @@ public sealed class ReleaseReadLockScriptDefinition : RedisScriptDefinition
     private ReleaseReadLockScriptDefinition()
         : base(
             """
-            return redis.call('hdel', @readerKey, @lockId)
+            return redis.call('hdel', @readerKey, @leaseId)
             """
         ) { }
 }
@@ -392,9 +392,9 @@ public sealed class TryAcquireWriteLockScriptDefinition : RedisScriptDefinition
 
               if redis.call('hlen', @readerKey) == 0 then
                 if (@expires ~= nil and @expires ~= '') then
-                  redis.call('set', @writerKey, @lockId, 'PX', @expires)
+                  redis.call('set', @writerKey, @leaseId, 'PX', @expires)
                 else
-                  redis.call('set', @writerKey, @lockId)
+                  redis.call('set', @writerKey, @leaseId)
                 end
                 return 1
               end
@@ -419,7 +419,7 @@ public sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition
     private TryExtendWriteLockScriptDefinition()
         : base(
             """
-            if redis.call('get', @writerKey) ~= @lockId then
+            if redis.call('get', @writerKey) ~= @leaseId then
               return 0
             end
 
@@ -441,7 +441,7 @@ public sealed class ReleaseWriteLockScriptDefinition : RedisScriptDefinition
         : base(
             """
             local current = redis.call('get', @writerKey)
-            if current == @lockId or current == @waitingId then
+            if current == @leaseId or current == @waitingId then
               return redis.call('del', @writerKey)
             end
             return 0

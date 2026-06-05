@@ -11,7 +11,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
 
     internal DisposableSemaphoreSlot(
         string resource,
-        string lockId,
+        string leaseId,
         long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
@@ -25,7 +25,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     )
         : base(
             resource,
-            lockId,
+            leaseId,
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -46,7 +46,7 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
     )
     {
         var result = await _provider
-            .RenewAsync(Resource, LockId, timeUntilExpires, cancellationToken)
+            .RenewAsync(Resource, LeaseId, timeUntilExpires, cancellationToken)
             .ConfigureAwait(false);
 
         if (result)
@@ -59,21 +59,21 @@ internal sealed class DisposableSemaphoreSlot : DistributedLockHandleBase
 
     protected override Task<bool> RenewLeaseAsync(CancellationToken cancellationToken)
     {
-        return _provider.RenewAsync(Resource, LockId, LeaseDuration, cancellationToken);
+        return _provider.RenewAsync(Resource, LeaseId, LeaseDuration, cancellationToken);
     }
 
     protected override Task<bool> ValidateOwnershipAsync(CancellationToken cancellationToken)
     {
-        return _provider.ValidateAsync(Resource, LockId, cancellationToken);
+        return _provider.ValidateAsync(Resource, LeaseId, cancellationToken);
     }
 
     protected override Task ReleaseCoreAsync()
     {
-        return _provider.ReleaseAsync(Resource, LockId, CancellationToken.None);
+        return _provider.ReleaseAsync(Resource, LeaseId, CancellationToken.None);
     }
 
     protected override void OnMonitorDisposeFailed(Exception exception)
     {
-        Logger.LogDisposableLockMonitorDisposeFailed(exception, Resource, LockId);
+        Logger.LogDisposableLockMonitorDisposeFailed(exception, Resource, LeaseId);
     }
 }

@@ -674,7 +674,7 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
 
     private IdempotencyMiddleware _CreateMiddlewareWithLock(
         ICache cache,
-        IDistributedLockProvider lockProvider,
+        IDistributedLock lockProvider,
         IProblemDetailsCreator? problemDetailsCreator = null
     )
     {
@@ -717,15 +717,15 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             )
             .Returns(true);
 
-        var dlock = Substitute.For<IDistributedLock>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var dlock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var lockAcquired = false;
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 lockAcquired = true;
-                return Task.FromResult<IDistributedLock?>(dlock);
+                return Task.FromResult<IDistributedLease?>(dlock);
             });
 
         var nextSawLock = false;
@@ -775,8 +775,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 new CacheValue<IdempotencyRecord>(complete, hasValue: true)
             );
 
-        var dlock = Substitute.For<IDistributedLock>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var dlock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
@@ -815,10 +815,10 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
             .GetAsync<IdempotencyRecord>(Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(new CacheValue<IdempotencyRecord>(inFlight, hasValue: true));
 
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns((IDistributedLock?)null);
+            .Returns((IDistributedLease?)null);
 
         var problemDetailsCreator = Substitute.For<IProblemDetailsCreator>();
         problemDetailsCreator
@@ -866,8 +866,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 new CacheValue<IdempotencyRecord>(complete, hasValue: true)
             );
 
-        var dlock = Substitute.For<IDistributedLock>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var dlock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
@@ -911,8 +911,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 new CacheValue<IdempotencyRecord>(inFlight, hasValue: true) // still InFlight after lock
             );
 
-        var dlock = Substitute.For<IDistributedLock>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var dlock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);
@@ -955,8 +955,8 @@ public sealed class IdempotencyMiddlewareTests : IdempotencyMiddlewareTestBase
                 CacheValue<IdempotencyRecord>.NoValue // evicted after lock
             );
 
-        var dlock = Substitute.For<IDistributedLock>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var dlock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
             .Returns(dlock);

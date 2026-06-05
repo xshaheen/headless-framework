@@ -6,7 +6,7 @@ tags: []
 dependencies: []
 ---
 
-# Improve waiter signaling in DistributedLockProvider
+# Improve waiter signaling in DistributedLock
 
 ## Problem Statement
 

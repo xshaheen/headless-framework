@@ -23,7 +23,7 @@ public sealed class SetupTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
+        provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
         provider.GetService<IOutboxBus>().Should().BeNull();
         // Auto-registration is unconditional. The lock-release consumer descriptor is present even
         // without messaging; without AddHeadlessMessaging it is inert (never drained / dispatched),
@@ -46,9 +46,9 @@ public sealed class SetupTests : TestBase
 
         // then — the shared lock-release consumer is present in the consumer registry with the
         // expected name, intent, and concurrency, with no explicit opt-in call.
-        provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
+        provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
         var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
-        metadata.ConsumerType.Should().Be<DistributedLockProvider.LockReleasedConsumer>();
+        metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
         metadata.IntentType.Should().Be(IntentType.Bus);
         metadata.Concurrency.Should().Be(1);
@@ -102,13 +102,13 @@ public sealed class SetupTests : TestBase
 
         // then — only one descriptor per service type (TryAdd* semantics) and a single consumer.
         services
-            .Count(d => d.ServiceType == typeof(IDistributedLockProvider))
+            .Count(d => d.ServiceType == typeof(IDistributedLock))
             .Should()
-            .Be(1, "TryAddSingleton on IDistributedLockProvider must be idempotent");
+            .Be(1, "TryAddSingleton on IDistributedLock must be idempotent");
         services
-            .Count(d => d.ServiceType == typeof(DistributedLockProvider))
+            .Count(d => d.ServiceType == typeof(DistributedLock))
             .Should()
-            .Be(1, "TryAddSingleton on the concrete DistributedLockProvider must be idempotent");
+            .Be(1, "TryAddSingleton on the concrete DistributedLock must be idempotent");
         services
             .Count(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>))
             .Should()

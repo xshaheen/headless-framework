@@ -19,7 +19,7 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
     {
         var keyPrefix = $"contention:{Faker.Random.AlphaNumeric(6)}:";
         await using var provider = _CreateProvider(enablePushWakeup, keyPrefix);
-        var locks = provider.GetRequiredService<IDistributedLockProvider>();
+        var locks = provider.GetRequiredService<IDistributedLock>();
         var resource = Faker.Random.AlphaNumeric(12);
 
         var first = await locks.AcquireAsync(

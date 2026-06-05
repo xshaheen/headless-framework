@@ -121,14 +121,14 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     {
         var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
         var holdersKey = _GetHoldersKey(resource);
-        const string lockId = "expired-lock-1";
+        const string leaseId = "expired-lock-1";
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         var pastExpiryScore = nowMs - 60_000;
-        await db.SortedSetAddAsync(holdersKey, lockId, pastExpiryScore);
+        await db.SortedSetAddAsync(holdersKey, leaseId, pastExpiryScore);
 
         var count = await fixture.SemaphoreStorage.GetCountAsync(resource, AbortToken);
-        var valid = await fixture.SemaphoreStorage.ValidateAsync(resource, lockId, AbortToken);
+        var valid = await fixture.SemaphoreStorage.ValidateAsync(resource, leaseId, AbortToken);
 
         count.Should().Be(0);
         valid.Should().BeFalse();
@@ -139,14 +139,14 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     {
         var resource = $"semaphore:{Faker.Random.AlphaNumeric(10)}";
         var holdersKey = _GetHoldersKey(resource);
-        const string lockId = "long-ttl-lock";
+        const string leaseId = "long-ttl-lock";
         var ttl = TimeSpan.FromDays(30);
 
-        var result = await fixture.SemaphoreStorage.TryAcquireAsync(resource, lockId, 1, ttl, AbortToken);
+        var result = await fixture.SemaphoreStorage.TryAcquireAsync(resource, leaseId, 1, ttl, AbortToken);
 
         result.Acquired.Should().BeTrue();
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var score = await db.SortedSetScoreAsync(holdersKey, lockId);
+        var score = await db.SortedSetScoreAsync(holdersKey, leaseId);
         score.Should().NotBeNull();
         var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         score!.Value.Should().BeGreaterThan(int.MaxValue);

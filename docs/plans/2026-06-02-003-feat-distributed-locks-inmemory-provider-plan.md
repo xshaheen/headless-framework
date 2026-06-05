@@ -29,7 +29,7 @@ This plan also renames `Headless.Caching.Memory` → `Headless.Caching.InMemory`
 
 ## Problem Frame
 
-Code written against `IDistributedLockProvider`, `IDistributedReaderWriterLockProvider`, and `IDistributedSemaphoreProvider` currently has no shipped in-process backend. Two needs go unmet:
+Code written against `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` currently has no shipped in-process backend. Two needs go unmet:
 
 1. **Test double.** Every unit test that exercises lock-consuming code must either spin up Testcontainers/Redis or hand-roll a private `IDistributedLockStorage` fake. The repo already grew three such fakes; the docs reference them. They should be a shipped, conformance-validated package instead of copy-paste test scaffolding.
 2. **No-infra default.** Local development and genuinely single-instance apps want the abstraction without standing up Redis. `Headless.Messaging.InMemory` and `Headless.Caching` (InMemory cache) already establish this "in-process backend ships as a real package" pattern.
@@ -44,7 +44,7 @@ Separately, `Headless.Caching.Memory` is the lone `*.Memory`-suffixed package in
 
 ### KTD1. Implement the storage seam, not the provider interface.
 
-The issue text says `InMemoryDistributedLockProvider : IDistributedLockProvider`, but the framework's actual pattern is **provider (Core) → storage (per-backend)**. `DistributedLockProvider` / `DistributedReaderWriterLockProvider` / `DistributedSemaphoreProvider` live in `Headless.DistributedLocks.Core` and delegate to `IDistributedLockStorage` / `IDistributedReaderWriterLockStorage` / `IDistributedSemaphoreStorage`. Redis implements only the storage interfaces. InMemory does the same: three storage classes, zero provider re-implementation. This keeps lease-monitoring, auto-extend, messaging wake-ups, and observability uniform across backends for free.
+The issue text says `InMemoryDistributedLock : IDistributedLock`, but the framework's actual pattern is **provider (Core) → storage (per-backend)**. `DistributedLock` / `DistributedReadWriteLock` / `DistributedSemaphoreProvider` live in `Headless.DistributedLocks.Core` and delegate to `IDistributedLockStorage` / `IDistributedReadWriteLockStorage` / `IDistributedSemaphoreStorage`. Redis implements only the storage interfaces. InMemory does the same: three storage classes, zero provider re-implementation. This keeps lease-monitoring, auto-extend, messaging wake-ups, and observability uniform across backends for free.
 
 ### KTD2. Promote the existing fakes; don't write from scratch.
 
@@ -75,13 +75,13 @@ The folder, `.csproj`, assembly name, and NuGet package id change `Memory` → `
 ```mermaid
 flowchart TB
   subgraph Abstractions["Headless.DistributedLocks.Abstractions"]
-    IP[IDistributedLockProvider]
-    IRW[IDistributedReaderWriterLockProvider]
+    IP[IDistributedLock]
+    IRW[IDistributedReadWriteLock]
     ISem[IDistributedSemaphoreProvider]
   end
   subgraph Core["Headless.DistributedLocks.Core"]
-    P[DistributedLockProvider] --> SL[IDistributedLockStorage]
-    RW[DistributedReaderWriterLockProvider] --> SRW[IDistributedReaderWriterLockStorage]
+    P[DistributedLock] --> SL[IDistributedLockStorage]
+    RW[DistributedReadWriteLock] --> SRW[IDistributedReadWriteLockStorage]
     SEM[DistributedSemaphoreProvider] --> SSEM[IDistributedSemaphoreStorage]
     P -.implements.-> IP
     RW -.implements.-> IRW
@@ -89,12 +89,12 @@ flowchart TB
   end
   subgraph InMemory["Headless.DistributedLocks.InMemory (new)"]
     A[InMemoryDistributedLockStorage]
-    B[InMemoryDistributedReaderWriterLockStorage]
+    B[InMemoryDistributedReadWriteLockStorage]
     C[InMemoryDistributedSemaphoreStorage]
   end
   subgraph Redis["Headless.DistributedLocks.Redis (analog)"]
     D[RedisDistributedLockStorage]
-    E[RedisDistributedReaderWriterLockStorage]
+    E[RedisDistributedReadWriteLockStorage]
     F[RedisDistributedSemaphoreStorage]
   end
   A -.implements.-> SL
@@ -128,13 +128,13 @@ Per-entry expiry keyed on `TimeProvider.GetUtcNow()`, pruned on access — the s
 src/Headless.DistributedLocks.InMemory/
   Headless.DistributedLocks.InMemory.csproj
   InMemoryDistributedLockStorage.cs
-  InMemoryDistributedReaderWriterLockStorage.cs
+  InMemoryDistributedReadWriteLockStorage.cs
   InMemoryDistributedSemaphoreStorage.cs
   Setup.cs
   README.md
 tests/Headless.DistributedLocks.InMemory.Tests.Integration/
   Headless.DistributedLocks.InMemory.Tests.Integration.csproj
-  InMemoryDistributedLockProviderTests.cs        # consumes DistributedLockProviderTestsBase
+  InMemoryDistributedLockTests.cs        # consumes DistributedLockTestsBase
   InMemoryReaderWriterLockProviderTests.cs       # mirrors RedisReaderWriterLockProviderTests
   InMemoryDistributedSemaphoreTests.cs           # mirrors Redis semaphore tests
   InMemoryStorageDeterministicTests.cs           # TTL expiry + fencing under FakeTimeProvider
@@ -148,10 +148,10 @@ Per-unit `**Files:**` remain authoritative; the implementer may adjust file spli
 
 ### InMemory provider (issue #366)
 
-- R1. New package `Headless.DistributedLocks.InMemory` exposes `InMemoryDistributedLockStorage`, `InMemoryDistributedReaderWriterLockStorage`, `InMemoryDistributedSemaphoreStorage` and an async-only setup extension with the three-overload pattern, attached to `headless-framework.slnx`.
+- R1. New package `Headless.DistributedLocks.InMemory` exposes `InMemoryDistributedLockStorage`, `InMemoryDistributedReadWriteLockStorage`, `InMemoryDistributedSemaphoreStorage` and an async-only setup extension with the three-overload pattern, attached to `headless-framework.slnx`.
 - R2. Storages are keyed per resource over `ConcurrentDictionary`, backed by in-process primitives, honoring `DistributedLockAcquireOptions` (timeout, `ReleaseOnDispose`) where the storage layer is responsible, and clamping/honoring TTL through an injected `TimeProvider`.
 - R3. Fencing tokens are strictly increasing per resource via a monotonic in-process counter (mutex and semaphore storages).
-- R4. The provider drives the existing regular-lock conformance suite (`DistributedLockProviderTestsBase`) green, the same suite the Redis provider passes.
+- R4. The provider drives the existing regular-lock conformance suite (`DistributedLockTestsBase`) green, the same suite the Redis provider passes.
 - R5. Reader-writer and semaphore behavior match the contract (RW: concurrent readers, exclusive writer, writer-preference, TTL expiry; semaphore: N-holder cap, fencing, TTL expiry), validated by tests mirroring the Redis provider's suites.
 - R6. Docs prominently scope the package as in-process / dev-test + single-instance and **never** distributed: new package README, a provider section + capability-matrix row in `docs/llms/distributed-locks.md`, and a root README row.
 - R7. The ad-hoc per-test `IDistributedLockStorage` / semaphore / RW fakes are replaced across **both** `Headless.DistributedLocks.Tests.Unit` (three fakes) and `Headless.Messaging.Core.Tests.Unit` (a fourth, duplicate `InMemoryDistributedLockStorage`): state-based tests consume the shipped storages; interaction-based tests use `NSubstitute`.
@@ -167,7 +167,7 @@ Per-unit `**Files:**` remain authoritative; the implementer may adjust file spli
 
 Conformance-first, mirroring the Redis provider's structure:
 
-- **Shared conformance (regular locks).** A concrete test class consumes `DistributedLockProviderTestsBase` from `Headless.DistributedLocks.Tests.Harness`, exactly as the Redis integration project does (override the `virtual` base methods, attribute with `[Fact]`). This proves the abstraction holds for InMemory against the identical suite Redis passes.
+- **Shared conformance (regular locks).** A concrete test class consumes `DistributedLockTestsBase` from `Headless.DistributedLocks.Tests.Harness`, exactly as the Redis integration project does (override the `virtual` base methods, attribute with `[Fact]`). This proves the abstraction holds for InMemory against the identical suite Redis passes.
 - **Hand-rolled RW + semaphore suites.** There is no shared reader-writer or semaphore conformance base today (Redis hand-rolls both). InMemory mirrors `RedisReaderWriterLockProviderTests` and the Redis semaphore tests **scenario-for-scenario, with high fidelity**, and adds a brief comment block per suite recording the contract interpretation each scenario encodes (writer-preference, never-shorten-TTL, cancellation, expired-lease handling). This makes the eventual shared-harness extraction a mechanical hoist rather than a re-derivation, and mitigates the divergent-interpretation risk (A1) of deferring extraction. Extracting shared RW/semaphore harness bases is **deferred** (see Scope Boundaries) and coordinated with the sibling Postgres plan, which also touches the harness.
 - **Deterministic in-process tests under `FakeTimeProvider`.** TTL expiry (lock, reader lease, writer-waiting marker, semaphore holder), fencing-token monotonicity, and writer-preference are tested deterministically by advancing a `FakeTimeProvider` — no wall-clock waits, no flakes. This is the InMemory backend's unique advantage as a conformance target.
 - **No Docker.** The `.Tests.Integration` name signals "exercises full provider+storage wiring via the shared conformance suite," consistent with the harness pattern; the project needs no Testcontainers.
@@ -226,17 +226,17 @@ Two streams: U1–U8 ship the InMemory provider; U9 renames the caching package.
   - Expired holder frees a slot without explicit release; `GetCountAsync` excludes expired holders.
 - **Verification:** U6 suite green.
 
-### U4. `InMemoryDistributedReaderWriterLockStorage` (net-new TTL logic)
+### U4. `InMemoryDistributedReadWriteLockStorage` (net-new TTL logic)
 
 - **Goal:** Ship the RW storage with full contract-correct TTL semantics.
 - **Requirements:** R2, R5
 - **Dependencies:** U1
 - **Files:**
-  - `src/Headless.DistributedLocks.InMemory/InMemoryDistributedReaderWriterLockStorage.cs` (create)
+  - `src/Headless.DistributedLocks.InMemory/InMemoryDistributedReadWriteLockStorage.cs` (create)
 - **Approach:** Start from `FakeReaderWriterLockStorage`'s writer-preference structure but **add per-entry expiry** (KTD3): reader set entries carry `expiry = now + ttl`; writer id and writer-waiting marker carry their own expiry (`markerTtl` for the marker). Prune expired entries on every operation before deciding. `TryAcquireReadAsync` fails when a live writer or live writer-waiting marker is present. `TryAcquireWriteAsync` grants when no live readers/writer, else plants/refreshes the writer-waiting marker and fails. `ReleaseWriteAsync` clears both writer id and the marker derived from the same lock id (use `DistributedLockCoreHelpers.GetWriterWaitingId` / `WriterWaitingSuffix`).
   - **Extend guards (E1, E2 — explicit):** `TryExtendReadAsync` / `TryExtendWriteAsync` must (a) **prune first**, so a lease that has already expired returns `false` (lost lease is not extendable) even if its entry lingers; and (b) **never shorten TTL** — compute `newExpiry = now + ttl` and update only when `newExpiry > existingExpiry`, otherwise leave the existing expiry and still return `true`.
   - **Inspection pruning (W1):** `IsReadLocked`, `IsWriteLocked`, `GetReaderCount` **also prune-on-access** before returning, consistent with the mutex/semaphore storages (U2/U3). The contract documents these as advisory and *permits* (does not require) staleness — but in-process pruning is free, makes the diagnostic accurate, and avoids deterministic-test flakiness where a count is asserted after expiry without an intervening write-acquire. This is a deliberate, contract-compatible tightening of the documented Redis behavior, not a contract violation.
-- **Patterns to follow:** `RedisDistributedReaderWriterLockStorage` for the *semantics* the Lua scripts encode (the in-process version reproduces behavior without Lua); `DistributedLockCoreHelpers` for marker-id derivation; the mutex/semaphore storages for the prune-on-access TTL idiom.
+- **Patterns to follow:** `RedisDistributedReadWriteLockStorage` for the *semantics* the Lua scripts encode (the in-process version reproduces behavior without Lua); `DistributedLockCoreHelpers` for marker-id derivation; the mutex/semaphore storages for the prune-on-access TTL idiom.
 - **Test scenarios:** (in U6, RW suite)
   - **Happy path:** multiple concurrent readers granted; writer exclusive; reader after writer release granted.
   - **Writer preference:** a queued writer (marker planted) blocks new readers until it acquires or releases.
@@ -248,12 +248,12 @@ Two streams: U1–U8 ship the InMemory provider; U9 renames the caching package.
 
 ### U5. `Setup.cs` — DI registration
 
-- **Goal:** Provide `AddInMemoryDistributedLock` / `AddInMemoryDistributedReaderWriterLock` / `AddInMemoryDistributedSemaphore`, three overloads each.
+- **Goal:** Provide `AddInMemoryDistributedLock` / `AddInMemoryDistributedReadWriteLock` / `AddInMemoryDistributedSemaphore`, three overloads each.
 - **Requirements:** R1
 - **Dependencies:** U2, U3, U4
 - **Files:**
   - `src/Headless.DistributedLocks.InMemory/Setup.cs` (create)
-- **Approach:** `public static class SetupInMemoryDistributedLock` using C# 14 `extension(IServiceCollection services)`. Each method family delegates to Core's generic registrar (`AddDistributedLock<InMemoryDistributedLockStorage>`, `AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>`, `AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>`), exactly mirroring `SetupRedisDistributedLock`. Three overloads per family: `IConfiguration`, `Action<DistributedLockOptions>`, `Action<DistributedLockOptions, IServiceProvider>`. Shared private helper named `_AddInMemoryDistributedLockCore` per the `_Add{Feature}Core` convention (InMemory needs no extra services like Redis's scripts loader, so the helper may be a thin pass-through — still present for shape consistency). `[PublicAPI]` on the class.
+- **Approach:** `public static class SetupInMemoryDistributedLock` using C# 14 `extension(IServiceCollection services)`. Each method family delegates to Core's generic registrar (`AddDistributedLock<InMemoryDistributedLockStorage>`, `AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>`, `AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>`), exactly mirroring `SetupRedisDistributedLock`. Three overloads per family: `IConfiguration`, `Action<DistributedLockOptions>`, `Action<DistributedLockOptions, IServiceProvider>`. Shared private helper named `_AddInMemoryDistributedLockCore` per the `_Add{Feature}Core` convention (InMemory needs no extra services like Redis's scripts loader, so the helper may be a thin pass-through — still present for shape consistency). `[PublicAPI]` on the class.
 - **Patterns to follow:** `src/Headless.DistributedLocks.Redis/Setup.cs` (current, all three families); `src/Headless.Caching.InMemory/Setup.cs` for the extension-member idiom.
 - **Test scenarios:**
   - Each `Add*` overload registers a resolvable provider of the corresponding interface; repeated calls are idempotent (`TryAdd*` semantics inherited from Core).
@@ -267,14 +267,14 @@ Two streams: U1–U8 ship the InMemory provider; U9 renames the caching package.
 - **Dependencies:** U5
 - **Files:**
   - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/Headless.DistributedLocks.InMemory.Tests.Integration.csproj` (create; `Headless.NET.Sdk.Test`; refs InMemory package + `Tests.Harness`)
-  - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/InMemoryDistributedLockProviderTests.cs` (create — consumes `DistributedLockProviderTestsBase`)
+  - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/InMemoryDistributedLockTests.cs` (create — consumes `DistributedLockTestsBase`)
   - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/InMemoryReaderWriterLockProviderTests.cs` (create)
   - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/InMemoryDistributedSemaphoreTests.cs` (create)
   - `tests/Headless.DistributedLocks.InMemory.Tests.Integration/InMemoryStorageDeterministicTests.cs` (create)
   - `headless-framework.slnx` (modify — add test project)
 - **Approach:** Mirror `Headless.DistributedLocks.Redis.Tests.Integration` for the harness-consumption mechanics (`GetLockProvider()` override returning a provider built via U5's `AddInMemoryDistributedLock`, `[Fact]` overrides of the base's `virtual` methods). RW and semaphore tests mirror the Redis equivalents. Deterministic tests inject `FakeTimeProvider` into a hand-built provider to assert TTL/fencing/writer-preference without wall-clock waits. Use `TestBase.AbortToken` for cancellation; `Bogus` for resource names.
 - **Test suite design:** Integration project (full provider+storage wiring), no external infra. Regular-lock coverage comes from the shared harness base; RW + semaphore from hand-rolled suites; TTL/fencing edge cases from the deterministic suite. No new harness infrastructure created here (deferred).
-- **Test scenarios:** the union of U2/U3/U4 enumerated scenarios, organized into the four files above; plus the full `DistributedLockProviderTestsBase` set inherited verbatim.
+- **Test scenarios:** the union of U2/U3/U4 enumerated scenarios, organized into the four files above; plus the full `DistributedLockTestsBase` set inherited verbatim.
 - **Verification:** `make test-project TEST_PROJECT=tests/Headless.DistributedLocks.InMemory.Tests.Integration` green; coverage meets `CLAUDE.md` targets for the new package.
 
 ### U7. Consolidate the ad-hoc fakes
@@ -334,7 +334,7 @@ Two streams: U1–U8 ship the InMemory provider; U9 renames the caching package.
 
 ### Deferred to Follow-Up Work
 
-- **Shared reader-writer and semaphore conformance harness bases.** Today only regular locks have a shared base (`DistributedLockProviderTestsBase`); RW and semaphore are hand-rolled per provider. InMemory is the cleanest driver for extracting shared RW/semaphore bases (all primitives trivially correct), and the CLAUDE.md "2nd provider" trigger now applies — but extraction is a dedicated batch coordinated with the sibling Postgres plan (`2026-06-02-002`), which also reworks the harness. Hand-rolled RW/semaphore suites are sufficient for this PR.
+- **Shared reader-writer and semaphore conformance harness bases.** Today only regular locks have a shared base (`DistributedLockTestsBase`); RW and semaphore are hand-rolled per provider. InMemory is the cleanest driver for extracting shared RW/semaphore bases (all primitives trivially correct), and the CLAUDE.md "2nd provider" trigger now applies — but extraction is a dedicated batch coordinated with the sibling Postgres plan (`2026-06-02-002`), which also reworks the harness. Hand-rolled RW/semaphore suites are sufficient for this PR.
 - **`Headless.DistributedLocks.Cache` package.** A stray untracked `obj/` exists for it; that directory is cleaned in U1, but no Cache-backed provider is in scope here.
 
 ---
@@ -349,16 +349,16 @@ Two streams: U1–U8 ship the InMemory provider; U9 renames the caching package.
 | Sibling provider plans (Postgres #293, SQL Server #294, FileSystem #365) touch the same storage contracts and harness concurrently. | Merge friction on `headless-framework.slnx` and `docs/llms/distributed-locks.md`. | Keep U8/U9 doc edits surgical; the slnx additions are independent folder entries; coordinate harness extraction as the deferred follow-up. |
 | Renaming a package id mid-stream while sibling lock plans are open could collide on `slnx`. | Low — different files/folders. | U9 is independent; land it cleanly with `git mv`. |
 
-**Dependency:** Core's generic registrars (`AddDistributedLock<TStorage>`, `AddDistributedReaderWriterLock<TStorage>`, `AddDistributedSemaphore<TStorage>`) already exist and register `TimeProvider.System` — no Core changes required.
+**Dependency:** Core's generic registrars (`AddDistributedLock<TStorage>`, `AddDistributedReadWriteLock<TStorage>`, `AddDistributedSemaphore<TStorage>`) already exist and register `TimeProvider.System` — no Core changes required.
 
 ---
 
 ## Sources & Research
 
 - Issue #366 (InMemory provider), #287 (coordination-scope capability matrix), #368 (fencing tokens + Redis semaphores — established the current three-primitive contract).
-- Current contracts: `IDistributedLockStorage`, `IDistributedReaderWriterLockStorage`, `IDistributedSemaphoreStorage`, `DistributedLockAcquireResult` in `src/Headless.DistributedLocks.Core`.
+- Current contracts: `IDistributedLockStorage`, `IDistributedReadWriteLockStorage`, `IDistributedSemaphoreStorage`, `DistributedLockAcquireResult` in `src/Headless.DistributedLocks.Core`.
 - De-facto in-process implementations being promoted: `FakeDistributedLockStorage`, `FakeDistributedSemaphoreStorage`, `FakeReaderWriterLockStorage` in `tests/Headless.DistributedLocks.Tests.Unit/Fakes/`.
-- Analog provider: `src/Headless.DistributedLocks.Redis/` (storages + `Setup.cs`); conformance base `tests/Headless.DistributedLocks.Tests.Harness/DistributedLockProviderTestsBase.cs`.
+- Analog provider: `src/Headless.DistributedLocks.Redis/` (storages + `Setup.cs`); conformance base `tests/Headless.DistributedLocks.Tests.Harness/DistributedLockTestsBase.cs`.
 - Package precedent for the rename: `src/Headless.Caching.Memory/` (already InMemory-named internally) and `src/Headless.Messaging.InMemory/`.
 - Sibling plan for structural alignment: `docs/plans/2026-06-02-002-feat-postgres-distributed-lock-provider-plan.md`; RW contract rationale in `docs/plans/2026-05-24-001-feat-distributed-locks-phase-3a-reader-writer-plan.md`.
 - No external research: pure in-process .NET concurrency over established local patterns; madelson ships no pure in-process backend (per #366), so nothing to port.

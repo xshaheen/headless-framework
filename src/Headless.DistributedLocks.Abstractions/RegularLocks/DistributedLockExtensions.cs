@@ -6,32 +6,32 @@ using Headless.Checks;
 namespace Headless.DistributedLocks;
 
 [PublicAPI]
-public static class DistributedLockProviderExtensions
+public static class DistributedLockExtensions
 {
-    extension(IDistributedLockProvider provider)
+    extension(IDistributedLock provider)
     {
         /// <summary>Releases a resource lock for <paramref name="distributedLock"/>.</summary>
-        public Task ReleaseAsync(IDistributedLock distributedLock, CancellationToken cancellationToken = default)
+        public Task ReleaseAsync(IDistributedLease distributedLock, CancellationToken cancellationToken = default)
         {
             Argument.IsNotNull(provider);
 
-            return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LockId, cancellationToken);
+            return provider.ReleaseAsync(distributedLock.Resource, distributedLock.LeaseId, cancellationToken);
         }
 
         /// <summary>
         /// Renews a resource lock for a specified <paramref name="distributedLock"/> by extending
-        /// the expiration time of the lock if it is still held to the <see cref="IDistributedLock.LockId"/>
+        /// the expiration time of the lock if it is still held to the <see cref="IDistributedLease.LeaseId"/>
         /// and return <see langword="true"/>, otherwise <see langword="false"/>.
         /// </summary>
         public Task RenewAsync(
-            IDistributedLock distributedLock,
+            IDistributedLease distributedLock,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         )
         {
             return provider.RenewAsync(
                 distributedLock.Resource,
-                distributedLock.LockId,
+                distributedLock.LeaseId,
                 timeUntilExpires,
                 cancellationToken
             );
@@ -76,7 +76,7 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLock,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
@@ -101,7 +101,7 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLock,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync(
             string resource,
             Func<CancellationToken, Task> work,
@@ -122,11 +122,11 @@ public static class DistributedLockProviderExtensions
 
             // When monitoring is enabled, link the caller's CT with the lease-lost token so
             // the work delegate observes lease loss promptly via its CancellationToken.
-            if (distributedLock.IsMonitored)
+            if (distributedLock.CanObserveLoss)
             {
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                     cancellationToken,
-                    distributedLock.HandleLostToken
+                    distributedLock.LostToken
                 );
 
                 await work(linkedCts.Token).ConfigureAwait(false);
@@ -139,7 +139,7 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLock,string,Func{Task},DistributedLockAcquireOptions,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
@@ -159,11 +159,11 @@ public static class DistributedLockProviderExtensions
                 return false;
             }
 
-            if (distributedLock.IsMonitored)
+            if (distributedLock.CanObserveLoss)
             {
                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
                     cancellationToken,
-                    distributedLock.HandleLostToken
+                    distributedLock.LostToken
                 );
 
                 await work(state, linkedCts.Token).ConfigureAwait(false);
@@ -199,7 +199,7 @@ public static class DistributedLockProviderExtensions
             return await provider.TryUsingAsync(resource, work, options, cancellationToken).ConfigureAwait(false);
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLock,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
         public async Task<bool> TryUsingAsync(
             string resource,
             Action work,
@@ -227,7 +227,7 @@ public static class DistributedLockProviderExtensions
             return true;
         }
 
-        /// <inheritdoc cref="TryUsingAsync(IDistributedLockProvider,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync(IDistributedLock,string,Action,TimeSpan?,TimeSpan?,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,
@@ -248,7 +248,7 @@ public static class DistributedLockProviderExtensions
                 .ConfigureAwait(false);
         }
 
-        /// <inheritdoc cref="TryUsingAsync{TState}(IDistributedLockProvider,string,TState,Action{TState},TimeSpan?,TimeSpan?,CancellationToken)"/>
+        /// <inheritdoc cref="TryUsingAsync{TState}(IDistributedLock,string,TState,Action{TState},TimeSpan?,TimeSpan?,CancellationToken)"/>
         public async Task<bool> TryUsingAsync<TState>(
             string resource,
             TState state,

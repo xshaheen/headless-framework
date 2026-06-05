@@ -246,15 +246,15 @@ internal sealed class Bootstrapper(
             return;
         }
 
-        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLockProvider>(
+        var lockProvider = serviceProvider.GetRequiredKeyedService<IDistributedLock>(
             MessagingKeys.LockProvider
         );
 
         // Direct type check on the public sentinel — sealed, so the test is exact. A user
-        // who deliberately wraps a NullDistributedLockProvider in a decorator will bypass
+        // who deliberately wraps a NullDistributedLock in a decorator will bypass
         // this warning; that's an opt-out we accept rather than guard against, since the
         // sentinel exists specifically to be detectable.
-        if (lockProvider is not NullDistributedLockProvider)
+        if (lockProvider is not NullDistributedLock)
         {
             return;
         }
@@ -268,10 +268,10 @@ internal sealed class Bootstrapper(
         // factory (e.g., missing Redis connection string) cannot fail messaging bootstrap. On
         // probe failure we fall through to the conservative "no provider" EventId 77 — the
         // factory's real error will surface at first lock acquisition with a clearer message.
-        IDistributedLockProvider? unkeyedProvider = null;
+        IDistributedLock? unkeyedProvider = null;
         try
         {
-            unkeyedProvider = serviceProvider.GetService<IDistributedLockProvider>();
+            unkeyedProvider = serviceProvider.GetService<IDistributedLock>();
         }
 #pragma warning disable RCS1075, ERP022 // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
         catch (Exception)
@@ -280,7 +280,7 @@ internal sealed class Bootstrapper(
         }
 #pragma warning restore RCS1075, ERP022
 
-        if (unkeyedProvider is not null and not NullDistributedLockProvider)
+        if (unkeyedProvider is not null and not NullDistributedLock)
         {
             logger.UseStorageLockWithNoOpProviderButRealUnkeyed();
             return;

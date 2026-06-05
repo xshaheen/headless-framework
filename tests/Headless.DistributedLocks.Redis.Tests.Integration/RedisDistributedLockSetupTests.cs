@@ -42,7 +42,7 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
         // when
         services.AddRedisDistributedLock();
         services.AddRedisDistributedSemaphore(static _ => { });
-        services.AddRedisDistributedReaderWriterLock(static _ => { });
+        services.AddRedisDistributedReadWriteLock(static _ => { });
 
         using var provider = services.BuildServiceProvider();
 

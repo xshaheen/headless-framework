@@ -298,9 +298,9 @@ public static class SetupMessaging
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
         // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
-        // IDistributedLockProvider so UseStorageLock always targets the provider wired via
+        // IDistributedLock so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
-        services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(
+        services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(
             MessagingKeys.LockProvider
         );
 

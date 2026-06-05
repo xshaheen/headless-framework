@@ -4,19 +4,19 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Fallback <see cref="IDistributedLockProvider"/> registered when no real provider is wired up.
+/// Fallback <see cref="IDistributedLock"/> registered when no real provider is wired up.
 /// Always grants the lock — every acquire succeeds and every renew returns true.
 /// Single-replica deployments (no contention) work correctly; multi-replica deployments with
 /// storage-based locks enabled should detect this sentinel by type and warn at startup.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDistributedLockProvider
+public sealed class NullDistributedLock(TimeProvider timeProvider) : IDistributedLock
 {
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-    public Task<IDistributedLock> AcquireAsync(
+    public Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -25,10 +25,10 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock>(new NullDistributedLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease>(new NullDistributedLease(resource, timeProvider));
     }
 
-    public Task<IDistributedLock?> TryAcquireAsync(
+    public Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -37,12 +37,12 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock?>(new NullDistributedLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease?>(new NullDistributedLease(resource, timeProvider));
     }
 
     public Task<bool> RenewAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     )
@@ -52,14 +52,14 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return Task.FromResult(true);
     }
 
-    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         return Task.FromResult<string?>(null);
     }
 
-    public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -76,14 +76,14 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return Task.FromResult<TimeSpan?>(null);
     }
 
-    public Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    public Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<LockInfo?>(null);
+        return Task.FromResult<DistributedLockInfo?>(null);
     }
 
-    public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
-        return Task.FromResult<IReadOnlyList<LockInfo>>([]);
+        return Task.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
     }
 
     public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default)
@@ -104,11 +104,11 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
         return options is { Monitoring: not LockMonitoringMode.None };
     }
 
-    private sealed class NullDistributedLock(string resource, TimeProvider timeProvider) : IDistributedLock
+    private sealed class NullDistributedLease(string resource, TimeProvider timeProvider) : IDistributedLease
     {
         private int _renewalCount;
 
-        public string LockId { get; } = Guid.NewGuid().ToString("N");
+        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
         public long? FencingToken => null;
 
@@ -120,9 +120,9 @@ public sealed class NullDistributedLockProvider(TimeProvider timeProvider) : IDi
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken HandleLostToken => CancellationToken.None;
+        public CancellationToken LostToken => CancellationToken.None;
 
-        public bool IsMonitored => false;
+        public bool CanObserveLoss => false;
 
         public Task ReleaseAsync()
         {

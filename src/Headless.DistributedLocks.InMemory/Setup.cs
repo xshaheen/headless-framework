@@ -84,30 +84,30 @@ public static class SetupInMemoryDistributedLock
         #region InMemory Distributed Reader-Writer Lock
 
         /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReaderWriterLock(
+        public IServiceCollection AddInMemoryDistributedReadWriteLock(
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
             return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(optionSetupAction)
+                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(optionSetupAction)
             );
         }
 
         /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReaderWriterLock(
+        public IServiceCollection AddInMemoryDistributedReadWriteLock(
             Action<DistributedLockOptions> optionSetupAction
         )
         {
             return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(optionSetupAction)
+                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(optionSetupAction)
             );
         }
 
         /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReaderWriterLock(IConfiguration config)
+        public IServiceCollection AddInMemoryDistributedReadWriteLock(IConfiguration config)
         {
             return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(config)
+                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(config)
             );
         }
 
