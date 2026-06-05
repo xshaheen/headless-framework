@@ -84,8 +84,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     throw;
                 }
 
-                await _TryRestampStaleAsync(store, key, staleCandidate, options, now, cancellationToken)
-                    .ConfigureAwait(false);
+                await _TryRestampStaleAsync(store, key, staleCandidate, options, now).ConfigureAwait(false);
 
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
                 return _ToCacheValue(staleCandidate, isStale: true);
@@ -119,8 +118,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         string key,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        DateTime now,
-        CancellationToken cancellationToken
+        DateTime now
     )
     {
         // staleCandidate always carries a physical expiration: _IsStaleCandidate (the only gate that assigns a
