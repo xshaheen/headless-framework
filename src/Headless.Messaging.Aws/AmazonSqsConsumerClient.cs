@@ -24,6 +24,7 @@ internal sealed class AmazonSqsConsumerClient(
 ) : IConsumerClient
 {
     private readonly Lock _connectionLock = new();
+    private readonly Lock _queueUrlsLock = new();
     private readonly AmazonSqsOptions _amazonSqsOptions = options.Value;
     private readonly ILogger _logger = logger;
     private readonly SemaphoreSlim _semaphore = new(groupConcurrent);
@@ -63,7 +64,7 @@ internal sealed class AmazonSqsConsumerClient(
                 queueUrls.Add(queueResponse.QueueUrl);
             }
 
-            Interlocked.Exchange(ref _queueUrls, [.. queueUrls]);
+            _SetQueueUrls([.. queueUrls]);
 
             return queueUrls;
         }
@@ -96,7 +97,7 @@ internal sealed class AmazonSqsConsumerClient(
         if (intentType == IntentType.Queue)
         {
             await _ConnectAsync(false, true, cancellationToken).ConfigureAwait(false);
-            Interlocked.Exchange(ref _queueUrls, [.. topics]);
+            _SetQueueUrls([.. topics]);
             _ready.TrySetResult();
             return;
         }
@@ -115,9 +116,9 @@ internal sealed class AmazonSqsConsumerClient(
     {
         await _ConnectAsync(intentType == IntentType.Bus, true, cancellationToken).ConfigureAwait(false);
 
-        if (intentType == IntentType.Bus && _queueUrls.Length == 0)
+        if (intentType == IntentType.Bus && _GetQueueUrlsSnapshot().Length == 0)
         {
-            Interlocked.Exchange(ref _queueUrls, [_queueUrl]);
+            _SetQueueUrls([_queueUrl]);
         }
 
         var retryDelay = TimeSpan.FromSeconds(1);
@@ -129,7 +130,7 @@ internal sealed class AmazonSqsConsumerClient(
             (string QueueUrl, ReceiveMessageResponse Response)[] responses;
             try
             {
-                var snapshot = _queueUrls;
+                var snapshot = _GetQueueUrlsSnapshot();
                 responses = await Task.WhenAll(
                         snapshot.Select(queueUrl => _ReceiveMessagesAsync(queueUrl, cancellationToken))
                     )
@@ -226,6 +227,22 @@ internal sealed class AmazonSqsConsumerClient(
         };
         var response = await _sqsClient!.ReceiveMessageAsync(request, cancellationToken).ConfigureAwait(false);
         return (queueUrl, response);
+    }
+
+    private ImmutableArray<string> _GetQueueUrlsSnapshot()
+    {
+        lock (_queueUrlsLock)
+        {
+            return _queueUrls;
+        }
+    }
+
+    private void _SetQueueUrls(ImmutableArray<string> queueUrls)
+    {
+        lock (_queueUrlsLock)
+        {
+            _queueUrls = queueUrls;
+        }
     }
 
     private static TimeSpan _NextBackoff(TimeSpan current)

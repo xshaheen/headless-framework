@@ -175,10 +175,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
-        await _AcquireMonitoredHandleAndDropReference(provider, resource);
-
-        provider.GetActiveMonitorCount(resource).Should().Be(1);
-        provider.GetActiveMonitorResourceCount().Should().Be(1);
+        await _AcquireMonitoredHandleAssertRegisteredAndDropReference(provider, resource);
 
         // when
         for (var i = 0; i < 20 && provider.GetActiveMonitorResourceCount() != 0; i++)
@@ -459,7 +456,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
     }
 
-    private static async Task _AcquireMonitoredHandleAndDropReference(DistributedLockProvider provider, string resource)
+    private static async Task _AcquireMonitoredHandleAssertRegisteredAndDropReference(
+        DistributedLockProvider provider,
+        string resource
+    )
     {
         var handle = await provider.TryAcquireAsync(
             resource,
@@ -470,8 +470,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             }
         );
         handle.Should().NotBeNull();
-        handle = null;
-        _ = handle;
+
+        provider.GetActiveMonitorCount(resource).Should().Be(1);
+        provider.GetActiveMonitorResourceCount().Should().Be(1);
+        GC.KeepAlive(handle);
     }
 
     private static async Task _DrainUntilAsync(Func<bool> condition, CancellationToken cancellationToken = default)
