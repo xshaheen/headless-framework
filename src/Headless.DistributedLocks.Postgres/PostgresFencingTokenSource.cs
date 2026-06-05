@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Options;
 using Npgsql;
+using System.Data.Common;
 
 namespace Headless.DistributedLocks.Postgres;
 
@@ -20,12 +21,21 @@ internal sealed class PostgresFencingTokenSource : IFencingTokenSource, IAsyncDi
         _commandTimeout = options.Value.CommandTimeout;
     }
 
-    public async ValueTask<long?> NextAsync(string resource, CancellationToken cancellationToken = default)
+    public async ValueTask<long?> NextAsync(
+        string resource,
+        DbConnection? connection = null,
+        CancellationToken cancellationToken = default
+    )
     {
-        await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await _EnsureSequenceAsync(connection, cancellationToken).ConfigureAwait(false);
+        // The handle connection comes from the multiplexing engine's pool and may be shared/dedicated under its own
+        // monitoring; Postgres always issues the token on a freshly-opened pooled connection from its owned data
+        // source, so the optional handle connection is intentionally ignored here.
+        _ = connection;
 
-        await using var command = connection.CreateCommand();
+        await using var pooledConnection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await _EnsureSequenceAsync(pooledConnection, cancellationToken).ConfigureAwait(false);
+
+        await using var command = pooledConnection.CreateCommand();
         command.CommandText = $"SELECT nextval('{_SequenceName}')";
         command.CommandTimeout = (int)_commandTimeout.TotalSeconds;
 

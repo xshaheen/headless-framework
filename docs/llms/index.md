@@ -248,6 +248,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.DistributedLocks.Core.Database` — Shared connection-scoped database lock engine.
 - `Headless.DistributedLocks.Postgres` — PostgreSQL advisory-lock provider.
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
+- `Headless.DistributedLocks.SqlServer` — SQL Server application-lock provider.
 
 ### Serialization
 - `Headless.Serializer.Abstractions` — `ISerializer` interface.

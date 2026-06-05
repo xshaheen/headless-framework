@@ -126,8 +126,32 @@ public sealed class ConnectionScopedDistributedLockProvider(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                var remainingAcquireTimeout = acquireTimeout == Timeout.InfiniteTimeSpan
+                    ? Timeout.InfiniteTimeSpan
+                    : acquireTimeout == TimeSpan.Zero
+                        ? TimeSpan.Zero
+                        : deadline - timeProvider.GetUtcNow();
+
+                if (remainingAcquireTimeout < TimeSpan.Zero)
+                {
+                    if (!throwOnTimeout)
+                    {
+                        return null;
+                    }
+
+                    throw acquireTimeout == TimeSpan.Zero
+                        ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+                        : new LockAcquisitionTimeoutException(resource);
+                }
+
+                if (storage.BlocksServerSide && acquireTimeout != TimeSpan.Zero && !isWaiting)
+                {
+                    _waiterCaps.Enter(resource);
+                    isWaiting = true;
+                }
+
                 var handle = await storage
-                    .TryAcquireAsync(resource, lockId, isShared, cancellationToken)
+                    .TryAcquireAsync(resource, lockId, isShared, remainingAcquireTimeout, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (handle is not null)
@@ -136,10 +160,11 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
                     try
                     {
-                        fencingToken =
-                            isShared || fencingTokenSource is null
-                                ? null
-                                : await fencingTokenSource.NextAsync(resource, cancellationToken).ConfigureAwait(false);
+                        fencingToken = isShared || fencingTokenSource is null
+                            ? null
+                            : await fencingTokenSource
+                                .NextAsync(resource, handle.HeldConnection, cancellationToken)
+                                .ConfigureAwait(false);
                     }
                     catch
                     {
@@ -170,6 +195,20 @@ public sealed class ConnectionScopedDistributedLockProvider(
                         _ReleaseAsync,
                         logger
                     );
+                }
+
+                if (storage.BlocksServerSide)
+                {
+                    recordFailedAcquisition();
+
+                    if (!throwOnTimeout)
+                    {
+                        return null;
+                    }
+
+                    throw acquireTimeout == TimeSpan.Zero
+                        ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
+                        : new LockAcquisitionTimeoutException(resource);
                 }
 
                 if (acquireTimeout == TimeSpan.Zero || timeProvider.GetUtcNow() >= deadline)

@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -34,6 +36,14 @@ public sealed class ConnectionScopedLockHandle : IAsyncDisposable
         ConnectionLostToken = connectionLostToken;
         _release = release;
     }
+
+    /// <summary>
+    /// The open connection that holds this lock, when the storage acquires on a dedicated connection it can safely
+    /// lend for an in-band follow-up query (for example issuing a fencing token on the same session). Null when the
+    /// storage has no lendable connection (for example pooled/multiplexed engines), in which case follow-up work
+    /// opens its own connection.
+    /// </summary>
+    internal DbConnection? HeldConnection { get; init; }
 
     /// <summary>The locked resource name.</summary>
     public string Resource { get; }

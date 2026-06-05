@@ -12,24 +12,33 @@ namespace Headless.DistributedLocks;
 /// </summary>
 /// <remarks>
 /// Implementations must be safe for concurrent use across acquirers. The provider performs all retry,
-/// timeout, and waiter accounting; storage only needs to attempt acquisition once per call and release.
+/// timeout, and waiter accounting unless <see cref="BlocksServerSide"/> is enabled; in that mode the
+/// storage receives the remaining acquire timeout and owns the native blocking wait.
 /// </remarks>
 [PublicAPI]
 public interface IConnectionScopedLockStorage
 {
     /// <summary>
-    /// Attempts a single, non-blocking acquisition of <paramref name="resource"/>. Returns a live
+    /// Indicates whether <see cref="TryAcquireAsync"/> blocks inside the backing engine for the supplied
+    /// acquire timeout. Non-blocking stores return immediately and rely on the provider's release-signal loop.
+    /// </summary>
+    bool BlocksServerSide => false;
+
+    /// <summary>
+    /// Attempts acquisition of <paramref name="resource"/>. Returns a live
     /// <see cref="ConnectionScopedLockHandle"/> on success, or <see langword="null"/> if the resource is
-    /// currently held in a conflicting mode (the provider then retries per its timeout policy). Must not
-    /// block waiting for the lock — blocking-with-timeout is owned by the provider.
+    /// currently held in a conflicting mode. Non-blocking stores must return immediately; server-blocking stores
+    /// may wait up to <paramref name="acquireTimeout"/>.
     /// </summary>
     /// <param name="resource">The resource name to lock.</param>
     /// <param name="lockId">Provider-generated identifier stamped onto the handle for ownership tracking.</param>
     /// <param name="isShared"><see langword="true"/> for a shared (reader) lock; <see langword="false"/> for an exclusive lock.</param>
+    /// <param name="acquireTimeout">Remaining acquire timeout for server-blocking stores; ignored by non-blocking stores.</param>
     ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
         string lockId,
         bool isShared,
+        TimeSpan acquireTimeout,
         CancellationToken cancellationToken = default
     );
 

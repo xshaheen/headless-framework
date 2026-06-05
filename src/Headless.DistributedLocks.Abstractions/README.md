@@ -13,7 +13,7 @@ Lets application and domain code depend on lock interfaces without referencing a
 - `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
 - `IDistributedLock` handle with `LockId`, nullable `FencingToken`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
-- `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
+- `LockAcquisitionTimeoutException`, `DistributedLockDeadlockException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
 - Lock inspection methods for current lock id, expiration, active count, active list, and lock info. `GetLockIdAsync` does not renew a lease; monitored holders should use `HandleLostToken` for lease-loss observation.
 
 ## Design Notes
