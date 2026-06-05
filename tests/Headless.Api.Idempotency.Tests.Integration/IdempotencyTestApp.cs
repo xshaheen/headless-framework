@@ -30,7 +30,7 @@ internal static class IdempotencyTestApp
         string? tenantHeaderName = null,
         bool withLockProvider = false,
         TestHandlerGate? handlerGate = null,
-        InMemoryDistributedLockProvider? lockProvider = null,
+        InMemoryDistributedLockDouble? lockProvider = null,
         Action<IServiceCollection>? configureServices = null
     )
     {
@@ -66,18 +66,18 @@ internal static class IdempotencyTestApp
         builder.Services.AddInMemoryCache();
 
         // Optional in-memory distributed-lock provider for WaitAndReplay tests. Built on a
-        // SemaphoreSlim-per-resource map; the production wiring (DistributedLockProvider in
+        // SemaphoreSlim-per-resource map; the production wiring (DistributedLock in
         // Headless.DistributedLocks.Core) depends on IOutboxBus which would force the
         // tests to spin up the messaging infrastructure. The middleware only exercises
-        // TryAcquireAsync + IDistributedLock.DisposeAsync, so the test double covers exactly
+        // TryAcquireAsync + IDistributedLease.DisposeAsync, so the test double covers exactly
         // the surface under test.
         if (lockProvider is not null)
         {
-            builder.Services.AddSingleton<IDistributedLockProvider>(lockProvider);
+            builder.Services.AddSingleton<IDistributedLock>(lockProvider);
         }
         else if (withLockProvider)
         {
-            builder.Services.AddSingleton<IDistributedLockProvider, InMemoryDistributedLockProvider>();
+            builder.Services.AddSingleton<IDistributedLock, InMemoryDistributedLockDouble>();
         }
 
         // Optional handler gate for concurrency tests (AE3, AE4). When the gate is supplied
@@ -288,7 +288,7 @@ internal static class IdempotencyTestApp
     }
 
     /// <summary>
-    /// In-memory <see cref="IDistributedLockProvider"/> that models lease expiry. Each resource
+    /// In-memory <see cref="IDistributedLock"/> that models lease expiry. Each resource
     /// tracks an owner lock-id and an absolute expiration timestamp; <c>TryAcquireAsync</c>
     /// considers the slot free either when no owner is set OR when the current owner's lease has
     /// elapsed (lock stealing). Releasing a lock whose lease already expired is a silent no-op so
@@ -301,10 +301,10 @@ internal static class IdempotencyTestApp
     /// <c>WinnerLockLease</c> values, lease-shorter-than-handler-runtime bugs) passes integration
     /// tests against a semaphore double and fails in production against Redis.
     ///
-    /// Implements only TryAcquireAsync + IDistributedLock.DisposeAsync — the surface the
+    /// Implements only TryAcquireAsync + IDistributedLease.DisposeAsync — the surface the
     /// idempotency middleware actually uses. Other interface methods throw NotSupportedException.
     /// </summary>
-    internal sealed class InMemoryDistributedLockProvider(TimeProvider timeProvider) : IDistributedLockProvider
+    internal sealed class InMemoryDistributedLockDouble(TimeProvider timeProvider) : IDistributedLock
     {
         internal sealed class LockSlot(TimeProvider timeProvider)
         {
@@ -329,11 +329,11 @@ internal static class IdempotencyTestApp
                 }
             }
 
-            public void ReleaseIfOwner(string lockId)
+            public void ReleaseIfOwner(string leaseId)
             {
                 lock (_sync)
                 {
-                    if (_ownerLockId == lockId)
+                    if (_ownerLockId == leaseId)
                     {
                         _ownerLockId = string.Empty;
                         _expiresAt = DateTimeOffset.MinValue;
@@ -357,7 +357,7 @@ internal static class IdempotencyTestApp
 
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-        public async Task<IDistributedLock> AcquireAsync(
+        public async Task<IDistributedLease> AcquireAsync(
             string resource,
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
@@ -367,7 +367,7 @@ internal static class IdempotencyTestApp
                 ?? throw new LockAcquisitionTimeoutException(resource);
         }
 
-        public async Task<IDistributedLock?> TryAcquireAsync(
+        public async Task<IDistributedLease?> TryAcquireAsync(
             string resource,
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
@@ -397,7 +397,7 @@ internal static class IdempotencyTestApp
                 var acquiredLockId = slot.TryAcquireOrSteal(lease);
                 if (acquiredLockId is not null)
                 {
-                    return new InMemoryDistributedLock(resource, acquiredLockId, slot, timeProvider);
+                    return new InMemoryDistributedLease(resource, acquiredLockId, slot, timeProvider);
                 }
 
                 if (timeProvider.GetUtcNow() >= deadline)
@@ -418,15 +418,15 @@ internal static class IdempotencyTestApp
 
         public Task<bool> RenewAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
-        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
+        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
         public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) =>
@@ -435,11 +435,14 @@ internal static class IdempotencyTestApp
         public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task<DistributedLockInfo?> GetLockInfoAsync(
+            string resource,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+        public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
 
         public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
@@ -605,16 +608,16 @@ internal static class IdempotencyTestApp
         public ValueTask FlushAsync(CancellationToken cancellationToken = default) => throw _Boom();
     }
 
-    internal sealed class InMemoryDistributedLock(
+    internal sealed class InMemoryDistributedLease(
         string resource,
-        string lockId,
-        InMemoryDistributedLockProvider.LockSlot slot,
+        string leaseId,
+        InMemoryDistributedLockDouble.LockSlot slot,
         TimeProvider timeProvider
-    ) : IDistributedLock
+    ) : IDistributedLease
     {
         private int _released;
 
-        public string LockId { get; } = lockId;
+        public string LeaseId { get; } = leaseId;
 
         public long? FencingToken => null;
 
@@ -626,9 +629,9 @@ internal static class IdempotencyTestApp
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken HandleLostToken => CancellationToken.None;
+        public CancellationToken LostToken => CancellationToken.None;
 
-        public bool IsMonitored => false;
+        public bool CanObserveLoss => false;
 
         public Task ReleaseAsync()
         {
@@ -658,7 +661,7 @@ internal static class IdempotencyTestApp
             // This mirrors Redis-style lock providers, where ReleaseAsync uses a Lua script
             // that checks the stored token before deleting — preventing a lapsed holder from
             // releasing a successor's lock.
-            slot.ReleaseIfOwner(LockId);
+            slot.ReleaseIfOwner(LeaseId);
         }
     }
 }

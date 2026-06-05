@@ -592,7 +592,7 @@ internal static partial class LoggerExtensions
         EventId = 77,
         EventName = "UseStorageLockWithNoOpProvider",
         Level = LogLevel.Warning,
-        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
+        Message = "UseStorageLock is enabled but no real IDistributedLock is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
     )]
     public static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
 
@@ -600,7 +600,7 @@ internal static partial class LoggerExtensions
         EventId = 78,
         EventName = "UseStorageLockWithNoOpProviderButRealUnkeyed",
         Level = LogLevel.Warning,
-        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
+        Message = "UseStorageLock is enabled but no real IDistributedLock is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
     )]
     public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
 

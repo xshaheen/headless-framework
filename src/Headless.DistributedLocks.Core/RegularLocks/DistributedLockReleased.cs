@@ -3,4 +3,4 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed record DistributedLockReleased(string Resource, string LockId);
+public sealed record DistributedLockReleased(string Resource, string LeaseId);

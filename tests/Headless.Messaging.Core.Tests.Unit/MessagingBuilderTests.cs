@@ -172,8 +172,8 @@ public sealed class MessagingBuilderTests
         // given — last-wins semantics: second registration must supersede the first
         var services = new ServiceCollection();
         var builder = new MessagingBuilder(services);
-        var firstProvider = Substitute.For<IDistributedLockProvider>();
-        var secondProvider = Substitute.For<IDistributedLockProvider>();
+        var firstProvider = Substitute.For<IDistributedLock>();
+        var secondProvider = Substitute.For<IDistributedLock>();
 
         // when
         builder.UseDistributedLock(firstProvider);
@@ -182,7 +182,7 @@ public sealed class MessagingBuilderTests
         // then — only one descriptor present for the messaging-keyed slot
         var descriptors = services
             .Where(d =>
-                d.ServiceType == typeof(IDistributedLockProvider)
+                d.ServiceType == typeof(IDistributedLock)
                 && d.IsKeyedService
                 && Equals(d.ServiceKey, MessagingKeys.LockProvider)
             )
@@ -191,7 +191,7 @@ public sealed class MessagingBuilderTests
         descriptors.Should().HaveCount(1);
 
         using var provider = services.BuildServiceProvider();
-        var resolved = provider.GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider);
+        var resolved = provider.GetRequiredKeyedService<IDistributedLock>(MessagingKeys.LockProvider);
         resolved.Should().BeSameAs(secondProvider, "the second registration must win under last-wins semantics");
     }
 

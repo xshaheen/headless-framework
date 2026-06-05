@@ -5,12 +5,12 @@ using Headless.Checks;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedReaderWriterLockStorage
+internal sealed class ScopedDistributedReadWriteLockStorage : IDistributedReadWriteLockStorage
 {
-    private readonly IDistributedReaderWriterLockStorage _inner;
+    private readonly IDistributedReadWriteLockStorage _inner;
     private readonly string _scopedPrefix;
 
-    public ScopedDistributedReaderWriterLockStorage(IDistributedReaderWriterLockStorage inner, string scopedPrefix)
+    public ScopedDistributedReadWriteLockStorage(IDistributedReadWriteLockStorage inner, string scopedPrefix)
     {
         _inner = Argument.IsNotNull(inner);
         _scopedPrefix = Argument.IsNotNullOrEmpty(scopedPrefix);
@@ -18,32 +18,32 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
 
     public ValueTask<bool> TryAcquireReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.TryAcquireReadAsync(_NormalizeResource(resource), lockId, ttl, cancellationToken);
+        return _inner.TryAcquireReadAsync(_NormalizeResource(resource), leaseId, ttl, cancellationToken);
     }
 
     public ValueTask<bool> TryExtendReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.TryExtendReadAsync(_NormalizeResource(resource), lockId, ttl, cancellationToken);
+        return _inner.TryExtendReadAsync(_NormalizeResource(resource), leaseId, ttl, cancellationToken);
     }
 
-    public ValueTask ReleaseReadAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask ReleaseReadAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
-        return _inner.ReleaseReadAsync(_NormalizeResource(resource), lockId, cancellationToken);
+        return _inner.ReleaseReadAsync(_NormalizeResource(resource), leaseId, cancellationToken);
     }
 
     public ValueTask<bool> TryAcquireWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         string waitingId,
         TimeSpan? ttl = null,
         TimeSpan? markerTtl = null,
@@ -52,7 +52,7 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
     {
         return _inner.TryAcquireWriteAsync(
             _NormalizeResource(resource),
-            lockId,
+            leaseId,
             waitingId,
             ttl,
             markerTtl,
@@ -62,35 +62,35 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
 
     public ValueTask<bool> TryExtendWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.TryExtendWriteAsync(_NormalizeResource(resource), lockId, ttl, cancellationToken);
+        return _inner.TryExtendWriteAsync(_NormalizeResource(resource), leaseId, ttl, cancellationToken);
     }
 
-    public ValueTask ReleaseWriteAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask ReleaseWriteAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
-        return _inner.ReleaseWriteAsync(_NormalizeResource(resource), lockId, cancellationToken);
+        return _inner.ReleaseWriteAsync(_NormalizeResource(resource), leaseId, cancellationToken);
     }
 
     public ValueTask<bool> ValidateReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.ValidateReadAsync(_NormalizeResource(resource), lockId, cancellationToken);
+        return _inner.ValidateReadAsync(_NormalizeResource(resource), leaseId, cancellationToken);
     }
 
     public ValueTask<bool> ValidateWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
-        return _inner.ValidateWriteAsync(_NormalizeResource(resource), lockId, cancellationToken);
+        return _inner.ValidateWriteAsync(_NormalizeResource(resource), leaseId, cancellationToken);
     }
 
     public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)

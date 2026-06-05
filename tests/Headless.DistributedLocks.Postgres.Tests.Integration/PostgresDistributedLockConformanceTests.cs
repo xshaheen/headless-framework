@@ -7,16 +7,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockProviderTestsBase"/>)
+/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockTestsBase"/>)
 /// against the PostgreSQL advisory-lock provider. Backend-specific behavior (advisory keys,
 /// LISTEN/NOTIFY, fencing sequence, transaction coupling, connection death) lives in the sibling
 /// test classes; this class only wires the provider and exposes the portable scenarios as facts.
 /// </summary>
 [Collection<PostgresDistributedLockFixture>]
-public sealed class PostgresDistributedLockConformanceTests : DistributedLockProviderTestsBase
+public sealed class PostgresDistributedLockConformanceTests : DistributedLockTestsBase
 {
     private readonly ServiceProvider _services;
-    private readonly IDistributedLockProvider _provider;
+    private readonly IDistributedLock _provider;
 
     public PostgresDistributedLockConformanceTests(PostgresDistributedLockFixture fixture)
     {
@@ -29,10 +29,10 @@ public sealed class PostgresDistributedLockConformanceTests : DistributedLockPro
         });
 
         _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedLockProvider>();
+        _provider = _services.GetRequiredService<IDistributedLock>();
     }
 
-    protected override IDistributedLockProvider GetLockProvider() => _provider;
+    protected override IDistributedLock GetLockProvider() => _provider;
 
     protected override async ValueTask DisposeAsyncCore()
     {
@@ -96,12 +96,14 @@ public sealed class PostgresDistributedLockConformanceTests : DistributedLockPro
     [Fact]
     public override Task should_get_active_locks_count() => base.should_get_active_locks_count();
 
+    [Fact]
+    public override Task should_expose_none_handle_lost_token_without_monitoring() =>
+        base.should_expose_none_handle_lost_token_without_monitoring();
+
     // Intentionally not overridden (not portable to the connection-scoped provider):
     //  - should_get_expiration_for_locked_resource / should_get_lock_info_for_locked_resource:
     //    session-scoped locks have no lease, so expiration and TimeToLive are always null.
     //  - should_keep_lock_alive_when_auto_extend_is_enabled_smoke: there is no lease to auto-extend.
     //  - should_timeout_when_try_to_lock_acquired_resource: relies on TTL expiry freeing the first
     //    lock; session-scoped locks are held for the connection lifetime and never expire on TTL.
-    //  - should_expose_none_handle_lost_token_without_monitoring: the provider always exposes a
-    //    real connection-lost token (covered by PostgresConnectionDeathTests instead).
 }

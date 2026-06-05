@@ -17,14 +17,14 @@ public sealed class RedisDistributedSemaphoreStorage(
 
     public async ValueTask<DistributedLockAcquireResult> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         int maxCount,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThanOrEqualTo(maxCount, 1);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
@@ -32,7 +32,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         var result = await _TryAcquireSemaphoreAsync(
                 keys.HoldersKey,
                 keys.FenceKey,
-                lockId,
+                leaseId,
                 maxCount,
                 ttl,
                 cancellationToken
@@ -46,13 +46,13 @@ public sealed class RedisDistributedSemaphoreStorage(
 
     public async ValueTask<bool> TryExtendAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -60,7 +60,7 @@ public sealed class RedisDistributedSemaphoreStorage(
             .EvaluateAsync(
                 Db,
                 TryExtendSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, lockId, ttl),
+                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -70,19 +70,19 @@ public sealed class RedisDistributedSemaphoreStorage(
 
     public async ValueTask<bool> ValidateAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 ValidateSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, lockId, ttl: null),
+                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -92,19 +92,19 @@ public sealed class RedisDistributedSemaphoreStorage(
 
     public async ValueTask<bool> ReleaseAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 ReleaseSemaphoreScriptDefinition.Instance,
-                _GetSemaphoreSlotParameters(keys.HoldersKey, lockId, ttl: null),
+                _GetSemaphoreSlotParameters(keys.HoldersKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -132,7 +132,7 @@ public sealed class RedisDistributedSemaphoreStorage(
     private async Task<(bool Acquired, long? FencingToken)> _TryAcquireSemaphoreAsync(
         RedisKey holdersKey,
         RedisKey fenceKey,
-        string lockId,
+        string leaseId,
         int maxCount,
         TimeSpan ttl,
         CancellationToken cancellationToken
@@ -141,7 +141,7 @@ public sealed class RedisDistributedSemaphoreStorage(
         var parameters = new SemaphoreAcquireParams(
             holdersKey,
             fenceKey,
-            lockId,
+            leaseId,
             maxCount,
             (long)ttl.TotalMilliseconds
         );
@@ -168,11 +168,11 @@ public sealed class RedisDistributedSemaphoreStorage(
         return (true, (long)values[1]);
     }
 
-    private static SemaphoreSlotParams _GetSemaphoreSlotParameters(RedisKey holdersKey, string lockId, TimeSpan? ttl)
+    private static SemaphoreSlotParams _GetSemaphoreSlotParameters(RedisKey holdersKey, string leaseId, TimeSpan? ttl)
     {
         var expiresValue = ttl.HasValue ? (long)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new SemaphoreSlotParams(holdersKey, lockId, expiresValue);
+        return new SemaphoreSlotParams(holdersKey, leaseId, expiresValue);
     }
 
     private static (RedisKey HoldersKey, RedisKey FenceKey) _GetKeys(string resource)
@@ -192,13 +192,13 @@ public sealed class RedisDistributedSemaphoreStorage(
     private readonly record struct SemaphoreAcquireParams(
         RedisKey holdersKey,
         RedisKey fenceKey,
-        string lockId,
+        string leaseId,
         int maxCount,
         long expires
     );
 
     [StructLayout(LayoutKind.Auto)]
-    private readonly record struct SemaphoreSlotParams(RedisKey holdersKey, string lockId, RedisValue expires);
+    private readonly record struct SemaphoreSlotParams(RedisKey holdersKey, string leaseId, RedisValue expires);
 
     [StructLayout(LayoutKind.Auto)]
     private readonly record struct SemaphoreCountParams(RedisKey holdersKey);

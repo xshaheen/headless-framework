@@ -5,11 +5,10 @@ using tusdotnet.Interfaces;
 
 namespace Headless.Tus;
 
-public sealed class DistributedLockTusFileLock(string fileId, IDistributedLockProvider distributedLockProvider)
-    : ITusFileLock
+public sealed class DistributedLockTusFileLock(string fileId, IDistributedLock distributedLockProvider) : ITusFileLock
 {
     private readonly string _resource = $"tus-file-lock-{fileId}";
-    private IDistributedLock? _distributedLock;
+    private IDistributedLease? _distributedLock;
 
     public async Task<bool> Lock()
     {
@@ -28,7 +27,7 @@ public sealed class DistributedLockTusFileLock(string fileId, IDistributedLockPr
     public Task ReleaseIfHeld()
     {
         return _distributedLock is not null
-            ? distributedLockProvider.ReleaseAsync(_distributedLock.Resource, _distributedLock.LockId)
+            ? distributedLockProvider.ReleaseAsync(_distributedLock.Resource, _distributedLock.LeaseId)
             : Task.CompletedTask;
     }
 }

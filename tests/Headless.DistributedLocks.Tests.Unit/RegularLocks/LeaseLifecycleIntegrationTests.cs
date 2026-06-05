@@ -35,7 +35,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
         // then
         handle.Should().NotBeNull();
-        handle!.HandleLostToken.Should().Be(CancellationToken.None);
+        handle!.LostToken.Should().Be(CancellationToken.None);
         provider.GetActiveMonitorCount(resource).Should().Be(0);
         provider.GetActiveMonitorResourceCount().Should().Be(0);
     }
@@ -60,7 +60,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
         // then
         handle.Should().NotBeNull();
-        handle!.HandleLostToken.Should().NotBe(CancellationToken.None);
+        handle!.LostToken.Should().NotBe(CancellationToken.None);
         provider.GetActiveMonitorCount(resource).Should().Be(1);
         provider.GetActiveMonitorResourceCount().Should().Be(1);
 
@@ -88,13 +88,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         handle.Should().NotBeNull();
         await _storage.ReplaceIfEqualAsync(
             options.KeyPrefix + resource,
-            handle!.LockId,
+            handle!.LeaseId,
             "foreign-lock",
             TimeSpan.FromSeconds(10),
             AbortToken
         );
         var lostSignal = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        using var lostRegistration = handle!.HandleLostToken.Register(
+        using var lostRegistration = handle!.LostToken.Register(
             static state => ((TaskCompletionSource)state!).TrySetResult(),
             lostSignal
         );
@@ -106,7 +106,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         stopwatch.Stop();
 
         // then
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle!.LostToken.IsCancellationRequested.Should().BeTrue();
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(200));
     }
 
@@ -131,7 +131,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // then
         handle.Should().NotBeNull();
         provider.GetActiveMonitorCount(resource).Should().Be(1);
-        handle!.HandleLostToken.Should().NotBe(CancellationToken.None);
+        handle!.LostToken.Should().NotBe(CancellationToken.None);
     }
 
     [Fact]
@@ -159,14 +159,14 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             .BeTrue();
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
         (await provider.IsLockedAsync(resource, AbortToken)).Should().BeFalse();
-        (await provider.GetLockIdAsync(resource, AbortToken)).Should().BeNull();
+        (await provider.GetLeaseIdAsync(resource, AbortToken)).Should().BeNull();
         (await provider.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await _DrainUntilAsync(() => handle!.HandleLostToken.IsCancellationRequested);
+        await _DrainUntilAsync(() => handle!.LostToken.IsCancellationRequested);
 
         // then
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle!.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
@@ -217,8 +217,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
             await Task.Yield();
         }
 
-        // then - HandleLostToken still not fired (auto-extend kept storage row alive).
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        // then - LostToken still not fired (auto-extend kept storage row alive).
+        handle!.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     public async Task should_report_null_provider_lock_as_unmonitored()
     {
         // given
-        var provider = new NullDistributedLockProvider(_timeProvider);
+        var provider = new NullDistributedLock(_timeProvider);
 
         // when
         await using var handle = await provider.TryAcquireAsync(
@@ -263,8 +263,8 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
 
         // then
-        handle!.IsMonitored.Should().BeFalse();
-        handle.HandleLostToken.Should().Be(CancellationToken.None);
+        handle!.CanObserveLoss.Should().BeFalse();
+        handle.LostToken.Should().Be(CancellationToken.None);
     }
 
     [Fact]
@@ -286,7 +286,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
 
         // then
-        monitored!.IsMonitored.Should().BeTrue();
+        monitored!.CanObserveLoss.Should().BeTrue();
 
         await monitored.DisposeAsync();
 
@@ -297,13 +297,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
 
         // then
-        unmonitored!.IsMonitored.Should().BeFalse();
+        unmonitored!.CanObserveLoss.Should().BeFalse();
     }
 
     [Fact]
     public async Task should_not_deadlock_when_handle_lost_callback_disposes_handle()
     {
-        // given - acquire with monitorLease enabled; register a HandleLostToken callback that
+        // given - acquire with monitorLease enabled; register a LostToken callback that
         // disposes the handle. Storage row swap triggers Lost on the next probe.
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options);
@@ -319,7 +319,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
         var disposalDone = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        handle!.HandleLostToken.Register(() =>
+        handle!.LostToken.Register(() =>
         {
             _ = Task.Run(async () =>
             {
@@ -329,7 +329,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         });
         await _storage.ReplaceIfEqualAsync(
             options.KeyPrefix + resource,
-            handle!.LockId,
+            handle!.LeaseId,
             "foreign-lock",
             TimeSpan.FromSeconds(10),
             AbortToken
@@ -347,7 +347,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     public async Task should_not_signal_handle_lost_on_self_release()
     {
         // given - monitor-backed handle, then provider.ReleaseAsync (direct) instead of dispose.
-        // The release path's OnLockReleased nudge must not declare Lost for the same lockId.
+        // The release path's OnLockReleased nudge must not declare Lost for the same leaseId.
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -362,15 +362,15 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
         handle.Should().NotBeNull();
 
-        // when - direct release of the same lockId; this triggers the outbox path and would
+        // when - direct release of the same leaseId; this triggers the outbox path and would
         // historically nudge the still-alive monitor for that resource.
-        await provider.ReleaseAsync(resource, handle!.LockId, AbortToken);
-        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LockId));
+        await provider.ReleaseAsync(resource, handle!.LeaseId, AbortToken);
+        ((ICanReceiveLockReleased)provider).OnLockReleased(new DistributedLockReleased(resource, handle.LeaseId));
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
         await _DrainUntilAsync(() => provider.GetActiveMonitorCount(resource) == 0);
 
-        // then - HandleLostToken stays unfired after a monitor cadence opportunity.
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        // then - LostToken stays unfired after a monitor cadence opportunity.
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
         provider.GetActiveMonitorCount(resource).Should().Be(0);
 
         await handle.DisposeAsync();
@@ -405,7 +405,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
     {
         // AC8 — without an outbox publisher, the only way the monitor can learn of loss is
         // via its own cadence-driven probe. Confirm that polling alone (no nudge) eventually
-        // surfaces HandleLostToken when storage is mutated by another party.
+        // surfaces LostToken when storage is mutated by another party.
         var options = new DistributedLockOptions();
         var provider = _CreateProvider(options, outboxBus: null);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -423,43 +423,40 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         // when - foreign party takes over the row; advance the clock past cadence intervals.
         await _storage.ReplaceIfEqualAsync(
             options.KeyPrefix + resource,
-            handle!.LockId,
+            handle!.LeaseId,
             "foreign-lock",
             TimeSpan.FromSeconds(10),
             AbortToken
         );
 
-        for (var i = 0; i < 10 && !handle!.HandleLostToken.IsCancellationRequested; i++)
+        for (var i = 0; i < 10 && !handle!.LostToken.IsCancellationRequested; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(6));
-            await _DrainUntilAsync(() => handle.HandleLostToken.IsCancellationRequested);
+            await _DrainUntilAsync(() => handle.LostToken.IsCancellationRequested);
         }
 
         // then - polling cadence alone (no nudge) was sufficient to detect loss.
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeTrue();
+        handle!.LostToken.IsCancellationRequested.Should().BeTrue();
     }
 
-    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options = null) =>
+    private DistributedLock _CreateProvider(DistributedLockOptions? options = null) =>
         _CreateProvider(options, Substitute.For<IOutboxBus>());
 
-    private DistributedLockProvider _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
+    private DistributedLock _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
     {
         _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
 
-        return new DistributedLockProvider(
+        return new DistributedLock(
             _storage,
             outboxBus,
             options ?? new DistributedLockOptions(),
             _longIdGenerator,
             _timeProvider,
-            LoggerFactory.CreateLogger<DistributedLockProvider>()
+            LoggerFactory.CreateLogger<DistributedLock>()
         );
     }
 
-    private static async Task _AcquireMonitoredHandleAssertRegisteredAndDropReference(
-        DistributedLockProvider provider,
-        string resource
-    )
+    private static async Task _AcquireMonitoredHandleAndDropReference(DistributedLock provider, string resource)
     {
         var handle = await provider.TryAcquireAsync(
             resource,

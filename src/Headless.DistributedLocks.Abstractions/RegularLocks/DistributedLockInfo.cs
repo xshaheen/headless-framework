@@ -5,13 +5,16 @@ namespace Headless.DistributedLocks;
 
 /// <summary>Information about an active resource lock.</summary>
 [PublicAPI]
-public sealed record LockInfo
+public sealed record DistributedLockInfo
 {
     /// <summary>The resource name that is locked.</summary>
     public required string Resource { get; init; }
 
-    /// <summary>The unique identifier of the lock holder.</summary>
-    public required string LockId { get; init; }
+    /// <summary>
+    /// The unique identifier of the lock holder, or null when the backend can observe the resource is locked
+    /// but cannot surface the current holder identity on the inspection path.
+    /// </summary>
+    public required string? LeaseId { get; init; }
 
     /// <summary>
     /// A per-resource monotonic grant counter used by protected resources to reject stale writes,
@@ -20,7 +23,7 @@ public sealed record LockInfo
     /// <remarks>
     /// The inspection path (<c>GetLockInfoAsync</c> / <c>ListActiveLocksAsync</c>) reports null for
     /// backends whose fence is stored separately (for example Redis); the live token is delivered on
-    /// the acquire handle's <see cref="IDistributedLock.FencingToken"/>.
+    /// the acquire handle's <see cref="IDistributedLease.FencingToken"/>.
     /// </remarks>
     public long? FencingToken { get; init; }
 

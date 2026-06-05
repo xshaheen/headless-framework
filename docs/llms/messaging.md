@@ -917,22 +917,22 @@ var info = new FailedInfo
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
 
 ```csharp
-// Instance overload — when you already have an IDistributedLockProvider
-var lockProvider = new MyDistributedLockProvider(...);
+// Instance overload — when you already have an IDistributedLock
+var lockProvider = new MyDistributedLock(...);
 builder.Services.AddHeadlessMessaging(setup => { ... })
     .UseDistributedLock(lockProvider);
 
 // Factory overload — when the provider depends on other DI services
 builder.Services.AddHeadlessMessaging(setup => { ... })
-    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
 ```
 
-Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLock` registered at the application level for other purposes.
 
 ### What this is and isn't (correctness vs coordination)
 
@@ -955,10 +955,10 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### Requirements
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
+- Without a real provider, only `NoOpDistributedLock` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
 - `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
 
-**NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
+**NoOp introspection contract:** when `NoOpDistributedLock` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
 
 ### Lock names
 
@@ -969,7 +969,7 @@ Both names follow the literal pattern shown above. They are constructed internal
 
 `{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
-**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
+**When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required.
 
 ### EventIds
 

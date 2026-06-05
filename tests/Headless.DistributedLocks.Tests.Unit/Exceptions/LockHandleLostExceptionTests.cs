@@ -12,15 +12,15 @@ public sealed class LockHandleLostExceptionTests : TestBase
     {
         // given
         var resource = Faker.Random.AlphaNumeric(10);
-        var lockId = Faker.Random.Guid().ToString();
+        var leaseId = Faker.Random.Guid().ToString();
 
         // when
-        var exception = new LockHandleLostException(resource, lockId);
+        var exception = new LockHandleLostException(resource, leaseId);
 
         // then
         exception.Resource.Should().Be(resource);
-        exception.LockId.Should().Be(lockId);
-        exception.Message.Should().Contain(resource).And.Contain(lockId);
+        exception.LeaseId.Should().Be(leaseId);
+        exception.Message.Should().Contain(resource).And.Contain(leaseId);
     }
 
     [Theory]
@@ -28,22 +28,22 @@ public sealed class LockHandleLostExceptionTests : TestBase
     [InlineData("", "lock-id")]
     [InlineData("resource", null)]
     [InlineData("resource", "")]
-    public void should_throw_when_resource_or_lock_id_is_null_or_whitespace(string? resource, string? lockId)
+    public void should_throw_when_resource_or_lock_id_is_null_or_whitespace(string? resource, string? leaseId)
     {
         var act1 = () =>
         {
-            _ = new LockHandleLostException(resource!, lockId!);
+            _ = new LockHandleLostException(resource!, leaseId!);
         };
         act1.Should().Throw<ArgumentException>();
 
         var act2 = () =>
         {
-            _ = new LockHandleLostException(resource!, lockId!, "message");
+            _ = new LockHandleLostException(resource!, leaseId!, "message");
         };
         act2.Should().Throw<ArgumentException>();
 
         var act3 = () =>
-            _ = new LockHandleLostException(resource!, lockId!, "message", new InvalidOperationException());
+            _ = new LockHandleLostException(resource!, leaseId!, "message", new InvalidOperationException());
         act3.Should().Throw<ArgumentException>();
     }
 

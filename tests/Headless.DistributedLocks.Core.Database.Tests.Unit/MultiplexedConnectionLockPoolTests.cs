@@ -155,7 +155,7 @@ public sealed class MultiplexedConnectionLockPoolTests : TestBase
         });
     }
 
-    private async Task<IDistributedLock?> _AcquireAsync(
+    private async Task<IDistributedLease?> _AcquireAsync(
         MultiplexedConnectionLockPool pool,
         string resource,
         FakeSynchronizationStrategy strategy

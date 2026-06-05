@@ -13,14 +13,14 @@ using Polly.Retry;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class DistributedLockProvider(
+public sealed class DistributedLock(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions lockOptions,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
-    ILogger<DistributedLockProvider> logger
-) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
+    ILogger<DistributedLock> logger
+) : IDistributedLock, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
@@ -81,7 +81,7 @@ public sealed class DistributedLockProvider(
 
     #region Acquire
 
-    public async Task<IDistributedLock> AcquireAsync(
+    public async Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -99,7 +99,7 @@ public sealed class DistributedLockProvider(
             : new LockAcquisitionTimeoutException(resource);
     }
 
-    public async Task<IDistributedLock?> TryAcquireAsync(
+    public async Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -121,9 +121,9 @@ public sealed class DistributedLockProvider(
         var monitorLease = monitoring != LockMonitoringMode.None;
         var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
-        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
 
-        logger.LogAttemptingToAcquireLock(resource, lockId);
+        logger.LogAttemptingToAcquireLock(resource, leaseId);
 
         using var activity = _StartLockActivity(resource);
         var timestamp = timeProvider.GetTimestamp();
@@ -139,7 +139,7 @@ public sealed class DistributedLockProvider(
         {
             return await _TryAcquireOnceAsync(
                     resource,
-                    lockId,
+                    leaseId,
                     timeUntilExpires,
                     timestamp,
                     releaseOnDispose,
@@ -176,14 +176,14 @@ public sealed class DistributedLockProvider(
                 // Try to acquire the lock
                 try
                 {
-                    acquireResult = await _storage.InsertAsync(resource, lockId, timeUntilExpires, attemptToken);
+                    acquireResult = await _storage.InsertAsync(resource, leaseId, timeUntilExpires, attemptToken);
                 }
                 catch (OperationCanceledException)
                 {
                     // Cancellation may have fired after the storage accepted the write but
                     // before we received the response. Attempt best-effort cleanup so we
                     // don't strand an orphan lock until TTL expiry.
-                    await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+                    await _TryReleaseOrphanLockAsync(resource, leaseId).ConfigureAwait(false);
 
                     if (cancellationToken.IsCancellationRequested)
                     {
@@ -195,7 +195,7 @@ public sealed class DistributedLockProvider(
                 catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
                 {
                     // Swallow transient errors (network, timeout) and retry
-                    logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+                    logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
                 }
 
                 if (acquireResult.Acquired)
@@ -204,14 +204,14 @@ public sealed class DistributedLockProvider(
                 }
 
                 // Failed to acquire lock either because it's already locked or an error occurred
-                logger.LogFailedToAcquireLock(resource, lockId);
+                logger.LogFailedToAcquireLock(resource, leaseId);
 
                 if (cts.IsCancellationRequested)
                 {
                     // Log only if cancellation was requested from the caller
                     if (!cancellationToken.IsCancellationRequested)
                     {
-                        logger.LogCancellationRequested(resource, lockId);
+                        logger.LogCancellationRequested(resource, leaseId);
                     }
 
                     break;
@@ -221,7 +221,7 @@ public sealed class DistributedLockProvider(
 
                 // Use exponential backoff instead of storage call
                 var delayAmount = DistributedLockCoreHelpers.GetBackoffDelay(retryAttempt++);
-                logger.LogDelayBeforeRetry(resource, lockId, delayAmount);
+                logger.LogDelayBeforeRetry(resource, leaseId, delayAmount);
 
                 // Wait until we get a message saying the lock was released by (autoResetEvent.Target.Set())
                 // or delayAmount has elapsed
@@ -248,13 +248,13 @@ public sealed class DistributedLockProvider(
 
             if (cts.IsCancellationRequested)
             {
-                logger.LogCancellationRequestedAfter(resource, lockId, timeWaitedForLock);
+                logger.LogCancellationRequestedAfter(resource, leaseId, timeWaitedForLock);
 
                 cancellationToken.ThrowIfCancellationRequested();
             }
             else
             {
-                logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
+                logger.LogFailedToAcquireLockAfter(resource, leaseId, timeWaitedForLock);
             }
 
             return null;
@@ -262,16 +262,16 @@ public sealed class DistributedLockProvider(
 
         if (timeWaitedForLock > _LongLockWarningThreshold)
         {
-            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+            logger.LogLongLockAcquired(resource, leaseId, timeWaitedForLock);
         }
         else
         {
-            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+            logger.LogAcquiredLock(resource, leaseId, timeWaitedForLock);
         }
 
         return _CreateLockHandle(
             resource,
-            lockId,
+            leaseId,
             acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -281,9 +281,9 @@ public sealed class DistributedLockProvider(
         );
     }
 
-    private async Task<IDistributedLock?> _TryAcquireOnceAsync(
+    private async Task<IDistributedLease?> _TryAcquireOnceAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires,
         long timestamp,
         bool releaseOnDispose,
@@ -310,7 +310,7 @@ public sealed class DistributedLockProvider(
         try
         {
             acquireResult = await _storage
-                .InsertAsync(resource, lockId, timeUntilExpires, attemptToken)
+                .InsertAsync(resource, leaseId, timeUntilExpires, attemptToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -318,7 +318,7 @@ public sealed class DistributedLockProvider(
             // Best-effort orphan cleanup in case the storage accepted the
             // write but the response was preempted by the safety deadline
             // or caller cancellation.
-            await _TryReleaseOrphanLockAsync(resource, lockId).ConfigureAwait(false);
+            await _TryReleaseOrphanLockAsync(resource, leaseId).ConfigureAwait(false);
 
             if (callerToken.IsCancellationRequested)
             {
@@ -333,7 +333,7 @@ public sealed class DistributedLockProvider(
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
         {
-            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+            logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
             acquireResult = DistributedLockAcquireResult.Failed;
         }
 
@@ -343,22 +343,22 @@ public sealed class DistributedLockProvider(
         if (!acquireResult.Acquired)
         {
             DistributedLockMetrics.LockFailed.Add(1);
-            logger.LogFailedToAcquireLockAfter(resource, lockId, timeWaitedForLock);
+            logger.LogFailedToAcquireLockAfter(resource, leaseId, timeWaitedForLock);
             return null;
         }
 
         if (timeWaitedForLock > _LongLockWarningThreshold)
         {
-            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+            logger.LogLongLockAcquired(resource, leaseId, timeWaitedForLock);
         }
         else
         {
-            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+            logger.LogAcquiredLock(resource, leaseId, timeWaitedForLock);
         }
 
         return _CreateLockHandle(
             resource,
-            lockId,
+            leaseId,
             acquireResult.FencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -370,7 +370,7 @@ public sealed class DistributedLockProvider(
 
     private DisposableDistributedLock _CreateLockHandle(
         string resource,
-        string lockId,
+        string leaseId,
         long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
@@ -381,7 +381,7 @@ public sealed class DistributedLockProvider(
     {
         var handle = new DisposableDistributedLock(
             resource,
-            lockId,
+            leaseId,
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -402,7 +402,7 @@ public sealed class DistributedLockProvider(
 #pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
         var monitor = new LeaseMonitor(handle, timeProvider, logger);
 #pragma warning restore CA2000
-        _monitorRegistry.Register(resource, lockId, monitor);
+        _monitorRegistry.Register(resource, leaseId, monitor);
         handle.AttachMonitor(monitor);
 
         return handle;
@@ -465,16 +465,16 @@ public sealed class DistributedLockProvider(
         }
     }
 
-    private async Task _TryReleaseOrphanLockAsync(string resource, string lockId)
+    private async Task _TryReleaseOrphanLockAsync(string resource, string leaseId)
     {
         try
         {
             using var cleanupCts = timeProvider.CreateCancellationTokenSource(_OrphanLockCleanupTimeout);
-            await _storage.RemoveIfEqualAsync(resource, lockId, cleanupCts.Token).ConfigureAwait(false);
+            await _storage.RemoveIfEqualAsync(resource, leaseId, cleanupCts.Token).ConfigureAwait(false);
         }
         catch (Exception e)
         {
-            logger.LogBestEffortLockCleanupFailed(e, resource, lockId);
+            logger.LogBestEffortLockCleanupFailed(e, resource, leaseId);
         }
     }
 
@@ -482,12 +482,12 @@ public sealed class DistributedLockProvider(
 
     #region Release
 
-    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
-        logger.LogReleaseStarted(resource, lockId);
+        logger.LogReleaseStarted(resource, leaseId);
 
         // If a transient exception fires AFTER storage has already deleted the row but BEFORE
         // we read the response, the retry's `RemoveIfEqualAsync` will return `false` (the
@@ -499,7 +499,7 @@ public sealed class DistributedLockProvider(
 
         var storageRef = _storage;
         var resourceRef = resource;
-        var lockIdRef = lockId;
+        var lockIdRef = leaseId;
 
         // Cap the release pipeline at DisposeTimeout so application shutdown is not blocked by
         // sustained storage unavailability. On timeout the pipeline continues in the background
@@ -532,7 +532,7 @@ public sealed class DistributedLockProvider(
         }
         catch (TimeoutException)
         {
-            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
+            logger.LogLockReleaseTimedOut(resource, leaseId, _disposeTimeout);
             // Background pipeline may still succeed and set observedAttemptSucceeded; treat the
             // caller's release as not-yet-confirmed so we skip the outbox publish (waiters will
             // fall back to polling, which is the same path as a never-published release).
@@ -544,7 +544,7 @@ public sealed class DistributedLockProvider(
             // Deregister after confirmed storage removal but before publishing the outbox
             // message. If release fails or retries are still in progress, the monitor must
             // remain visible so lease-loss detection continues for the still-held lock.
-            var monitor = _monitorRegistry.TryDeregister(resource, lockId);
+            var monitor = _monitorRegistry.TryDeregister(resource, leaseId);
 
             if (monitor is not null)
             {
@@ -554,7 +554,7 @@ public sealed class DistributedLockProvider(
                 }
                 catch (Exception exception)
                 {
-                    logger.LogLeaseMonitorFaulted(exception, resource, lockId);
+                    logger.LogLeaseMonitorFaulted(exception, resource, leaseId);
                 }
             }
         }
@@ -563,7 +563,7 @@ public sealed class DistributedLockProvider(
         // Publish notifies waiters immediately; if skipped, waiters retry via backoff.
         if (removed && _outboxBus is not null)
         {
-            var distributedLockReleased = new DistributedLockReleased(resource, lockId);
+            var distributedLockReleased = new DistributedLockReleased(resource, leaseId);
 
             try
             {
@@ -574,11 +574,11 @@ public sealed class DistributedLockProvider(
             catch (Exception ex)
             {
                 // Release already succeeded — do not rethrow. Waiters will fall back to polling backoff.
-                logger.LogLockReleasePublishFailed(ex, resource, lockId);
+                logger.LogLockReleasePublishFailed(ex, resource, leaseId);
             }
         }
 
-        logger.LogReleaseReleased(resource, lockId);
+        logger.LogReleaseReleased(resource, leaseId);
     }
 
     #endregion
@@ -587,30 +587,30 @@ public sealed class DistributedLockProvider(
 
     public Task<bool> RenewAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
         timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
             timeUntilExpires,
             DefaultTimeUntilExpires
         );
 
-        logger.LogRenewingLock(resource, lockId, timeUntilExpires);
+        logger.LogRenewingLock(resource, leaseId, timeUntilExpires);
 
         return _queryPipeline
             .ExecuteAsync(
                 static async (state, ct) =>
                 {
-                    var (storage, resource, lockId, ttl) = state;
+                    var (storage, resource, leaseId, ttl) = state;
 
-                    return await storage.ReplaceIfEqualAsync(resource, lockId, lockId, ttl, ct).ConfigureAwait(false);
+                    return await storage.ReplaceIfEqualAsync(resource, leaseId, leaseId, ttl, ct).ConfigureAwait(false);
                 },
-                (_storage, resource, lockId, timeUntilExpires),
+                (_storage, resource, leaseId, timeUntilExpires),
                 cancellationToken
             )
             .AsTask();
@@ -620,7 +620,7 @@ public sealed class DistributedLockProvider(
 
     #region Lease validation
 
-    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
@@ -668,11 +668,11 @@ public sealed class DistributedLockProvider(
             .AsTask();
     }
 
-    public async Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    public async Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
-        var lockId = await _queryPipeline
+        var leaseId = await _queryPipeline
             .ExecuteAsync(
                 static async (state, ct) => await state._storage.GetAsync(state.resource, ct).ConfigureAwait(false),
                 (_storage, resource),
@@ -680,23 +680,23 @@ public sealed class DistributedLockProvider(
             )
             .ConfigureAwait(false);
 
-        if (lockId is null)
+        if (leaseId is null)
         {
             return null;
         }
 
         var ttl = await _storage.GetExpirationAsync(resource, cancellationToken).ConfigureAwait(false);
 
-        return new LockInfo
+        return new DistributedLockInfo
         {
             Resource = resource,
-            LockId = lockId,
+            LeaseId = leaseId,
             FencingToken = null,
             TimeToLive = ttl,
         };
     }
 
-    public async Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         var locks = await _queryPipeline
             .ExecuteAsync(
@@ -707,14 +707,14 @@ public sealed class DistributedLockProvider(
             )
             .ConfigureAwait(false);
 
-        var result = new List<LockInfo>(locks.Count);
+        var result = new List<DistributedLockInfo>(locks.Count);
 
         foreach (var (resource, info) in locks)
         {
-            var lockInfo = new LockInfo
+            var lockInfo = new DistributedLockInfo
             {
                 Resource = resource,
-                LockId = info.LockId,
+                LeaseId = info.LeaseId,
                 FencingToken = null,
                 TimeToLive = info.Ttl,
             };
@@ -757,7 +757,7 @@ public sealed class DistributedLockProvider(
 
     private static ResiliencePipeline _BuildQueryPipeline(
         TimeProvider timeProvider,
-        ILogger<DistributedLockProvider> logger
+        ILogger<DistributedLock> logger
     )
     {
         return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
@@ -801,7 +801,7 @@ public sealed class DistributedLockProvider(
 
     void ICanReceiveLockReleased.OnLockReleased(DistributedLockReleased message)
     {
-        logger.LogGotLockReleasedMessage(message.Resource, message.LockId);
+        logger.LogGotLockReleasedMessage(message.Resource, message.LeaseId);
 
         // Signal waiters immediately when lock released instead of waiting for delay timeout.
         // No lock needed - ConcurrentDictionary.TryGetValue is thread-safe for reads.
@@ -815,9 +815,9 @@ public sealed class DistributedLockProvider(
         _monitorRegistry.NudgeActive(message.Resource);
     }
 
-    private void _DeregisterMonitor(string resource, string lockId)
+    private void _DeregisterMonitor(string resource, string leaseId)
     {
-        _ = _monitorRegistry.TryDeregister(resource, lockId);
+        _ = _monitorRegistry.TryDeregister(resource, leaseId);
     }
 
     internal int GetActiveMonitorCount(string resource)
@@ -848,7 +848,7 @@ public sealed class DistributedLockProvider(
             logger.LogProcessingLockReleased(context.MessageId, context.Message.Resource);
 
             // Fan the released signal out to every provider that can wake waiters (mutex,
-            // semaphore, reader-writer). Both DistributedLockProvider and
+            // semaphore, reader-writer). Both DistributedLock and
             // DistributedSemaphoreProvider are registered under ICanReceiveLockReleased via
             // TryAddEnumerable so this seam stays decoupled from the concrete provider types.
             foreach (var receiver in receivers)

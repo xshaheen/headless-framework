@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// <see cref="IDistributedLockProvider"/> implementation over the connection-scoped seams. A custom database
+/// <see cref="IDistributedLock"/> implementation over the connection-scoped seams. A custom database
 /// provider supplies an <see cref="IConnectionScopedLockStorage"/>, an <see cref="IReleaseSignal"/>, and an
 /// optional <see cref="IFencingTokenSource"/>; this type owns the portable concerns: single-attempt acquire
 /// plus retry loop, acquire-timeout contract, jittered polling backed by the release signal, waiter caps for
@@ -19,7 +19,8 @@ namespace Headless.DistributedLocks;
 /// <remarks>
 /// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> is a no-op success and
 /// <see cref="GetExpirationAsync"/> returns <see langword="null"/>. Lock loss is tied to the storage
-/// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/> only when
+/// acquire-time monitoring is enabled.
 /// </remarks>
 /// <param name="storage">Backend storage seam performing the native acquire/release.</param>
 /// <param name="releaseSignal">Wake-up seam used between retry attempts; polling is the correctness fallback.</param>
@@ -30,22 +31,22 @@ namespace Headless.DistributedLocks;
 /// <param name="fencingTokenSource">Optional source of monotonic fencing tokens for exclusive locks.</param>
 /// <param name="pollingFallback">Maximum delay between retry attempts; defaults to 100ms.</param>
 [PublicAPI]
-public sealed class ConnectionScopedDistributedLockProvider(
+public sealed class ConnectionScopedDistributedLock(
     IConnectionScopedLockStorage storage,
     IReleaseSignal releaseSignal,
     DistributedLockOptions options,
     ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider,
-    ILogger<ConnectionScopedDistributedLockProvider> logger,
+    ILogger<ConnectionScopedDistributedLock> logger,
     IFencingTokenSource? fencingTokenSource = null,
     TimeSpan? pollingFallback = null
-) : IDistributedLockProvider
+) : IDistributedLock
 {
     private static readonly TimeSpan _DefaultPollingFallback = TimeSpan.FromMilliseconds(100);
     private readonly TimeSpan _pollingFallback = pollingFallback ?? _DefaultPollingFallback;
 
     // Per-resource waiter accounting for DoS protection, sharing the same cap enforcement as the
-    // sibling DistributedLockProvider via the common WaiterCapRegistry.
+    // sibling DistributedLock via the common WaiterCapRegistry.
     private readonly WaiterCapRegistry _waiterCaps = new(
         options.MaxConcurrentWaitingResources,
         options.MaxWaitersPerResource
@@ -55,7 +56,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
     public TimeSpan DefaultAcquireTimeout { get; init; } = TimeSpan.FromSeconds(30);
 
-    public Task<IDistributedLock> AcquireAsync(
+    public Task<IDistributedLease> AcquireAsync(
         string resource,
         DistributedLockAcquireOptions? acquireOptions = null,
         CancellationToken cancellationToken = default
@@ -64,7 +65,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return _AcquireCoreAsync(throwOnTimeout: true, resource, acquireOptions, isShared: false, cancellationToken)!;
     }
 
-    public Task<IDistributedLock?> TryAcquireAsync(
+    public Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         DistributedLockAcquireOptions? acquireOptions = null,
         CancellationToken cancellationToken = default
@@ -73,7 +74,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return _AcquireCoreAsync(throwOnTimeout: false, resource, acquireOptions, isShared: false, cancellationToken);
     }
 
-    internal Task<IDistributedLock?> TryAcquireAsync(
+    internal Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         bool isShared,
         DistributedLockAcquireOptions? acquireOptions = null,
@@ -83,7 +84,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return _AcquireCoreAsync(throwOnTimeout: false, resource, acquireOptions, isShared, cancellationToken);
     }
 
-    private async Task<IDistributedLock?> _AcquireCoreAsync(
+    private async Task<IDistributedLease?> _AcquireCoreAsync(
         bool throwOnTimeout,
         string resource,
         DistributedLockAcquireOptions? acquireOptions,
@@ -102,18 +103,18 @@ public sealed class ConnectionScopedDistributedLockProvider(
         }
 
         var acquireTimeout = acquireOptions?.AcquireTimeout ?? DefaultAcquireTimeout;
+        var observeLoss = (acquireOptions?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
         var started = timeProvider.GetTimestamp();
-        var deadline =
-            acquireTimeout == Timeout.InfiniteTimeSpan
-                ? DateTimeOffset.MaxValue
-                : timeProvider.GetUtcNow().Add(acquireTimeout);
-        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var deadline = acquireTimeout == Timeout.InfiniteTimeSpan
+            ? DateTimeOffset.MaxValue
+            : timeProvider.GetUtcNow().Add(acquireTimeout);
+        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var isWaiting = false;
 
         using var activity = _StartLockActivity(resource);
 
         // Records the wait-time histogram plus the failure counter for any non-acquiring outcome (timeout,
-        // past-deadline, or fencing failure), mirroring the sibling DistributedLockProvider's instrumentation.
+        // past-deadline, or fencing failure), mirroring the sibling DistributedLock's instrumentation.
         void recordFailedAcquisition()
         {
             DistributedLockMetrics.LockWaitTime.Record(timeProvider.GetElapsedTime(started).TotalMilliseconds);
@@ -126,32 +127,8 @@ public sealed class ConnectionScopedDistributedLockProvider(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var remainingAcquireTimeout = acquireTimeout == Timeout.InfiniteTimeSpan
-                    ? Timeout.InfiniteTimeSpan
-                    : acquireTimeout == TimeSpan.Zero
-                        ? TimeSpan.Zero
-                        : deadline - timeProvider.GetUtcNow();
-
-                if (remainingAcquireTimeout < TimeSpan.Zero)
-                {
-                    if (!throwOnTimeout)
-                    {
-                        return null;
-                    }
-
-                    throw acquireTimeout == TimeSpan.Zero
-                        ? LockAcquisitionTimeoutException.ForTryOnceContention(resource)
-                        : new LockAcquisitionTimeoutException(resource);
-                }
-
-                if (storage.BlocksServerSide && acquireTimeout != TimeSpan.Zero && !isWaiting)
-                {
-                    _waiterCaps.Enter(resource);
-                    isWaiting = true;
-                }
-
                 var handle = await storage
-                    .TryAcquireAsync(resource, lockId, isShared, remainingAcquireTimeout, cancellationToken)
+                    .TryAcquireAsync(resource, leaseId, isShared, observeLoss, cancellationToken)
                     .ConfigureAwait(false);
 
                 if (handle is not null)
@@ -174,7 +151,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
                         }
                         catch (Exception releaseException)
                         {
-                            logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, lockId);
+                            logger.LogConnectionScopedLockReleaseFailed(releaseException, resource, leaseId);
                         }
 
                         recordFailedAcquisition();
@@ -271,7 +248,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
     public Task<bool> RenewAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     )
@@ -280,15 +257,15 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return Task.FromResult(true);
     }
 
-    public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return storage.GetLocalLockIdAsync(resource, cancellationToken).AsTask();
+        return storage.GetLocalLeaseIdAsync(resource, cancellationToken).AsTask();
     }
 
-    public async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
-        await storage.ReleaseAsync(resource, lockId, cancellationToken).ConfigureAwait(false);
-        await _PublishReleaseAsync(resource, lockId).ConfigureAwait(false);
+        await storage.ReleaseAsync(resource, leaseId, cancellationToken).ConfigureAwait(false);
+        await _PublishReleaseAsync(resource, leaseId).ConfigureAwait(false);
     }
 
     public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -316,14 +293,25 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return Task.FromResult<TimeSpan?>(null);
     }
 
-    public async Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    public async Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return (await storage.ListActiveLocksAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(x =>
-            string.Equals(x.Resource, resource, StringComparison.Ordinal)
-        );
+        if (!await storage.IsLockedAsync(resource, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var leaseId = await storage.GetLocalLeaseIdAsync(resource, cancellationToken).ConfigureAwait(false);
+
+        return new DistributedLockInfo
+        {
+            Resource = resource,
+            LeaseId = leaseId,
+            TimeToLive = null,
+            FencingToken = null,
+        };
     }
 
-    public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
     {
         return storage.ListActiveLocksAsync(cancellationToken).AsTask();
     }
@@ -336,10 +324,10 @@ public sealed class ConnectionScopedDistributedLockProvider(
     private async ValueTask _ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken)
     {
         await storage.ReleaseAsync(handle, cancellationToken).ConfigureAwait(false);
-        await _PublishReleaseAsync(handle.Resource, handle.LockId).ConfigureAwait(false);
+        await _PublishReleaseAsync(handle.Resource, handle.LeaseId).ConfigureAwait(false);
     }
 
-    private async ValueTask _PublishReleaseAsync(string resource, string lockId)
+    private async ValueTask _PublishReleaseAsync(string resource, string leaseId)
     {
         try
         {
@@ -350,7 +338,7 @@ public sealed class ConnectionScopedDistributedLockProvider(
         }
         catch (Exception exception)
         {
-            logger.LogReleaseWakePublishFailed(exception, resource, lockId);
+            logger.LogReleaseWakePublishFailed(exception, resource, leaseId);
         }
     }
 

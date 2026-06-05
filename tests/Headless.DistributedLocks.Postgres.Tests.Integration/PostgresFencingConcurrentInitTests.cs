@@ -35,7 +35,7 @@ public sealed class PostgresFencingConcurrentInitTests(PostgresDistributedLockFi
                     Task.Run(
                         async () =>
                         {
-                            var locks = p.GetRequiredService<IDistributedLockProvider>();
+                            var locks = p.GetRequiredService<IDistributedLock>();
 
                             // Distinct resources so the racers do not block on each other's advisory lock —
                             // the point is to race the sequence init, not the lock itself.

@@ -52,7 +52,7 @@ internal sealed class DistributedSemaphoreProvider(
         return new DistributedSemaphore(this, resource, maxCount);
     }
 
-    internal async Task<IDistributedLock> AcquireAsync(
+    internal async Task<IDistributedLease> AcquireAsync(
         string resource,
         int maxCount,
         DistributedLockAcquireOptions? options = null,
@@ -69,7 +69,7 @@ internal sealed class DistributedSemaphoreProvider(
             );
     }
 
-    internal async Task<IDistributedLock?> TryAcquireAsync(
+    internal async Task<IDistributedLease?> TryAcquireAsync(
         string resource,
         int maxCount,
         DistributedLockAcquireOptions? acquireOptions = null,
@@ -106,7 +106,7 @@ internal sealed class DistributedSemaphoreProvider(
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var acquireTimeout = acquireOptions.AcquireTimeout;
-        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var timestamp = timeProvider.GetTimestamp();
 
         using var activity = _StartSemaphoreActivity(resource, maxCount);
@@ -124,7 +124,7 @@ internal sealed class DistributedSemaphoreProvider(
             {
                 singleResult = await _TryAcquireStorageAsync(
                         resource,
-                        lockId,
+                        leaseId,
                         maxCount,
                         timeUntilExpires,
                         timestamp,
@@ -137,7 +137,7 @@ internal sealed class DistributedSemaphoreProvider(
                 // Cancellation may have fired after storage accepted the ZADD but before we
                 // received the reply; best-effort cleanup so we don't strand an orphan slot
                 // (holding capacity) until the lease TTL expires.
-                await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+                await _TryReleaseOrphanSlotAsync(resource, leaseId).ConfigureAwait(false);
 
                 if (cancellationToken.IsCancellationRequested)
                 {
@@ -158,7 +158,7 @@ internal sealed class DistributedSemaphoreProvider(
             return singleResult.Acquired
                 ? _CreateSlot(
                     resource,
-                    lockId,
+                    leaseId,
                     singleResult.FencingToken,
                     leaseDuration,
                     singleWait,
@@ -184,13 +184,13 @@ internal sealed class DistributedSemaphoreProvider(
                 // the first attempt, preempting the storage call before it can run. Fall back to
                 // the caller's bare token on that first attempt so acquisition gets one real
                 // chance; retries use the linked token so the caller's budget governs the loop.
-                // Mirrors DistributedLockProvider (Issue #282).
+                // Mirrors DistributedLock (Issue #282).
                 var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
                 isFirstAttempt = false;
 
                 result = await _TryAcquireStorageAsync(
                         resource,
-                        lockId,
+                        leaseId,
                         maxCount,
                         timeUntilExpires,
                         timestamp,
@@ -222,7 +222,7 @@ internal sealed class DistributedSemaphoreProvider(
         {
             // Cancellation may have fired after storage accepted the ZADD but before we received
             // the reply; best-effort cleanup so we don't strand an orphan slot until lease TTL.
-            await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+            await _TryReleaseOrphanSlotAsync(resource, leaseId).ConfigureAwait(false);
 
             if (cancellationToken.IsCancellationRequested)
             {
@@ -248,16 +248,16 @@ internal sealed class DistributedSemaphoreProvider(
 
         if (timeWaitedForLock > _LongLockWarningThreshold)
         {
-            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+            logger.LogLongLockAcquired(resource, leaseId, timeWaitedForLock);
         }
         else
         {
-            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+            logger.LogAcquiredLock(resource, leaseId, timeWaitedForLock);
         }
 
         return _CreateSlot(
             resource,
-            lockId,
+            leaseId,
             result.FencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -269,32 +269,32 @@ internal sealed class DistributedSemaphoreProvider(
 
     internal Task<bool> RenewAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     )
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
         var ttl =
             DistributedLockCoreHelpers.NormalizeTimeUntilExpires(timeUntilExpires, DefaultTimeUntilExpires)
             ?? DefaultTimeUntilExpires;
 
-        return storage.TryExtendAsync(_StorageResource(resource), lockId, ttl, cancellationToken).AsTask();
+        return storage.TryExtendAsync(_StorageResource(resource), leaseId, ttl, cancellationToken).AsTask();
     }
 
-    internal Task<bool> ValidateAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    internal Task<bool> ValidateAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
-        return storage.ValidateAsync(_StorageResource(resource), lockId, cancellationToken).AsTask();
+        return storage.ValidateAsync(_StorageResource(resource), leaseId, cancellationToken).AsTask();
     }
 
-    internal async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    internal async Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
         var removed = false;
 
         try
@@ -303,10 +303,10 @@ internal sealed class DistributedSemaphoreProvider(
                 .ExecuteAsync(
                     static async (state, ct) =>
                     {
-                        var (storage, storageResource, lockId) = state;
-                        return await storage.ReleaseAsync(storageResource, lockId, ct).ConfigureAwait(false);
+                        var (storage, storageResource, leaseId) = state;
+                        return await storage.ReleaseAsync(storageResource, leaseId, ct).ConfigureAwait(false);
                     },
-                    (storage, storageResource: _StorageResource(resource), lockId),
+                    (storage, storageResource: _StorageResource(resource), leaseId),
                     CancellationToken.None
                 )
                 .AsTask()
@@ -315,10 +315,10 @@ internal sealed class DistributedSemaphoreProvider(
         }
         catch (TimeoutException)
         {
-            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
+            logger.LogLockReleaseTimedOut(resource, leaseId, _disposeTimeout);
         }
 
-        var monitor = _monitorRegistry.TryDeregister(resource, lockId);
+        var monitor = _monitorRegistry.TryDeregister(resource, leaseId);
         if (monitor is not null)
         {
             await monitor.DisposeAsync().ConfigureAwait(false);
@@ -329,12 +329,12 @@ internal sealed class DistributedSemaphoreProvider(
             try
             {
                 await _outboxBus
-                    .PublishAsync(new DistributedLockReleased(resource, lockId), cancellationToken: cancellationToken)
+                    .PublishAsync(new DistributedLockReleased(resource, leaseId), cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (Exception exception)
             {
-                logger.LogLockReleasePublishFailed(exception, resource, lockId);
+                logger.LogLockReleasePublishFailed(exception, resource, leaseId);
             }
         }
     }
@@ -348,7 +348,7 @@ internal sealed class DistributedSemaphoreProvider(
 
     private async ValueTask<DistributedLockAcquireResult> _TryAcquireStorageAsync(
         string resource,
-        string lockId,
+        string leaseId,
         int maxCount,
         TimeSpan ttl,
         long startTimestamp,
@@ -358,39 +358,39 @@ internal sealed class DistributedSemaphoreProvider(
         try
         {
             return await storage
-                .TryAcquireAsync(_StorageResource(resource), lockId, maxCount, ttl, cancellationToken)
+                .TryAcquireAsync(_StorageResource(resource), leaseId, maxCount, ttl, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception e)
             when (e is not (OperationCanceledException or ObjectDisposedException or InvalidOperationException))
         {
-            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, startTimestamp);
+            logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, startTimestamp);
 
             // A transient backend failure may surface after the acquire script already committed
-            // the ZADD; best-effort cleanup keyed on the unique lockId is idempotent and prevents
+            // the ZADD; best-effort cleanup keyed on the unique leaseId is idempotent and prevents
             // a stranded slot from holding capacity until the lease TTL expires.
-            await _TryReleaseOrphanSlotAsync(resource, lockId).ConfigureAwait(false);
+            await _TryReleaseOrphanSlotAsync(resource, leaseId).ConfigureAwait(false);
 
             return DistributedLockAcquireResult.Failed;
         }
     }
 
-    private async Task _TryReleaseOrphanSlotAsync(string resource, string lockId)
+    private async Task _TryReleaseOrphanSlotAsync(string resource, string leaseId)
     {
         try
         {
             using var cleanupCts = timeProvider.CreateCancellationTokenSource(_OrphanSlotCleanupTimeout);
-            await storage.ReleaseAsync(_StorageResource(resource), lockId, cleanupCts.Token).ConfigureAwait(false);
+            await storage.ReleaseAsync(_StorageResource(resource), leaseId, cleanupCts.Token).ConfigureAwait(false);
         }
         catch (Exception e)
         {
-            logger.LogBestEffortLockCleanupFailed(e, resource, lockId);
+            logger.LogBestEffortLockCleanupFailed(e, resource, leaseId);
         }
     }
 
     private DisposableSemaphoreSlot _CreateSlot(
         string resource,
-        string lockId,
+        string leaseId,
         long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
@@ -401,7 +401,7 @@ internal sealed class DistributedSemaphoreProvider(
     {
         var handle = new DisposableSemaphoreSlot(
             resource,
-            lockId,
+            leaseId,
             fencingToken,
             leaseDuration,
             timeWaitedForLock,
@@ -422,7 +422,7 @@ internal sealed class DistributedSemaphoreProvider(
 #pragma warning disable CA2000
         var monitor = new LeaseMonitor(handle, timeProvider, logger);
 #pragma warning restore CA2000
-        _monitorRegistry.Register(resource, lockId, monitor);
+        _monitorRegistry.Register(resource, leaseId, monitor);
         handle.AttachMonitor(monitor);
 
         return handle;
@@ -501,9 +501,9 @@ internal sealed class DistributedSemaphoreProvider(
         _monitorRegistry.NudgeActive(message.Resource);
     }
 
-    private void _DeregisterMonitor(string resource, string lockId)
+    private void _DeregisterMonitor(string resource, string leaseId)
     {
-        _ = _monitorRegistry.TryDeregister(resource, lockId);
+        _ = _monitorRegistry.TryDeregister(resource, leaseId);
     }
 
     private static Activity? _StartSemaphoreActivity(string resource, int maxCount)
@@ -528,7 +528,7 @@ internal sealed class DistributedSemaphoreProvider(
 
         public int MaxCount { get; } = maxCount;
 
-        public Task<IDistributedLock> AcquireAsync(
+        public Task<IDistributedLease> AcquireAsync(
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )
@@ -536,7 +536,7 @@ internal sealed class DistributedSemaphoreProvider(
             return provider.AcquireAsync(Resource, MaxCount, options, cancellationToken);
         }
 
-        public Task<IDistributedLock?> TryAcquireAsync(
+        public Task<IDistributedLease?> TryAcquireAsync(
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
         )

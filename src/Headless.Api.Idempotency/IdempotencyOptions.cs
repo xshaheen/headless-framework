@@ -59,7 +59,7 @@ public sealed class IdempotencyOptions
     /// <summary>
     /// How the middleware reacts when the idempotency backing store throws — either the
     /// underlying <see cref="Headless.Caching.ICache"/> or the
-    /// <see cref="Headless.DistributedLocks.IDistributedLockProvider"/> used by
+    /// <see cref="Headless.DistributedLocks.IDistributedLock"/> used by
     /// <see cref="InFlightStrategy.WaitAndReplay"/>. Defaults to
     /// <see cref="OnCacheErrorBehavior.FailOpen"/>: log a warning and bypass idempotency for the
     /// failing request. Switch to <see cref="OnCacheErrorBehavior.Throw"/> for environments
@@ -236,7 +236,7 @@ internal sealed class IdempotencyOptionsValidator : AbstractValidator<Idempotenc
 /// DI-aware validator that fails fast at host startup when
 /// <see cref="IdempotencyOptions.InFlightStrategy"/> is
 /// <see cref="InFlightStrategy.WaitAndReplay"/> but no
-/// <see cref="IDistributedLockProvider"/> is registered.
+/// <see cref="IDistributedLock"/> is registered.
 /// </summary>
 internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProvider)
     : IValidateOptions<IdempotencyOptions>
@@ -248,7 +248,7 @@ internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProv
             return ValidateOptionsResult.Success;
         }
 
-        var lockProvider = serviceProvider.GetService<IDistributedLockProvider>();
+        var lockProvider = serviceProvider.GetService<IDistributedLock>();
 
         if (lockProvider is not null)
         {
@@ -257,7 +257,7 @@ internal sealed class IdempotencyOptionsDIValidator(IServiceProvider serviceProv
 
         return ValidateOptionsResult.Fail(
             $"{nameof(IdempotencyOptions)}.{nameof(IdempotencyOptions.InFlightStrategy)} = "
-                + $"{nameof(InFlightStrategy.WaitAndReplay)} requires {nameof(IDistributedLockProvider)} "
+                + $"{nameof(InFlightStrategy.WaitAndReplay)} requires {nameof(IDistributedLock)} "
                 + "to be registered. Either switch InFlightStrategy to Reject or register a distributed-lock provider."
         );
     }

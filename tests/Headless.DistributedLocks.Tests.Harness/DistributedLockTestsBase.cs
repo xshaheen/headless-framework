@@ -8,13 +8,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class DistributedLockProviderTestsBase : TestBase
+public abstract class DistributedLockTestsBase : TestBase
 {
     protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
     protected static readonly DistributedLockOptions Options = new() { KeyPrefix = "test:" };
 
-    protected abstract IDistributedLockProvider GetLockProvider();
+    protected abstract IDistributedLock GetLockProvider();
 
     /// <summary>
     /// Kills the backing session/connection that holds <paramref name="handle"/> from a separate admin connection,
@@ -38,7 +38,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         handle.Should().NotBeNull();
         handle.Resource.Should().Be(resource);
-        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.LeaseId.Should().NotBeNullOrEmpty();
         handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
@@ -51,7 +51,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await using var handle = await lockProvider.AcquireAsync(resource);
 
         handle.Resource.Should().Be(resource);
-        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.LeaseId.Should().NotBeNullOrEmpty();
         handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
@@ -183,7 +183,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await handle.DisposeAsync();
 
         (await locker.IsLockedAsync(resource)).Should().BeTrue();
-        await locker.ReleaseAsync(resource, handle.LockId);
+        await locker.ReleaseAsync(resource, handle.LeaseId);
     }
 
     public virtual async Task should_release_explicitly_when_release_on_dispose_false()
@@ -441,7 +441,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         successCount.Should().Be(2);
 
-        static Task<bool> doLockedWorkAsync(IDistributedLockProvider locker, string resource)
+        static Task<bool> doLockedWorkAsync(IDistributedLock locker, string resource)
         {
             return locker.TryUsingAsync(
                 resource: resource,
@@ -501,7 +501,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         info.Should().NotBeNull();
         info.Resource.Should().Be(resource);
-        info.LockId.Should().Be(handle.LockId);
+        info.LeaseId.Should().Be(handle.LeaseId);
         info.TimeToLive.Should().NotBeNull();
         info.TimeToLive!.Value.Should().BeCloseTo(ttl, TimeSpan.FromSeconds(5));
     }
@@ -560,7 +560,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await using var handle = await locker.TryAcquireAsync(resource);
 
         handle.Should().NotBeNull();
-        handle!.HandleLostToken.Should().Be(CancellationToken.None);
+        handle!.LostToken.Should().Be(CancellationToken.None);
     }
 
     public virtual async Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
@@ -584,7 +584,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle!.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     /// <summary>

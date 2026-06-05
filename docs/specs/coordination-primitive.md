@@ -1,0 +1,635 @@
+---
+title: Headless.Coordination — design spec
+status: in-progress (modeling)
+issue: 396
+date: 2026-06-05
+mode: design-spec (no implementation)
+---
+
+# Headless.Coordination — Design Spec
+
+> **Status:** Modeling in progress. This document is a faithful snapshot of resolved
+> design decisions and their rationale. Unresolved decisions are marked `OPEN`.
+> Nothing here is "decided" until it has an explicit **Resolution** with rationale.
+
+## 1. What we are solving
+
+Two problems are stacked. They have different urgency and must not be conflated.
+
+1. **The acute trigger (worker-id collision).** `SnowflakeId` derives its 10-bit
+   worker-id (0–1023) from the host NIC MAC's low bits, falling back to
+   `random(0,1024)`. Containers virtualize/randomize MACs → two instances silently
+   pick the same worker-id → **duplicate `long` primary keys in production**. ORM
+   (`IEntity<long>` at add-time), Messaging, and DistributedLocks all mint these.
+   This is the cheapest first slice, **not** the reason the primitive exists.
+
+2. **The structural goal (de-silo coordination).** Membership/liveness logic already
+   exists in the repo but is siloed in `Headless.Jobs.Caching.Redis` and Redis-only.
+   Run Jobs on Postgres without Redis and dead-node recovery silently vanishes;
+   Messaging has no node-level recovery at all. The goal is to extract the genuinely
+   shared concern — **liveness + identity** — once, so Jobs, Messaging, dashboards,
+   and worker-id all consume it.
+
+**Framing decision (agreed):** we are building the *correct shape* for a maybe-soon
+multi-service world, not merely patching the bug. The bug is the forcing function;
+the de-silo is the point.
+
+## 1.5 Non-goals & safety ceiling (Decision 7 — RESOLVED)
+
+`Headless.Coordination` is an **application-level coordination substrate**.
+
+**It provides:**
+- node identity;
+- incarnation-qualified liveness;
+- lifecycle events;
+- ordered live-node views;
+- lease/session integration;
+- optional acceleration for feature recovery.
+
+**It is not a consensus system. It does not provide:**
+- Raft/Paxos-style agreement;
+- split-brain-proof leadership under arbitrary network partitions;
+- cross-region linearizability;
+- transactional ownership transfer across unrelated stores;
+- a generic ownership ledger;
+- domain recovery logic.
+
+**The safety ceiling is:**
+- **fencing-safe** when consumers validate fencing tokens or incarnation-qualified owners;
+- **fail-stop** when lease/session loss is observed;
+- **fail-closed** when the authoritative store is unavailable;
+- **not consensus-safe** unless backed by a consensus-grade provider.
+
+Consumers that require consensus-grade behavior must use a consensus-backed provider
+such as Kubernetes/etcd/Consul/ZooKeeper, or an external platform primitive. This
+ceiling must be explicit in the API surface and docs (so the primitive is never cited
+as RedLock-equivalent — consistent with the repo's standing RedLock rejection).
+
+## 2. Prior art studied (source-read, not paraphrased)
+
+We read the concrete contracts of the three proven designs. They draw the **same
+boundary**:
+
+| | Stored / provider contract (dumb) | Where the algorithm lives |
+|---|---|---|
+| **Orleans `IMembershipTable`** | 8 methods: read/insert/update rows + CAS table-version + 1 CAS-free dirty-write (`UpdateIAmAlive`). Stores votes + a `SiloStatus` enum but doesn't know what they *mean* | `MembershipTableManager` (runtime): probing, suspicion, voting, declare-dead — all as ordinary CAS writes |
+| **Akka `Lease`** | 5 members: `Acquire×2`, `Release`, `CheckLease`, `Settings`. No membership, no quorum, no leadership. **No fencing token (its gap).** | The consumer (SBR / Singleton / Sharding) holds quorum, retry, what-to-do-on-loss |
+| **K8s `Lease`** | 7 dumb fields. No server-side TTL/expiry/callbacks. API server enforces only `resourceVersion` CAS | The `leaderelection` client holds the entire expiry/takeover/fail-stop algorithm |
+
+**Universal lesson:** keep the stored contract dumb; put intelligence in a
+consumer-side service. This maps onto what we already have — `IDistributedLease`
+(Acquire/Release/Renew/**FencingToken**/LostToken) is Akka's `Lease` *with the
+fencing token Akka lacks*, and `IDistributedLock` / `IDistributedReadWriteLock` are
+the acquisition primitives over dumb backend storage.
+
+**Shape fit:** we are a **K8s-shaped** problem, not an Orleans-shaped one. Orleans
+does P2P probing + quorum voting because it distrusts the store's availability for
+the liveness *decision*. Our consumers already depend on a shared DB/Redis, so we
+trust the store for ordering — K8s' "dumb store + client-side algorithm + don't
+trust remote wall clocks" template fits and **deletes the voting/suspicion oracle**.
+
+## 3. Decision surface
+
+Load-bearing (resolve first): 1–3. Downstream (gated): 4–8.
+
+| # | Decision | Status |
+|---|----------|--------|
+| 0 | DistributedLocks-first primitive shape (lock vs lease naming, owner token, fencing) | **RESOLVED** (§3a) |
+| 1 | Membership/liveness model (substrate shape, identity, clocks) | **RESOLVED** (§4) |
+| 1b | Substrate read contract (liveness-tracker vs ownership-ledger) | **RESOLVED** (§4b) |
+| 2 | Worker-id boundary — in or out of Coordination | **RESOLVED** (§5) |
+| 3 | Mutual exclusion + package decomposition | **RESOLVED** (§6) |
+| 4 | Correctness invariants & where enforced (fail-stop, clock-safe reuse, graceful release) | **RESOLVED** (§7) |
+| 5 | Consumer integration contracts (Jobs / Messaging / ORM·Locks) | **RESOLVED** (§9, verified vs code) |
+| 6 | Provider model (backends, capability tiers, conformance harness) | OPEN |
+| 7 | Failure & partition semantics (fail-stop vs fail-closed; "fencing-safe, not consensus-safe") | **RESOLVED** (§1.5) |
+| 8 | Scope line for v1 (leadership election? HRW rebalance? Messaging hardening?) | OPEN |
+
+## 3a. Decision 0 — Enhance DistributedLocks first — RESOLVED
+
+`Headless.DistributedLocks` is the low-level lease/fencing primitive. Coordination
+must build on it rather than re-inventing lock ownership, renewals, loss signals, or
+fencing.
+
+### Public vocabulary
+
+**Resolution:**
+- `IDistributedLock` is the regular mutual-exclusion acquisition primitive.
+- `IDistributedReadWriteLock` is the read/write acquisition primitive.
+- `IDistributedSemaphoreProvider` remains provider-shaped because
+  `IDistributedSemaphore` already names the created bounded-N semaphore object.
+- `IDistributedLease` is the held acquisition handle returned by locks, read/write
+  locks, and semaphore slots.
+- `DistributedLockInfo` is the inspection DTO for active regular locks.
+
+**Why:** "Provider" was noise for the lock/RW-lock API. A caller asks for a lock and
+acquires a lease. This makes the model read like:
+
+```csharp
+await using IDistributedLease lease = await distributedLock.AcquireAsync(resource);
+lease.ThrowIfLost();
+```
+
+### Lease handle contract
+
+`IDistributedLease` is the first-class holder-side lease handle:
+
+```csharp
+public interface IDistributedLease : IAsyncDisposable
+{
+    string LeaseId { get; }
+    string Resource { get; }
+    long? FencingToken { get; }
+    CancellationToken LostToken { get; }
+    bool IsLost => LostToken.IsCancellationRequested;
+    void ThrowIfLost() { ... } // default implementation
+    Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);
+}
+```
+
+The implementation may expose extra operational fields such as acquisition time,
+renewal count, wait time, and whether loss can be observed. The load-bearing members
+are `LeaseId`, `Resource`, `FencingToken`, `LostToken`, `IsLost`, `ThrowIfLost()`,
+`RenewAsync(...)`, and async disposal/release.
+
+### OwnerId vs LeaseId
+
+**Resolution:** do **not** add `OwnerId` to `IDistributedLease` v1.
+
+There are two different "owners" and mixing them is dangerous:
+
+- `LeaseId` is the opaque acquisition token stored by the lock backend. It answers:
+  "is this exact holder still the one allowed to renew/release?"
+- `node@incarnation` is the Coordination ownership stamp stored by consumers. It
+  answers: "which process incarnation should recover this job/message row if it dies?"
+
+Those are not the same identity. A lock lease can be held by code that has no
+Coordination node. A Coordination node may stamp many domain rows without a
+corresponding per-row lock lease. Therefore the spec uses:
+
+- `LeaseId` for lock-store ownership and release/renew equality;
+- `FencingToken` for protected-resource stale-write rejection;
+- `node@incarnation` for Jobs/Messaging/consumer-owned recovery predicates.
+
+If a future backend needs human-readable attribution, add a non-correctness
+`OwnerHint` / metadata field to acquire options, not a correctness-bearing
+`OwnerId` on the lease handle.
+
+### Correctness role
+
+DistributedLocks provides:
+- mutual exclusion;
+- lease renewal/release;
+- holder-side loss observation (`LostToken`);
+- holder-side self-fencing (`ThrowIfLost()`);
+- stale-holder rejection by downstream resources (`FencingToken`);
+- bounded-N concurrency via semaphores;
+- read/write concurrency where the backend supports it.
+
+It does **not** provide:
+- cluster membership;
+- node incarnation identity;
+- `NodeLeft` events;
+- domain ownership ledgers;
+- Jobs or Messaging recovery rules.
+
+This keeps the stack layered:
+
+```
+DistributedLocks: lock/lease/fence
+Coordination: node identity/liveness/events
+Consumers: ownership rows + recovery predicates
+```
+
+## 4. Decision 1 — Membership & liveness model — RESOLVED
+
+### Foundations (agreed)
+- **K8s-style** lease/membership semantics over **framework-owned SQL/Redis providers**.
+- **Orleans-style incarnation identity** — a node identity carries a monotonic
+  incarnation/generation so a restarted node is distinct from its dead predecessor
+  (Orleans `SiloAddress = endpoint + Generation`; restart ⇒ new larger generation ⇒
+  predecessor's `Dead` row and successor's `Active` row never collide).
+- Our **fencing-aware `IDistributedLease`** sits underneath, acquired via
+  `IDistributedLock` / `IDistributedReadWriteLock` (we keep the fencing token Akka
+  deliberately omits — consistent with the repo's standing rejection of RedLock).
+- **Coordination reports liveness + identity. It does not own domain recovery.**
+  The substrate answers "who is alive / who joined / who left / what is this node's
+  incarnation-qualified identity." The **reaction and ownership queries stay in each
+  feature** — reclaiming jobs, reclaiming in-flight messages — each carrying its own
+  terminal-state-aware logic. (Coordination never answers "who owns what"; see §4b.)
+
+### Fork 1 — single-row vs split descriptor/liveness → **SPLIT**
+- **Resolution:** two rows per node — a **cold descriptor** (write-once on join:
+  identity, incarnation, host/ports, role/metadata) and a **hot liveness row**
+  (heartbeat timestamp, status).
+- **Rationale:** heartbeat is hot data; the descriptor is cold. Mixing them forces
+  frequent writes to a row that also carries metadata. Split is cleaner for SQL,
+  Redis, dashboards, and future ownership queries. (Contrast Orleans, which folds
+  both into one CAS row + a CAS-free dirty-write fast path; the split achieves the
+  same hot/cold separation structurally instead of via a relaxed write path.)
+
+### Fork 2 — observation-of-change vs store-server-clock TTL → **HYBRID, single-authority rule**
+- **Resolution:** the provider **may** use its own authoritative server clock for
+  expiration where supported (PostgreSQL `now()` / transaction timestamp; Redis
+  `TIME`). Liveness is **exposed to consumers as observed state**, never as "trust
+  remote clocks."
+- **Correctness invariant (spec rule):**
+  > Expiry and takeover are decided by exactly one clock — the store's. A node's
+  > heartbeat is written with the store's server time; dead-node detection is a
+  > store-evaluated predicate (`last_beat < now() - ttl`). **No application node ever
+  > compares another node's wall clock to its own.** The store is the sole temporal
+  > authority; app clocks are never cross-compared. Takeover depends on observed
+  > lease-renewal semantics, not on arbitrary remote app clocks.
+- **Why hybrid (not pure K8s observation):** K8s uses local observation-of-change
+  because etcd exposes no server-side "now" for this. Our SQL/Redis providers *do*
+  expose an authoritative server clock, which is a stronger single-authority basis
+  than per-client observation. We take it for provider-side cleanup/expiry while
+  keeping the consumer-facing guarantee identical to K8s' intent (no cross-node
+  wall-clock comparison).
+
+### Authoritative-store rule for liveness decisions
+
+Store-clock-based liveness is valid only on the authoritative write path.
+
+Heartbeat writes, lease acquisition, lease renewal, lease expiry, slot takeover, and
+`NodeLeft` decisions must be evaluated against the same authoritative consistency
+domain.
+
+For PostgreSQL, this means the primary/write connection. For Redis, this means the
+primary executing the Lua script / transaction. For quorum-backed stores, this means
+a linearizable operation.
+
+Async replicas, read replicas, cache replicas, and eventually consistent reads may be
+used for dashboards or approximate read-only views, but they must not drive failover
+decisions, `NodeLeft` events, worker-id handover, slot takeover, or recovery triggers.
+
+If a provider cannot offer an authoritative clock plus strongly ordered read/write
+semantics for the liveness row, it is not eligible for correctness-sensitive
+coordination decisions and must be marked as degraded or unsupported for failover.
+
+**Invariant:** no failover decision may be made from stale reads.
+
+### Residual NOT closed by Fork 2 (→ Decision 4)
+Fork 2 makes **liveness/takeover** clock-safe. It does **not** make **snowflake
+worker-id reuse** clock-safe, because a snowflake's 41-bit timestamp is generated
+from the *app node's* wall clock — which the store never sees. When node B reclaims
+a slot after A dies, the store clock governs *when* handover happens, but B then
+stamps IDs from B's own clock; if B is behind A's last-emitted timestamp, B can mint
+an ID ≤ A's → collision. Worker-id reuse therefore needs **one extra invariant** in
+the worker-id provider: (a) TTL ≥ max app-clock-skew (wait out the window), (b)
+persist last-used-timestamp on the slot and spin until the new holder's clock exceeds
+it, or (c) carry the incarnation in the ID so old/new are distinguishable downstream.
+This is the reason worker-id stays a *separate* primitive (see §5). Resolved in
+Decision 4.
+
+## 4b. Decision 1b — Substrate read contract — RESOLVED (option C)
+
+**Question:** Where does "what did the dead node own?" knowledge live, given that
+Coordination must not own domain recovery?
+
+**Resolution — C: liveness-tracker + incarnation-qualified identity as the stamp;
+ownership lives in consumer tables.**
+
+- Coordination exposes: register / heartbeat / leave, `IsAlive(node)`, the **ordered
+  live-node set** (`GetLiveNodes()`), the **incarnation-qualified identity**
+  (`nodeId@incarnation`) to stamp, and **events** `NodeJoined` / `NodeLeft` /
+  `NodeSuspected`.
+- Consumers **stamp the identity onto their own rows** (`jobs.owner = nodeId@inc`,
+  `outbox.owner = nodeId@inc`) and, on `NodeLeft(node, inc)`, query *their own* tables
+  (`WHERE owner = node@inc AND <not terminal>`) to reclaim — each keeping its own
+  terminal-state-aware logic.
+- Partition / shard ownership is **computed** from the live-node set (HRW /
+  rendezvous hashing), not stored — every node derives the same owner deterministically.
+
+**Rationale:** Orleans' grain directory (who owns which activation) is deliberately
+**not** in `IMembershipTable` — membership provides identity + liveness; ownership is
+a separate structure built on top, per-consumer. Ownership data is domain-shaped (a
+job-claim and a message-claim have different terminal states and reclaim rules), so a
+generic ownership store is either lossy or leaks domain logic into the substrate.
+Rejected **B** (ownership-ledger) for re-introducing recovery into the substrate;
+rejected **A** (pure liveness-tracker) for under-specifying the shared stamp every
+consumer needs.
+
+**Invariant:** the `NodeLeft` event payload carries the **incarnation** (`node@inc`),
+not just the node id. Keying recovery on node-id alone would let a fast restart
+(new incarnation, same node id) have its legitimately-owned rows reclaimed by a
+survivor reacting to the *previous* incarnation's death. Recovery predicates must
+match `owner = node@inc` exactly.
+
+## 5. Decision 2 — Worker-id boundary — RESOLVED (out of Coordination)
+
+Worker-id is **not** part of the Coordination membership primitive. Expose a small
+`IWorkerIdProvider` with two implementations:
+- **static/ordinal** (default) — reads an orchestrator ordinal (K8s StatefulSet
+  ordinal, ECS task index) or config; **zero coordination, zero dependencies**.
+- **lease-backed** — claims a bounded slot via the DistributedLocks slot lease.
+
+ORM/Messaging/Locks depend only on the small `IWorkerIdProvider` contract; neither
+Coordination nor DistributedLocks is a hard dependency for the static default.
+
+**Rationale:** worker-id carries a clock-safety obligation (reuse-after-crash, the
+§4 residual) that liveness does not, and it is consumed at the ID-generation layer —
+a distinct concern that must not be coupled to cluster membership. The static default
+must drag in nothing so a single-service app pays zero coordination tax.
+
+**Default vs production-safe (important):** the static/ordinal provider is
+dependency-free and may be the **default provider shape**, but **production
+multi-instance use must either configure durable timestamp persistence** (the §7.3
+correctness standard) **or explicitly opt into the degraded bounded-skew mode**. The
+default is *not* automatically the recommended production-safe mode — a reader must
+not conclude otherwise.
+
+**Worker-id lease lifetime → RESOLVED (lean): fixed-for-process.** A lease-backed
+worker-id is acquired once at startup and **held for the process lifetime**. On lease
+loss the holder **fail-stops** (stops minting per §4.1) — it does **not** rebind to a
+different worker-id mid-process. Rationale: IdGen bakes the worker-id at construction
+(no setter — `SnowflakeId.cs:33`), so rebind would require reconstructing the generator
+behind a volatile swap; and rebinding mid-process complicates the `ReservedUntil`
+reservation and is the more dangerous design. Fixed-for-process keeps the generator
+immutable. (Flagged for override if a rebind use-case emerges.)
+
+**Resolved by Decision 4:** worker-id reuse-safety uses a durable per-worker-id
+timestamp upper bound (§7.3).
+`OPEN`: snowflake bit-layout configurability (issue open question).
+
+## 6. Decision 3 — Mutual exclusion + package decomposition — RESOLVED
+
+The issue's "Coordination vs Cluster vs fold into DistributedLocks" question
+**dissolves** by separating the three shapes; all three placements are true at once.
+
+| Shape | Home | Why |
+|---|---|---|
+| **Mutual exclusion** — bounded-slot lease, leadership (N=1) | **`Headless.DistributedLocks.*`** (existing) | The Redis ZSET semaphore (bounded-N lease) already lives here; leadership = N=1 lock; keeps all mutual-exclusion in one place with the fencing token |
+| **Membership / liveness / identity / events** | **new `Headless.Coordination.{Abstractions,EntityFramework,PostgreSql,Redis}`** | Genuinely new shared concern (the K8s-style substrate); *consumes* DistributedLocks, never reinvents it |
+| **Worker-id** — `IWorkerIdProvider` | abstraction in **`Headless.Extensions.Abstractions`** (next to `ILongIdGenerator`/`SnowflakeId`); static default in **`Headless.Extensions`**; lease-backed impl in a **separate `Headless.WorkerId.DistributedLocks` bridge package** | ORM/Messaging/Locks already depend on Extensions; static default depends on nothing; lease-backed needs only the slot lease, not membership |
+
+**Lease-backed worker-id placement (sub-fork) → RESOLVED (b):** the lease-backed
+impl lives in its **own bridge package**, not inside `Headless.DistributedLocks`.
+DistributedLocks must not know what a worker-id (snowflake semantics) is. Costs one
+extra package; keeps DistributedLocks domain-agnostic.
+
+**Dependency rules (explicit, to avoid accidental cycles):**
+- `Headless.Extensions.Abstractions` defines `IWorkerIdProvider`.
+- `Headless.Extensions` provides the static/default implementation (depends only on
+  its own Abstractions).
+- `Headless.DistributedLocks` does **not** depend on WorkerId semantics.
+- `Headless.WorkerId.DistributedLocks` depends on `Headless.Extensions.Abstractions`
+  + `Headless.DistributedLocks`.
+- `Headless.Coordination` depends on `Headless.DistributedLocks` **only if** it needs
+  lease helpers; it does **not** depend on Jobs, Messaging, ORM, or WorkerId.
+- Jobs / Messaging / ORM consume only the small abstractions they need.
+
+No arrow points back: no feature is a dependency of the primitives, and worker-id
+never depends on Coordination. This keeps the design acyclic.
+
+`OPEN` (deferred to Decision 7): leadership safety-ceiling contract — fencing-safe,
+NOT consensus-safe; must be explicit in API + docs.
+
+## 7. Decision 4 — Correctness invariants — RESOLVED
+
+Coordination and worker-id providers must enforce three invariants.
+
+### 4.1 Fail-stop on lease loss
+A holder must stop minting IDs once its lease-loss token fires. ID generators
+**self-fence at the mint site** — check lease state *before* generating
+(`lease.ThrowIfLost()`), not via a background poll. Holder-side self-enforcement
+(K8s-style): infrastructure does not stop you; you stop yourself.
+
+### 4.2 Graceful release on shutdown
+Lease handles are `IAsyncDisposable`. During host shutdown the holder releases its
+worker-id lease so other nodes can reuse the slot without waiting for TTL expiry.
+(Does not bypass §4.3 — a reclaiming holder still waits out the persisted upper
+bound; graceful release speeds slot *handover*, not timestamp reuse-safety.)
+
+### 4.3 Clock-safe worker-id reuse — durable timestamp upper bound (forward reservation)
+Reusing a worker id is safe only when the new holder can prove its **first emitted
+timestamp is greater than the previous holder's last *possible* emitted timestamp**
+for that same worker id.
+
+**Correctness standard:** a durable **per-worker-id timestamp upper bound** —
+modelled as a *forward reservation*, not a backward record. Field name:
+`ReservedUntilTimestamp` (a.k.a. `TimestampUpperBound`), **not** `LastUsedTimestamp`.
+
+**Clock domain (precise — this closes the proof):** `ReservedUntilTimestamp` is
+expressed in the **same timestamp domain used by Snowflake emission** — Unix epoch
+milliseconds. On renewal the holder computes it from its **local Snowflake clock**:
+
+```
+ReservedUntilTimestamp = localSnowflakeClockNow + reservationWindow + safetyMargin
+```
+
+The store only **durably persists** the value and **arbitrates lease ownership**; it
+does **not** translate or recompute this timestamp. Do **not** use PostgreSQL `now()`
+to compute `ReservedUntil` — the store clock decides slot *ownership* (Fork 2), not
+Snowflake timestamp *progression*; mixing domains weakens the proof because the mint
+gate compares `localSnowflakeClock > ReservedUntilTimestamp` and both sides must live
+in the emission domain.
+
+**Implementation note (verified against IdGen 3.0.7 — `SnowflakeId.cs:30,36`).**
+`SnowflakeId` delegates minting to the IdGen NuGet package, which reads its timestamp
+from a configured `ITimeSource` — by default `DefaultTimeSource`, a **`Stopwatch`
+anchored at construction**, *not* `DateTimeOffset.UtcNow`. Therefore the gate must read
+the **same `ITimeSource` IdGen mints from**, not a fresh `UtcNow` — otherwise the two
+clocks drift (NTP slew, Stopwatch vs wall-clock) and the "same domain as emission"
+guarantee silently fails. Required change: replace `DefaultTimeSource` with a custom
+`ITimeSource` whose `GetTicks()` is the authoritative emission-ms domain shared with
+`ReservedUntil`. The gate itself wraps `SnowflakeId.NewId()` as a pre-check before
+`IdGenerator.CreateId()` (the mint loop is third-party and cannot be modified inline;
+a pre-check wrapper is sufficient and does not disturb sequence/throughput logic).
+
+Mechanism:
+- On lease renewal the holder persists `ReservedUntilTimestamp` (the max timestamp it
+  may emit before the next renewal), computed as above.
+- The generator may mint only while `localSnowflakeClock <= ReservedUntilTimestamp`
+  **and** `lease_not_lost`. Both checked before every mint/batch.
+- A future holder must **wait until `localSnowflakeClock > persisted ReservedUntilTimestamp`**
+  before minting.
+
+**Fail-closed at the bound (spec rule, not implementation discipline):** if the local
+Snowflake clock reaches `ReservedUntilTimestamp` before the lease is renewed and a new
+reservation persisted, the provider **must fail closed and stop minting**. It may
+block, throw, or surface backpressure according to consumer policy, but it must **not**
+emit IDs past the reserved upper bound.
+
+Why forward-reservation beats exact-last-timestamp: the old holder may have emitted
+anything `<= ReservedUntil`, so the new holder waiting out the reserved window is safe
+**even if the old holder crashed immediately after renewing** — with no write-per-ID-batch.
+Write-on-renewal gives a bounded safety window (≤ one lease-duration) with low write
+amplification; continuous writes would turn every batch into coordination traffic.
+
+**Two gates, two clocks — both correct (record so no one "fixes" the apparent contradiction):**
+- *Can I take the slot?* → **store clock** (the lease expired), per Fork 2 (§4).
+- *When may I start emitting on it?* → **local clock vs `ReservedUntil`**, this invariant.
+
+The second gate compares a local clock to a value another node wrote, which *looks*
+like it violates Fork 2's "no cross-node wall-clock comparison." It does not: the
+comparison is conservative in the safe direction — waiting only ever **delays**, never
+prematurely permits. Fork 2 governs *takeover*; §4.3 governs *monotonicity*. Proof:
+old holder refuses to mint past `ReservedUntil` ⇒ `old.maxEmitted <= ReservedUntil`;
+new holder waits until `localClock > ReservedUntil` ⇒ `new.firstEmitted > ReservedUntil
+>= old.maxEmitted`. Holds regardless of skew direction.
+
+### Degraded mode (static / ordinal without persistence)
+Static or orchestrator-ordinal worker-id providers **without** durable timestamp
+storage are a **degraded mode**. They depend on a bounded clock-skew assumption
+(`reclaim-gap > 2 × max-skew`) and must be **explicitly configured and documented as
+weaker** than the correctness standard, with explicit warnings that clock regressions
+across restarts can reintroduce duplicate snowflake IDs. (Note: the reuse hazard
+exists for static-ordinal too — a StatefulSet restarts pod-0 *as* pod-0, reusing
+worker-id 0; cross-restart safety requires the persisted bound, which a store-less
+provider lacks.)
+
+### Out of scope: incarnation-in-ID
+Carrying an incarnation *inside* the snowflake is rejected — the 64-bit layout
+(41 ts + 10 worker + 12 sequence) has no spare bits. Viable only for a 128-bit scheme,
+which we are not adopting.
+
+## 8. Remaining open decisions (6, 8)
+
+Decisions 5 (§9) and 7 (§1.5) are now **resolved**.
+
+- **6. Provider model** — InMemory / EF / Postgres / Redis; provider eligibility is a
+  **correctness gate** (§4 authoritative-store rule), not just a capability list — a
+  provider without linearizable liveness-row read/write is degraded/unsupported for
+  failover; `Headless.Coordination.Tests.Harness` conformance suite (per repo rule).
+  **Constraint from §9.2 (Finding B):** the **EF/Postgres membership provider is not
+  optional** if Jobs ships in v1 — it must provide DB-heartbeat liveness for the
+  no-Redis path, else pure-EF/Postgres Jobs loses dead-node recovery on migration.
+- **8. Scope line for v1** — leadership election in/out; partition/HRW rebalance
+  in/out; Messaging recovery in/out. Lean: **Foundational** — worker-id + membership
+  (**incl. EF/Postgres provider, now mandatory per Finding B**) + Jobs as the forcing
+  pair; Messaging fast-follow (3-store schema migration); leadership/HRW/dashboards
+  deferred.
+
+## 9. Decision 5 — Consumer integration contracts — RESOLVED (verified against code)
+
+All three consumers were verified against actual source (file:line below). **Verdict:
+the abstraction fits all three — none blocked.** Effort ordering worker-id < Jobs <
+Messaging, matching the v1 lean.
+
+### Why consumers need Coordination instead of only DistributedLocks
+
+DistributedLocks answers "may I exclusively do this small critical section right
+now?" Coordination answers "which process incarnations are alive, and which dead
+incarnation should consumers recover from?"
+
+Jobs and Messaging need the second question because they have durable work rows. A
+lock can prevent two processors from claiming the same row at the same instant, but
+it cannot tell a surviving node which rows were last owned by a crashed process
+unless those rows carry a node-incarnation stamp and the system emits a reliable
+`NodeLeft(node@inc)` signal.
+
+The ownership rule is therefore:
+
+```
+acquire/claim path: stamp owner = current node@incarnation in the consumer table
+death path: on NodeLeft(node@inc), consumer reclaims WHERE owner = node@inc AND not terminal
+```
+
+Coordination intentionally does not know what "not terminal" means. Jobs and
+Messaging each keep their own terminal-state predicate.
+
+### 5.1 Snowflake worker-id — fits-with-friction (no schema change)
+- **Current:** worker-id derived from MAC, eager at construction, **immutable after**
+  (`ILongIdGenerator.cs:24-51`, `SnowflakeId.cs:20-34`). Minted via third-party IdGen
+  3.0.7 (`SnowflakeId.cs:36`). 8 DI registration sites, all parameterless → MAC.
+  Consumer seam `ILongIdGenerator.Create()` returns `long` and need **not** change.
+- **Migration:** inject `IWorkerIdProvider` at `SnowflakeIdLongIdGenerator` ctor
+  (replace `GenerateWorkerId()`); add the §7.3 mint-gate as a pre-check wrapper at
+  `SnowflakeId.NewId()`; swap IdGen's `ITimeSource` (Finding A, §7.3 impl note).
+- **Risks:** (1) clock-domain — see §7.3 implementation note; (2) `SnowflakeId.Default`
+  (parameterless singleton, `SnowflakeId.cs:14`) can't carry a lease/reservation — keep
+  as an ungated convenience or remove; (3) public-API change on the generator ctor +
+  8 registration sites (add a default `IWorkerIdProvider` registration in shared wiring).
+
+### 5.2 Jobs — fits-with-friction (schema-free; behavioral risk)
+- **Current:** node identity = `SchedulerOptionsBuilder.NodeIdentifier` (string =
+  `Environment.MachineName`, **stable across restarts, no incarnation** —
+  `JobsOptionsBuilder.cs:182`). Ownership is **explicit and already present**:
+  `TimeJobEntity.LockHolder`/`LockedAt` + `CronJobOccurrenceEntity.LockHolder`/`LockedAt`
+  (`TimeJobEntity.cs:12,15`; `CronJobOccurrenceEntity.cs:10,13`) — real nullable DB
+  columns. `InternalJobsManager.ReleaseDeadNodeResources(owner)` (`InternalJobsManager.cs:616`)
+  already reclaims via `WHERE LockHolder = owner` (EF `BasePersistenceProvider.cs:250-287,520-557`).
+  Membership is **Redis-only** (confirmed): without Redis, `IJobsRedisContext` →
+  `NoOpJobsRedisContext` (returns no dead nodes), heartbeat service unregistered.
+- **Migration:** remap `NodeIdentifier` → `node@incarnation` (single set-site); stamp
+  `LockHolder` with it (no schema change — column exists); delete `JobsRedisContext`
+  membership + `NodeHeartBeatBackgroundService` + the startup self-reclaim hook; trigger
+  `ReleaseDeadNodeResources(node@inc)` from `NodeLeft`. Tighten the reclaim predicate
+  `WhereCanAcquire` (`JobsQueryExtensions.cs:12-28`) to strict `LockHolder == owner`
+  (drop the `LockedAt == null` arm — incarnation makes the loose match wrong).
+- **Biggest risk (Finding B, behavioral not schema):** the stable incarnation-free
+  `NodeIdentifier` is load-bearing for the **no-Redis startup self-reclaim**
+  (`EF/ServiceExtension.cs:61`). Adding an incarnation breaks name-match, so the
+  no-Redis path's recovery becomes entirely dependent on `IMembership.NodeLeft`. ⇒
+  **the EF/Postgres Coordination provider (DB-heartbeat liveness) must ship in the same
+  v1 as the Jobs migration**, or pure-EF/Postgres Jobs loses recovery it had. (Feeds §8.)
+
+**Why Jobs need Coordination:** Jobs already have ownership columns and recovery
+logic, but liveness is Redis-only and identity is incarnation-free. Coordination
+makes dead-node recovery backend-neutral and restart-safe: the row owner becomes
+`node@inc`, and `NodeLeft(node@inc)` becomes the trigger. Without Coordination, the
+Postgres/EF-only path either has no dead-node recovery or must keep duplicating
+membership logic inside Jobs.
+
+### 5.3 Messaging — fits-with-friction (net-new; 3-store schema migration)
+- **Current:** CAP-derived outbox/inbox (`published`/`received`, `MediumMessage` row).
+  **No owner/node column anywhere** (`MediumMessage.cs:6-41`; PG DDL
+  `PostgreSqlStorageInitializer.cs:204-256`). Orphan recovery today = the per-row
+  `LockedUntil` visibility-lease + `NextRetryAt`: a dead node's row is re-pickable when
+  its lease expires via atomic `UPDATE … SET LockedUntil … FOR UPDATE SKIP LOCKED`
+  (`PostgreSqlDataStorage.cs:796-810`). **No sweeper, no node concept** — genuinely
+  net-new. Terminal-state scar predicate: `NOT (StatusName IN ('Succeeded','Failed')
+  AND NextRetryAt IS NULL)` (`PostgreSqlDataStorage.cs:43-52`) — a `Failed` row with
+  non-null `NextRetryAt` is retry-pending and must stay mutable.
+- **Migration:** add `owner` (`owner_node` + `owner_incarnation`) to `published` +
+  `received` across Postgres/SqlServer/InMemory; **stamp `owner = node@inc` at the same
+  atomic claim** that sets `LockedUntil` (not separately — else re-introduce the
+  SELECT-then-write double-dispatch race); add a `NodeLeft` reclaim UPDATE that ANDs
+  `owner = node@inc` onto the **exact** terminal-guard predicate; keep `LockedUntil`
+  as the safety floor (reclaim must not bypass it — guards against membership
+  false-positive double-processing).
+- **Biggest risk:** hand-written **positional SQL** column lists across 3 providers ×
+  many statements (`PostgreSqlDataStorage.cs:809,837-848`) — a missed ordinal silently
+  corrupts reads; and the terminal predicate must be replicated byte-for-byte in a 4th
+  place. **Mitigation:** drive `owner`-stamp + `NodeLeft`-reclaim conformance through
+  `Headless.Messaging.Core.Tests.Harness` (per repo harness rule) so all 3 stores test
+  against one contract. (Team already anticipates a `LeaseMonitor`+autoExtend evolution
+  here — #289/#296/#300.)
+
+**What Messaging does today:** Messaging currently relies on per-row visibility
+leases (`LockedUntil`) and retry scheduling (`NextRetryAt`). When a process dies, a
+row becomes eligible again only after `LockedUntil` expires. The optional
+`UseStorageLock` path uses `IDistributedLock` as coarse-grained mutual exclusion for
+retry-pickup ticks; it does **not** identify the owning node, stamp rows, or recover
+work on `NodeLeft`.
+
+**Why Messaging needs Coordination:** Messaging can keep `LockedUntil` as the safety
+floor, but node-incarnation ownership lets recovery become explicit and observable:
+when `NodeLeft(node@inc)` fires, Messaging can accelerate retry visibility for rows
+owned by that exact dead incarnation while preserving the terminal-state guard and
+the visibility lease floor. This is not required for correctness today because
+`LockedUntil` eventually recovers work, but it improves recovery latency,
+operability, and parity with Jobs once the three storage schemas carry owner stamps.
+
+**Spec constraint:** `IDistributedLock` remains useful for coarse retry-pickup
+coordination, but it is not a replacement for Messaging ownership stamps. The two
+layers compose:
+
+```
+IDistributedLock: one retry pickup tick at a time
+Coordination owner stamp: which dead node's claimed rows may be recovered
+LockedUntil: minimum safety floor against false-positive liveness decisions
+```
+
+## Appendix — key source references
+- Orleans: `IMembershipTable`, `MembershipEntry`, `SiloAddress`/`Generation`,
+  `SiloStatus`, `IGatewayListProvider` (read-only projection); liveness decisions in
+  `MembershipTableManager` (dotnet/orleans).
+- Akka: `Akka.Coordination.Lease` (+ `LeaseSettings`/`TimeoutSettings`/`LeaseProvider`);
+  consumers SBR / Singleton / Sharding (akkadotnet/akka.net).
+- K8s: `coordination.k8s.io/v1` `LeaseSpec`; `client-go` `leaderelection`
+  (`observedTime`, the LeaseDuration > RenewDeadline > RetryPeriod triangle,
+  `leaseTransitions`, `OnStoppedLeading`).
+- Repo prior art: `Headless.Jobs.Caching.Redis` membership; `IDistributedLease`
+  (FencingToken/LostToken); Redis ZSET semaphore (server-clock timestamps).

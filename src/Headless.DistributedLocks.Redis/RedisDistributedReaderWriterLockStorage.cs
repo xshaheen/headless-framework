@@ -8,29 +8,29 @@ using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
 
-public sealed class RedisDistributedReaderWriterLockStorage(
+public sealed class RedisDistributedReadWriteLockStorage(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisDistributedLockServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader
-) : IDistributedReaderWriterLockStorage
+) : IDistributedReadWriteLockStorage
 {
     private IDatabase Db => multiplexer.GetDatabase();
 
     public async ValueTask<bool> TryAcquireReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 TryAcquireReadLockScriptDefinition.Instance,
-                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, lockId, ttl),
+                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -40,20 +40,20 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     public async ValueTask<bool> TryExtendReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 TryExtendReadLockScriptDefinition.Instance,
-                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, lockId, ttl),
+                _GetReadLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -63,19 +63,19 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     public async ValueTask ReleaseReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         _ = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 ReleaseReadLockScriptDefinition.Instance,
-                _GetReaderOnlyLockParameters(keys.ReaderKey, lockId, ttl: null),
+                _GetReaderOnlyLockParameters(keys.ReaderKey, leaseId, ttl: null),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -83,7 +83,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     public async ValueTask<bool> TryAcquireWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         string waitingId,
         TimeSpan? ttl = null,
         TimeSpan? markerTtl = null,
@@ -91,7 +91,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         Argument.IsNotNullOrEmpty(waitingId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -99,7 +99,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
             .EvaluateAsync(
                 Db,
                 TryAcquireWriteLockScriptDefinition.Instance,
-                _GetWriteLockParameters(keys.WriterKey, keys.ReaderKey, lockId, waitingId, ttl, markerTtl),
+                _GetWriteLockParameters(keys.WriterKey, keys.ReaderKey, leaseId, waitingId, ttl, markerTtl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -109,20 +109,20 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     public async ValueTask<bool> TryExtendWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
                 TryExtendWriteLockScriptDefinition.Instance,
-                _GetWriterOnlyLockParameters(keys.WriterKey, lockId, ttl),
+                _GetWriterOnlyLockParameters(keys.WriterKey, leaseId, ttl),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -132,12 +132,12 @@ public sealed class RedisDistributedReaderWriterLockStorage(
 
     public async ValueTask ReleaseWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         _ = await scriptsLoader
@@ -146,9 +146,9 @@ public sealed class RedisDistributedReaderWriterLockStorage(
                 ReleaseWriteLockScriptDefinition.Instance,
                 _GetWriterOnlyLockParameters(
                     keys.WriterKey,
-                    lockId,
+                    leaseId,
                     ttl: null,
-                    DistributedLockCoreHelpers.GetWriterWaitingId(lockId)
+                    DistributedLockCoreHelpers.GetWriterWaitingId(leaseId)
                 ),
                 cancellationToken
             )
@@ -164,30 +164,30 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     // StackExchange.Redis AsyncTimeout for hard bounds.
     public async ValueTask<bool> ValidateReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await Db.HashExistsAsync(keys.ReaderKey, lockId).WaitAsync(cancellationToken).ConfigureAwait(false);
+        return await Db.HashExistsAsync(keys.ReaderKey, leaseId).WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask<bool> ValidateWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         var keys = _GetKeys(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var value = await Db.StringGetAsync(keys.WriterKey).WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        return value.HasValue && string.Equals(value.ToString(), lockId, StringComparison.Ordinal);
+        return value.HasValue && string.Equals(value.ToString(), leaseId, StringComparison.Ordinal);
     }
 
     public async ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -233,30 +233,30 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     private static ReaderWriterReadParams _GetReadLockParameters(
         RedisKey writerKey,
         RedisKey readerKey,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl
     )
     {
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new ReaderWriterReadParams(writerKey, readerKey, lockId, expiresValue);
+        return new ReaderWriterReadParams(writerKey, readerKey, leaseId, expiresValue);
     }
 
     private static ReaderWriterReaderOnlyParams _GetReaderOnlyLockParameters(
         RedisKey readerKey,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl
     )
     {
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new ReaderWriterReaderOnlyParams(readerKey, lockId, expiresValue);
+        return new ReaderWriterReaderOnlyParams(readerKey, leaseId, expiresValue);
     }
 
     private static ReaderWriterWriteParams _GetWriteLockParameters(
         RedisKey writerKey,
         RedisKey readerKey,
-        string lockId,
+        string leaseId,
         string waitingId,
         TimeSpan? ttl,
         TimeSpan? markerTtl
@@ -265,26 +265,26 @@ public sealed class RedisDistributedReaderWriterLockStorage(
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
         var markerExpiresValue = markerTtl.HasValue ? (int)markerTtl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new ReaderWriterWriteParams(writerKey, readerKey, lockId, waitingId, expiresValue, markerExpiresValue);
+        return new ReaderWriterWriteParams(writerKey, readerKey, leaseId, waitingId, expiresValue, markerExpiresValue);
     }
 
     private static ReaderWriterWriterOnlyParams _GetWriterOnlyLockParameters(
         RedisKey writerKey,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl,
         string? waitingId = null
     )
     {
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new ReaderWriterWriterOnlyParams(writerKey, lockId, waitingId ?? string.Empty, expiresValue);
+        return new ReaderWriterWriterOnlyParams(writerKey, leaseId, waitingId ?? string.Empty, expiresValue);
     }
 
-    private static void _ValidateLockId(string lockId)
+    private static void _ValidateLockId(string leaseId)
     {
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Ensure.False(
-            lockId.Contains(':', StringComparison.Ordinal),
+            leaseId.Contains(':', StringComparison.Ordinal),
             "Reader-writer lock ids cannot contain ':' because it conflicts with the writer-waiting suffix delimiter."
         );
     }
@@ -293,18 +293,18 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     private readonly record struct ReaderWriterReadParams(
         RedisKey writerKey,
         RedisKey readerKey,
-        string lockId,
+        string leaseId,
         RedisValue expires
     );
 
     [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReaderWriterReaderOnlyParams(RedisKey readerKey, string lockId, RedisValue expires);
+    private readonly record struct ReaderWriterReaderOnlyParams(RedisKey readerKey, string leaseId, RedisValue expires);
 
     [StructLayout(LayoutKind.Auto)]
     private readonly record struct ReaderWriterWriteParams(
         RedisKey writerKey,
         RedisKey readerKey,
-        string lockId,
+        string leaseId,
         string waitingId,
         RedisValue expires,
         RedisValue markerExpires
@@ -313,7 +313,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     [StructLayout(LayoutKind.Auto)]
     private readonly record struct ReaderWriterWriterOnlyParams(
         RedisKey writerKey,
-        string lockId,
+        string leaseId,
         string waitingId,
         RedisValue expires
     );

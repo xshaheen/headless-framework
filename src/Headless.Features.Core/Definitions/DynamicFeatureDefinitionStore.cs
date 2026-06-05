@@ -31,7 +31,7 @@ public sealed class DynamicFeatureDefinitionStore(
     IStaticFeatureDefinitionStore staticStore,
     IFeatureDefinitionSerializer serializer,
     ICache distributedCache,
-    IDistributedLockProvider distributedLockProvider,
+    IDistributedLock distributedLockProvider,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<FeatureManagementOptions> optionsAccessor,

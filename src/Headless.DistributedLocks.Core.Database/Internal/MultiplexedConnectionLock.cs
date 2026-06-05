@@ -281,7 +281,7 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
 
     public readonly struct Result
     {
-        public Result(IDistributedLock handle)
+        public Result(IDistributedLease handle)
         {
             Handle = handle;
             Retry = MultiplexedConnectionLockRetry.NoRetry;
@@ -295,14 +295,14 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
             CanSafelyDispose = canSafelyDispose;
         }
 
-        public IDistributedLock? Handle { get; }
+        public IDistributedLease? Handle { get; }
 
         public MultiplexedConnectionLockRetry Retry { get; }
 
         public bool CanSafelyDispose { get; }
     }
 
-    private sealed class Handle<TLockCookie> : IDistributedLock
+    private sealed class Handle<TLockCookie> : IDistributedLease
         where TLockCookie : class
     {
         private readonly MultiplexedConnectionLock _lock;
@@ -325,11 +325,11 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
             Resource = name;
             _identity = identity;
             _lockCookie = lockCookie;
-            LockId = Guid.NewGuid().ToString("N");
+            LeaseId = Guid.NewGuid().ToString("N");
             DateAcquired = @lock._connection.TimeProvider.GetUtcNow();
         }
 
-        public string LockId { get; }
+        public string LeaseId { get; }
 
         public long? FencingToken => null;
 
@@ -341,9 +341,9 @@ internal sealed class MultiplexedConnectionLock : IAsyncDisposable
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public bool IsMonitored => true;
+        public bool CanObserveLoss => true;
 
-        public CancellationToken HandleLostToken
+        public CancellationToken LostToken
         {
             get
             {

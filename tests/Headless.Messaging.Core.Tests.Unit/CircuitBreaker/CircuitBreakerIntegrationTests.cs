@@ -247,7 +247,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
         // wire up the retry processor with the real state manager as monitor
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(
@@ -306,7 +306,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var retryProcessor = new MessageNeedToRetryProcessor(

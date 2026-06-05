@@ -14,7 +14,7 @@ public enum InFlightStrategy
 
     /// <summary>
     /// Acquire a distributed lock keyed by the cache slot, block waiting for the winner to
-    /// finalize, and replay the cached response. Requires an <c>IDistributedLockProvider</c>
+    /// finalize, and replay the cached response. Requires an <c>IDistributedLock</c>
     /// to be registered (enforced at startup). If the acquisition timeout elapses, returns
     /// 409 with <c>g:idempotency_in_flight_timeout</c>.
     /// </summary>

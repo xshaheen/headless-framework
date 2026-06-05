@@ -3,56 +3,117 @@
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-/// <summary>
-/// A mutex synchronization primitive which can be used to coordinate access to a resource or critical region of code
-/// across processes or systems. The scope and capabilities of the lock are dependent on the particular implementation
-/// </summary>
+/// <summary>Provides methods to acquire, release, and manage resource locks.</summary>
 [PublicAPI]
-public interface IDistributedLock : IAsyncDisposable
+public interface IDistributedLock
 {
-    /// <summary>A unique identifier for the lock instance.</summary>
-    string LockId { get; }
+    TimeSpan DefaultTimeUntilExpires { get; }
+
+    TimeSpan DefaultAcquireTimeout { get; }
 
     /// <summary>
-    /// A per-resource monotonic grant counter used by protected resources to reject stale writes.
-    /// This is distinct from <see cref="LockId"/>, which remains the opaque ownership token used
-    /// for release and renew equality checks. Returns <see langword="null"/> when the backend or
-    /// lock type does not support fencing tokens.
+    /// Acquires a resource lock for a specified resource and throws
+    /// <see cref="LockAcquisitionTimeoutException"/> if the lock is not acquired before
+    /// <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
-    long? FencingToken { get; }
-
-    /// <summary>A name that uniquely identifies the lock.</summary>
-    string Resource { get; }
-
-    /// <summary>The number of times the lock has been renewed.</summary>
-    int RenewalCount { get; }
-
-    /// <summary>The time the lock was acquired.</summary>
-    DateTimeOffset DateAcquired { get; }
-
-    /// <summary>The amount of time waited to acquire the lock.</summary>
-    TimeSpan TimeWaitedForLock { get; }
+    /// <param name="resource">The resource to acquire the lock for.</param>
+    /// <param name="options">
+    /// Per-call configuration (lease TTL, acquire timeout, release-on-dispose, monitoring mode).
+    /// <see langword="null"/> applies the lock defaults. See <see cref="DistributedLockAcquireOptions"/>.
+    /// </param>
+    /// <param name="cancellationToken"></param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+    /// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/> but
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
+    /// (monitoring requires a finite lease).
+    /// </exception>
+    Task<IDistributedLease> AcquireAsync(
+        string resource,
+        DistributedLockAcquireOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
-    /// Cancellation token that is cancelled when the lock lease is detected as lost.
-    /// Returns <see cref="CancellationToken.None"/> when lease monitoring was not enabled for the acquire call
-    /// (check <see cref="IsMonitored"/> first).
-    /// This is an observability signal. Consumers needing correctness must validate <see cref="LockId"/> at the
-    /// protected resource. A faulted monitor (e.g., logger or storage initialization throws unexpectedly) is
-    /// surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
+    /// Acquires a resource lock for a specified resource this method will block
+    /// until the lock is acquired or the <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is reached.
     /// </summary>
-    CancellationToken HandleLostToken { get; }
+    /// <param name="resource">The resource to acquire the lock for.</param>
+    /// <param name="options">
+    /// Per-call configuration (lease TTL, acquire timeout, release-on-dispose, monitoring mode).
+    /// <see langword="null"/> applies the lock defaults. See <see cref="DistributedLockAcquireOptions"/>.
+    /// </param>
+    /// <param name="cancellationToken"></param>
+    /// <returns>
+    /// A task that represents the asynchronous operation.
+    /// The task result contains the acquired lease or null if the lock could not be acquired.
+    /// </returns>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <see cref="DistributedLockAcquireOptions.Monitoring"/> is
+    /// <see cref="LockMonitoringMode.Monitor"/> or <see cref="LockMonitoringMode.AutoExtend"/> but
+    /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
+    /// (monitoring requires a finite lease).
+    /// </exception>
+    /// <remarks>
+    /// When <see cref="DistributedLockAcquireOptions.AcquireTimeout"/> is <see cref="TimeSpan.Zero"/> the
+    /// implementation runs a single storage attempt with no retry loop (the "try once, no wait" semantic).
+    /// The attempt is bounded by an internal safety deadline so a stalled lock-store call cannot hang the
+    /// caller indefinitely, even when <paramref name="cancellationToken"/> is <see cref="CancellationToken.None"/>.
+    /// The deadline is a ceiling on the storage round-trip, not a wait budget — under healthy lock-store
+    /// conditions the call completes well within it. The caller's <paramref name="cancellationToken"/> still
+    /// takes precedence if it fires first. See issue #297 and the F#2 review finding from PR #284 for the rationale.
+    /// </remarks>
+    Task<IDistributedLease?> TryAcquireAsync(
+        string resource,
+        DistributedLockAcquireOptions? options = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
-    /// <see langword="true"/> when the handle was acquired with lease monitoring enabled and
-    /// <see cref="HandleLostToken"/> carries a live signal. <see langword="false"/> when monitoring was
-    /// disabled and <see cref="HandleLostToken"/> returns <see cref="CancellationToken.None"/>.
+    /// Renews a resource lock for a specified <paramref name="resource"/> by extending
+    /// the expiration time of the lock if it is still held to the <paramref name="leaseId"/>
+    /// and return <see langword="true"/>, otherwise <see langword="false"/>.
     /// </summary>
-    bool IsMonitored { get; }
+    Task<bool> RenewAsync(
+        string resource,
+        string leaseId,
+        TimeSpan? timeUntilExpires = null,
+        CancellationToken cancellationToken = default
+    );
 
-    /// <summary>Releases the lock.</summary>
-    Task ReleaseAsync();
+    /// <summary>
+    /// Gets the current lease id for a specified <paramref name="resource"/>, or null when it is not locked
+    /// or the backend cannot observe the current holder identity on its inspection path. This is an
+    /// inspection/read primitive; it does not renew the lease. Consumers that already hold a monitored
+    /// handle should prefer <see cref="IDistributedLease.LostToken"/> for lease-loss signals.
+    /// </summary>
+    Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default);
 
-    /// <summary>Attempts to renew the lock.</summary>
-    Task<bool> RenewAsync(TimeSpan? timeUntilExpires = null, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Releases a resource lock for a specified <paramref name="resource"/>
+    /// if it is acquired by the <paramref name="leaseId"/>.
+    /// </summary>
+    Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default);
+
+    /// <summary>Checks if a specified resource is currently locked.</summary>
+    Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the remaining time until the lock expires for a specified resource.</summary>
+    /// <returns>The remaining TTL, or null if the resource is not locked or has no expiration.</returns>
+    Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Gets information about a specific lock.</summary>
+    /// <remarks>
+    /// <see cref="DistributedLockInfo.LeaseId"/> may be null when the backend can observe that the
+    /// resource is locked but cannot surface the current holder identity on the inspection path.
+    /// </remarks>
+    /// <returns>Lock information, or null if the resource is not locked.</returns>
+    Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default);
+
+    /// <summary>Lists the active locks observable through this provider's inspection path.</summary>
+    /// <returns>Collection of active lock information.</returns>
+    Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Gets the total count of active locks observable through this provider's inspection path.</summary>
+    Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
 }

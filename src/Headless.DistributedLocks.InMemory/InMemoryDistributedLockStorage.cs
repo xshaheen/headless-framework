@@ -14,13 +14,13 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
 
     public ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(key);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var state = _resources.GetOrAdd(key, static _ => new ResourceState());
@@ -38,7 +38,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
                 return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
             }
 
-            state.Entry = new LockEntry(lockId, _GetExpiration(ttl));
+            state.Entry = new LockEntry(leaseId, _GetExpiration(ttl));
             state.FencingToken++;
 
             return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, state.FencingToken));
@@ -69,7 +69,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
 
             if (
                 state.Entry is not { } existing
-                || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal)
+                || !string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal)
             )
             {
                 return ValueTask.FromResult(false);
@@ -102,7 +102,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
 
             if (
                 state.Entry is not { } existing
-                || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal)
+                || !string.Equals(existing.LeaseId, expectedId, StringComparison.Ordinal)
             )
             {
                 return ValueTask.FromResult(false);
@@ -171,7 +171,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         {
             _PruneExpired(state);
 
-            return ValueTask.FromResult(state.Entry?.LockId);
+            return ValueTask.FromResult(state.Entry?.LeaseId);
         }
     }
 
@@ -198,7 +198,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
 
                 if (state.Entry is { } entry)
                 {
-                    result[key] = entry.LockId;
+                    result[key] = entry.LeaseId;
                 }
             }
         }
@@ -206,7 +206,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         return ValueTask.FromResult<IReadOnlyDictionary<string, string>>(result);
     }
 
-    public ValueTask<IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
+    public ValueTask<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>> GetAllWithExpirationByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     )
@@ -215,7 +215,7 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         cancellationToken.ThrowIfCancellationRequested();
 
         var now = timeProvider.GetUtcNow();
-        var result = new Dictionary<string, (string LockId, TimeSpan? Ttl)>(StringComparer.Ordinal);
+        var result = new Dictionary<string, (string LeaseId, TimeSpan? Ttl)>(StringComparer.Ordinal);
 
         foreach (var (key, state) in _resources)
         {
@@ -239,11 +239,11 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
                     : remaining.HasValue ? TimeSpan.Zero
                     : null;
 
-                result[key] = (entry.LockId, ttl);
+                result[key] = (entry.LeaseId, ttl);
             }
         }
 
-        return ValueTask.FromResult<IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>>(result);
+        return ValueTask.FromResult<IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>>(result);
     }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -299,5 +299,5 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         public long FencingToken { get; set; }
     }
 
-    private sealed record LockEntry(string LockId, DateTimeOffset? Expiration);
+    private sealed record LockEntry(string LeaseId, DateTimeOffset? Expiration);
 }

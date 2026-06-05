@@ -31,7 +31,7 @@ internal static class DistributedLockConsumerRegistration
         services.ForMessage<DistributedLockReleased>(message =>
             message
                 .MessageName("headless.locks.released")
-                .OnBus<DistributedLockProvider.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
+                .OnBus<DistributedLock.LockReleasedConsumer>(consumer => consumer.Concurrency(1))
         );
     }
 }

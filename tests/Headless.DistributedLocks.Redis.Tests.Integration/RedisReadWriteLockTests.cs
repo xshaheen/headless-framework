@@ -11,7 +11,7 @@ namespace Tests.ReaderWriterLocks;
 
 [Collection<RedisTestFixture>]
 public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
-    : DistributedReaderWriterLockProviderTestsBase
+    : DistributedReadWriteLockTestsBase
 {
     public override async ValueTask InitializeAsync()
     {
@@ -19,17 +19,15 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
         await fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
-        DistributedLockOptions? options = null
-    )
+    protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {
-        return new DistributedReaderWriterLockProvider(
+        return new DistributedReadWriteLock(
             fixture.ReaderWriterLockStorage,
             outboxBus: null,
             options ?? new DistributedLockOptions(),
             new SnowflakeIdLongIdGenerator(),
             TimeProvider.System,
-            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+            LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
 

@@ -10,8 +10,8 @@ using Polly.Retry;
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Shared helpers used by both the mutex (<see cref="DistributedLockProvider"/>) and the
-/// reader-writer (<see cref="DistributedReaderWriterLockProvider"/>) providers. Kept internal
+/// Shared helpers used by both the mutex (<see cref="DistributedLock"/>) and the
+/// reader-writer (<see cref="DistributedReadWriteLock"/>) providers. Kept internal
 /// because the behavior is private contract between the two providers — callers should not depend
 /// on these signatures.
 /// </summary>
@@ -34,9 +34,9 @@ internal static class DistributedLockCoreHelpers
     /// with the original acquire-time marker.
     /// </summary>
     [Pure]
-    public static string GetWriterWaitingId(string lockId)
+    public static string GetWriterWaitingId(string leaseId)
     {
-        return lockId + WriterWaitingSuffix;
+        return leaseId + WriterWaitingSuffix;
     }
 
     /// <summary>
@@ -156,8 +156,8 @@ internal static class DistributedLockCoreHelpers
     /// <summary>
     /// Long-running pipeline for the release path (critical path: failure to release strands
     /// waiters until TTL expiry). 15 total attempts (1 + 14 retries) matches the prior
-    /// <c>_MaxReleaseRetryAttempts</c> in <see cref="DistributedLockProvider"/>. Shared with
-    /// <see cref="DistributedReaderWriterLockProvider"/>'s release path so both flows get the
+    /// <c>_MaxReleaseRetryAttempts</c> in <see cref="DistributedLock"/>. Shared with
+    /// <see cref="DistributedReadWriteLock"/>'s release path so both flows get the
     /// same retry budget and jitter.
     /// </summary>
     public static ResiliencePipeline BuildReleasePipeline(TimeProvider timeProvider, ILogger logger)

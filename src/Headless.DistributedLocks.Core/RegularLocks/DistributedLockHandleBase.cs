@@ -13,7 +13,7 @@ namespace Headless.DistributedLocks;
 /// both handle types behave identically. Provider-specific storage operations (renew, ownership
 /// validation, release) are supplied by the derived handle.
 /// </summary>
-internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonitor.ILeaseHandle
+internal abstract class DistributedLockHandleBase : IDistributedLease, LeaseMonitor.ILeaseHandle
 {
     private readonly TimeProvider _timeProvider;
     private readonly Action<string, string>? _deregisterMonitor;
@@ -38,7 +38,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
     // not throw ObjectDisposedException. CancellationToken values are valid after the source is
     // disposed; only IsCancellationRequested/Register on disposed sources throws — and the
     // snapshot's IsCancellationRequested observes the final cancellation state set during dispose.
-#pragma warning disable IDE0032 // Field-backed by intent: setter is internal (AttachMonitor) but the property must be public on IDistributedLock.
+#pragma warning disable IDE0032 // Field-backed by intent: setter is internal (AttachMonitor) but the property must be public on IDistributedLease.
     private CancellationToken _handleLostToken = CancellationToken.None;
 #pragma warning restore IDE0032
 
@@ -54,7 +54,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
 
     protected DistributedLockHandleBase(
         string resource,
-        string lockId,
+        string leaseId,
         long? fencingToken,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
@@ -67,7 +67,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
     )
     {
         Resource = resource;
-        LockId = lockId;
+        LeaseId = leaseId;
         FencingToken = fencingToken;
         DateAcquired = timeProvider.GetUtcNow();
         TimeWaitedForLock = timeWaitedForLock;
@@ -88,7 +88,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
             _monitoringCadenceSnapshot.TotalSeconds < 5.0 ? _monitoringCadenceSnapshot : TimeSpan.FromSeconds(5);
     }
 
-    public string LockId { get; }
+    public string LeaseId { get; }
 
     public long? FencingToken { get; }
 
@@ -98,9 +98,9 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
 
     public TimeSpan TimeWaitedForLock { get; }
 
-    public CancellationToken HandleLostToken => _handleLostToken;
+    public CancellationToken LostToken => _handleLostToken;
 
-    public bool IsMonitored => _monitor is not null;
+    public bool CanObserveLoss => _monitor is not null;
 
     public int RenewalCount => Volatile.Read(ref _renewalCount);
 
@@ -111,7 +111,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
     internal void AttachMonitor(LeaseMonitor monitor)
     {
         _monitor = monitor;
-        _handleLostToken = monitor.HandleLostToken;
+        _handleLostToken = monitor.LostToken;
     }
 
     // ---- Provider-specific storage operations ----
@@ -174,10 +174,10 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
             {
                 var elapsed = _timeProvider.GetElapsedTime(_timestamp);
 
-                Logger.LogDisposableLockReleasing(Resource, LockId, elapsed);
+                Logger.LogDisposableLockReleasing(Resource, LeaseId, elapsed);
             }
 
-            // Stop the monitor unconditionally so it does not fire HandleLostToken after an explicit
+            // Stop the monitor unconditionally so it does not fire LostToken after an explicit
             // release, regardless of whether the storage call below succeeds.
             await _StopMonitorAsync().ConfigureAwait(false);
 
@@ -200,7 +200,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
     public async ValueTask DisposeAsync()
     {
         // Idempotency: matches the LeaseMonitor.DisposeAsync pattern. Re-entry (e.g., a
-        // HandleLostToken callback that disposes the handle while the caller also disposes) must be
+        // LostToken callback that disposes the handle while the caller also disposes) must be
         // a no-op rather than running release/monitor-dispose twice.
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -211,7 +211,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
 
         if (isTraceLogLevelEnabled)
         {
-            Logger.LogDisposableLockDisposing(Resource, LockId);
+            Logger.LogDisposableLockDisposing(Resource, LeaseId);
         }
 
         try
@@ -225,12 +225,12 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
         }
         catch (Exception e)
         {
-            Logger.LogDisposableLockReleaseFailed(e, Resource, LockId);
+            Logger.LogDisposableLockReleaseFailed(e, Resource, LeaseId);
         }
 
         if (isTraceLogLevelEnabled)
         {
-            Logger.LogDisposableLockDisposed(Resource, LockId);
+            Logger.LogDisposableLockDisposed(Resource, LeaseId);
         }
     }
 
@@ -349,7 +349,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
 
             // Disambiguate: a renew failure can be a genuine fence mismatch OR transient
             // retry-exhaustion. Probe ownership before declaring Lost — a transient renewal failure
-            // must not cancel HandleLostToken when storage still confirms ownership.
+            // must not cancel LostToken when storage still confirms ownership.
             var stillOwnerAfterRenew = await ValidateOwnershipAsync(cancellationToken).ConfigureAwait(false);
 
             return stillOwnerAfterRenew ? LeaseMonitor.LeaseState.Unknown : LeaseMonitor.LeaseState.Lost;
@@ -389,7 +389,7 @@ internal abstract class DistributedLockHandleBase : IDistributedLock, LeaseMonit
         }
         finally
         {
-            _deregisterMonitor?.Invoke(Resource, LockId);
+            _deregisterMonitor?.Invoke(Resource, LeaseId);
         }
     }
 }

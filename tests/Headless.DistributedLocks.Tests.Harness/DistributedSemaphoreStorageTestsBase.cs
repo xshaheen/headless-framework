@@ -167,11 +167,11 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         await Parallel.ForEachAsync(
             lockIds,
             new ParallelOptions { MaxDegreeOfParallelism = totalCandidates },
-            async (lockId, _) =>
+            async (leaseId, _) =>
             {
                 var result = await SemaphoreStorage.TryAcquireAsync(
                     resource,
-                    lockId,
+                    leaseId,
                     maxCount,
                     TimeSpan.FromMinutes(5),
                     AbortToken

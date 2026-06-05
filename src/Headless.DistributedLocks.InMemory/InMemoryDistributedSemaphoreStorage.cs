@@ -15,14 +15,14 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
 
     public ValueTask<DistributedLockAcquireResult> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         int maxCount,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThanOrEqualTo(maxCount, 1);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
@@ -33,12 +33,12 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
         {
             _PruneExpired(state);
 
-            if (state.Holders.Count >= maxCount || state.Holders.ContainsKey(lockId))
+            if (state.Holders.Count >= maxCount || state.Holders.ContainsKey(leaseId))
             {
                 return ValueTask.FromResult(DistributedLockAcquireResult.Failed);
             }
 
-            state.Holders[lockId] = new HolderEntry(timeProvider.GetUtcNow().Add(ttl));
+            state.Holders[leaseId] = new HolderEntry(timeProvider.GetUtcNow().Add(ttl));
             var fencingToken = _fencingTokens.AddOrUpdate(resource, static _ => 1, static (_, current) => current + 1);
 
             return ValueTask.FromResult(new DistributedLockAcquireResult(Acquired: true, fencingToken));
@@ -47,13 +47,13 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
 
     public ValueTask<bool> TryExtendAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan ttl,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Argument.IsGreaterThan(ttl, TimeSpan.Zero);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -66,7 +66,7 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
         {
             _PruneExpired(state);
 
-            if (!state.Holders.TryGetValue(lockId, out var existing))
+            if (!state.Holders.TryGetValue(leaseId, out var existing))
             {
                 return ValueTask.FromResult(false);
             }
@@ -75,17 +75,17 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
 
             if (newExpiry > existing.Expires)
             {
-                state.Holders[lockId] = new HolderEntry(newExpiry);
+                state.Holders[leaseId] = new HolderEntry(newExpiry);
             }
 
             return ValueTask.FromResult(true);
         }
     }
 
-    public ValueTask<bool> ValidateAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask<bool> ValidateAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -97,14 +97,14 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
         {
             _PruneExpired(state);
 
-            return ValueTask.FromResult(state.Holders.ContainsKey(lockId));
+            return ValueTask.FromResult(state.Holders.ContainsKey(leaseId));
         }
     }
 
-    public ValueTask<bool> ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask<bool> ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(resource);
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -116,7 +116,7 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
         {
             _PruneExpired(state);
 
-            return ValueTask.FromResult(state.Holders.Remove(lockId));
+            return ValueTask.FromResult(state.Holders.Remove(leaseId));
         }
     }
 
@@ -144,20 +144,20 @@ public sealed class InMemoryDistributedSemaphoreStorage(TimeProvider timeProvide
 
         List<string>? expired = null;
 
-        foreach (var (lockId, entry) in state.Holders)
+        foreach (var (leaseId, entry) in state.Holders)
         {
             if (entry.Expires <= now)
             {
                 expired ??= [];
-                expired.Add(lockId);
+                expired.Add(leaseId);
             }
         }
 
         if (expired is not null)
         {
-            foreach (var lockId in expired)
+            foreach (var leaseId in expired)
             {
-                state.Holders.Remove(lockId);
+                state.Holders.Remove(leaseId);
             }
         }
     }
