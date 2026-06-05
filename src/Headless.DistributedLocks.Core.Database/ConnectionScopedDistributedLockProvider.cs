@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
+using System.Globalization;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
-using System.Globalization;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -103,9 +103,10 @@ public sealed class ConnectionScopedDistributedLockProvider(
 
         var acquireTimeout = acquireOptions?.AcquireTimeout ?? DefaultAcquireTimeout;
         var started = timeProvider.GetTimestamp();
-        var deadline = acquireTimeout == Timeout.InfiniteTimeSpan
-            ? DateTimeOffset.MaxValue
-            : timeProvider.GetUtcNow().Add(acquireTimeout);
+        var deadline =
+            acquireTimeout == Timeout.InfiniteTimeSpan
+                ? DateTimeOffset.MaxValue
+                : timeProvider.GetUtcNow().Add(acquireTimeout);
         var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var isWaiting = false;
 
@@ -224,9 +225,8 @@ public sealed class ConnectionScopedDistributedLockProvider(
                         : new LockAcquisitionTimeoutException(resource);
                 }
 
-                var remaining = deadline == DateTimeOffset.MaxValue
-                    ? _pollingFallback
-                    : deadline - timeProvider.GetUtcNow();
+                var remaining =
+                    deadline == DateTimeOffset.MaxValue ? _pollingFallback : deadline - timeProvider.GetUtcNow();
 
                 if (remaining <= TimeSpan.Zero)
                 {
@@ -301,7 +301,11 @@ public sealed class ConnectionScopedDistributedLockProvider(
         return storage.IsLockedAsync(resource, isShared, cancellationToken).AsTask();
     }
 
-    internal Task<long> GetLocksCountAsync(string resource, bool isShared, CancellationToken cancellationToken = default)
+    internal Task<long> GetLocksCountAsync(
+        string resource,
+        bool isShared,
+        CancellationToken cancellationToken = default
+    )
     {
         return storage.GetLocksCountAsync(resource, isShared, cancellationToken).AsTask();
     }

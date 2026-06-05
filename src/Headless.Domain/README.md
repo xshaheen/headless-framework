@@ -14,8 +14,8 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
-- **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
-- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessageEmitter`
+- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. `AggregateRoot` implements `IDomainEventEmitter` (`AddDomainEvent`, `ClearDomainEvents`, `GetDomainEvents`). Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. `AggregateRoot` implements `IIntegrationEventEmitter` (`AddIntegrationEvent`, `ClearIntegrationEvents`, `GetIntegrationEvents`). This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.Orm.EntityFramework.Messaging`), not from `Headless.Domain`.
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
 ## Installation
@@ -37,11 +37,14 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
     public void Complete()
     {
         Status = OrderStatus.Completed;
-        AddMessage(new OrderCompletedEvent(Id));
+        AddDomainEvent(new OrderCompletedEvent(Id));
     }
 }
 
-public sealed record OrderCompletedEvent(Guid OrderId) : ILocalMessage;
+public sealed record OrderCompletedEvent(Guid OrderId) : IDomainEvent
+{
+    public string UniqueId { get; } = Guid.NewGuid().ToString();
+}
 ```
 
 ### Auditing

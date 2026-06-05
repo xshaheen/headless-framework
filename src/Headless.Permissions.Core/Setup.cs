@@ -125,7 +125,7 @@ public static class SetupPermissions
         services.AddTransient<IGrantPermissionsSeedHelper, GrantPermissionsSeedHelper>();
 
         services.AddTransient<
-            ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>,
+            IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>,
             PermissionGrantCacheItemInvalidator
         >();
 

@@ -34,7 +34,7 @@ help: ## Show available commands.
 	@printf "  make pack CONFIGURATION=Release\n\n"
 
 .PHONY: bootstrap
-bootstrap: tools restore ## Restore local tools and NuGet packages.
+bootstrap: tools restore hooks ## Restore local tools, NuGet packages, and git hooks.
 
 .PHONY: tools
 tools: ## Restore repo-pinned .NET tools.
@@ -43,6 +43,10 @@ tools: ## Restore repo-pinned .NET tools.
 .PHONY: restore
 restore: ## Restore NuGet packages.
 	$(DOTNET) restore "$(SOLUTION)"
+
+.PHONY: hooks
+hooks: ## Point git at the committed hooks (per clone/worktree).
+	git config core.hooksPath .husky
 
 .PHONY: build
 build: restore ## Build the solution.

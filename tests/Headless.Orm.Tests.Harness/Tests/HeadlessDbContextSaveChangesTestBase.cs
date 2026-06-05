@@ -87,14 +87,11 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         entity.DateSuspended.Should().BeNull();
         entity.SuspendedById.Should().BeNull();
 
-        // then - local messages emitted (Created + Changed)
-        db.EmittedLocalMessages.Should().ContainSingle();
-        var local = db.EmittedLocalMessages.Single();
-        local.Emitter.Should().Be(entity);
-        local.Messages.Should().HaveCount(2);
-        var createdMessage = local.Messages.OfType<EntityCreatedEventData<HarnessTestEntity>>().Single();
+        // then - local domain events emitted (Created + Changed)
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var createdMessage = db.EmittedLocalMessages.OfType<EntityCreatedEventData<HarnessTestEntity>>().Single();
         createdMessage.Entity.Should().Be(entity);
-        var changedMessage = local.Messages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -113,6 +110,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         db.TestEntities.Add(entity);
         await db.SaveChangesAsync(AbortToken);
         var oldStamp = entity.ConcurrencyStamp;
+        db.EmittedLocalMessages.Clear();
 
         // when
         entity.Name = "updated";
@@ -126,13 +124,11 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
-        // then - local messages emitted (Updated + Changed)
-        db.EmittedLocalMessages.Should().NotBeEmpty();
-        var last = db.EmittedLocalMessages[^1];
-        last.Messages.Should().HaveCount(2);
-        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<HarnessTestEntity>>().Single();
+        // then - local domain events emitted (Updated + Changed)
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var updatedMessage = db.EmittedLocalMessages.OfType<EntityUpdatedEventData<HarnessTestEntity>>().Single();
         updatedMessage.Entity.Should().Be(entity);
-        var changedMessage = last.Messages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -150,6 +146,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         var entity = new HarnessTestEntity { Name = "to-delete", TenantId = "T1" };
         db.TestEntities.Add(entity);
         await db.SaveChangesAsync(AbortToken);
+        db.EmittedLocalMessages.Clear();
 
         // when
         entity.MarkDeleted();
@@ -161,12 +158,11 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         entity.DateDeleted.Should().Be(Fixture.Now);
         entity.DeletedById.Should().Be(Fixture.UserId);
 
-        // then - local messages emitted (Updated + Changed)
-        var last = db.EmittedLocalMessages[^1];
-        last.Messages.Should().HaveCount(2);
-        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<HarnessTestEntity>>().Single();
+        // then - local domain events emitted (Updated + Changed)
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var updatedMessage = db.EmittedLocalMessages.OfType<EntityUpdatedEventData<HarnessTestEntity>>().Single();
         updatedMessage.Entity.Should().Be(entity);
-        var changedMessage = last.Messages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -208,7 +204,7 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
 
         var entity = new HarnessTestEntity { Name = "with-msgs", TenantId = "T1" };
-        entity.AddMessage(new HarnessDistributedMessage("hello"));
+        entity.AddIntegrationEvent(new HarnessDistributedMessage("hello"));
         db.TestEntities.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
@@ -216,13 +212,10 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         // when
         await db.SaveChangesAsync(AbortToken);
 
-        // then - both local and distributed messages emitted
+        // then - both local and distributed events emitted
         db.EmittedLocalMessages.Should().NotBeEmpty();
         db.EmittedDistributedMessages.Should().ContainSingle();
-        var dist = db.EmittedDistributedMessages.Single();
-        dist.Emitter.Should().Be(entity);
-        dist.Messages.Should().ContainSingle();
-        dist.Messages.Single().Should().BeOfType<HarnessDistributedMessage>();
+        db.EmittedDistributedMessages.Single().Should().BeOfType<HarnessDistributedMessage>();
 
         await tx.CommitAsync(AbortToken);
     }

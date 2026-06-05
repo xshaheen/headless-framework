@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
-using System.Runtime.InteropServices;
 using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
@@ -263,9 +263,7 @@ public sealed class RedisDistributedReaderWriterLockStorage(
     )
     {
         var expiresValue = ttl.HasValue ? (int)ttl.Value.TotalMilliseconds : RedisValue.EmptyString;
-        var markerExpiresValue = markerTtl.HasValue
-            ? (int)markerTtl.Value.TotalMilliseconds
-            : RedisValue.EmptyString;
+        var markerExpiresValue = markerTtl.HasValue ? (int)markerTtl.Value.TotalMilliseconds : RedisValue.EmptyString;
 
         return new ReaderWriterWriteParams(writerKey, readerKey, lockId, waitingId, expiresValue, markerExpiresValue);
     }

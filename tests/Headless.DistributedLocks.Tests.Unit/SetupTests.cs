@@ -70,7 +70,10 @@ public sealed class SetupTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // then
-        services.Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>)).Should().Be(1);
+        services
+            .Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>))
+            .Should()
+            .Be(1);
         provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
     }
 

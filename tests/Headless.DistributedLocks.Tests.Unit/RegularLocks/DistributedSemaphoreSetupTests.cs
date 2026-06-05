@@ -84,12 +84,14 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddSingleton<IMyMarker>(new _MyMarkerImpl());
 
         // when
-        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>((opts, sp) =>
-        {
-            // verify IServiceProvider is functional (resolves a registered dependency)
-            sp.GetRequiredService<IMyMarker>().Should().NotBeNull();
-            opts.KeyPrefix = "sp-overload:";
-        });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(
+            (opts, sp) =>
+            {
+                // verify IServiceProvider is functional (resolves a registered dependency)
+                sp.GetRequiredService<IMyMarker>().Should().NotBeNull();
+                opts.KeyPrefix = "sp-overload:";
+            }
+        );
         using var provider = services.BuildServiceProvider();
 
         // then

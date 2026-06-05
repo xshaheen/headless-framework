@@ -19,7 +19,9 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
         await fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null)
+    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
+        DistributedLockOptions? options = null
+    )
     {
         return new DistributedReaderWriterLockProvider(
             fixture.ReaderWriterLockStorage,
@@ -44,7 +46,9 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
             async () =>
             {
                 var db = fixture.ConnectionMultiplexer.GetDatabase();
-                var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
+                var writerKeyValue = await db.StringGetAsync(
+                    "{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer"
+                );
 
                 return writerKeyValue.HasValue;
             },
@@ -53,43 +57,54 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
     }
 
     [Fact]
-    public override Task should_allow_multiple_readers_and_release_on_dispose() => base.should_allow_multiple_readers_and_release_on_dispose();
+    public override Task should_allow_multiple_readers_and_release_on_dispose() =>
+        base.should_allow_multiple_readers_and_release_on_dispose();
 
     [Fact]
     public override Task should_acquire_write_lock_exclusively() => base.should_acquire_write_lock_exclusively();
 
     [Fact]
-    public override Task should_release_read_lock_and_allow_writer() => base.should_release_read_lock_and_allow_writer();
+    public override Task should_release_read_lock_and_allow_writer() =>
+        base.should_release_read_lock_and_allow_writer();
 
     [Fact]
-    public override Task should_queue_second_writer_and_unblock_after_first_releases() => base.should_queue_second_writer_and_unblock_after_first_releases();
+    public override Task should_queue_second_writer_and_unblock_after_first_releases() =>
+        base.should_queue_second_writer_and_unblock_after_first_releases();
 
     [Fact]
-    public override Task should_leave_lock_held_when_release_on_dispose_is_false() => base.should_leave_lock_held_when_release_on_dispose_is_false();
+    public override Task should_leave_lock_held_when_release_on_dispose_is_false() =>
+        base.should_leave_lock_held_when_release_on_dispose_is_false();
 
     [Fact]
     public override Task should_be_idempotent_for_stale_release() => base.should_be_idempotent_for_stale_release();
 
     [Fact]
-    public override Task should_throw_when_acquire_read_blocked_by_writer() => base.should_throw_when_acquire_read_blocked_by_writer();
+    public override Task should_throw_when_acquire_read_blocked_by_writer() =>
+        base.should_throw_when_acquire_read_blocked_by_writer();
 
     [Fact]
-    public override Task should_throw_when_acquire_write_blocked_by_reader() => base.should_throw_when_acquire_write_blocked_by_reader();
+    public override Task should_throw_when_acquire_write_blocked_by_reader() =>
+        base.should_throw_when_acquire_write_blocked_by_reader();
 
     [Fact]
-    public override Task should_prefer_queued_writer_over_new_reader() => base.should_prefer_queued_writer_over_new_reader();
+    public override Task should_prefer_queued_writer_over_new_reader() =>
+        base.should_prefer_queued_writer_over_new_reader();
 
     [Fact]
-    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_times_out() => base.should_clear_writer_waiting_marker_when_try_acquire_write_times_out();
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_times_out() =>
+        base.should_clear_writer_waiting_marker_when_try_acquire_write_times_out();
 
     [Fact]
-    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled() => base.should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled();
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled() =>
+        base.should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled();
 
     [Fact]
-    public override Task should_fire_handle_lost_token_when_read_lock_ttl_expires() => base.should_fire_handle_lost_token_when_read_lock_ttl_expires();
+    public override Task should_fire_handle_lost_token_when_read_lock_ttl_expires() =>
+        base.should_fire_handle_lost_token_when_read_lock_ttl_expires();
 
     [Fact]
-    public override Task should_fire_handle_lost_token_when_write_lock_ttl_expires() => base.should_fire_handle_lost_token_when_write_lock_ttl_expires();
+    public override Task should_fire_handle_lost_token_when_write_lock_ttl_expires() =>
+        base.should_fire_handle_lost_token_when_write_lock_ttl_expires();
 
     [Fact]
     public override Task should_auto_extend_write_lock() => base.should_auto_extend_write_lock();
@@ -116,7 +131,9 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
         await act.Should().ThrowAsync<OperationCanceledException>();
 
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var writerKeyValue = await db.StringGetAsync("{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer");
+        var writerKeyValue = await db.StringGetAsync(
+            "{" + DistributedLockOptions.DefaultKeyPrefix + resource + "}:writer"
+        );
         writerKeyValue.HasValue.Should().BeFalse();
     }
 }

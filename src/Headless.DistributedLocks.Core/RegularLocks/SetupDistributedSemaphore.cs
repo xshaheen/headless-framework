@@ -49,16 +49,14 @@ public static class SetupDistributedSemaphore
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
-            services.TryAddSingleton<DistributedSemaphoreProvider>(provider =>
-                new DistributedSemaphoreProvider(
-                    provider.GetRequiredService<TStorage>(),
-                    provider.GetService<IOutboxBus>(),
-                    provider.GetRequiredService<DistributedLockOptions>(),
-                    provider.GetRequiredService<ILongIdGenerator>(),
-                    provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<ILogger<DistributedSemaphoreProvider>>()
-                )
-            );
+            services.TryAddSingleton<DistributedSemaphoreProvider>(provider => new DistributedSemaphoreProvider(
+                provider.GetRequiredService<TStorage>(),
+                provider.GetService<IOutboxBus>(),
+                provider.GetRequiredService<DistributedLockOptions>(),
+                provider.GetRequiredService<ILongIdGenerator>(),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<ILogger<DistributedSemaphoreProvider>>()
+            ));
 
             services.TryAddSingleton<IDistributedSemaphoreProvider>(sp =>
                 sp.GetRequiredService<DistributedSemaphoreProvider>()
@@ -67,8 +65,8 @@ public static class SetupDistributedSemaphore
             // Register under ICanReceiveLockReleased so LockReleasedConsumer wakes semaphore waiters
             // alongside mutex waiters. TryAddEnumerable keeps repeated registrations idempotent.
             services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedSemaphoreProvider>(
-                    static sp => sp.GetRequiredService<DistributedSemaphoreProvider>()
+                ServiceDescriptor.Singleton<ICanReceiveLockReleased, DistributedSemaphoreProvider>(static sp =>
+                    sp.GetRequiredService<DistributedSemaphoreProvider>()
                 )
             );
 

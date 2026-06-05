@@ -10,7 +10,7 @@ namespace Headless.Permissions.Grants;
 public sealed class PermissionGrantCacheItemInvalidator(
     ICache<PermissionGrantCacheItem> cache,
     ICurrentTenant currentTenant
-) : ILocalMessageHandler<EntityChangedEventData<PermissionGrantRecord>>
+) : IDomainEventHandler<EntityChangedEventData<PermissionGrantRecord>>
 {
     public async ValueTask HandleAsync(
         EntityChangedEventData<PermissionGrantRecord> message,

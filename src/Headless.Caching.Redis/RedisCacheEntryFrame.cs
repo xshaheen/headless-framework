@@ -20,12 +20,7 @@ internal static class RedisCacheEntryFrame
     internal const long MinUnixEpochMilliseconds = -62_135_596_800_000L; // 0001-01-01T00:00:00.000Z
     internal const long MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
 
-    public static byte[] Encode(
-        RedisValue value,
-        bool isNull,
-        DateTime? logicalExpiresAt,
-        DateTime? physicalExpiresAt
-    )
+    public static byte[] Encode(RedisValue value, bool isNull, DateTime? logicalExpiresAt, DateTime? physicalExpiresAt)
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
         var buffer = new byte[HeaderLength + valueBytes.Length];
@@ -128,8 +123,7 @@ internal static class RedisCacheEntryFrame
     private static DateTime _FromUnixTimeMilliseconds(long value) =>
         DateTimeOffset.FromUnixTimeMilliseconds(value).UtcDateTime;
 
-    private static bool _IsOutOfRange(long value) =>
-        value is < MinUnixEpochMilliseconds or > MaxUnixEpochMilliseconds;
+    private static bool _IsOutOfRange(long value) => value is < MinUnixEpochMilliseconds or > MaxUnixEpochMilliseconds;
 
     internal readonly record struct DecodedFrame(
         bool IsFramed,
@@ -139,12 +133,13 @@ internal static class RedisCacheEntryFrame
         ReadOnlyMemory<byte> ValueSegment
     )
     {
-        public static DecodedFrame Unframed { get; } = new(
-            IsFramed: false,
-            IsNull: false,
-            LogicalExpiresAt: null,
-            PhysicalExpiresAt: null,
-            ValueSegment: ReadOnlyMemory<byte>.Empty
-        );
+        public static DecodedFrame Unframed { get; } =
+            new(
+                IsFramed: false,
+                IsNull: false,
+                LogicalExpiresAt: null,
+                PhysicalExpiresAt: null,
+                ValueSegment: ReadOnlyMemory<byte>.Empty
+            );
     }
 }

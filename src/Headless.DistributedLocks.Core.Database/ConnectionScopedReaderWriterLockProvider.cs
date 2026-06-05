@@ -65,7 +65,9 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
 
     public async Task<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return await mutexProvider.GetLocksCountAsync(resource, isShared: true, cancellationToken).ConfigureAwait(false);
+        return await mutexProvider
+            .GetLocksCountAsync(resource, isShared: true, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private async Task<IDistributedLock> _AcquireAsync(
@@ -75,7 +77,9 @@ public sealed class ConnectionScopedReaderWriterLockProvider(ConnectionScopedDis
         CancellationToken cancellationToken
     )
     {
-        var handle = await mutexProvider.TryAcquireAsync(resource, isShared, options, cancellationToken).ConfigureAwait(false);
+        var handle = await mutexProvider
+            .TryAcquireAsync(resource, isShared, options, cancellationToken)
+            .ConfigureAwait(false);
 
         if (handle is not null)
         {

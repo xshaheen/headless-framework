@@ -20,5 +20,9 @@ internal static partial class LoggerExtensions
         EventName = "ReleaseNotificationFanoutFailed",
         Message = "Fanning out a LISTEN/NOTIFY release notification for resource {Resource} to local waiters failed."
     )]
-    public static partial void LogReleaseNotificationFanoutFailed(this ILogger logger, Exception exception, string resource);
+    public static partial void LogReleaseNotificationFanoutFailed(
+        this ILogger logger,
+        Exception exception,
+        string resource
+    );
 }

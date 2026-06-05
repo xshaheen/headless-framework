@@ -64,7 +64,8 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
     public override Task should_lock_one_at_a_time_async() => base.should_lock_one_at_a_time_async();
 
     [Fact]
-    public override Task should_get_expiration_for_locked_resource() => base.should_get_expiration_for_locked_resource();
+    public override Task should_get_expiration_for_locked_resource() =>
+        base.should_get_expiration_for_locked_resource();
 
     [Fact]
     public override Task should_return_null_expiration_when_not_locked() =>
@@ -74,7 +75,8 @@ public sealed class InMemoryDistributedLockProviderTests : DistributedLockProvid
     public override Task should_get_lock_info_for_locked_resource() => base.should_get_lock_info_for_locked_resource();
 
     [Fact]
-    public override Task should_return_null_lock_info_when_not_locked() => base.should_return_null_lock_info_when_not_locked();
+    public override Task should_return_null_lock_info_when_not_locked() =>
+        base.should_return_null_lock_info_when_not_locked();
 
     [Fact]
     public override Task should_list_active_locks() => base.should_list_active_locks();

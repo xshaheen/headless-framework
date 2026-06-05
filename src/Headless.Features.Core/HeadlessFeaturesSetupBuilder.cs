@@ -38,7 +38,9 @@ public sealed class HeadlessFeaturesSetupBuilder
         return this;
     }
 
-    public HeadlessFeaturesSetupBuilder ConfigureManagement(Action<FeatureManagementOptions, IServiceProvider> configure)
+    public HeadlessFeaturesSetupBuilder ConfigureManagement(
+        Action<FeatureManagementOptions, IServiceProvider> configure
+    )
     {
         Argument.IsNotNull(configure);
 

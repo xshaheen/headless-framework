@@ -15,6 +15,9 @@ public sealed class PostgresDistributedLockFixture
 
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure().WithDatabase("distributed_locks_test").WithUsername("postgres").WithPassword("postgres");
+        return base.Configure()
+            .WithDatabase("distributed_locks_test")
+            .WithUsername("postgres")
+            .WithPassword("postgres");
     }
 }

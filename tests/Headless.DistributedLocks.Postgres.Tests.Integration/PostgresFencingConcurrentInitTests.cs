@@ -31,26 +31,28 @@ public sealed class PostgresFencingConcurrentInitTests(PostgresDistributedLockFi
             var resource = Faker.Random.AlphaNumeric(12);
 
             var acquires = providers
-                .Select(p => Task.Run(
-                    async () =>
-                    {
-                        var locks = p.GetRequiredService<IDistributedLockProvider>();
+                .Select(p =>
+                    Task.Run(
+                        async () =>
+                        {
+                            var locks = p.GetRequiredService<IDistributedLockProvider>();
 
-                        // Distinct resources so the racers do not block on each other's advisory lock —
-                        // the point is to race the sequence init, not the lock itself.
-                        var handle = await locks.AcquireAsync(
-                            $"{resource}:{Guid.NewGuid():N}",
-                            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
-                            AbortToken
-                        );
+                            // Distinct resources so the racers do not block on each other's advisory lock —
+                            // the point is to race the sequence init, not the lock itself.
+                            var handle = await locks.AcquireAsync(
+                                $"{resource}:{Guid.NewGuid():N}",
+                                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                                AbortToken
+                            );
 
-                        var token = handle.FencingToken;
-                        await handle.ReleaseAsync();
+                            var token = handle.FencingToken;
+                            await handle.ReleaseAsync();
 
-                        return token;
-                    },
-                    AbortToken
-                ))
+                            return token;
+                        },
+                        AbortToken
+                    )
+                )
                 .ToArray();
 
             var tokens = await Task.WhenAll(acquires);

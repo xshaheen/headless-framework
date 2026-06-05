@@ -15,6 +15,9 @@ public sealed class PostgreSqlPermissionsFixture
 
     protected override PostgreSqlBuilder Configure()
     {
-        return base.Configure().WithDatabase("permissions_storage_test").WithUsername("postgres").WithPassword("postgres");
+        return base.Configure()
+            .WithDatabase("permissions_storage_test")
+            .WithUsername("postgres")
+            .WithPassword("postgres");
     }
 }

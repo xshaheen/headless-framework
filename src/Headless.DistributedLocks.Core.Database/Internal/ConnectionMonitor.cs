@@ -74,7 +74,8 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     /// <summary>Protects all mutable state. The weak reference is a stable, otherwise-unused lock object.</summary>
     private object Lock => _weakConnection;
 
-    private bool _HasRegisteredMonitoringHandlesNoLock => (_monitoringHandleRegistrations?.Count).GetValueOrDefault() != 0;
+    private bool _HasRegisteredMonitoringHandlesNoLock =>
+        (_monitoringHandleRegistrations?.Count).GetValueOrDefault() != 0;
 
     public async ValueTask<IDisposable?> AcquireConnectionLockAsync(CancellationToken cancellationToken)
     {
@@ -151,11 +152,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             var handle = new MonitoringHandle(this, connectionLostTokenSource.Token);
             (_monitoringHandleRegistrations ??= []).Add(handle, connectionLostTokenSource);
 
-            if (
-                !_StartMonitorWorkerIfNeededNoLock()
-                && !hadRegisteredMonitoringHandles
-                && _state == State.Active
-            )
+            if (!_StartMonitorWorkerIfNeededNoLock() && !hadRegisteredMonitoringHandles && _state == State.Active)
             {
                 // An active worker was doing keepalive (not monitoring) and is likely asleep. Wake it so it switches
                 // over to monitoring.
@@ -436,17 +433,17 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             // acquirer needs the connection or when monitoring is no longer needed. The bounded command timeout the
             // executor applies guarantees a silently-dead connection surfaces as a fault rather than hanging forever.
             await _SuppressAsync(
-                connection.SleepAsync(
-                    sleepTime: _MonitoringProbeCadence,
-                    executor: (command, token) =>
-                    {
-                        command.SetExactTimeoutSeconds(_monitoringCommandTimeoutSeconds);
+                    connection.SleepAsync(
+                        sleepTime: _MonitoringProbeCadence,
+                        executor: (command, token) =>
+                        {
+                            command.SetExactTimeoutSeconds(_monitoringCommandTimeoutSeconds);
 
-                        return command.ExecuteNonQueryAsync(isConnectionMonitoringQuery: true, token);
-                    },
-                    cancellationToken: cancellationToken
+                            return command.ExecuteNonQueryAsync(isConnectionMonitoringQuery: true, token);
+                        },
+                        cancellationToken: cancellationToken
+                    )
                 )
-            )
                 .ConfigureAwait(false);
         }
         finally
@@ -485,8 +482,8 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                 // Fast and non-blocking; we don't bother cancelling it.
 #pragma warning disable VSTHRD003 // The task is started here by ExecuteNonQueryAsync, not awaited from elsewhere.
                 await _SuppressAsync(
-                    command.ExecuteNonQueryAsync(isConnectionMonitoringQuery: true, CancellationToken.None).AsTask()
-                )
+                        command.ExecuteNonQueryAsync(isConnectionMonitoringQuery: true, CancellationToken.None).AsTask()
+                    )
                     .ConfigureAwait(false);
 #pragma warning restore VSTHRD003
             }

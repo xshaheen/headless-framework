@@ -106,9 +106,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var finalData = allDates
             .Select(date =>
             {
-                var statusCounts = groupedData.TryGetValue(date, out var statusData)
-                    ? statusData
-                    : [];
+                var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
@@ -160,9 +158,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var finalData = allDates
             .Select(date =>
             {
-                var statusCounts = groupedData.TryGetValue(date, out var statusData)
-                    ? statusData
-                    : [];
+                var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))
@@ -236,9 +232,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
         var finalData = allDates
             .Select(date =>
             {
-                var statusCounts = groupedData.TryGetValue(date, out var statusData)
-                    ? statusData
-                    : [];
+                var statusCounts = groupedData.TryGetValue(date, out var statusData) ? statusData : [];
 
                 var results = allStatuses
                     .Select(status => Tuple.Create((int)status, statusCounts.GetValueOrDefault(status, 0)))

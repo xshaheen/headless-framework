@@ -1,3 +1,4 @@
+using Headless.Domain;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Tests.Fixtures;
@@ -16,9 +17,9 @@ public sealed class TestHeadlessDbContext(
 
     public required DbSet<LongKeyedEntity> LongKeyed { get; set; }
 
-    public List<EmitterDistributedMessages> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
+    public List<IIntegrationEvent> EmittedDistributedMessages => messageDispatcher.EmittedDistributedMessages;
 
-    public List<EmitterLocalMessages> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
+    public List<IDomainEvent> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
 
     public override string DefaultSchema => "";
 }

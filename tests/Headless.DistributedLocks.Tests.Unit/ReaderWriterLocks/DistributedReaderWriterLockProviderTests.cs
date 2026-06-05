@@ -58,10 +58,20 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         // given
         var storage = Substitute.For<IDistributedReaderWriterLockStorage>();
         storage
-            .TryAcquireReadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .TryAcquireReadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(true);
         storage
-            .TryExtendReadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .TryExtendReadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(true);
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -78,7 +88,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         await storage.Received(1).ReleaseReadAsync(scopedResource, handle.LockId, Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
-            .TryExtendWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+            .TryExtendWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -97,7 +112,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
             )
             .Returns(true);
         storage
-            .TryExtendWriteAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .TryExtendWriteAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            )
             .Returns(true);
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
@@ -114,7 +134,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         await storage.Received(1).ReleaseWriteAsync(scopedResource, handle.LockId, Arg.Any<CancellationToken>());
         await storage
             .DidNotReceive()
-            .TryExtendReadAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+            .TryExtendReadAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan?>(),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -126,7 +151,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
-        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
+        await storage.TryAcquireReadAsync(
+            $"distributed-lock:{resource}",
+            "reader-1",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
 
         // when
         var result = await provider.TryAcquireWriteLockAsync(
@@ -150,7 +180,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         );
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
-        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
+        await storage.TryAcquireReadAsync(
+            $"distributed-lock:{resource}",
+            "reader-1",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
 
         // when
         var acquireTask = provider.TryAcquireWriteLockAsync(
@@ -177,7 +212,12 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
         var releaseObserver = new ReleaseObservingReaderWriterLockStorage(storage);
         var provider = _CreateProvider(releaseObserver);
         var resource = Faker.Random.AlphaNumeric(10);
-        await storage.TryAcquireReadAsync($"distributed-lock:{resource}", "reader-1", TimeSpan.FromSeconds(10), AbortToken);
+        await storage.TryAcquireReadAsync(
+            $"distributed-lock:{resource}",
+            "reader-1",
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
 
         using var cts = new CancellationTokenSource();
         releaseObserver.OnTryAcquireWriteCancellation = () => cts.Cancel();
@@ -291,13 +331,13 @@ public sealed class DistributedReaderWriterLockProviderTests : TestBase
             CancellationToken cancellationToken = default
         ) => inner.ValidateWriteAsync(resource, lockId, cancellationToken);
 
-        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => inner.IsReadLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            inner.IsReadLockedAsync(resource, cancellationToken);
 
-        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default)
-            => inner.IsWriteLockedAsync(resource, cancellationToken);
+        public ValueTask<bool> IsWriteLockedAsync(string resource, CancellationToken cancellationToken = default) =>
+            inner.IsWriteLockedAsync(resource, cancellationToken);
 
-        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default)
-            => inner.GetReaderCountAsync(resource, cancellationToken);
+        public ValueTask<long> GetReaderCountAsync(string resource, CancellationToken cancellationToken = default) =>
+            inner.GetReaderCountAsync(resource, cancellationToken);
     }
 }

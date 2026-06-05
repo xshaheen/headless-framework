@@ -96,7 +96,12 @@ public sealed class HeadlessRedisScriptsLoader(
                     LoadedLuaScript[] results;
 
                     using (var timeoutCts = _timeProvider.CreateCancellationTokenSource(_ScriptLoadTimeout))
-                    using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                    using (
+                        var loadCts = CancellationTokenSource.CreateLinkedTokenSource(
+                            cancellationToken,
+                            timeoutCts.Token
+                        )
+                    )
                     {
                         results = await Task.WhenAll(loadTasks)
                             .WithAggregatedExceptions()
@@ -260,7 +265,12 @@ public sealed class HeadlessRedisScriptsLoader(
                     // every other caller. A TimeProvider-driven timeout CTS linked with the caller token
                     // (via .WaitAsync) lets a stuck load fail fast and release the lock instead.
                     using (var timeoutCts = _timeProvider.CreateCancellationTokenSource(_ScriptLoadTimeout))
-                    using (var loadCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token))
+                    using (
+                        var loadCts = CancellationTokenSource.CreateLinkedTokenSource(
+                            cancellationToken,
+                            timeoutCts.Token
+                        )
+                    )
                     {
                         loadedScript = await scriptDefinition
                             .LoadAsync(server)

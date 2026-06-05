@@ -15,23 +15,23 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
             return;
         }
 
-        if (entry.Entity is IDistributedMessageEmitter distributedMessageEmitter)
+        if (entry.Entity is IIntegrationEventEmitter integrationEmitter)
         {
-            var messages = distributedMessageEmitter.GetDistributedMessages();
+            var events = integrationEmitter.GetIntegrationEvents();
 
-            if (messages.Count > 0)
+            if (events.Count > 0)
             {
-                context.DistributedEmitters.Add(new(distributedMessageEmitter, messages));
+                context.IntegrationEventEmitters.Add(new(integrationEmitter, events));
             }
         }
 
-        if (entry.Entity is ILocalMessageEmitter localMessageEmitter)
+        if (entry.Entity is IDomainEventEmitter domainEmitter)
         {
-            var messages = localMessageEmitter.GetLocalMessages();
+            var events = domainEmitter.GetDomainEvents();
 
-            if (messages.Count > 0)
+            if (events.Count > 0)
             {
-                context.LocalEmitters.Add(new(localMessageEmitter, messages));
+                context.DomainEventEmitters.Add(new(domainEmitter, events));
             }
         }
     }

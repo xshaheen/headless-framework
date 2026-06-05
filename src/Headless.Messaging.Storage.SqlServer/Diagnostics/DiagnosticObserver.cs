@@ -11,8 +11,7 @@ namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
     : IObserver<KeyValuePair<string, object?>>
 {
-    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache =
-        [];
+    private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache = [];
 
     private static readonly ConditionalWeakTable<
         Type,

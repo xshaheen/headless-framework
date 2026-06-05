@@ -1,6 +1,6 @@
 ---
 domain: Core
-packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.Abstractions, Security
+packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.Abstractions, Security
 ---
 
 # Core
@@ -51,9 +51,10 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
     - [Configuration](#configuration-3)
     - [Dependencies](#dependencies-3)
     - [Side Effects](#side-effects-3)
-- [Headless.Domain.LocalPublisher](#headlessdomainlocalpublisher)
+- [Headless.Domain.LocalEventBus](#headlessdomainlocaleventbus)
     - [Problem Solved](#problem-solved-4)
     - [Key Features](#key-features-4)
+    - [Design Notes](#design-notes)
     - [Installation](#installation-4)
     - [Quick Start](#quick-start-4)
         - [Publishing Events](#publishing-events)
@@ -71,16 +72,16 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalPublisher, Security.
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
-- **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and local/distributed messaging contracts (`ILocalMessage`, `IDistributedMessage`).
-- **`Headless.Domain.LocalPublisher`** — DI-based `ILocalMessagePublisher` for in-process event handling. Register with `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`.
+- **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use `IDomainEvent` + `IDomainEventEmitter`; integration (distributed) events use `IIntegrationEvent` + `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
+- **`Headless.Domain.LocalEventBus`** — DI-based `ILocalEventBus` for in-process domain event dispatch. Register with `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Namespace stays `Headless.Domain`; only the package/assembly name changed from `Headless.Domain.LocalPublisher`.
 
 ## Agent Instructions
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
-- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit domain events via `AddMessage()` on aggregate roots.
+- Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
 - Use `Headless.Core` for `ICurrentUser`, `ICurrentTenant`, and `IClock` — never use `DateTime.UtcNow` directly; inject `IClock` instead.
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
-- For local (in-process) domain events, register `AddLocalMessagePublisher()` and implement `ILocalMessageHandler<T>`. Use `LocalEventHandlerOrderAttribute` to control handler execution order.
+- For local (in-process) domain events, register `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit `IIntegrationEvent` via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
 - `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api.Core` or other host packages — do not register them manually.
@@ -399,8 +400,8 @@ Provides building blocks for implementing DDD patterns: entities with identity, 
 - **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`
 - **Concurrency**: `IHasConcurrencyStamp`, `IHasETag`
 - **Multi-tenancy**: `IMultiTenant`
-- **Local Messaging**: `ILocalMessage`, `ILocalMessagePublisher`, `ILocalMessageHandler`
-- **Distributed Messaging**: `IDistributedMessage`, `IDistributedMessagePublisher`, `IDistributedMessageHandler`
+- **Domain Events (in-process)**: `IDomainEvent`, `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. `AggregateRoot` implements `IDomainEventEmitter` (`AddDomainEvent`, `ClearDomainEvents`, `GetDomainEvents`). Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Integration Events (distributed)**: `IIntegrationEvent`, `IIntegrationEventEmitter`. `AggregateRoot` implements `IIntegrationEventEmitter` (`AddIntegrationEvent`, `ClearIntegrationEvents`, `GetIntegrationEvents`). This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.Orm.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
 ## Installation
@@ -422,11 +423,14 @@ public sealed class Order : AggregateRoot<Guid>, ICreateAudit
     public void Complete()
     {
         Status = OrderStatus.Completed;
-        AddMessage(new OrderCompletedEvent(Id));
+        AddDomainEvent(new OrderCompletedEvent(Id));
     }
 }
 
-public sealed record OrderCompletedEvent(Guid OrderId) : ILocalMessage;
+public sealed record OrderCompletedEvent(Guid OrderId) : IDomainEvent
+{
+    public string UniqueId { get; } = Guid.NewGuid().ToString();
+}
 ```
 
 ### Auditing
@@ -472,26 +476,33 @@ None.
 
 ## None.
 
-# Headless.Domain.LocalPublisher
+# Headless.Domain.LocalEventBus
 
-DI-based implementation of `ILocalMessagePublisher` for in-process domain event handling.
+DI-based implementation of `ILocalEventBus` for in-process domain event handling.
 
 ## Problem Solved
 
-Provides in-memory local message publishing that resolves handlers from the DI container, enabling decoupled event-driven architecture within a single process.
+Provides in-memory domain event dispatch that resolves handlers from the DI container, enabling decoupled event-driven architecture within a single process and unit of work.
 
 ## Key Features
 
-- `ILocalMessagePublisher` implementation using DI
-- Automatic handler discovery and resolution
-- Handler ordering via `LocalEventHandlerOrderAttribute`
-- Sync and async publishing support
-- Scoped handler resolution
+- `ILocalEventBus` implementation (`ServiceProviderLocalEventBus`) backed by DI
+- Generic and non-generic publish overloads (`Publish`, `PublishAsync`)
+- Handler resolution per publish from the active scope
+- Handler ordering via `DomainEventHandlerOrderAttribute`
+- Handler exception aggregation and cooperative cancellation
+
+### Design Notes
+
+- **Non-generic runtime-typed dispatch.** `Publish(IDomainEvent)` / `PublishAsync(IDomainEvent)` dispatch to handlers of the event's exact runtime type — there is no contravariant traversal to base types or implemented interfaces. The runtime type is mapped to a compiled invoker that is built once and cached, so repeated publishes of the same concrete type avoid reflection on the hot path. The generic overloads (`Publish<T>` / `PublishAsync<T>`) dispatch against the static type argument `T`.
+- **Scoped lifetime.** `AddHeadlessLocalEventBus()` registers `ILocalEventBus` as scoped (`TryAddScoped`). Handlers are resolved from the caller's scope, so they share the same scoped services — notably the `DbContext` — when published inside a unit of work.
+- **Exception aggregation and cancellation.** Handlers are resolved and invoked per publish. A single handler exception is rethrown as-is; multiple handler exceptions are wrapped in an `AggregateException`. Cancellation is observed between handlers; if the token is cancelled, already-accumulated handler exceptions are preserved rather than discarded.
+- **Namespace unchanged.** The package/assembly was renamed from `Headless.Domain.LocalPublisher`, but the namespace stays `Headless.Domain` — no `using` changes are needed.
 
 ## Installation
 
 ```bash
-dotnet add package Headless.Domain.LocalPublisher
+dotnet add package Headless.Domain.LocalEventBus
 ```
 
 ## Quick Start
@@ -499,23 +510,23 @@ dotnet add package Headless.Domain.LocalPublisher
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Register local message publisher
-builder.Services.AddLocalMessagePublisher();
+// Register the in-process local event bus
+builder.Services.AddHeadlessLocalEventBus();
 
-// Register handlers (automatically discovered or explicit)
-builder.Services.AddScoped<ILocalMessageHandler<OrderCreatedEvent>, OrderCreatedHandler>();
+// Register handlers
+builder.Services.AddScoped<IDomainEventHandler<OrderCreatedEvent>, OrderCreatedHandler>();
 ```
 
 ### Publishing Events
 
 ```csharp
-public sealed class OrderService(ILocalMessagePublisher publisher)
+public sealed class OrderService(ILocalEventBus eventBus)
 {
     public async Task CreateOrderAsync(Order order, CancellationToken ct)
     {
         await _repository.AddAsync(order, ct).ConfigureAwait(false);
 
-        await publisher.PublishAsync(new OrderCreatedEvent(order.Id), ct).ConfigureAwait(false);
+        await eventBus.PublishAsync(new OrderCreatedEvent(order.Id), ct).ConfigureAwait(false);
     }
 }
 ```
@@ -523,21 +534,22 @@ public sealed class OrderService(ILocalMessagePublisher publisher)
 ### Handling Events
 
 ```csharp
-public sealed class OrderCreatedHandler : ILocalMessageHandler<OrderCreatedEvent>
+public sealed class OrderCreatedHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public async Task HandleAsync(OrderCreatedEvent message, CancellationToken ct)
+    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, CancellationToken ct = default)
     {
         // Send email, update read model, etc.
+        return ValueTask.CompletedTask;
     }
 }
 
-[LocalEventHandlerOrder(1)] // Execute first
-public sealed class AuditHandler : ILocalMessageHandler<OrderCreatedEvent>
+[DomainEventHandlerOrder(1)] // Execute first
+public sealed class AuditHandler : IDomainEventHandler<OrderCreatedEvent>
 {
-    public Task HandleAsync(OrderCreatedEvent message, CancellationToken ct)
+    public ValueTask HandleAsync(OrderCreatedEvent domainEvent, CancellationToken ct = default)
     {
         // Audit logging
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 }
 ```
@@ -553,4 +565,4 @@ No configuration required.
 
 ## Side Effects
 
-- Registers `ILocalMessagePublisher` as scoped
+- Registers `ILocalEventBus` (`ServiceProviderLocalEventBus`) as scoped

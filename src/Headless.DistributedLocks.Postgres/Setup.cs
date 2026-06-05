@@ -65,16 +65,20 @@ public static class SetupPostgresDistributedLocks
             services.TryAddSingleton<DistributedLockOptions>(sp =>
                 sp.GetRequiredService<IOptions<DistributedLockOptions>>().Value
             );
-            services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(sp => new ConnectionScopedDistributedLockProvider(
-                sp.GetRequiredService<IConnectionScopedLockStorage>(),
-                sp.GetRequiredService<IReleaseSignal>(),
-                sp.GetRequiredService<DistributedLockOptions>(),
-                sp.GetRequiredService<ILongIdGenerator>(),
-                sp.GetRequiredService<TimeProvider>(),
-                sp.GetRequiredService<ILogger<ConnectionScopedDistributedLockProvider>>(),
-                sp.GetService<IFencingTokenSource>(),
-                pollingFallback: sp.GetRequiredService<IOptions<PostgresDistributedLockOptions>>().Value.PollingFallback
-            ));
+            services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(
+                sp => new ConnectionScopedDistributedLockProvider(
+                    sp.GetRequiredService<IConnectionScopedLockStorage>(),
+                    sp.GetRequiredService<IReleaseSignal>(),
+                    sp.GetRequiredService<DistributedLockOptions>(),
+                    sp.GetRequiredService<ILongIdGenerator>(),
+                    sp.GetRequiredService<TimeProvider>(),
+                    sp.GetRequiredService<ILogger<ConnectionScopedDistributedLockProvider>>(),
+                    sp.GetService<IFencingTokenSource>(),
+                    pollingFallback: sp.GetRequiredService<
+                        IOptions<PostgresDistributedLockOptions>
+                    >().Value.PollingFallback
+                )
+            );
             services.TryAddSingleton<IDistributedLockProvider>(sp =>
                 sp.GetRequiredService<ConnectionScopedDistributedLockProvider>()
             );

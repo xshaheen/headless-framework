@@ -27,8 +27,8 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // when
         var results = await Task.WhenAll(
             lockIds.Select(lockId =>
-                fixture.ReaderWriterLockStorage
-                    .TryAcquireReadAsync(resource, lockId, TimeSpan.FromMinutes(1), AbortToken)
+                fixture
+                    .ReaderWriterLockStorage.TryAcquireReadAsync(resource, lockId, TimeSpan.FromMinutes(1), AbortToken)
                     .AsTask()
             )
         );
@@ -69,7 +69,12 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var readerId = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
         var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromMinutes(1),
+            AbortToken
+        );
 
         // when
         var result = await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
@@ -95,7 +100,12 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var readerId = Guid.NewGuid().ToString("N");
         var writerId = Guid.NewGuid().ToString("N");
         var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromMinutes(1),
+            AbortToken
+        );
         await fixture.ReaderWriterLockStorage.TryAcquireWriteAsync(
             resource,
             writerId,
@@ -127,7 +137,12 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromSeconds(10), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromSeconds(10),
+            AbortToken
+        );
         var before = await db.KeyTimeToLiveAsync(_ReaderKey(resource));
 
         // when
@@ -241,7 +256,12 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
 
         // and after granting + releasing twice, the second is still a no-op.
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromMinutes(1),
+            AbortToken
+        );
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
         (await fixture.ReaderWriterLockStorage.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
@@ -258,8 +278,8 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // when - race writers against a clean state.
         var results = await Task.WhenAll(
             writers.Select(id =>
-                fixture.ReaderWriterLockStorage
-                    .TryAcquireWriteAsync(
+                fixture
+                    .ReaderWriterLockStorage.TryAcquireWriteAsync(
                         resource,
                         id,
                         DistributedLockCoreHelpers.GetWriterWaitingId(id),
@@ -322,10 +342,17 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
 
         // when
         var readerId = Guid.NewGuid().ToString("N");
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromMinutes(1), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromMinutes(1),
+            AbortToken
+        );
 
         // then
-        (await fixture.ReaderWriterLockStorage.IsReadLockedAsync(resource, AbortToken)).Should().BeTrue();
+        (await fixture.ReaderWriterLockStorage.IsReadLockedAsync(resource, AbortToken))
+            .Should()
+            .BeTrue();
 
         // and after release returns to false
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, readerId, AbortToken);
@@ -347,7 +374,9 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         await db.StringSetAsync(_WriterKey(resource), writerId);
 
         // then
-        (await fixture.ReaderWriterLockStorage.IsWriteLockedAsync(resource, AbortToken)).Should().BeTrue();
+        (await fixture.ReaderWriterLockStorage.IsWriteLockedAsync(resource, AbortToken))
+            .Should()
+            .BeTrue();
     }
 
     [Fact]
@@ -360,11 +389,18 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // when
         foreach (var id in lockIds)
         {
-            await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, id, TimeSpan.FromMinutes(1), AbortToken);
+            await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+                resource,
+                id,
+                TimeSpan.FromMinutes(1),
+                AbortToken
+            );
         }
 
         // then
-        (await fixture.ReaderWriterLockStorage.GetReaderCountAsync(resource, AbortToken)).Should().Be(7);
+        (await fixture.ReaderWriterLockStorage.GetReaderCountAsync(resource, AbortToken))
+            .Should()
+            .Be(7);
 
         // and after removing two, count drops.
         await fixture.ReaderWriterLockStorage.ReleaseReadAsync(resource, lockIds[0], AbortToken);
@@ -378,14 +414,21 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
         // given - short TTL so Redis can drop the key inside test budget.
         var resource = _NewResource();
         var readerId = Guid.NewGuid().ToString("N");
-        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(resource, readerId, TimeSpan.FromSeconds(1), AbortToken);
+        await fixture.ReaderWriterLockStorage.TryAcquireReadAsync(
+            resource,
+            readerId,
+            TimeSpan.FromSeconds(1),
+            AbortToken
+        );
         (await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken)).Should().BeTrue();
 
         // when - wait past the TTL.
         await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
 
         // then
-        (await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken)).Should().BeFalse();
+        (await fixture.ReaderWriterLockStorage.ValidateReadAsync(resource, readerId, AbortToken))
+            .Should()
+            .BeFalse();
         (await fixture.ReaderWriterLockStorage.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
     }
 
@@ -507,8 +550,13 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
     {
         // when
         var act = () =>
-            fixture.ReaderWriterLockStorage
-                .TryAcquireReadAsync("tenant:{bad}", Guid.NewGuid().ToString("N"), TimeSpan.FromMinutes(1), AbortToken)
+            fixture
+                .ReaderWriterLockStorage.TryAcquireReadAsync(
+                    "tenant:{bad}",
+                    Guid.NewGuid().ToString("N"),
+                    TimeSpan.FromMinutes(1),
+                    AbortToken
+                )
                 .AsTask();
 
         // then

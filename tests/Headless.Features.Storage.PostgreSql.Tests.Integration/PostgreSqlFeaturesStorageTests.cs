@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
 using Headless.Features;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
+using Headless.Features.Seeders;
+using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Headless.Features.Seeders;
 
 namespace Tests;
 
@@ -25,25 +25,29 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not FeaturesInitializationBackgroundService);
         var valueRepository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
         var definitionRepository = host.Services.GetRequiredService<IFeatureDefinitionRecordRepository>();
         var record = new FeatureValueRecord(Guid.NewGuid(), "Checkout.Enabled", "true", "Edition", "pro");
         var group = new FeatureGroupDefinitionRecord(Guid.NewGuid(), "Checkout", "Checkout");
-        var feature = new FeatureDefinitionRecord(Guid.NewGuid(), "Checkout", "Checkout.Enabled", null, "Checkout enabled");
+        var feature = new FeatureDefinitionRecord(
+            Guid.NewGuid(),
+            "Checkout",
+            "Checkout.Enabled",
+            null,
+            "Checkout enabled"
+        );
 
         await valueRepository.InsertAsync(record, TestContext.Current.CancellationToken);
-        await definitionRepository.SaveAsync(
-            [group],
-            [],
-            [],
-            [feature],
-            [],
-            [],
+        await definitionRepository.SaveAsync([group], [], [], [feature], [], [], TestContext.Current.CancellationToken);
+        var stored = await valueRepository.FindAsync(
+            "Checkout.Enabled",
+            "Edition",
+            "pro",
             TestContext.Current.CancellationToken
         );
-        var stored = await valueRepository.FindAsync("Checkout.Enabled", "Edition", "pro", TestContext.Current.CancellationToken);
         var storedGroups = await definitionRepository.GetGroupsListAsync(TestContext.Current.CancellationToken);
         var storedFeatures = await definitionRepository.GetFeaturesListAsync(TestContext.Current.CancellationToken);
 
@@ -69,11 +73,19 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
 
         const int totalGroups = 550;
         const int totalFeatures = 550;
-        var groups = Enumerable.Range(0, totalGroups)
+        var groups = Enumerable
+            .Range(0, totalGroups)
             .Select(i => new FeatureGroupDefinitionRecord(Guid.NewGuid(), $"Group_{i:D4}", $"Group {i}"))
             .ToList();
-        var features = Enumerable.Range(0, totalFeatures)
-            .Select(i => new FeatureDefinitionRecord(Guid.NewGuid(), groups[i % totalGroups].Name, $"Feature_{i:D4}", null, $"Feature {i}"))
+        var features = Enumerable
+            .Range(0, totalFeatures)
+            .Select(i => new FeatureDefinitionRecord(
+                Guid.NewGuid(),
+                groups[i % totalGroups].Name,
+                $"Feature_{i:D4}",
+                null,
+                $"Feature {i}"
+            ))
             .ToList();
 
         // when
@@ -122,7 +134,9 @@ public sealed class PostgreSqlFeaturesStorageTests(PostgreSqlFeaturesFixture fix
         await host.StartAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await _IndexExistsAsync("IX_FeatureGroupDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_FeatureGroupDefinitions_Name"))
+            .Should()
+            .BeTrue();
         (await _IndexExistsAsync("IX_FeatureDefinitions_GroupName")).Should().BeTrue();
         (await _IndexExistsAsync("IX_FeatureDefinitions_Name")).Should().BeTrue();
         (await _IndexExistsAsync("IX_FeatureValues_ProviderName_ProviderKey")).Should().BeTrue();

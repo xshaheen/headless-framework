@@ -9,7 +9,9 @@ namespace Tests;
 
 public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
 {
-    protected abstract IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null);
+    protected abstract IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
+        DistributedLockOptions? options = null
+    );
     protected abstract TimeProvider TimeProvider { get; }
     protected abstract Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken);
 
@@ -61,7 +63,8 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
         }
     }
 
-    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken) => Task.CompletedTask;
+    protected virtual Task WaitForWriterQueuedAsync(string resource, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 
     public virtual async Task should_allow_multiple_readers_and_release_on_dispose()
     {
@@ -85,15 +88,27 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
 
         await using var writer1 = await provider.AcquireWriteLockAsync(resource, cancellationToken: AbortToken);
 
-        var writer2 = await provider.TryAcquireWriteLockAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }, AbortToken);
-        var reader = await provider.TryAcquireReadLockAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }, AbortToken);
+        var writer2 = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
+        var reader = await provider.TryAcquireReadLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
 
         writer2.Should().BeNull();
         reader.Should().BeNull();
 
         await writer1.ReleaseAsync();
 
-        await using var writer3 = await provider.TryAcquireWriteLockAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }, AbortToken);
+        await using var writer3 = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
         writer3.Should().NotBeNull();
     }
 
@@ -103,12 +118,20 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
 
         var reader = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken);
-        var writer1 = await provider.TryAcquireWriteLockAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }, AbortToken);
+        var writer1 = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
         writer1.Should().BeNull();
 
         await reader.ReleaseAsync();
 
-        await using var writer2 = await provider.TryAcquireWriteLockAsync(resource, new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero }, AbortToken);
+        await using var writer2 = await provider.TryAcquireWriteLockAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero },
+            AbortToken
+        );
         writer2.Should().NotBeNull();
     }
 
@@ -366,11 +389,7 @@ public abstract class DistributedReaderWriterLockProviderTestsBase : TestBase
     public virtual async Task should_auto_extend_write_lock()
     {
         var provider = GetReaderWriterLockProvider(
-            new DistributedLockOptions
-            {
-                AutoExtensionCadenceFraction = 0.1,
-                PollingCadenceFraction = 0.1,
-            }
+            new DistributedLockOptions { AutoExtensionCadenceFraction = 0.1, PollingCadenceFraction = 0.1 }
         );
         var resource = Faker.Random.AlphaNumeric(10);
 

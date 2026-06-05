@@ -117,7 +117,8 @@ public static class MessageExtensions
         /// </returns>
         public int GetCorrelationSequence()
         {
-            return message.Headers.TryGetValue(Headers.CorrelationSequence, out var value)
+            return
+                message.Headers.TryGetValue(Headers.CorrelationSequence, out var value)
                 && int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var sequence)
                 ? sequence
                 : 0;

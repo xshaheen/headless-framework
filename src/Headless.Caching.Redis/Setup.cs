@@ -49,11 +49,12 @@ public static class SetupRedisCache
             services.AddSingletonOptionValue<RedisCacheOptions>();
             services.TryAddKeyedSingleton(
                 RedisCacheServiceKeys.ScriptsLoader,
-                (sp, _) => new HeadlessRedisScriptsLoader(
-                    sp.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer,
-                    sp.GetService<TimeProvider>(),
-                    sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
-                )
+                (sp, _) =>
+                    new HeadlessRedisScriptsLoader(
+                        sp.GetRequiredService<RedisCacheOptions>().ConnectionMultiplexer,
+                        sp.GetService<TimeProvider>(),
+                        sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                    )
             );
             services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
             services.TryAddSingleton<IRemoteCache, RedisCache>();
@@ -70,10 +71,7 @@ public static class SetupRedisCache
             else
             {
                 services.TryAddSingleton<ICache>(provider => provider.GetRequiredService<IRemoteCache>());
-                services.AddKeyedSingleton(
-                    CacheConstants.RemoteCacheProvider,
-                    x => x.GetRequiredService<ICache>()
-                );
+                services.AddKeyedSingleton(CacheConstants.RemoteCacheProvider, x => x.GetRequiredService<ICache>());
             }
 
             return services;

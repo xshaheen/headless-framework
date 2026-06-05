@@ -82,7 +82,7 @@ public abstract class PostgreSqlDbContextTestFixture<TContext> : IDbContextTestF
         services.AddSingleton<ICurrentUser>(CurrentUser);
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddHeadlessDbContextServices();
-        services.AddHeadlessMessageDispatcher<RecordingHeadlessMessageDispatcher>();
+        services.AddRecordingHeadlessDispatcher();
         services.AddSingleton<ICurrentTenant>(CurrentTenant);
 
         ConfigureDbContext(services);
