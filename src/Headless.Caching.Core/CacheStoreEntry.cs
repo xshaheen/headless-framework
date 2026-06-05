@@ -34,6 +34,10 @@ public readonly record struct CacheStoreEntry<T>(
 public static class CacheStoreEntryExtensions
 {
     /// <summary>Returns whether the entry is present and not past its logical (stale) expiration.</summary>
+    /// <typeparam name="T">The cached value type.</typeparam>
+    /// <param name="entry">The entry snapshot to evaluate.</param>
+    /// <param name="now">The current UTC timestamp (from <see cref="TimeProvider.GetUtcNow"/>); expirations are UTC.</param>
+    /// <returns><see langword="true"/> when the entry is physically present and not logically expired.</returns>
     public static bool IsFresh<T>(this CacheStoreEntry<T> entry, DateTime now)
     {
         if (!entry.IsPhysicallyPresent(now))
@@ -45,9 +49,10 @@ public static class CacheStoreEntryExtensions
     }
 
     /// <summary>Returns whether the entry is present and not past its physical (retention) expiration.</summary>
+    /// <typeparam name="T">The cached value type.</typeparam>
+    /// <param name="entry">The entry snapshot to evaluate.</param>
+    /// <param name="now">The current UTC timestamp (from <see cref="TimeProvider.GetUtcNow"/>); expirations are UTC.</param>
+    /// <returns><see langword="true"/> when the entry is found and not physically expired.</returns>
     public static bool IsPhysicallyPresent<T>(this CacheStoreEntry<T> entry, DateTime now) =>
         entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);
-
-    /// <summary>Returns the earlier of two timestamps.</summary>
-    public static DateTime Min(DateTime left, DateTime right) => left <= right ? left : right;
 }

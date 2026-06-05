@@ -368,6 +368,92 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         factoryCalls.Should().Be(1);
     }
 
+    // #1 regression guard — token-less OCE from factory with None caller token must activate fail-safe, not propagate.
+    // This pins the bug: CancellationToken.None.CanBeCanceled == false, so the identity check is skipped and
+    // the token-less OCE is correctly treated as a non-caller exception, enabling fail-safe activation.
+    [Fact]
+    public async Task should_activate_failsafe_when_factory_throws_tokenless_oce_and_caller_token_is_none()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        // when — caller passes no token (default = CancellationToken.None)
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => throw new OperationCanceledException(), // token-less OCE
+                _CreateOptions(isFailSafeEnabled: true),
+                CancellationToken.None
+            );
+
+        // then — fail-safe must activate; stale value is returned, NOT an exception
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    // #1b — OCE carrying an unrelated (non-caller) token must activate fail-safe.
+    [Fact]
+    public async Task should_activate_failsafe_when_factory_throws_oce_from_unrelated_token()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        using var callerCts = new CancellationTokenSource();   // not cancelled
+        using var internalCts = new CancellationTokenSource(); // simulates a downstream / internal timeout
+
+        // when — factory throws an OCE bound to an *internal* token, not the caller's
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => throw new OperationCanceledException(internalCts.Token),
+                _CreateOptions(isFailSafeEnabled: true),
+                callerCts.Token
+            );
+
+        // then — fail-safe must activate because the OCE token differs from the caller's token
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    // #5 — store write failure after successful factory MUST propagate; fail-safe must NOT activate.
+    [Fact]
+    public async Task should_propagate_when_fresh_store_write_fails_after_factory_success()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        // Fault the FIRST SetEntryAsync call (the fresh write after factory success), then auto-clear so the
+        // restamp path (which swallows exceptions) does not interfere.
+        var storeWriteException = new InvalidOperationException("store write failed");
+        _store.SetEntryFault = () =>
+        {
+            _store.SetEntryFault = null; // one-shot: only the first call throws
+            return storeWriteException;
+        };
+
+        // when — factory succeeds, but the fresh write to the store throws
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    key,
+                    _ => ValueTask.FromResult<string?>("fresh"),
+                    _CreateOptions(isFailSafeEnabled: true),
+                    TestContext.Current.CancellationToken
+                );
+
+        // then — the store-write exception propagates; fail-safe does NOT swallow it
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(storeWriteException.Message);
+    }
+
     private FactoryCacheCoordinator _CreateCoordinator() =>
         new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
 

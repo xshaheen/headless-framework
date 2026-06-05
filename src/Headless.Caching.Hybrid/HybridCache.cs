@@ -1192,8 +1192,8 @@ public sealed class HybridCache(
             return;
         }
 
-        var logicalExpiresAt = localCeiling.HasValue ? CacheStoreEntryExtensions.Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
-        var physicalExpiresAt = localCeiling.HasValue ? CacheStoreEntryExtensions.Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
+        var logicalExpiresAt = localCeiling.HasValue ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
+        var physicalExpiresAt = localCeiling.HasValue ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
 
         await l1Store
             .SetEntryAsync(key, entry.Value, entry.IsNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
@@ -1201,6 +1201,8 @@ public sealed class HybridCache(
     }
 
     private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
+    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
     private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;
 

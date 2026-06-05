@@ -5,6 +5,7 @@
 namespace Headless.Caching;
 
 /// <summary>Cache value.</summary>
+[PublicAPI]
 public sealed class CacheValue<T>
 {
     /// <summary>Initializes a new instance of the <see cref="CacheValue{T}"/> class.</summary>

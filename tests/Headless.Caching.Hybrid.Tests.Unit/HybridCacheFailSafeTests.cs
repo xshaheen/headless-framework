@@ -369,7 +369,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
     {
         // given — only L2 holds the reserve; L1 is empty
         var throttle = TimeSpan.FromSeconds(30);
-        var (cache, _, l2, _) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = null });
+        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = null });
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -408,8 +408,25 @@ public sealed class HybridCacheFailSafeTests : TestBase
         activation.IsStale.Should().BeTrue("fail-safe activation serves the reserve as stale");
         factoryCallCount.Should().Be(1, "factory ran once on the activating call");
 
+        // Direct L1 assertion: after fail-safe, the throttle entry must be present in L1 with
+        // LogicalExpiresAt ≈ now + FailSafeThrottleDuration (in the future, within physical reserve).
+        // This assertion fails if the L1 restamp write is removed.
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.Found.Should().BeTrue("fail-safe must write a throttle entry into L1 after activation");
+        l1Entry.LogicalExpiresAt.Should()
+            .NotBeNull("throttle entry must carry a logical expiration so future reads see it as fresh");
+        l1Entry.LogicalExpiresAt!.Value.Should()
+            .BeAfter(now, "throttle logical expiry must be in the future (now + FailSafeThrottleDuration)");
+        l1Entry.PhysicalExpiresAt.Should()
+            .NotBeNull("throttle entry must carry a physical expiration so it can eventually be evicted");
+        l1Entry.PhysicalExpiresAt!.Value.Should()
+            .BeOnOrAfter(
+                l1Entry.LogicalExpiresAt.Value,
+                "physical expiry must be at or after logical expiry"
+            );
+
         // and — fail-safe refreshed L1 with a logically-fresh throttle entry (FusionCache parity, KTD-4):
-        // logical ≈ now + FailSafeThrottleDuration (in the future, within the physical reserve)
+        // a subsequent read within the throttle window is a normal L1 hit — fresh, factory not invoked
         var second = await cache.GetOrAddAsync<int>(
             key,
             _ =>
@@ -421,7 +438,6 @@ public sealed class HybridCacheFailSafeTests : TestBase
             AbortToken
         );
 
-        // a subsequent read within the throttle window is a normal L1 hit — fresh, factory not invoked
         second.HasValue.Should().BeTrue();
         second.Value.Should().Be(staleValue);
         second.IsStale.Should().BeFalse("the throttle entry is logically fresh, so the read is a normal L1 hit");
@@ -431,218 +447,103 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
     #endregion
 
-    #region Test doubles
+    #region U7-8: null-timestamp L2 entry promoted into L1 bounded by DefaultLocalExpiration
 
-    /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-    private sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache, IFactoryCacheStore
+    [Fact]
+    public async Task should_promote_null_timestamp_l2_entry_into_l1_bounded_by_default_local_expiration_when_configured()
     {
-        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-            string key,
-            Func<CancellationToken, ValueTask<T?>> factory,
-            CacheEntryOptions options,
-            CancellationToken cancellationToken = default
-        ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
+        // given — L2 returns an entry with null LogicalExpiresAt and PhysicalExpiresAt (legacy/unframed).
+        //         DefaultLocalExpiration is configured so the promotion path applies.
+        var localExp = TimeSpan.FromMinutes(3);
+        var value = Faker.Random.Int(1, 1000);
+        var l1Options = new InMemoryCacheOptions { CloneValues = true };
+        using var l1Cache = new InMemoryCache(_timeProvider, l1Options);
 
-        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-            ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
+        using var l2 = new NullTimestampL2Adapter<int>(value);
 
-        public ValueTask SetEntryAsync<T>(
-            string key,
-            T? value,
-            bool isNull,
-            DateTime logicalExpiresAt,
-            DateTime physicalExpiresAt,
-            CancellationToken cancellationToken
-        ) =>
-            ((IFactoryCacheStore)cache)
-                .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken);
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
-        public ValueTask<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.UpsertAsync(key, value, expiration, ct);
+        var cache = new HybridCache(
+            l1Cache,
+            l2,
+            publisher,
+            new HybridCacheOptions { DefaultLocalExpiration = localExp },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
 
-        public ValueTask<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.UpsertAllAsync(value, expiration, ct);
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
 
-        public ValueTask<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.TryInsertAsync(key, value, expiration, ct);
+        // when — composite read (TryGetEntryAsync) triggers promotion of the null-timestamp L2 entry
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
 
-        public ValueTask<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.TryReplaceAsync(key, value, expiration, ct);
+        // then — entry found with the value from L2
+        entry.Found.Should().BeTrue("the null-timestamp L2 entry must be surfaced");
+        entry.Value.Should().Be(value);
 
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.TryReplaceIfEqualAsync(key, expected, value, expiration, ct);
+        // and — L1 must have been populated with the entry bounded by now + DefaultLocalExpiration
+        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.Found.Should().BeTrue("null-timestamp L2 entry must be promoted into L1 when DefaultLocalExpiration is configured");
 
-        public ValueTask<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.IncrementAsync(key, amount, expiration, ct);
-
-        public ValueTask<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.IncrementAsync(key, amount, expiration, ct);
-
-        public ValueTask<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetIfHigherAsync(key, value, expiration, ct);
-
-        public ValueTask<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetIfHigherAsync(key, value, expiration, ct);
-
-        public ValueTask<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetIfLowerAsync(key, value, expiration, ct);
-
-        public ValueTask<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetIfLowerAsync(key, value, expiration, ct);
-
-        public ValueTask<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetAddAsync(key, value, expiration, ct);
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys, CancellationToken ct = default) =>
-            cache.GetAllAsync<T>(keys, ct);
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken ct = default) =>
-            cache.GetByPrefixAsync<T>(prefix, ct);
-
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken ct = default) =>
-            cache.GetAllKeysByPrefixAsync(prefix, ct);
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken ct = default) =>
-            cache.GetAsync<T>(key, ct);
-
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken ct = default) =>
-            cache.GetCountAsync(prefix, ct);
-
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken ct = default) =>
-            cache.ExistsAsync(key, ct);
-
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken ct = default) =>
-            cache.GetExpirationAsync(key, ct);
-
-        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken ct = default) =>
-            cache.GetSetAsync<T>(key, pageIndex, pageSize, ct);
-
-        public ValueTask<bool> RemoveAsync(string key, CancellationToken ct = default) =>
-            cache.RemoveAsync(key, ct);
-
-        public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken ct = default) =>
-            cache.RemoveIfEqualAsync(key, expected, ct);
-
-        public ValueTask<int> RemoveAllAsync(IEnumerable<string> keys, CancellationToken ct = default) =>
-            cache.RemoveAllAsync(keys, ct);
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken ct = default) =>
-            cache.RemoveByPrefixAsync(prefix, ct);
-
-        public ValueTask<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            cache.SetRemoveAsync(key, value, expiration, ct);
-
-        public ValueTask FlushAsync(CancellationToken ct = default) =>
-            cache.FlushAsync(ct);
+        var ceiling = now.Add(localExp);
+        l1Entry.LogicalExpiresAt.Should()
+            .NotBeNull("promoted entry must have a logical expiry set to the local ceiling");
+        l1Entry.LogicalExpiresAt!.Value.Should()
+            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1),
+                "logical expiry must be ≈ now + DefaultLocalExpiration");
+        l1Entry.PhysicalExpiresAt.Should()
+            .NotBeNull("promoted entry must have a physical expiry set to the local ceiling");
+        l1Entry.PhysicalExpiresAt!.Value.Should()
+            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1),
+                "physical expiry must be ≈ now + DefaultLocalExpiration");
     }
 
-    /// <summary>
-    /// An L2 remote cache whose read (TryGetEntryAsync) always throws to simulate a down store.
-    /// Write operations are no-ops so the factory-success path still works if needed.
-    /// </summary>
-    private sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemoteCache, IFactoryCacheStore, IDisposable
+    [Fact]
+    public async Task should_not_promote_null_timestamp_l2_entry_into_l1_when_no_default_local_expiration()
     {
-        private readonly InMemoryCache _inner = new(timeProvider, new InMemoryCacheOptions());
+        // given — L2 returns a null-timestamp entry but DefaultLocalExpiration is not configured.
+        //         Without a ceiling there is no finite bound to apply, so the entry must NOT be
+        //         cached into L1 (it would live forever in process memory).
+        var value = Faker.Random.Int(1, 1000);
+        var l1Options = new InMemoryCacheOptions { CloneValues = true };
+        using var l1Cache = new InMemoryCache(_timeProvider, l1Options);
 
-        public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("L2 store is unavailable");
+        using var l2 = new NullTimestampL2Adapter<int>(value);
 
-        public ValueTask SetEntryAsync<T>(
-            string key,
-            T? value,
-            bool isNull,
-            DateTime logicalExpiresAt,
-            DateTime physicalExpiresAt,
-            CancellationToken cancellationToken
-        ) =>
-            // No-op: writes are silently dropped (non-fatal in HybridCache.SetEntryAsync)
-            ValueTask.CompletedTask;
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
-        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-            string key,
-            Func<CancellationToken, ValueTask<T?>> factory,
-            CacheEntryOptions options,
-            CancellationToken ct = default
-        ) => throw new InvalidOperationException("L2 store is unavailable");
+        var cache = new HybridCache(
+            l1Cache,
+            l2,
+            publisher,
+            new HybridCacheOptions { DefaultLocalExpiration = null },
+            timeProvider: _timeProvider
+        );
+        await using var _ = cache;
 
-        public ValueTask<bool> UpsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(false);
+        var key = Faker.Random.AlphaNumeric(10);
 
-        public ValueTask<int> UpsertAllAsync<T>(IDictionary<string, T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0);
+        // when — composite read triggers the null-timestamp branch
+        var entry = await ((IFactoryCacheStore)cache).TryGetEntryAsync<int>(key, AbortToken);
 
-        public ValueTask<bool> TryInsertAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(false);
+        // then — entry still surfaced to caller (coordinator needs it)
+        entry.Found.Should().BeTrue();
+        entry.Value.Should().Be(value);
 
-        public ValueTask<bool> TryReplaceAsync<T>(string key, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(false);
-
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(string key, T? expected, T? value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(false);
-
-        public ValueTask<double> IncrementAsync(string key, double amount, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0d);
-
-        public ValueTask<long> IncrementAsync(string key, long amount, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask<double> SetIfHigherAsync(string key, double value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0d);
-
-        public ValueTask<long> SetIfHigherAsync(string key, long value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask<double> SetIfLowerAsync(string key, double value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0d);
-
-        public ValueTask<long> SetIfLowerAsync(string key, long value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask<long> SetAddAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken ct = default) =>
-            new(CacheValue<T>.NoValue);
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(IEnumerable<string> keys, CancellationToken ct = default) =>
-            new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(string prefix, CancellationToken ct = default) =>
-            new((IDictionary<string, CacheValue<T>>)new Dictionary<string, CacheValue<T>>(StringComparer.Ordinal));
-
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(string prefix, CancellationToken ct = default) =>
-            new((IReadOnlyList<string>)Array.Empty<string>());
-
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken ct = default) =>
-            new(false);
-
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken ct = default) =>
-            new((TimeSpan?)null);
-
-        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(string key, int? pageIndex = null, int pageSize = 100, CancellationToken ct = default) =>
-            new(CacheValue<ICollection<T>>.NoValue);
-
-        public ValueTask<bool> RemoveAsync(string key, CancellationToken ct = default) =>
-            new(false);
-
-        public ValueTask<bool> RemoveIfEqualAsync<T>(string key, T? expected, CancellationToken ct = default) =>
-            new(false);
-
-        public ValueTask<int> RemoveAllAsync(IEnumerable<string> keys, CancellationToken ct = default) =>
-            new(0);
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken ct = default) =>
-            new(0);
-
-        public ValueTask<long> SetRemoveAsync<T>(string key, IEnumerable<T> value, TimeSpan? expiration, CancellationToken ct = default) =>
-            new(0L);
-
-        public ValueTask FlushAsync(CancellationToken ct = default) => ValueTask.CompletedTask;
-
-        public void Dispose() => _inner.Dispose();
+        // but — L1 must NOT have been populated (no finite bound exists)
+        var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.Found.Should()
+            .BeFalse(
+                "without DefaultLocalExpiration there is no finite bound, "
+                    + "so null-timestamp L2 entries must not be promoted into L1"
+            );
     }
 
     #endregion

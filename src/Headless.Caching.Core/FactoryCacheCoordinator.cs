@@ -123,15 +123,10 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CancellationToken cancellationToken
     )
     {
-        if (!staleCandidate.PhysicalExpiresAt.HasValue)
-        {
-            return;
-        }
-
-        var logicalExpiresAt = CacheStoreEntryExtensions.Min(
-            now.Add(options.FailSafeThrottleDuration),
-            staleCandidate.PhysicalExpiresAt.Value
-        );
+        // staleCandidate always carries a physical expiration: _IsStaleCandidate (the only gate that assigns a
+        // stale candidate) requires PhysicalExpiresAt.HasValue, so the throttle restamp can always be written.
+        var physicalExpiresAt = staleCandidate.PhysicalExpiresAt!.Value;
+        var logicalExpiresAt = _Min(now.Add(options.FailSafeThrottleDuration), physicalExpiresAt);
 
         try
         {
@@ -143,7 +138,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     staleCandidate.Value,
                     staleCandidate.IsNull,
                     logicalExpiresAt,
-                    staleCandidate.PhysicalExpiresAt.Value,
+                    physicalExpiresAt,
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -202,13 +197,19 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             return true;
         }
 
-        return exception is OperationCanceledException operationCanceled
+        // Identity-match only when the caller supplied a cancellable token. CancellationToken.None compares equal
+        // to a token-less OperationCanceledException's token (default == default), which would otherwise wrongly
+        // suppress fail-safe for a downstream OCE when the caller passed no token (the default-token call shape).
+        return cancellationToken.CanBeCanceled
+            && exception is OperationCanceledException operationCanceled
             && operationCanceled.CancellationToken == cancellationToken;
     }
 
     private DateTime _GetUtcNow() => timeProvider.GetUtcNow().UtcDateTime;
 
     private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
+
+    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 }
 
 internal static partial class FactoryCacheCoordinatorLog
@@ -224,8 +225,9 @@ internal static partial class FactoryCacheCoordinatorLog
     [LoggerMessage(
         EventId = 2,
         EventName = "CacheFailSafeRestampFailed",
-        Level = LogLevel.Debug,
-        Message = "Cache fail-safe restamp failed for key {Key}; stale value will still be returned."
+        Level = LogLevel.Warning,
+        Message = "Cache fail-safe restamp failed for key {Key}; stale value will still be returned, but the "
+            + "throttle window was not persisted so the factory may be retried sooner than expected."
     )]
     public static partial void LogFailSafeRestampFailed(this ILogger logger, Exception exception, string key);
 

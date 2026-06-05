@@ -1689,6 +1689,52 @@ public sealed class InMemoryCacheTests : TestBase
         result.HasValue.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_treat_entry_as_expired_at_exact_expiration_tick()
+    {
+        // Pins the `<= now` boundary: an entry whose PhysicalExpiresAt == GetUtcNow() is expired,
+        // not alive. If the check regresses to `< now` (strict less-than) this test will fail
+        // because the entry would still be returned as a hit at the exact tick.
+
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+
+        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+
+        // when — advance by exactly the duration so GetUtcNow() == PhysicalExpiresAt
+        _timeProvider.Advance(duration);
+
+        // then — entry is expired AT the exact tick (inclusive boundary)
+        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        result.HasValue.Should().BeFalse("entry must be expired when now == expiresAt (inclusive boundary)");
+    }
+
+    [Fact]
+    public async Task should_return_value_one_tick_before_expiration()
+    {
+        // Sibling to the at-tick test: ensures the >= boundary does not over-expire.
+        // An entry whose PhysicalExpiresAt is one tick in the future must still be a hit.
+        // If the check incorrectly uses `<= now` for a time strictly before expiry this would fail,
+        // but that is an impossible regression; the test's real value is documenting the just-before boundary.
+
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+
+        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+
+        // when — advance to one tick before expiration
+        _timeProvider.Advance(duration - TimeSpan.FromTicks(1));
+
+        // then — entry is still alive one tick before expiry
+        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        result.HasValue.Should().BeTrue("entry must be alive one tick before expiration");
+        result.Value.Should().Be("value");
+    }
+
     #endregion
 
     #region MaxItems/LRU Eviction
