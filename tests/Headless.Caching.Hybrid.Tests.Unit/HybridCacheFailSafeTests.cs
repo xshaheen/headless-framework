@@ -185,6 +185,50 @@ public sealed class HybridCacheFailSafeTests : TestBase
         result.IsStale.Should().BeTrue("L1 stale reserve must be served when L2 read fails and factory throws");
     }
 
+    [Fact]
+    public async Task should_serve_stale_from_l1_when_l2_does_not_support_factory_store()
+    {
+        // given
+        var l1Options = new InMemoryCacheOptions { CloneValues = true };
+        using var l1Cache = new InMemoryCache(_timeProvider, l1Options);
+        var l2 = Substitute.For<IRemoteCache>();
+        l2.GetAsync<int>(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(CacheValue<int>.NoValue);
+        l2.GetExpirationAsync(Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns((TimeSpan?)null);
+
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
+
+        var cache = new HybridCache(l1Cache, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var staleValue = Faker.Random.Int(1, 100);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        await ((IFactoryCacheStore)l1Cache)
+            .SetEntryAsync(
+                key,
+                staleValue,
+                isNull: false,
+                logicalExpiresAt: now.AddMinutes(-1),
+                physicalExpiresAt: now.AddHours(1),
+                AbortToken
+            );
+
+        // when
+        var result = await cache.GetOrAddAsync<int>(
+            key,
+            _ => throw new InvalidOperationException("upstream unavailable"),
+            _FailSafeOptions(),
+            AbortToken
+        );
+
+        // then
+        result.Value.Should().Be(staleValue);
+        result.IsStale.Should().BeTrue();
+    }
+
     #endregion
 
     #region U7-4: no behavior change when fail-safe disabled
@@ -358,6 +402,44 @@ public sealed class HybridCacheFailSafeTests : TestBase
                 "the read-path guard must not promote a logically-expired L2 reserve into L1 (#9): "
                     + "promoting on every fail-safe read amplifies L1 writes and can overwrite a newer L1 reserve"
             );
+    }
+
+    [Fact]
+    public async Task should_cap_public_get_l1_promotion_by_l2_logical_expiration()
+    {
+        // given
+        var localCap = TimeSpan.FromMinutes(5);
+        var logicalTtl = TimeSpan.FromSeconds(30);
+        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = localCap });
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int(1, 100);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        await ((IFactoryCacheStore)l2)
+            .SetEntryAsync(
+                key,
+                value,
+                isNull: false,
+                logicalExpiresAt: now.Add(logicalTtl),
+                physicalExpiresAt: now.AddHours(1),
+                AbortToken
+            );
+
+        // when
+        var result = await cache.GetAsync<int>(key, AbortToken);
+
+        // then
+        result.Value.Should().Be(value);
+        var l1Expiration = await l1.GetExpirationAsync(key, AbortToken);
+        l1Expiration.Should().HaveValue();
+        l1Expiration!.Value.Should().BeLessThan(localCap);
+        l1Expiration.Value.Should().BeCloseTo(logicalTtl, TimeSpan.FromSeconds(2));
+
+        _timeProvider.Advance(logicalTtl + TimeSpan.FromSeconds(1));
+
+        var afterLogicalExpiry = await cache.GetAsync<int>(key, AbortToken);
+        afterLogicalExpiry.HasValue.Should().BeFalse();
     }
 
     #endregion

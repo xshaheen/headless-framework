@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -11,6 +12,16 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeFactoryCacheStore _store = new();
+
+    [Fact]
+    public void should_throw_when_time_provider_is_null()
+    {
+        // when
+        var act = () => new FactoryCacheCoordinator(null!, NullLogger<FactoryCacheCoordinator>.Instance);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
+    }
 
     [Fact]
     public async Task should_return_fresh_hit_without_invoking_factory()
@@ -62,6 +73,41 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         result.Value.Should().Be("stale");
         result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_log_warning_when_failsafe_activates()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+
+        // when
+        await new FactoryCacheCoordinator(_timeProvider, logger)
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => throw new InvalidOperationException("downstream unavailable"),
+                _CreateOptions(isFailSafeEnabled: true),
+                AbortToken
+            );
+
+        // then
+        var logged = logger
+            .ReceivedCalls()
+            .Any(call =>
+            {
+                var arguments = call.GetArguments();
+
+                return call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && arguments[0] is LogLevel.Warning
+                    && arguments[1] is EventId { Id: 1, Name: "CacheFailSafeActivated" };
+            });
+
+        logged.Should().BeTrue();
     }
 
     [Fact]

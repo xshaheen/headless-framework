@@ -13,6 +13,7 @@ namespace Headless.Caching;
 public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null)
     : IDisposable
 {
+    private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
 
@@ -213,7 +214,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             && operationCanceled.CancellationToken == cancellationToken;
     }
 
-    private DateTime _GetUtcNow() => timeProvider.GetUtcNow().UtcDateTime;
+    private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
 
     private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
 

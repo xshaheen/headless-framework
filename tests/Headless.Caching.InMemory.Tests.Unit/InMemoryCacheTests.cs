@@ -1852,6 +1852,83 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
+    public async Task should_clone_get_or_add_hits_when_option_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions { CloneValues = true };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, new TestClass { Value = 1 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var first = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 2 }),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+        var second = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 3 }),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        first.Value!.Value = 99;
+
+        // then
+        ReferenceEquals(first.Value, second.Value).Should().BeFalse();
+        second.Value!.Value.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_clone_failsafe_stale_value_when_option_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions { CloneValues = true };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await ((IFactoryCacheStore)cache)
+            .SetEntryAsync(
+                key,
+                new TestClass { Value = 1 },
+                isNull: false,
+                logicalExpiresAt: now.AddMinutes(-1),
+                physicalExpiresAt: now.AddMinutes(5),
+                AbortToken
+            );
+
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(10),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+        };
+
+        // when
+        var stale = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => throw new InvalidOperationException("factory failed"),
+            failSafeOptions,
+            AbortToken
+        );
+        stale.Value!.Value = 99;
+        var cached = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 2 }),
+            failSafeOptions,
+            AbortToken
+        );
+
+        // then
+        stale.IsStale.Should().BeTrue();
+        cached.Value!.Value.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_handle_reference_equality_limitation_when_clone_enabled()
     {
         // given

@@ -1065,7 +1065,7 @@ public sealed class HybridCache(
 
         if (l2Cache is not IFactoryCacheStore l2Store)
         {
-            return CacheStoreEntry<T>.NotFound;
+            return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
         CacheStoreEntry<T> l2Entry;
@@ -1204,7 +1204,17 @@ public sealed class HybridCache(
 
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
-    private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;
+    private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
+    {
+        if (!options.DefaultLocalExpiration.HasValue)
+        {
+            return expiration;
+        }
+
+        return expiration.HasValue && expiration.Value < options.DefaultLocalExpiration.Value
+            ? expiration
+            : options.DefaultLocalExpiration;
+    }
 
     #endregion
 

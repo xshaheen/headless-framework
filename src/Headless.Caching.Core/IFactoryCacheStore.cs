@@ -8,6 +8,13 @@ namespace Headless.Caching;
 public interface IFactoryCacheStore
 {
     /// <summary>Attempts to get an entry with its logical and physical expiration metadata.</summary>
+    /// <remarks>
+    /// Implementations must return entries that are still physically present even when logical expiration has
+    /// passed. The coordinator uses that state as a fail-safe stale candidate. Return
+    /// <see cref="CacheStoreEntry{T}.NotFound"/> only when the entry is missing or physically expired.
+    /// Expiration timestamps are UTC. When <see cref="CacheStoreEntry{T}.IsNull"/> is <see langword="true"/>,
+    /// <see cref="CacheStoreEntry{T}.Value"/> is ignored and the coordinator returns a cached null value.
+    /// </remarks>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="key">The cache key.</param>
     /// <param name="cancellationToken">The cancellation token.</param>

@@ -1592,8 +1592,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         try
         {
-            // PeekValue avoids the deep-clone and LRU touch GetValue performs: this is a metadata read.
-            value = existingEntry.PeekValue<T>();
+            value = existingEntry.GetValue<T>();
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
         {
