@@ -94,7 +94,7 @@ internal static class DistributedLockCoreHelpers
 
     /// <summary>
     /// Validates the caller-supplied acquire timeout. Allows <see langword="null"/> (use default) and
-    /// <see cref="Timeout.InfiniteTimeSpan"/> (wait forever); rejects other negatives.
+    /// <see cref="Timeout.InfiniteTimeSpan"/> (wait forever); rejects other negatives or extremely large values.
     /// </summary>
     public static void ValidateAcquireTimeout(TimeSpan? acquireTimeout)
     {
@@ -103,7 +103,8 @@ internal static class DistributedLockCoreHelpers
             return;
         }
 
-        Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
+        var value = Argument.IsPositiveOrZero(acquireTimeout.Value, paramName: nameof(acquireTimeout));
+        Argument.IsLessThan(value.TotalMilliseconds, int.MaxValue, paramName: nameof(acquireTimeout));
     }
 
     /// <summary>

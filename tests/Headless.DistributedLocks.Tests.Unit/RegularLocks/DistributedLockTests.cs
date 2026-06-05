@@ -90,6 +90,68 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_throw_when_acquire_timeout_is_negative_except_infinite()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(-5) },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Fact]
+    public async Task should_throw_when_acquire_timeout_is_extremely_large()
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions
+                {
+                    AcquireTimeout = TimeSpan.FromMilliseconds((double)int.MaxValue + 1),
+                },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Theory]
+    [InlineData(LockMonitoringMode.Monitor)]
+    [InlineData(LockMonitoringMode.AutoExtend)]
+    public async Task should_throw_when_time_until_expires_is_infinite_and_monitoring_requested(LockMonitoringMode mode)
+    {
+        // given
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        // when
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { TimeUntilExpires = Timeout.InfiniteTimeSpan, Monitoring = mode },
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("timeUntilExpires");
+    }
+
+    [Fact]
     public async Task should_acquire_lock_when_not_held()
     {
         // given

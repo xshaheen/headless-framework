@@ -102,12 +102,15 @@ public sealed class ConnectionScopedDistributedLock(
             );
         }
 
+        DistributedLockCoreHelpers.ValidateAcquireTimeout(acquireOptions?.AcquireTimeout);
+
         var acquireTimeout = acquireOptions?.AcquireTimeout ?? DefaultAcquireTimeout;
         var observeLoss = (acquireOptions?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
         var started = timeProvider.GetTimestamp();
-        var deadline = acquireTimeout == Timeout.InfiniteTimeSpan
-            ? DateTimeOffset.MaxValue
-            : timeProvider.GetUtcNow().Add(acquireTimeout);
+        var deadline =
+            acquireTimeout == Timeout.InfiniteTimeSpan
+                ? DateTimeOffset.MaxValue
+                : timeProvider.GetUtcNow().Add(acquireTimeout);
         var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var isWaiting = false;
 
@@ -137,11 +140,12 @@ public sealed class ConnectionScopedDistributedLock(
 
                     try
                     {
-                        fencingToken = isShared || fencingTokenSource is null
-                            ? null
-                            : await fencingTokenSource
-                                .NextAsync(resource, handle.HeldConnection, cancellationToken)
-                                .ConfigureAwait(false);
+                        fencingToken =
+                            isShared || fencingTokenSource is null
+                                ? null
+                                : await fencingTokenSource
+                                    .NextAsync(resource, handle.HeldConnection, cancellationToken)
+                                    .ConfigureAwait(false);
                     }
                     catch
                     {
@@ -293,7 +297,10 @@ public sealed class ConnectionScopedDistributedLock(
         return Task.FromResult<TimeSpan?>(null);
     }
 
-    public async Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    public async Task<DistributedLockInfo?> GetLockInfoAsync(
+        string resource,
+        CancellationToken cancellationToken = default
+    )
     {
         if (!await storage.IsLockedAsync(resource, cancellationToken: cancellationToken).ConfigureAwait(false))
         {

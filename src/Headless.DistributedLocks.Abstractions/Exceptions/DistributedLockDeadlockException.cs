@@ -10,7 +10,10 @@ namespace Headless.DistributedLocks;
 public sealed class DistributedLockDeadlockException : DistributedLockException
 {
     public DistributedLockDeadlockException(string resource)
-        : this(Argument.IsNotNullOrWhiteSpace(resource), $"Distributed lock acquisition for resource '{resource}' deadlocked.") { }
+        : this(
+            Argument.IsNotNullOrWhiteSpace(resource),
+            $"Distributed lock acquisition for resource '{resource}' deadlocked."
+        ) { }
 
     public DistributedLockDeadlockException(string resource, string? message)
         : base(message)

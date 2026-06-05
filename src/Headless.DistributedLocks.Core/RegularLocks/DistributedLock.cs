@@ -668,7 +668,10 @@ public sealed class DistributedLock(
             .AsTask();
     }
 
-    public async Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
+    public async Task<DistributedLockInfo?> GetLockInfoAsync(
+        string resource,
+        CancellationToken cancellationToken = default
+    )
     {
         Argument.IsNotNullOrWhiteSpace(resource);
 
@@ -696,7 +699,9 @@ public sealed class DistributedLock(
         };
     }
 
-    public async Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         var locks = await _queryPipeline
             .ExecuteAsync(
@@ -755,10 +760,7 @@ public sealed class DistributedLock(
         return activity;
     }
 
-    private static ResiliencePipeline _BuildQueryPipeline(
-        TimeProvider timeProvider,
-        ILogger<DistributedLock> logger
-    )
+    private static ResiliencePipeline _BuildQueryPipeline(TimeProvider timeProvider, ILogger<DistributedLock> logger)
     {
         return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
             .AddRetry(

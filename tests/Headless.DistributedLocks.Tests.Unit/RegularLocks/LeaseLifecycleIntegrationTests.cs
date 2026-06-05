@@ -456,7 +456,10 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         );
     }
 
-    private static async Task _AcquireMonitoredHandleAndDropReference(DistributedLock provider, string resource)
+    private static async Task _AcquireMonitoredHandleAssertRegisteredAndDropReference(
+        DistributedLock provider,
+        string resource
+    )
     {
         var handle = await provider.TryAcquireAsync(
             resource,

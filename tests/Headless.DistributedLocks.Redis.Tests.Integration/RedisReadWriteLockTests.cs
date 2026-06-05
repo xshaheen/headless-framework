@@ -10,8 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Tests.ReaderWriterLocks;
 
 [Collection<RedisTestFixture>]
-public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
-    : DistributedReadWriteLockTestsBase
+public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture) : DistributedReadWriteLockTestsBase
 {
     public override async ValueTask InitializeAsync()
     {

@@ -27,13 +27,12 @@ public interface IConnectionScopedLockStorage
     /// <summary>
     /// Attempts acquisition of <paramref name="resource"/>. Returns a live
     /// <see cref="ConnectionScopedLockHandle"/> on success, or <see langword="null"/> if the resource is
-    /// currently held in a conflicting mode. Non-blocking stores must return immediately; server-blocking stores
-    /// may wait up to <paramref name="acquireTimeout"/>.
+    /// currently held in a conflicting mode.
     /// </summary>
     /// <param name="resource">The resource name to lock.</param>
     /// <param name="leaseId">Provider-generated identifier stamped onto the handle for ownership tracking.</param>
     /// <param name="isShared"><see langword="true"/> for a shared (reader) lock; <see langword="false"/> for an exclusive lock.</param>
-    /// <param name="acquireTimeout">Remaining acquire timeout for server-blocking stores; ignored by non-blocking stores.</param>
+    /// <param name="observeLoss"><see langword="true"/> to enable connection-loss monitoring; <see langword="false"/> otherwise.</param>
     ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
         string leaseId,

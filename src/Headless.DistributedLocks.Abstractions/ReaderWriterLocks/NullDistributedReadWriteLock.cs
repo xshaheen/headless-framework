@@ -8,8 +8,7 @@ namespace Headless.DistributedLocks;
 /// Every read and write acquire succeeds immediately and every renew returns true.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider)
-    : IDistributedReadWriteLock
+public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : IDistributedReadWriteLock
 {
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 

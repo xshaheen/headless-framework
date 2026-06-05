@@ -8,14 +8,14 @@ namespace Tests;
 
 /// <summary>
 /// Runs the cross-provider reader-writer conformance contract
-/// (<see cref="DistributedReaderWriterLockProviderTestsBase"/>) against the SQL Server application-lock provider.
+/// (<see cref="DistributedReadWriteLockTestsBase"/>) against the SQL Server application-lock provider.
 /// Backend-specific behavior lives in the sibling test classes; this class only wires the portable scenarios as facts.
 /// </summary>
 [Collection<SqlServerDistributedLockFixture>]
-public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReaderWriterLockProviderTestsBase
+public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReadWriteLockTestsBase
 {
     private readonly ServiceProvider _services;
-    private readonly IDistributedReaderWriterLockProvider _provider;
+    private readonly IDistributedReadWriteLock _provider;
 
     public SqlServerReaderWriterLockConformanceTests(SqlServerDistributedLockFixture fixture)
     {
@@ -29,12 +29,11 @@ public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReade
         });
 
         _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedReaderWriterLockProvider>();
+        _provider = _services.GetRequiredService<IDistributedReadWriteLock>();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
-        DistributedLockOptions? options = null
-    ) => _provider;
+    protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null) =>
+        _provider;
 
     protected override TimeProvider TimeProvider => TimeProvider.System;
 
@@ -59,7 +58,8 @@ public sealed class SqlServerReaderWriterLockConformanceTests : DistributedReade
     public override Task should_acquire_write_lock_exclusively() => base.should_acquire_write_lock_exclusively();
 
     [Fact]
-    public override Task should_release_read_lock_and_allow_writer() => base.should_release_read_lock_and_allow_writer();
+    public override Task should_release_read_lock_and_allow_writer() =>
+        base.should_release_read_lock_and_allow_writer();
 
     [Fact]
     public override Task should_queue_second_writer_and_unblock_after_first_releases() =>

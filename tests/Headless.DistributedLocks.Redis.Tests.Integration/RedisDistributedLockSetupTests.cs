@@ -49,4 +49,26 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
         // then
         provider.GetRequiredService<IEnumerable<IInitializer>>().Should().HaveCount(3);
     }
+
+    [Fact]
+    public void AddRedisDistributedLock_should_fail_validation_when_options_are_invalid()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton<IConnectionMultiplexer>(fixture.ConnectionMultiplexer);
+        services.AddRedisDistributedLock(options =>
+        {
+            options.MaxResourceNameLength = 0; // invalid per DistributedLockOptionsValidator
+        });
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () =>
+            provider
+                .GetRequiredService<Microsoft.Extensions.Options.IOptions<Headless.DistributedLocks.DistributedLockOptions>>()
+                .Value;
+
+        // then
+        act.Should().Throw<Microsoft.Extensions.Options.OptionsValidationException>();
+    }
 }

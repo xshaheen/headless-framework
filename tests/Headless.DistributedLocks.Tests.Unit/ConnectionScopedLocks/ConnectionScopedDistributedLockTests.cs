@@ -32,6 +32,41 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_throw_when_acquire_timeout_is_negative_except_infinite()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(-5) },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Fact]
+    public async Task should_throw_when_acquire_timeout_is_extremely_large()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                resource,
+                new DistributedLockAcquireOptions
+                {
+                    AcquireTimeout = TimeSpan.FromMilliseconds((double)int.MaxValue + 1),
+                },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>().WithParameterName("acquireTimeout");
+    }
+
+    [Fact]
     public async Task should_jitter_polling_fallback_across_waits_when_waiting_for_contention()
     {
         // 50 contended attempts before success forces 50 jittered waits on the same resource.
@@ -142,10 +177,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     {
         var resource = Faker.Random.AlphaNumeric(12);
         var provider = _CreateProvider(
-            storage: new InspectableConnectionScopedLockStorage(
-                lockedResource: resource,
-                localLeaseId: null
-            )
+            storage: new InspectableConnectionScopedLockStorage(lockedResource: resource, localLeaseId: null)
         );
 
         var leaseId = await provider.GetLeaseIdAsync(resource, AbortToken);
@@ -320,8 +352,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         public Queue<bool> AcquireResults { get; } = new();
         public CancellationToken ConnectionLostToken { get; set; } = CancellationToken.None;
 
-        public List<TimeSpan> AcquireTimeouts { get; } = [];
-
         public TaskCompletionSource? BlockAcquire { get; set; }
 
         public int AcquireCount { get; private set; }
@@ -333,7 +363,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         private Dictionary<string, string> LocalLeaseIds { get; } = new(StringComparer.Ordinal);
         private Dictionary<string, string> ResourcesByLeaseId { get; } = new(StringComparer.Ordinal);
 
-        public ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
+        public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
             string leaseId,
             bool isShared,
@@ -343,7 +373,6 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         {
             cancellationToken.ThrowIfCancellationRequested();
             AcquireCount++;
-            AcquireTimeouts.Add(acquireTimeout);
 
             if (BlockAcquire is not null)
             {
@@ -354,19 +383,17 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
 
             if (!acquired)
             {
-                return ValueTask.FromResult<ConnectionScopedLockHandle?>(null);
+                return null;
             }
 
             LocalLeaseIds[resource] = leaseId;
             ResourcesByLeaseId[leaseId] = resource;
 
-            return ValueTask.FromResult<ConnectionScopedLockHandle?>(
-                new ConnectionScopedLockHandle(
-                    resource,
-                    leaseId,
-                    ReleaseAsync,
-                    observeLoss ? ConnectionLostToken : CancellationToken.None
-                )
+            return new ConnectionScopedLockHandle(
+                resource,
+                leaseId,
+                ReleaseAsync,
+                observeLoss ? ConnectionLostToken : CancellationToken.None
             );
         }
 
@@ -419,7 +446,9 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             return ValueTask.FromResult(LocalLeaseIds.TryGetValue(resource, out var leaseId) ? leaseId : null);
         }
 
-        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+            CancellationToken cancellationToken = default
+        )
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -455,8 +484,10 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             CancellationToken cancellationToken = default
         ) => throw new NotSupportedException();
 
-        public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(
+            ConnectionScopedLockHandle handle,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;
@@ -473,11 +504,17 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             CancellationToken cancellationToken = default
         ) => ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal) ? 1L : 0L);
 
-        public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult(string.Equals(resource, lockedResource, StringComparison.Ordinal) ? localLeaseId : null);
+        public ValueTask<string?> GetLocalLeaseIdAsync(
+            string resource,
+            CancellationToken cancellationToken = default
+        ) =>
+            ValueTask.FromResult(
+                string.Equals(resource, lockedResource, StringComparison.Ordinal) ? localLeaseId : null
+            );
 
-        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
 
         public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(0L);
@@ -566,11 +603,14 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
             CancellationToken cancellationToken = default
         ) => ValueTask.FromResult(0L);
 
-        public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<string?>(null);
+        public ValueTask<string?> GetLocalLeaseIdAsync(
+            string resource,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult<string?>(null);
 
-        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
+        public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
 
         public ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(0L);
