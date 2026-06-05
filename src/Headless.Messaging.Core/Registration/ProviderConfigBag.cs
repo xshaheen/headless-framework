@@ -1,0 +1,66 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+
+namespace Headless.Messaging;
+
+internal interface IMessageProviderConfigBuilder<out TMessage>
+    where TMessage : class
+{
+    void SetMessageProviderConfig(object config);
+}
+
+internal interface IConsumerProviderConfigBuilder
+{
+    void SetConsumerProviderConfig(object config);
+}
+
+internal interface IProviderHeaderContributions
+{
+    IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; }
+}
+
+internal readonly record struct ProviderHeaderContribution(string HeaderName, Func<object, string?> Selector);
+
+internal sealed class ProviderConfigBag
+{
+    private readonly Dictionary<Type, object> _configs = [];
+
+    public IReadOnlyDictionary<Type, object> Values => _configs;
+
+    public bool IsEmpty => _configs.Count == 0;
+
+    public void Set(object config)
+    {
+        Argument.IsNotNull(config);
+
+        _configs[config.GetType()] = config;
+    }
+
+    public IReadOnlyDictionary<Type, object> Build() =>
+        _configs.Count == 0
+            ? new Dictionary<Type, object>()
+            : new Dictionary<Type, object>(_configs);
+
+    public IReadOnlyDictionary<Type, object> BuildOverlay(IReadOnlyDictionary<Type, object> baseConfigs)
+    {
+        if (baseConfigs.Count == 0)
+        {
+            return Build();
+        }
+
+        if (IsEmpty)
+        {
+            return new Dictionary<Type, object>(baseConfigs);
+        }
+
+        var merged = new Dictionary<Type, object>(baseConfigs);
+
+        foreach (var pair in _configs)
+        {
+            merged[pair.Key] = pair.Value;
+        }
+
+        return merged;
+    }
+}

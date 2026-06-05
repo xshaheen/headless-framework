@@ -23,7 +23,9 @@ internal sealed class MessagePublishRequestFactory(
     ILongIdGenerator idGenerator,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> optionsAccessor,
-    ICurrentTenant currentTenant
+    ICurrentTenant currentTenant,
+    IMessageMetadataRegistry? metadataRegistry = null,
+    IConsumeContextAccessor? consumeContextAccessor = null
 ) : IMessagePublishRequestFactory
 {
     private static readonly HashSet<string> _ReservedHeaders = new(StringComparer.Ordinal)
@@ -54,9 +56,23 @@ internal sealed class MessagePublishRequestFactory(
             Argument.IsPositive(requestedDelay);
         }
 
+        var messageType = options?.MessageType ?? typeof(T);
+        var metadataLookupType = contentObj?.GetType() ?? messageType;
+        MessageMetadata? metadata = null;
+        metadataRegistry?.TryGet(metadataLookupType, out metadata);
+
         var messageName = _ResolveMessageName(typeof(T), options?.MessageName);
-        var headers = _CreateHeaders(options?.MessageType ?? typeof(T), messageName, options, delayTime);
+        var headers = _CreateHeaders(
+            messageType,
+            messageName,
+            options,
+            delayTime,
+            _ResolveCorrelationFromSelector(metadata, contentObj, metadataLookupType),
+            consumeContextAccessor?.Current?.CorrelationId
+        );
         var publishAt = _ResolvePublishAt(delayTime);
+
+        _ApplyProviderHeaderContributions(headers, metadata, contentObj, metadataLookupType);
 
         headers[Headers.SentTime] = publishAt.UtcDateTime.ToString(CultureInfo.InvariantCulture);
         headers[Headers.Intent] = intentType.ToString();
@@ -79,7 +95,9 @@ internal sealed class MessagePublishRequestFactory(
         Type messageType,
         string messageName,
         MessageOptions? options,
-        TimeSpan? delayTime
+        TimeSpan? delayTime,
+        string? selectorCorrelationId,
+        string? ambientCorrelationId
     )
     {
         var headers =
@@ -95,9 +113,12 @@ internal sealed class MessagePublishRequestFactory(
             : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;
-        headers[Headers.CorrelationId] = string.IsNullOrWhiteSpace(options?.CorrelationId)
-            ? messageId
-            : options!.CorrelationId;
+        headers[Headers.CorrelationId] = _ResolveCorrelationId(
+            options?.CorrelationId,
+            selectorCorrelationId,
+            ambientCorrelationId,
+            messageId
+        );
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
@@ -115,6 +136,129 @@ internal sealed class MessagePublishRequestFactory(
         }
 
         return headers;
+    }
+
+    private static string _ResolveCorrelationId(
+        string? explicitCorrelationId,
+        string? selectorCorrelationId,
+        string? ambientCorrelationId,
+        string messageId
+    )
+    {
+        if (!string.IsNullOrWhiteSpace(explicitCorrelationId))
+        {
+            return explicitCorrelationId!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectorCorrelationId))
+        {
+            return selectorCorrelationId!;
+        }
+
+        if (!string.IsNullOrWhiteSpace(ambientCorrelationId))
+        {
+            return ambientCorrelationId!;
+        }
+
+        return messageId;
+    }
+
+    private static string? _ResolveCorrelationFromSelector<T>(
+        MessageMetadata? metadata,
+        T? contentObj,
+        Type messageType
+    )
+    {
+        if (metadata?.CorrelationSelector is null || contentObj is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var value = metadata.CorrelationSelector(contentObj);
+            return string.IsNullOrWhiteSpace(value) ? null : value;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"CorrelationFrom selector failed for message type '{messageType.FullName ?? messageType.Name}'.",
+                ex
+            );
+        }
+    }
+
+    private static void _ApplyProviderHeaderContributions<T>(
+        Dictionary<string, string?> headers,
+        MessageMetadata? metadata,
+        T? contentObj,
+        Type messageType
+    )
+    {
+        if (metadata is null || contentObj is null)
+        {
+            return;
+        }
+
+        foreach (var config in metadata.ProviderConfigs.Values)
+        {
+            if (config is not IProviderHeaderContributions providerContributions)
+            {
+                continue;
+            }
+
+            foreach (var contribution in providerContributions.HeaderContributions)
+            {
+                _ValidateProviderHeaderName(contribution.HeaderName, config);
+
+                string? value;
+                try
+                {
+                    value = contribution.Selector(contentObj);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Provider header contribution '{contribution.HeaderName}' failed for message type "
+                            + $"'{messageType.FullName ?? messageType.Name}' from provider config "
+                            + $"'{config.GetType().FullName ?? config.GetType().Name}'.",
+                        ex
+                    );
+                }
+
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                _ValidateProviderHeaderValue(contribution.HeaderName, value!, config);
+                headers[contribution.HeaderName] = value;
+            }
+        }
+    }
+
+    private static void _ValidateProviderHeaderName(string headerName, object providerConfig)
+    {
+        Argument.IsNotNullOrWhiteSpace(headerName);
+
+        if (_ReservedHeaders.Contains(headerName))
+        {
+            throw new InvalidOperationException(
+                $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' tried to write "
+                    + $"reserved header '{headerName}'."
+            );
+        }
+    }
+
+    private static void _ValidateProviderHeaderValue(string headerName, string value, object providerConfig)
+    {
+        if (value.Any(static character => char.IsControl(character)))
+        {
+            throw new InvalidOperationException(
+                $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' returned an invalid "
+                    + $"value for header '{headerName}'. Header values cannot contain control characters."
+            );
+        }
     }
 
     private static string _ValidateMessageId(string messageId)

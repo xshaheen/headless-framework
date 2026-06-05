@@ -253,7 +253,15 @@ public static class SetupMessaging
                 new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
             );
 
-            setup.Services.AddSingleton(new MessageRegistration(messageType, MessageName: null, [builder.Build()]));
+            setup.Services.AddSingleton(
+                new MessageRegistration(
+                    messageType,
+                    MessageName: null,
+                    CorrelationSelector: null,
+                    ProviderConfigs: new Dictionary<Type, object>(),
+                    Consumers: [builder.Build()]
+                )
+            );
         }
     }
 
@@ -280,6 +288,8 @@ public static class SetupMessaging
         // strict-tenancy guard (#238) still fails fast when TenantContextRequired = true and no caller / seam set a tenant.
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+        services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
+        services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
