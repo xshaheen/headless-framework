@@ -82,9 +82,10 @@ public interface IDistributedLock
     );
 
     /// <summary>
-    /// Gets the current lease id for a specified <paramref name="resource"/>, or null when it is not locked.
-    /// This is an inspection/read primitive; it does not renew the lease. Consumers that already hold a
-    /// monitored handle should prefer <see cref="IDistributedLease.LostToken"/> for lease-loss signals.
+    /// Gets the current lease id for a specified <paramref name="resource"/>, or null when it is not locked
+    /// or the backend cannot observe the current holder identity on its inspection path. This is an
+    /// inspection/read primitive; it does not renew the lease. Consumers that already hold a monitored
+    /// handle should prefer <see cref="IDistributedLease.LostToken"/> for lease-loss signals.
     /// </summary>
     Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default);
 
@@ -102,13 +103,17 @@ public interface IDistributedLock
     Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default);
 
     /// <summary>Gets information about a specific lock.</summary>
+    /// <remarks>
+    /// <see cref="DistributedLockInfo.LeaseId"/> may be null when the backend can observe that the
+    /// resource is locked but cannot surface the current holder identity on the inspection path.
+    /// </remarks>
     /// <returns>Lock information, or null if the resource is not locked.</returns>
     Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default);
 
-    /// <summary>Lists all active locks.</summary>
+    /// <summary>Lists the active locks observable through this provider's inspection path.</summary>
     /// <returns>Collection of active lock information.</returns>
     Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the total count of active locks.</summary>
+    /// <summary>Gets the total count of active locks observable through this provider's inspection path.</summary>
     Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
 }

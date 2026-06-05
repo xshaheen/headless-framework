@@ -19,7 +19,8 @@ namespace Headless.DistributedLocks;
 /// <remarks>
 /// Connection-scoped locks have no TTL: <see cref="RenewAsync"/> is a no-op success and
 /// <see cref="GetExpirationAsync"/> returns <see langword="null"/>. Lock loss is tied to the storage
-/// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// connection and surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/> only when
+/// acquire-time monitoring is enabled.
 /// </remarks>
 /// <param name="storage">Backend storage seam performing the native acquire/release.</param>
 /// <param name="releaseSignal">Wake-up seam used between retry attempts; polling is the correctness fallback.</param>
@@ -102,6 +103,7 @@ public sealed class ConnectionScopedDistributedLock(
         }
 
         var acquireTimeout = acquireOptions?.AcquireTimeout ?? DefaultAcquireTimeout;
+        var observeLoss = (acquireOptions?.Monitoring ?? LockMonitoringMode.None) != LockMonitoringMode.None;
         var started = timeProvider.GetTimestamp();
         var deadline = acquireTimeout == Timeout.InfiniteTimeSpan
             ? DateTimeOffset.MaxValue
@@ -125,7 +127,9 @@ public sealed class ConnectionScopedDistributedLock(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var handle = await storage.TryAcquireAsync(resource, leaseId, isShared, cancellationToken).ConfigureAwait(false);
+                var handle = await storage
+                    .TryAcquireAsync(resource, leaseId, isShared, observeLoss, cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (handle is not null)
                 {
@@ -272,9 +276,20 @@ public sealed class ConnectionScopedDistributedLock(
 
     public async Task<DistributedLockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default)
     {
-        return (await storage.ListActiveLocksAsync(cancellationToken).ConfigureAwait(false)).FirstOrDefault(x =>
-            string.Equals(x.Resource, resource, StringComparison.Ordinal)
-        );
+        if (!await storage.IsLockedAsync(resource, cancellationToken: cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var leaseId = await storage.GetLocalLeaseIdAsync(resource, cancellationToken).ConfigureAwait(false);
+
+        return new DistributedLockInfo
+        {
+            Resource = resource,
+            LeaseId = leaseId,
+            TimeToLive = null,
+            FencingToken = null,
+        };
     }
 
     public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)

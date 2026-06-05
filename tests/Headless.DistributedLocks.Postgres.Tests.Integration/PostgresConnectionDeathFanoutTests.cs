@@ -31,7 +31,11 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
 
         // ReleaseOnDispose is false: terminating the backend frees both advisory locks server-side, so disposing the
         // handles must not attempt explicit releases against the now-dead connection.
-        var acquireOptions = new DistributedLockAcquireOptions { ReleaseOnDispose = false };
+        var acquireOptions = new DistributedLockAcquireOptions
+        {
+            ReleaseOnDispose = false,
+            Monitoring = LockMonitoringMode.Monitor,
+        };
 
         await using var first = await locks.AcquireAsync(resourceA, acquireOptions, AbortToken);
         await using var second = await locks.AcquireAsync(resourceB, acquireOptions, AbortToken);

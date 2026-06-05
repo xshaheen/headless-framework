@@ -96,12 +96,14 @@ public sealed class PostgresDistributedLockConformanceTests : DistributedLockTes
     [Fact]
     public override Task should_get_active_locks_count() => base.should_get_active_locks_count();
 
+    [Fact]
+    public override Task should_expose_none_handle_lost_token_without_monitoring() =>
+        base.should_expose_none_handle_lost_token_without_monitoring();
+
     // Intentionally not overridden (not portable to the connection-scoped provider):
     //  - should_get_expiration_for_locked_resource / should_get_lock_info_for_locked_resource:
     //    session-scoped locks have no lease, so expiration and TimeToLive are always null.
     //  - should_keep_lock_alive_when_auto_extend_is_enabled_smoke: there is no lease to auto-extend.
     //  - should_timeout_when_try_to_lock_acquired_resource: relies on TTL expiry freeing the first
     //    lock; session-scoped locks are held for the connection lifetime and never expire on TTL.
-    //  - should_expose_none_handle_lost_token_without_monitoring: the provider always exposes a
-    //    real connection-lost token (covered by PostgresConnectionDeathTests instead).
 }

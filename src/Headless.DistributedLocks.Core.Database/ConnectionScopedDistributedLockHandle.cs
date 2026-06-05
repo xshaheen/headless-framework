@@ -59,7 +59,7 @@ internal sealed class ConnectionScopedDistributedLockHandle : IDistributedLease
 
     public CancellationToken LostToken => _handle.ConnectionLostToken;
 
-    public bool CanObserveLoss => true;
+    public bool CanObserveLoss => _handle.ConnectionLostToken.CanBeCanceled;
 
     public async Task ReleaseAsync()
     {

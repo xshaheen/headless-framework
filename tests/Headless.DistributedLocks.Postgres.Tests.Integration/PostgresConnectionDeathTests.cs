@@ -22,7 +22,11 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         // disposing the handle must not attempt an explicit release against the now-dead connection.
         await using var handle = await locks.AcquireAsync(
             resource,
-            new DistributedLockAcquireOptions { ReleaseOnDispose = false },
+            new DistributedLockAcquireOptions
+            {
+                ReleaseOnDispose = false,
+                Monitoring = LockMonitoringMode.Monitor,
+            },
             AbortToken
         );
 

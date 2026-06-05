@@ -20,7 +20,7 @@ public sealed class ConnectionScopedLockHandle : IAsyncDisposable
     /// <param name="release">Callback invoked exactly once to release the lock in the backing store.</param>
     /// <param name="connectionLostToken">
     /// Token cancelled when the underlying connection is lost; consumers observe it to learn the lock is no
-    /// longer held.
+    /// longer held. <see cref="CancellationToken.None"/> means acquire-time monitoring was disabled.
     /// </param>
     public ConnectionScopedLockHandle(
         string resource,

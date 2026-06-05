@@ -38,7 +38,33 @@ public sealed class PostgresDistributedLockTests(PostgresDistributedLockFixture 
         await using var handle = await locks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         (await locks.GetExpirationAsync(resource, AbortToken)).Should().BeNull();
-        handle.CanObserveLoss.Should().BeTrue();
+        handle.CanObserveLoss.Should().BeFalse();
+        handle.LostToken.Should().Be(CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task should_report_remote_holder_without_remote_lease_id_on_resource_targeted_inspection()
+    {
+        var keyPrefix = $"test:inspect:{Faker.Random.AlphaNumeric(6)}:";
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        await using var ownerProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+        await using var observerProvider = _CreateProvider(options => options.KeyPrefix = keyPrefix);
+
+        var owner = ownerProvider.GetRequiredService<IDistributedLock>();
+        var observer = observerProvider.GetRequiredService<IDistributedLock>();
+
+        await using var handle = await owner.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        (await observer.GetLeaseIdAsync(resource, AbortToken)).Should().BeNull();
+        (await observer.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
+
+        var info = await observer.GetLockInfoAsync(resource, AbortToken);
+
+        info.Should().NotBeNull();
+        info!.Resource.Should().Be(resource);
+        info.LeaseId.Should().BeNull();
+        info.TimeToLive.Should().BeNull();
     }
 
     [Fact]

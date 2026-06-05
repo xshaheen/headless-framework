@@ -7,8 +7,8 @@ namespace Headless.DistributedLocks;
 /// Backend seam for connection-scoped (session- or transaction-held) lock storage. A custom database
 /// lock provider implements this to map its native primitive (for example <c>pg_advisory_lock</c> or
 /// <c>sp_getapplock</c>) onto <see cref="ConnectionScopedDistributedLock"/>. Locks live for the
-/// lifetime of the underlying connection and have no TTL; loss of the connection releases the lock and is
-/// surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
+/// lifetime of the underlying connection and have no TTL; when acquire-time monitoring is enabled, loss of
+/// the connection releases the lock and is surfaced through <see cref="ConnectionScopedLockHandle.ConnectionLostToken"/>.
 /// </summary>
 /// <remarks>
 /// Implementations must be safe for concurrent use across acquirers. The provider performs all retry,
@@ -30,6 +30,7 @@ public interface IConnectionScopedLockStorage
         string resource,
         string leaseId,
         bool isShared,
+        bool observeLoss,
         CancellationToken cancellationToken = default
     );
 
@@ -67,9 +68,15 @@ public interface IConnectionScopedLockStorage
     /// </summary>
     ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default);
 
-    /// <summary>Lists all locks currently observable in the backing store.</summary>
+    /// <summary>
+    /// Lists the locks currently enumerable through the backing store's inspection path. Some backends can only
+    /// enumerate locks held by this process because the store metadata does not expose reversible resource names.
+    /// </summary>
     ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Returns the total count of locks currently observable in the backing store.</summary>
+    /// <summary>
+    /// Returns the total count of locks currently enumerable through the backing store's inspection path.
+    /// Some backends can only count locks held by this process.
+    /// </summary>
     ValueTask<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default);
 }

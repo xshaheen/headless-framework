@@ -23,7 +23,7 @@ public static class DistributedLockExtensions
         /// the expiration time of the lock if it is still held to the <see cref="IDistributedLease.LeaseId"/>
         /// and return <see langword="true"/>, otherwise <see langword="false"/>.
         /// </summary>
-        public Task RenewAsync(
+        public Task<bool> RenewAsync(
             IDistributedLease distributedLock,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default

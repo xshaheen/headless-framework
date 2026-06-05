@@ -26,6 +26,22 @@ public sealed class DistributedLockExtensionsTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_provider_renewal_result_for_handle_renewal()
+    {
+        var provider = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
+        var timeUntilExpires = TimeSpan.FromMinutes(5);
+        distributedLock.Resource.Returns("resource");
+        distributedLock.LeaseId.Returns("lock-id");
+        provider.RenewAsync("resource", "lock-id", timeUntilExpires, AbortToken).Returns(Task.FromResult(false));
+
+        var result = await provider.RenewAsync(distributedLock, timeUntilExpires, AbortToken);
+
+        result.Should().BeFalse();
+        await provider.Received(1).RenewAsync("resource", "lock-id", timeUntilExpires, AbortToken);
+    }
+
+    [Fact]
     public async Task should_return_false_when_lock_not_acquired()
     {
         // given

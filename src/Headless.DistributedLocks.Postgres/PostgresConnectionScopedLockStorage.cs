@@ -70,6 +70,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         string resource,
         string leaseId,
         bool isShared,
+        bool observeLoss,
         CancellationToken cancellationToken = default
     )
     {
@@ -102,9 +103,7 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         try
         {
-            // Read the engine handle's lost token now so the ConnectionMonitor registers its monitoring handle (and
-            // starts the active probe) at acquire time rather than lazily on first consumer read.
-            var connectionLostToken = engineHandle.LostToken;
+            var connectionLostToken = observeLoss ? engineHandle.LostToken : CancellationToken.None;
 
             // Close the dispose race: if teardown has begun, the just-acquired lock would be missed by the
             // teardown snapshot of _heldByLockId, leaking its connection and advisory lock under No Reset On
@@ -197,6 +196,9 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     {
         cancellationToken.ThrowIfCancellationRequested();
 
+        // pg_locks can answer "is resource X locked?" because the caller supplies the resource key, but it cannot
+        // enumerate this provider's resource names across the whole namespace once long keys are hashed into advisory
+        // integers. Provider-wide listing therefore remains local-handle only.
         IReadOnlyList<DistributedLockInfo> locks = _heldByLockId
             .Values.Select(x => new DistributedLockInfo
             {
