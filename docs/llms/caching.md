@@ -87,6 +87,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - Fail-safe retention is bounded by `max(Duration, FailSafeMaxDuration)` from entry creation. `FailSafeThrottleDuration` restamps logical expiration to avoid hammering a failing factory, but never extends physical retention.
 - Normal value reads (`GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`) use logical expiration. A fail-safe reserve is only consumed by `GetOrAddAsync`.
 - Keep direct write operations (`UpsertAsync`, `TryInsertAsync`, set/increment operations) on `TimeSpan?`; they do not establish a fail-safe reserve because they do not carry `CacheEntryOptions`.
+- Caller cancellation never serves stale: if the `CancellationToken` you pass to `GetOrAddAsync` is cancelled, the exception propagates and fail-safe does not activate. A factory or store `OperationCanceledException` carrying an unrelated/downstream token (for example a timeout) is treated as a failure and *does* activate fail-safe. The distinction is by token identity, so a token-less `OperationCanceledException` under a non-cancelable caller token also activates fail-safe.
 - Key length validation is the consumer's responsibility. The framework does not enforce key length limits for DoS protection — validate at your application boundary.
 - StackExchange.Redis does not support `CancellationToken` — timeouts are configured via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`. Cancellation is checked at the start of operations only.
 - For Redis, SCAN-based operations (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) are cancellable during iteration; single-key and batch operations complete atomically once started.
@@ -202,11 +203,13 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 - `FactoryCacheCoordinator` - shared factory orchestration engine.
 - `IFactoryCacheStore` - provider primitive for metadata-aware entry reads and writes.
 - `CacheStoreEntry<T>` - logical and physical expiration snapshot used by the coordinator.
+- `CacheStoreEntryExtensions` - shared `IsFresh`/`IsPhysicallyPresent` predicates so every provider and the coordinator agree on the expiration boundary (an entry is expired at the exact tick, `expiresAt <= now`).
+- `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - Fail-safe activation log when stale data is served.
 
 ## Design Notes
 
-Providers construct the coordinator directly with their `TimeProvider` and logger; the Core package has no DI setup. Store read failures are treated as misses, and fail-safe restamp writes are best-effort so a stale value can still be returned when the backing store is unhealthy.
+Providers construct the coordinator directly with their `TimeProvider` and logger; the Core package has no DI setup. Store read failures are treated as misses, and fail-safe restamp writes are best-effort so a stale value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe.
 
 ## Installation
 
@@ -502,7 +505,8 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 | Publish fails                | Log warning, other instances serve stale until TTL |
 | L1 write fails               | Propagate exception (indicates serious issue)      |
 | L2 read fails                | Treat as miss for `GetOrAddAsync`; serve any L1 fail-safe reserve if available |
-| `OperationCanceledException` | Always propagate                                   |
+| Caller-token cancellation    | Propagate; fail-safe is not activated              |
+| Unrelated/downstream `OperationCanceledException` | Treated as a failure (by token identity); activates fail-safe and serves stale if available |
 
 ## Metrics
 

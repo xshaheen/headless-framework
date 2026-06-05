@@ -1074,7 +1074,7 @@ public sealed class HybridCache(
         {
             l2Entry = await l2Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
         {
             _logger.LogFailedToReadFromL2Cache(exception, key);
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
@@ -1114,7 +1114,7 @@ public sealed class HybridCache(
                     .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
@@ -1129,7 +1129,7 @@ public sealed class HybridCache(
                     .UpsertAsync(key, isNull ? default : value, expiresIn, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }

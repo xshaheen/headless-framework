@@ -75,7 +75,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             {
                 value = await factory(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception exception) when (!_IsCallerCancellation(exception, cancellationToken))
+            catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
             {
                 now = _GetUtcNow();
 
@@ -160,7 +160,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             return await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (!_IsCallerCancellation(exception, cancellationToken))
+        catch (Exception exception) when (!IsCallerCancellation(exception, cancellationToken))
         {
             _logger.LogCacheStoreReadFailed(exception, key);
             return CacheStoreEntry<T>.NotFound;
@@ -190,7 +190,17 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     // Caller cancellation (the caller's own token) must always propagate and never activate fail-safe (KTD-7).
     // Use token identity, not just IsCancellationRequested, so an OperationCanceledException raised by an
     // unrelated linked/internal token (e.g. a downstream timeout) still activates fail-safe.
-    private static bool _IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
+    /// <summary>
+    /// Returns whether <paramref name="exception"/> represents cancellation of the caller's own token, which must
+    /// always propagate rather than activate fail-safe (KTD-7). An <see cref="OperationCanceledException"/> raised
+    /// by an unrelated linked/internal token (for example a downstream timeout) is NOT caller cancellation and
+    /// should activate fail-safe / degrade to a miss. Providers composing this engine (e.g. a hybrid store)
+    /// should use this predicate for their best-effort catch filters so cancellation semantics stay consistent.
+    /// </summary>
+    /// <param name="exception">The exception thrown by the factory or store operation.</param>
+    /// <param name="cancellationToken">The caller's cancellation token.</param>
+    [Pure]
+    public static bool IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
         {
