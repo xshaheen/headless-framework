@@ -75,7 +75,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             {
                 value = await factory(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            catch (Exception exception) when (!_IsCallerCancellation(exception, cancellationToken))
             {
                 now = _GetUtcNow();
 
@@ -165,7 +165,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             return await store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        catch (Exception exception) when (!_IsCallerCancellation(exception, cancellationToken))
         {
             _logger.LogCacheStoreReadFailed(exception, key);
             return CacheStoreEntry<T>.NotFound;
@@ -191,6 +191,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     // null-physical entry would be served as stale without a throttle write, hammering the factory.
     private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now) =>
         entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
+
+    // Caller cancellation (the caller's own token) must always propagate and never activate fail-safe (KTD-7).
+    // Use token identity, not just IsCancellationRequested, so an OperationCanceledException raised by an
+    // unrelated linked/internal token (e.g. a downstream timeout) still activates fail-safe.
+    private static bool _IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return true;
+        }
+
+        return exception is OperationCanceledException operationCanceled
+            && operationCanceled.CancellationToken == cancellationToken;
+    }
 
     private DateTime _GetUtcNow() => timeProvider.GetUtcNow().UtcDateTime;
 

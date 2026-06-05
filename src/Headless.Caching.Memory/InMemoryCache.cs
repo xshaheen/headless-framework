@@ -2138,11 +2138,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         internal IReadOnlySet<string>? Tags { get; }
 
+        // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
+        // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
+        // coordinator agree on the boundary instant.
         internal bool IsExpired =>
-            PhysicalExpiresAt.HasValue && PhysicalExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+            PhysicalExpiresAt.HasValue && PhysicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
 
         internal bool IsLogicallyExpired =>
-            LogicalExpiresAt.HasValue && LogicalExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+            LogicalExpiresAt.HasValue && LogicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 

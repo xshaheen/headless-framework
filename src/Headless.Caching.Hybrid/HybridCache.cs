@@ -1080,7 +1080,11 @@ public sealed class HybridCache(
             return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
         }
 
-        if (l2Entry.Found && LocalCache is IFactoryCacheStore l1StoreForPromotion)
+        // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
+        // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.
+        // The coordinator still receives the returned l2Entry as its stale candidate, so fail-safe serving of
+        // an L2 reserve is unaffected — it simply is not re-cached into L1.
+        if (l2Entry.IsFresh(now) && LocalCache is IFactoryCacheStore l1StoreForPromotion)
         {
             await _SetLocalEntryAsync(l1StoreForPromotion, key, l2Entry, cancellationToken).ConfigureAwait(false);
         }
@@ -1163,13 +1167,31 @@ public sealed class HybridCache(
         CancellationToken cancellationToken
     )
     {
-        if (!entry.Found || !entry.LogicalExpiresAt.HasValue || !entry.PhysicalExpiresAt.HasValue)
+        if (!entry.Found)
         {
             return;
         }
 
         var now = _GetUtcNow();
         var localCeiling = options.DefaultLocalExpiration.HasValue ? now.Add(options.DefaultLocalExpiration.Value) : (DateTime?)null;
+
+        // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local
+        // ceiling so they cannot pin process memory indefinitely; without a configured ceiling there is no finite
+        // bound to apply, so skip rather than cache a never-expiring entry locally.
+        if (!entry.LogicalExpiresAt.HasValue || !entry.PhysicalExpiresAt.HasValue)
+        {
+            if (!localCeiling.HasValue)
+            {
+                return;
+            }
+
+            await l1Store
+                .SetEntryAsync(key, entry.Value, entry.IsNull, localCeiling.Value, localCeiling.Value, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
         var logicalExpiresAt = localCeiling.HasValue ? CacheStoreEntryExtensions.Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
         var physicalExpiresAt = localCeiling.HasValue ? CacheStoreEntryExtensions.Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
 

@@ -621,6 +621,10 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
+        // Fetch the value rather than KeyExists: a fail-safe reserve keeps its Redis TTL aligned to PHYSICAL
+        // expiration, so the key can still exist after its LOGICAL expiration. A key-existence check would
+        // report such a logically-expired reserve as present; _RedisValueIsLogicallyPresent applies the same
+        // logical-expiry rule the read methods use.
         var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
         return _RedisValueIsLogicallyPresent(redisValue);
     }
@@ -696,6 +700,8 @@ public sealed class RedisCache(
 
         if (!frame.IsFramed)
         {
+            // Non-framed (legacy/raw) keys carry no logical metadata, so fall back to the server TTL. Only
+            // legacy keys pay this second round trip; framed keys return below from the decoded frame.
             return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
         }
 
