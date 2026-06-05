@@ -187,6 +187,29 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_allow_protected_resource_to_reject_stale_fencing_token()
+    {
+        // given
+        var provider = _CreateProvider();
+        var protectedResource = new FencedProtectedResource();
+        var resource = Faker.Random.AlphaNumeric(10);
+
+        await using var first = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        var staleToken = first.FencingToken;
+        protectedResource.TryWrite(staleToken).Should().BeTrue();
+        await first.ReleaseAsync();
+
+        await using var second = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+        protectedResource.TryWrite(second.FencingToken).Should().BeTrue();
+
+        // when
+        var accepted = protectedResource.TryWrite(staleToken);
+
+        // then
+        accepted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_keep_fencing_token_stable_on_renew()
     {
         // given
@@ -1454,4 +1477,21 @@ public sealed class DistributedLockTests : TestBase
     }
 
     #endregion
+
+    private sealed class FencedProtectedResource
+    {
+        private long _lastSeenFence;
+
+        public bool TryWrite(long? fencingToken)
+        {
+            if (fencingToken is not { } token || token < _lastSeenFence)
+            {
+                return false;
+            }
+
+            _lastSeenFence = token;
+
+            return true;
+        }
+    }
 }
