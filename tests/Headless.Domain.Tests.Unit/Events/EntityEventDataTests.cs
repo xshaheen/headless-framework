@@ -62,10 +62,10 @@ public sealed class EntityEventDataTests
         var deletedEvent = new EntityDeletedEventData<TestEntity>(entity);
         var changedEvent = new EntityChangedEventData<TestEntity>(entity);
 
-        createdEvent.Should().BeAssignableTo<ILocalMessage>();
-        updatedEvent.Should().BeAssignableTo<ILocalMessage>();
-        deletedEvent.Should().BeAssignableTo<ILocalMessage>();
-        changedEvent.Should().BeAssignableTo<ILocalMessage>();
+        createdEvent.Should().BeAssignableTo<IDomainEvent>();
+        updatedEvent.Should().BeAssignableTo<IDomainEvent>();
+        deletedEvent.Should().BeAssignableTo<IDomainEvent>();
+        changedEvent.Should().BeAssignableTo<IDomainEvent>();
     }
 
     [Fact]

@@ -227,7 +227,7 @@ internal sealed class PostgreSqlSettingValueRecordRepository(
     private async ValueTask _PublishAsync(SettingValueRecord setting, CancellationToken cancellationToken)
     {
         await using var scope = services.CreateAsyncScope();
-        var publisher = scope.ServiceProvider.GetService<ILocalMessagePublisher>();
+        var publisher = scope.ServiceProvider.GetService<ILocalEventBus>();
 
         if (publisher is not null)
         {

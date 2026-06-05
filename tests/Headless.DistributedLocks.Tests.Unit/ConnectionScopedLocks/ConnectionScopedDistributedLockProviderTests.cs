@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using System.Diagnostics;
 
 namespace Tests.ConnectionScopedLocks;
 
@@ -60,9 +60,13 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         waits.Should().HaveCount(contendedAttempts);
 
         // Every wait must stay inside the [0.8, 1.2) jitter band around the base fallback.
-        waits.Should().AllSatisfy(wait =>
-            wait.Should().BeGreaterThanOrEqualTo(pollingFallback * 0.8).And.BeLessThanOrEqualTo(pollingFallback * 1.2)
-        );
+        waits
+            .Should()
+            .AllSatisfy(wait =>
+                wait.Should()
+                    .BeGreaterThanOrEqualTo(pollingFallback * 0.8)
+                    .And.BeLessThanOrEqualTo(pollingFallback * 1.2)
+            );
 
         // Prove jitter is actually applied: a no-jitter implementation would return exactly the base
         // every time. Require distinct values that fall on BOTH sides of the base fallback so the test
@@ -109,11 +113,7 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         var blockingSignal = new BlockingReleaseSignal();
         var alwaysContended = new AlwaysContendedStorage();
 
-        var provider = _CreateProvider(
-            options: options,
-            storage: alwaysContended,
-            releaseSignal: blockingSignal
-        );
+        var provider = _CreateProvider(options: options, storage: alwaysContended, releaseSignal: blockingSignal);
         var resource = Faker.Random.AlphaNumeric(12);
 
         var acquireOptions = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(10) };
@@ -125,7 +125,8 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         // Second acquirer on the same resource overflows the per-resource cap.
         var act = async () => await provider.TryAcquireAsync(resource, acquireOptions, AbortToken);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should()
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should()
             .Contain("Maximum waiters per resource");
 
         blockingSignal.ReleaseAll();
@@ -143,11 +144,7 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         var blockingSignal = new BlockingReleaseSignal();
         var alwaysContended = new AlwaysContendedStorage();
 
-        var provider = _CreateProvider(
-            options: options,
-            storage: alwaysContended,
-            releaseSignal: blockingSignal
-        );
+        var provider = _CreateProvider(options: options, storage: alwaysContended, releaseSignal: blockingSignal);
 
         var acquireOptions = new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMinutes(10) };
 
@@ -156,7 +153,8 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
 
         var act = async () => await provider.TryAcquireAsync(Faker.Random.AlphaNumeric(12), acquireOptions, AbortToken);
 
-        (await act.Should().ThrowAsync<InvalidOperationException>()).Which.Message.Should()
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should()
             .Contain("Maximum concurrent waiting resources");
 
         blockingSignal.ReleaseAll();
@@ -240,6 +238,61 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_call_server_blocking_storage_once_with_full_timeout_and_skip_release_signal()
+    {
+        var acquireTimeout = TimeSpan.FromSeconds(13);
+        _storage.BlocksServerSide = true;
+        _storage.AcquireResults.Enqueue(false);
+
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+
+        var handle = await provider.TryAcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { AcquireTimeout = acquireTimeout },
+            AbortToken
+        );
+
+        handle.Should().BeNull();
+        _storage.AcquireCount.Should().Be(1);
+        _storage.AcquireTimeouts.Should().ContainSingle().Which.Should().Be(acquireTimeout);
+        _releaseSignal.WaitDurations.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_enforce_waiter_guardrails_before_server_blocking_storage_call()
+    {
+        _storage.BlocksServerSide = true;
+        _storage.BlockAcquire = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _storage.AcquireResults.Enqueue(true);
+
+        var provider = _CreateProvider(options: new DistributedLockOptions { MaxConcurrentWaitingResources = 1 });
+
+#pragma warning disable AsyncFixer04 // Intentionally not awaited so the first acquire remains blocked in storage.
+        var first = provider.TryAcquireAsync(
+            "resource-1",
+            new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+            AbortToken
+        );
+#pragma warning restore AsyncFixer04
+
+        await _storage.WaitForAcquireAsync(AbortToken);
+
+        var act = async () =>
+            await provider.TryAcquireAsync(
+                "resource-2",
+                new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
+                AbortToken
+            );
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Maximum concurrent waiting resources*");
+
+        _storage.BlockAcquire.SetResult();
+        await using var handle = await first;
+        handle.Should().NotBeNull();
+    }
+
     private ConnectionScopedDistributedLockProvider _CreateProvider(
         IFencingTokenSource? fencingTokenSource = null,
         TimeSpan? pollingFallback = null,
@@ -266,21 +319,44 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
     {
         public Queue<bool> AcquireResults { get; } = new();
 
+        public List<TimeSpan> AcquireTimeouts { get; } = [];
+
+        public TaskCompletionSource? BlockAcquire { get; set; }
+
+        public int AcquireCount { get; private set; }
+
+        public bool BlocksServerSide { get; set; }
+
         public int ReleaseCount { get; private set; }
 
-        public ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
+        public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
             string resource,
             string lockId,
             bool isShared,
+            TimeSpan acquireTimeout,
             CancellationToken cancellationToken = default
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
+            AcquireCount++;
+            AcquireTimeouts.Add(acquireTimeout);
+
+            if (BlockAcquire is not null)
+            {
+                await BlockAcquire.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             var acquired = AcquireResults.Count == 0 || AcquireResults.Dequeue();
 
-            return ValueTask.FromResult<ConnectionScopedLockHandle?>(
-                acquired ? new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, CancellationToken.None) : null
-            );
+            return acquired ? new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, CancellationToken.None) : null;
+        }
+
+        public async Task WaitForAcquireAsync(CancellationToken cancellationToken)
+        {
+            while (AcquireCount == 0)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
+            }
         }
 
         public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
@@ -372,7 +448,11 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
 
     private sealed class ThrowingFencingTokenSource : IFencingTokenSource
     {
-        public ValueTask<long?> NextAsync(string resource, CancellationToken cancellationToken = default)
+        public ValueTask<long?> NextAsync(
+            string resource,
+            System.Data.Common.DbConnection? connection = null,
+            CancellationToken cancellationToken = default
+        )
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -391,6 +471,7 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
             string resource,
             string lockId,
             bool isShared,
+            TimeSpan acquireTimeout,
             CancellationToken cancellationToken = default
         )
         {
@@ -401,8 +482,10 @@ public sealed class ConnectionScopedDistributedLockProviderTests : TestBase
             );
         }
 
-        public ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default) =>
-            ValueTask.CompletedTask;
+        public ValueTask ReleaseAsync(
+            ConnectionScopedLockHandle handle,
+            CancellationToken cancellationToken = default
+        ) => ValueTask.CompletedTask;
 
         public ValueTask ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
             ValueTask.CompletedTask;

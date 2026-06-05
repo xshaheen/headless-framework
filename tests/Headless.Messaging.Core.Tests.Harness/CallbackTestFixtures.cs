@@ -14,7 +14,8 @@ public sealed class MessageCollector<TMessage> : IConsume<TMessage>
 
     public IReadOnlyCollection<ConsumeContext<TMessage>> ReceivedContexts => _receivedContexts;
 
-    public IReadOnlyCollection<TMessage> ReceivedMessages => _receivedContexts.Select(context => context.Message).ToArray();
+    public IReadOnlyCollection<TMessage> ReceivedMessages =>
+        _receivedContexts.Select(context => context.Message).ToArray();
 
     public ValueTask ConsumeAsync(ConsumeContext<TMessage> context, CancellationToken cancellationToken)
     {
@@ -180,7 +181,10 @@ public sealed class CallbackRequestConsumer : IConsume<CallbackRequestMessage>
 
 public sealed class CallbackQueueRequestConsumer : IConsume<CallbackQueueRequestMessage>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<CallbackQueueRequestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(
+        ConsumeContext<CallbackQueueRequestMessage> context,
+        CancellationToken cancellationToken
+    )
     {
         context.SetResponse(new CallbackResponse(context.Message.Id, context.IntentType.ToString()));
         return ValueTask.CompletedTask;
@@ -193,7 +197,10 @@ public sealed class CallbackFailureRequestConsumer : IConsume<CallbackFailureReq
     private bool _attempted;
     private TaskCompletionSource<bool> _attemptTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public ValueTask ConsumeAsync(ConsumeContext<CallbackFailureRequestMessage> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(
+        ConsumeContext<CallbackFailureRequestMessage> context,
+        CancellationToken cancellationToken
+    )
     {
         lock (_lock)
         {
@@ -295,7 +302,10 @@ public sealed class ChainRequestConsumer : IConsume<ChainRequestMessage>
 
 public sealed class ChainIntermediateConsumer : IConsume<ChainIntermediateResponse>
 {
-    public ValueTask ConsumeAsync(ConsumeContext<ChainIntermediateResponse> context, CancellationToken cancellationToken)
+    public ValueTask ConsumeAsync(
+        ConsumeContext<ChainIntermediateResponse> context,
+        CancellationToken cancellationToken
+    )
     {
         context.SetResponse(new ChainFinalResponse(context.Message.RequestId));
         return ValueTask.CompletedTask;

@@ -64,11 +64,7 @@ internal static class DistributedLockCoreHelpers
         }
 
         var value = Argument.IsPositive(timeUntilExpires.Value);
-        Argument.IsLessThan(
-            value.TotalMilliseconds,
-            int.MaxValue,
-            paramName: nameof(timeUntilExpires)
-        );
+        Argument.IsLessThan(value.TotalMilliseconds, int.MaxValue, paramName: nameof(timeUntilExpires));
 
         return value;
     }

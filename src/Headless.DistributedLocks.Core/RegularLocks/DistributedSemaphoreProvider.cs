@@ -25,8 +25,13 @@ internal sealed class DistributedSemaphoreProvider(
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
     private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
-    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(timeProvider, logger);
-    private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(StringComparer.Ordinal);
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
+        timeProvider,
+        logger
+    );
+    private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
+        StringComparer.Ordinal
+    );
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly Lock _resetEventLock = new();
     private readonly int _maxResourceNameLength = options.MaxResourceNameLength;
@@ -92,10 +97,11 @@ internal sealed class DistributedSemaphoreProvider(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        var timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
-            acquireOptions.TimeUntilExpires,
-            DefaultTimeUntilExpires
-        ) ?? DefaultTimeUntilExpires;
+        var timeUntilExpires =
+            DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
+                acquireOptions.TimeUntilExpires,
+                DefaultTimeUntilExpires
+            ) ?? DefaultTimeUntilExpires;
         var monitorLease = acquireOptions.Monitoring != LockMonitoringMode.None;
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
@@ -116,7 +122,14 @@ internal sealed class DistributedSemaphoreProvider(
 
             try
             {
-                singleResult = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, timestamp, attemptToken)
+                singleResult = await _TryAcquireStorageAsync(
+                        resource,
+                        lockId,
+                        maxCount,
+                        timeUntilExpires,
+                        timestamp,
+                        attemptToken
+                    )
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -175,7 +188,14 @@ internal sealed class DistributedSemaphoreProvider(
                 var attemptToken = isFirstAttempt && timeoutCts.IsCancellationRequested ? cancellationToken : cts.Token;
                 isFirstAttempt = false;
 
-                result = await _TryAcquireStorageAsync(resource, lockId, maxCount, timeUntilExpires, timestamp, attemptToken)
+                result = await _TryAcquireStorageAsync(
+                        resource,
+                        lockId,
+                        maxCount,
+                        timeUntilExpires,
+                        timestamp,
+                        attemptToken
+                    )
                     .ConfigureAwait(false);
 
                 if (result.Acquired)
@@ -256,7 +276,8 @@ internal sealed class DistributedSemaphoreProvider(
     {
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
-        var ttl = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(timeUntilExpires, DefaultTimeUntilExpires)
+        var ttl =
+            DistributedLockCoreHelpers.NormalizeTimeUntilExpires(timeUntilExpires, DefaultTimeUntilExpires)
             ?? DefaultTimeUntilExpires;
 
         return storage.TryExtendAsync(_StorageResource(resource), lockId, ttl, cancellationToken).AsTask();
@@ -270,11 +291,7 @@ internal sealed class DistributedSemaphoreProvider(
         return storage.ValidateAsync(_StorageResource(resource), lockId, cancellationToken).AsTask();
     }
 
-    internal async Task ReleaseAsync(
-        string resource,
-        string lockId,
-        CancellationToken cancellationToken = default
-    )
+    internal async Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         _ValidateResource(resource);
         Argument.IsNotNullOrWhiteSpace(lockId);
@@ -340,10 +357,12 @@ internal sealed class DistributedSemaphoreProvider(
     {
         try
         {
-            return await storage.TryAcquireAsync(_StorageResource(resource), lockId, maxCount, ttl, cancellationToken)
+            return await storage
+                .TryAcquireAsync(_StorageResource(resource), lockId, maxCount, ttl, cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (Exception e) when (e is not (OperationCanceledException or ObjectDisposedException or InvalidOperationException))
+        catch (Exception e)
+            when (e is not (OperationCanceledException or ObjectDisposedException or InvalidOperationException))
         {
             logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, startTimestamp);
 

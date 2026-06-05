@@ -38,7 +38,8 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     }
 
     [Fact]
-    public override Task should_round_trip_object_and_string_values() => base.should_round_trip_object_and_string_values();
+    public override Task should_round_trip_object_and_string_values() =>
+        base.should_round_trip_object_and_string_values();
 
     [Fact]
     public override Task should_round_trip_null_and_null_sentinel_string() =>

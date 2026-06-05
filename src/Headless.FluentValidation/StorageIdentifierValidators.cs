@@ -20,8 +20,7 @@ public static class StorageIdentifierValidators
     /// </summary>
     public static IRuleBuilderOptions<T, string?> IsValidPostgreSqlIdentifier<T>(this IRuleBuilder<T, string?> rule)
     {
-        return rule
-            .NotEmpty()
+        return rule.NotEmpty()
             .Matches(StorageIdentifier.PostgreSql.IdentifierPattern)
             .MaximumLength(StorageIdentifier.PostgreSql.IdentifierMaxLength);
     }
@@ -33,8 +32,7 @@ public static class StorageIdentifierValidators
     /// </summary>
     public static IRuleBuilderOptions<T, string?> IsValidSqlServerIdentifier<T>(this IRuleBuilder<T, string?> rule)
     {
-        return rule
-            .NotEmpty()
+        return rule.NotEmpty()
             .Matches(StorageIdentifier.SqlServer.IdentifierPattern)
             .MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
     }
@@ -47,8 +45,7 @@ public static class StorageIdentifierValidators
     /// </summary>
     public static IRuleBuilderOptions<T, string?> IsValidCrossProviderIdentifier<T>(this IRuleBuilder<T, string?> rule)
     {
-        return rule
-            .NotEmpty()
+        return rule.NotEmpty()
             .Matches(StorageIdentifier.SqlServer.IdentifierPattern)
             .MaximumLength(StorageIdentifier.SqlServer.IdentifierMaxLength);
     }

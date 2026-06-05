@@ -25,7 +25,8 @@ public static class SetupPermissions
         }
     }
 
-    private sealed class EntityFrameworkPermissionsOptionsExtension(Type dbContextType) : IPermissionsStorageOptionsExtension
+    private sealed class EntityFrameworkPermissionsOptionsExtension(Type dbContextType)
+        : IPermissionsStorageOptionsExtension
     {
         public void AddServices(IServiceCollection services)
         {
@@ -51,7 +52,8 @@ public static class SetupPermissions
     // permissive identifier pattern (SqlServer, a superset of PostgreSQL's character set) and
     // the larger length cap (SqlServer). The underlying DB surfaces type/length issues at
     // migration time.
-    private sealed class EntityFrameworkPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
+    private sealed class EntityFrameworkPermissionsStorageOptionsValidator
+        : AbstractValidator<PermissionsStorageOptions>
     {
         public EntityFrameworkPermissionsStorageOptionsValidator()
         {

@@ -190,7 +190,10 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
 
     private async ValueTask _ReleaseAsync(DatabaseConnection connection, PostgresAdvisoryLockKey key, bool isTry)
     {
-        Debug.Assert(!_UseTransactionScopedLock(connection), "Transaction-scoped locks are released by the transaction.");
+        Debug.Assert(
+            !_UseTransactionScopedLock(connection),
+            "Transaction-scoped locks are released by the transaction."
+        );
 
         using var command = connection.CreateCommand();
         command.SetCommandText(
@@ -227,7 +230,11 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         return (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))! != 0;
     }
 
-    private DatabaseCommand _CreateAcquireCommand(DatabaseConnection connection, PostgresAdvisoryLockKey key, TimeSpan timeout)
+    private DatabaseCommand _CreateAcquireCommand(
+        DatabaseConnection connection,
+        PostgresAdvisoryLockKey key,
+        TimeSpan timeout
+    )
     {
         var command = connection.CreateCommand();
 
@@ -242,10 +249,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
             timeout == TimeSpan.Zero || timeout == Timeout.InfiniteTimeSpan
                 ? 0
                 : (long)Math.Ceiling(timeout.TotalMilliseconds);
-        commandText.AppendLine(
-            CultureInfo.InvariantCulture,
-            $"SET LOCAL lock_timeout = {lockTimeoutMs};"
-        );
+        commandText.AppendLine(CultureInfo.InvariantCulture, $"SET LOCAL lock_timeout = {lockTimeoutMs};");
 
         var isTry = timeout == TimeSpan.Zero;
 

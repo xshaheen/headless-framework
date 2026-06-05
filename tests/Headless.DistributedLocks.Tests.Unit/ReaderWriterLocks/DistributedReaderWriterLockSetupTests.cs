@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.Fakes;
 
 namespace Tests.ReaderWriterLocks;
 
@@ -20,7 +20,7 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<FakeReaderWriterLockStorage>(_ => { });
+        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -39,8 +39,8 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<FakeReaderWriterLockStorage>(_ => { });
-        services.AddDistributedReaderWriterLock<FakeReaderWriterLockStorage>(_ => { });
+        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
+        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(_ => { });
 
         // then
         services.Count(x => x.ServiceType == typeof(IDistributedReaderWriterLockProvider)).Should().Be(1);
@@ -64,7 +64,7 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReaderWriterLock<FakeReaderWriterLockStorage>(configuration);
+        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(configuration);
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -85,7 +85,7 @@ public sealed class DistributedReaderWriterLockSetupTests : TestBase
         services.AddSingleton(new MarkerService { Prefix = "custom-prefix:" });
 
         // when - the Action<TOption, IServiceProvider> overload lets options pull values from DI.
-        services.AddDistributedReaderWriterLock<FakeReaderWriterLockStorage>(
+        services.AddDistributedReaderWriterLock<InMemoryDistributedReaderWriterLockStorage>(
             (opts, sp) =>
             {
                 var marker = sp.GetRequiredService<MarkerService>();

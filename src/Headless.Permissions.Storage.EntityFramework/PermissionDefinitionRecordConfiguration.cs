@@ -16,7 +16,9 @@ internal sealed class PermissionDefinitionRecordConfiguration(PermissionsStorage
         b.Property(x => x.GroupName).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.Name).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength).IsRequired();
         b.Property(x => x.ParentName).HasMaxLength(PermissionDefinitionRecordConstants.NameMaxLength);
-        b.Property(x => x.DisplayName).HasMaxLength(PermissionDefinitionRecordConstants.DisplayNameMaxLength).IsRequired();
+        b.Property(x => x.DisplayName)
+            .HasMaxLength(PermissionDefinitionRecordConstants.DisplayNameMaxLength)
+            .IsRequired();
         b.Property(x => x.Providers).HasMaxLength(PermissionDefinitionRecordConstants.ProvidersMaxLength);
         b.HasIndex(x => new { x.Name }).IsUnique();
         b.HasIndex(x => new { x.GroupName });

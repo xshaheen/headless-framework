@@ -5,7 +5,6 @@ using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Messaging;
 using Headless.Permissions;
-using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -50,21 +49,20 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
         services.AddSingleton(Substitute.For<IBus>());
-        services.AddServiceProviderLocalMessagePublisher();
+        services.AddHeadlessLocalEventBus();
 
+        // Cache
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
+        // Lock Storage
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
+        // Resource Lock
+        services.AddRedisDistributedLock(static _ => { });
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
-        // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
-        // Lock Storage
-        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
-        services.AddSingleton<HeadlessRedisScriptsLoader>();
-        // Resource Lock
-        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
         services.AddDbContextFactory<PermissionsTestDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)

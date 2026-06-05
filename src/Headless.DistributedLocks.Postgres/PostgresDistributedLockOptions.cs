@@ -51,6 +51,8 @@ internal sealed class PostgresDistributedLockOptionsValidator : AbstractValidato
         RuleFor(x => x.KeepAlive).GreaterThanOrEqualTo(TimeSpan.Zero);
         RuleFor(x => x)
             .Must(x => x.DataSource is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
-            .WithMessage($"{nameof(PostgresDistributedLockOptions.ConnectionString)} or {nameof(PostgresDistributedLockOptions.DataSource)} is required.");
+            .WithMessage(
+                $"{nameof(PostgresDistributedLockOptions.ConnectionString)} or {nameof(PostgresDistributedLockOptions.DataSource)} is required."
+            );
     }
 }

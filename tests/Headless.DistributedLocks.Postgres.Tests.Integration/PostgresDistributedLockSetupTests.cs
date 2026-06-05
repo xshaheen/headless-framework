@@ -23,7 +23,13 @@ public sealed class PostgresDistributedLockSetupTests : TestBase
 
         await using var provider = services.BuildServiceProvider();
 
-        provider.GetRequiredService<IDistributedLockProvider>().Should().BeOfType<ConnectionScopedDistributedLockProvider>();
-        provider.GetRequiredService<IDistributedReaderWriterLockProvider>().Should().BeOfType<ConnectionScopedReaderWriterLockProvider>();
+        provider
+            .GetRequiredService<IDistributedLockProvider>()
+            .Should()
+            .BeOfType<ConnectionScopedDistributedLockProvider>();
+        provider
+            .GetRequiredService<IDistributedReaderWriterLockProvider>()
+            .Should()
+            .BeOfType<ConnectionScopedReaderWriterLockProvider>();
     }
 }

@@ -19,22 +19,48 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
     private const string _QueryCanceledSqlState = "57014";
 
     /// <summary>Constructs an instance over an externally-owned <see cref="NpgsqlConnection"/>.</summary>
-    public PostgresDatabaseConnection(NpgsqlConnection connection, TimeProvider timeProvider, int monitoringCommandTimeoutSeconds)
+    public PostgresDatabaseConnection(
+        NpgsqlConnection connection,
+        TimeProvider timeProvider,
+        int monitoringCommandTimeoutSeconds
+    )
         : base(connection, isExternallyOwned: true, timeProvider, monitoringCommandTimeoutSeconds) { }
 
     /// <summary>Constructs an instance over an externally-owned <see cref="NpgsqlTransaction"/>.</summary>
-    public PostgresDatabaseConnection(NpgsqlTransaction transaction, TimeProvider timeProvider, int monitoringCommandTimeoutSeconds)
+    public PostgresDatabaseConnection(
+        NpgsqlTransaction transaction,
+        TimeProvider timeProvider,
+        int monitoringCommandTimeoutSeconds
+    )
         : base(transaction, isExternallyOwned: true, timeProvider, monitoringCommandTimeoutSeconds) { }
 
     /// <summary>Constructs an internally-owned instance from <paramref name="dataSource"/>.</summary>
-    public PostgresDatabaseConnection(NpgsqlDataSource dataSource, TimeProvider timeProvider, int monitoringCommandTimeoutSeconds)
-        : base(Argument.IsNotNull(dataSource).CreateConnection(), isExternallyOwned: false, timeProvider, monitoringCommandTimeoutSeconds) { }
+    public PostgresDatabaseConnection(
+        NpgsqlDataSource dataSource,
+        TimeProvider timeProvider,
+        int monitoringCommandTimeoutSeconds
+    )
+        : base(
+            Argument.IsNotNull(dataSource).CreateConnection(),
+            isExternallyOwned: false,
+            timeProvider,
+            monitoringCommandTimeoutSeconds
+        ) { }
 
     /// <summary>Constructs an internally-owned instance from <paramref name="connectionString"/>.</summary>
     // The base DatabaseConnection takes ownership of the connection and disposes it.
 #pragma warning disable CA2000
-    public PostgresDatabaseConnection(string connectionString, TimeProvider timeProvider, int monitoringCommandTimeoutSeconds)
-        : base(new NpgsqlConnection(connectionString), isExternallyOwned: false, timeProvider, monitoringCommandTimeoutSeconds) { }
+    public PostgresDatabaseConnection(
+        string connectionString,
+        TimeProvider timeProvider,
+        int monitoringCommandTimeoutSeconds
+    )
+        : base(
+            new NpgsqlConnection(connectionString),
+            isExternallyOwned: false,
+            timeProvider,
+            monitoringCommandTimeoutSeconds
+        ) { }
 #pragma warning restore CA2000
 
     // See https://www.npgsql.org/doc/prepare.html

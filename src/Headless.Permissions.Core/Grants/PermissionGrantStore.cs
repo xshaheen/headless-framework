@@ -424,7 +424,8 @@ public sealed class PermissionGrantStore(
 
         foreach (var cacheKey in cacheKeys)
         {
-            var item = newCacheItems.GetOrDefault(cacheKey) ?? cacheItemsMap.GetOrDefault(cacheKey)?.Value;
+            var cachedItem = cacheItemsMap.GetOrDefault(cacheKey);
+            var item = newCacheItems.GetOrDefault(cacheKey) ?? (cachedItem.HasValue ? cachedItem.Value : null);
             var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
 
             result[permissionName] = PermissionGrantStatus.From(item?.IsGranted);

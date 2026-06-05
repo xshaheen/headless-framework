@@ -6,7 +6,6 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Domain;
 using Headless.Features;
-using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,25 +47,22 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddServiceProviderLocalMessagePublisher();
+        services.AddHeadlessLocalEventBus();
 
+        // Cache
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
+        // Lock Storage
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
+        // Resource Lock
+        services.AddRedisDistributedLock(static _ => { });
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
-        // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
-        // Lock Storage
-        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
-        services.AddSingleton<HeadlessRedisScriptsLoader>();
-        // Resource Lock
-        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
-        services.AddDbContextFactory<FeaturesTestDbContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        services.AddDbContextFactory<FeaturesTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.AddHeadlessFeatures(setup =>
         {

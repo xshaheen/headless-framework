@@ -5,6 +5,7 @@ using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Headless.Serializer;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;

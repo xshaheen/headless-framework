@@ -4,10 +4,10 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Domain;
-using Headless.Redis;
 using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -48,26 +48,23 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
-        services.AddServiceProviderLocalMessagePublisher();
+        services.AddHeadlessLocalEventBus();
 
+        // Cache
+        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
+        // Lock Storage
+        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
+        // Resource Lock
+        services.AddRedisDistributedLock(static _ => { });
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });
-        // Cache
-        services.AddRedisCache(options => options.ConnectionMultiplexer = Fixture.Multiplexer);
-        // Lock Storage
-        services.AddSingleton<IConnectionMultiplexer>(Fixture.Multiplexer);
-        services.AddSingleton<HeadlessRedisScriptsLoader>();
-        // Resource Lock
-        services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
         services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
-        services.AddDbContextFactory<SettingsTestDbContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        services.AddDbContextFactory<SettingsTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.AddHeadlessSettings(setup =>
         {
@@ -92,10 +89,38 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         IOptions<SettingsStorageOptions> storageOptions
     ) : DbContext(options)
     {
+        internal SettingsStorageOptions StorageOptions => storageOptions.Value;
+
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        {
+            optionsBuilder.ReplaceService<IModelCacheKeyFactory, SettingsStorageModelCacheKeyFactory>();
+        }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.AddHeadlessSettings(storageOptions.Value);
+        }
+    }
+
+    private sealed class SettingsStorageModelCacheKeyFactory : IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+        {
+            if (context is not SettingsTestDbContext settingsContext)
+            {
+                return (context.GetType(), designTime);
+            }
+
+            var options = settingsContext.StorageOptions;
+
+            return (
+                context.GetType(),
+                options.Schema,
+                options.SettingValuesTableName,
+                options.SettingDefinitionsTableName,
+                designTime
+            );
         }
     }
 }

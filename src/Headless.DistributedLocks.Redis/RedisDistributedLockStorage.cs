@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.InteropServices;
+using System.Text;
 using Headless.Checks;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
-using System.Runtime.InteropServices;
-using System.Text;
 using StackExchange.Redis;
 
 namespace Headless.DistributedLocks.Redis;
@@ -334,9 +334,7 @@ public sealed class RedisDistributedLockStorage(
             return null;
         }
 
-        var encodedKey = physicalKey[
-            _PhysicalLockKeyPrefix.Length..^_PhysicalLockKeySuffix.Length
-        ];
+        var encodedKey = physicalKey[_PhysicalLockKeyPrefix.Length..^_PhysicalLockKeySuffix.Length];
 
         try
         {
@@ -348,11 +346,7 @@ public sealed class RedisDistributedLockStorage(
         }
     }
 
-    private async ValueTask _ProcessBatchAsync(
-        List<RedisKey> batch,
-        string prefix,
-        Dictionary<string, string> result
-    )
+    private async ValueTask _ProcessBatchAsync(List<RedisKey> batch, string prefix, Dictionary<string, string> result)
     {
         // NOTE: We use individual async tasks instead of Db.StringGetAsync(keyArray)
         // for absolute cluster safety across any sharding topology.

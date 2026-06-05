@@ -23,13 +23,6 @@
       ],
       "rollForward": false
     },
-    "husky": {
-      "version": "0.9.1",
-      "commands": [
-        "husky"
-      ],
-      "rollForward": true
-    },
     "dotnet-coverage": {
       "version": "18.5.2",
       "commands": [

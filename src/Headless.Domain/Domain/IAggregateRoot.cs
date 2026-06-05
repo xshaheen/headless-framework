@@ -10,21 +10,22 @@ namespace Headless.Domain;
 /// </summary>
 public interface IAggregateRoot : IEntity;
 
-/// <summary>Base class for aggregate roots that may emit local and distributed messages.</summary>
-public abstract class AggregateRoot : Entity, IAggregateRoot, IDistributedMessageEmitter, ILocalMessageEmitter
+/// <summary>Base class for aggregate roots that may emit domain (in-process) and integration (distributed) events.</summary>
+public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventEmitter, IDomainEventEmitter
 {
-    private List<ILocalMessage>? _localMessages;
-    private List<IDistributedMessage>? _distributedMessages;
+    private List<IDomainEvent>? _domainEvents;
+    private List<IIntegrationEvent>? _integrationEvents;
 
-    public void AddMessage(IDistributedMessage message) => (_distributedMessages ??= []).Add(message);
+    public void AddIntegrationEvent(IIntegrationEvent integrationEvent) =>
+        (_integrationEvents ??= []).Add(integrationEvent);
 
-    public void ClearDistributedMessages() => _distributedMessages?.Clear();
+    public void ClearIntegrationEvents() => _integrationEvents?.Clear();
 
-    public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _distributedMessages ?? [];
+    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents() => _integrationEvents ?? [];
 
-    public void AddMessage(ILocalMessage messages) => (_localMessages ??= []).Add(messages);
+    public void AddDomainEvent(IDomainEvent domainEvent) => (_domainEvents ??= []).Add(domainEvent);
 
-    public IReadOnlyList<ILocalMessage> GetLocalMessages() => _localMessages ?? [];
+    public IReadOnlyList<IDomainEvent> GetDomainEvents() => _domainEvents ?? [];
 
-    public void ClearLocalMessages() => _localMessages?.Clear();
+    public void ClearDomainEvents() => _domainEvents?.Clear();
 }

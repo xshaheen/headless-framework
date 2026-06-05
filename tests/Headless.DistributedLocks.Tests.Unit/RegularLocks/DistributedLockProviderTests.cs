@@ -2,11 +2,11 @@
 
 using Headless.Abstractions;
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
@@ -14,11 +14,16 @@ namespace Tests.RegularLocks;
 public sealed class DistributedLockProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly FakeDistributedLockStorage _storage = new();
+    private readonly InMemoryDistributedLockStorage _storage;
     private readonly IOutboxBus _outboxBus = Substitute.For<IOutboxBus>();
     private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
 
     private long _lockIdCounter = 1000;
+
+    public DistributedLockProviderTests()
+    {
+        _storage = new InMemoryDistributedLockStorage(_timeProvider);
+    }
 
     private DistributedLockProvider _CreateProvider(
         DistributedLockOptions? options = null,
@@ -1210,9 +1215,7 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 cts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
-                return ValueTask.FromException<DistributedLockAcquireResult>(
-                    new OperationCanceledException(cts.Token)
-                );
+                return ValueTask.FromException<DistributedLockAcquireResult>(new OperationCanceledException(cts.Token));
             });
 
         // when

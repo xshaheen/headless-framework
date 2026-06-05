@@ -6,55 +6,47 @@ using Headless.Domain;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Pairs a <see cref="ILocalMessageEmitter"/> with the snapshot of local messages collected from it
-/// during the current <c>SaveChanges</c>.
+/// Pairs an <see cref="IDomainEventEmitter"/> with the deduplicated snapshot of domain events collected
+/// from it during the current <c>SaveChanges</c>. Internal bookkeeping for collection and post-save
+/// clearing — not part of the public dispatch contract.
 /// </summary>
-/// <remarks>
-/// The constructor parameter is captured by value and then deduplicated by <see cref="ILocalMessage.UniqueId"/>.
-/// Subsequent mutations to the source list on the emitter never leak into the dispatched snapshot.
-/// </remarks>
-public sealed record EmitterLocalMessages(ILocalMessageEmitter Emitter, IReadOnlyList<ILocalMessage> Messages)
+internal sealed record EmitterDomainEvents(IDomainEventEmitter Emitter, IReadOnlyList<IDomainEvent> Events)
 {
     /// <summary>
-    /// Returns a deduplicated snapshot of the constructor argument keyed by
-    /// <see cref="ILocalMessage.UniqueId"/>. Deconstruct returns this snapshot, not the input.
+    /// Returns a snapshot of the constructor argument deduplicated by <see cref="IDomainEvent.UniqueId"/>,
+    /// isolating the dispatch from subsequent mutation of the emitter's source list.
     /// </summary>
-    public IReadOnlyList<ILocalMessage> Messages { get; } =
-        EmitterMessagesSnapshot.Snapshot(Messages, static m => m.UniqueId);
+    public IReadOnlyList<IDomainEvent> Events { get; } = EmitterEventsSnapshot.Snapshot(Events, static e => e.UniqueId);
 }
 
 /// <summary>
-/// Pairs a <see cref="IDistributedMessageEmitter"/> with the snapshot of distributed messages collected
-/// from it during the current <c>SaveChanges</c>.
+/// Pairs an <see cref="IIntegrationEventEmitter"/> with the deduplicated snapshot of integration events
+/// collected from it during the current <c>SaveChanges</c>. Internal bookkeeping — not public contract.
 /// </summary>
-/// <remarks>
-/// The constructor parameter is captured by value and then deduplicated by <see cref="IDistributedMessage.UniqueId"/>.
-/// Subsequent mutations to the source list on the emitter never leak into the dispatched snapshot.
-/// </remarks>
-public sealed record EmitterDistributedMessages(
-    IDistributedMessageEmitter Emitter,
-    IReadOnlyList<IDistributedMessage> Messages
+internal sealed record EmitterIntegrationEvents(
+    IIntegrationEventEmitter Emitter,
+    IReadOnlyList<IIntegrationEvent> Events
 )
 {
     /// <summary>
-    /// Returns a deduplicated snapshot of the constructor argument keyed by
-    /// <see cref="IDistributedMessage.UniqueId"/>. Deconstruct returns this snapshot, not the input.
+    /// Returns a snapshot of the constructor argument deduplicated by
+    /// <see cref="IIntegrationEvent.UniqueId"/>, isolated from subsequent emitter mutation.
     /// </summary>
-    public IReadOnlyList<IDistributedMessage> Messages { get; } =
-        EmitterMessagesSnapshot.Snapshot(Messages, static m => m.UniqueId);
+    public IReadOnlyList<IIntegrationEvent> Events { get; } =
+        EmitterEventsSnapshot.Snapshot(Events, static e => e.UniqueId);
 }
 
-internal static class EmitterMessagesSnapshot
+internal static class EmitterEventsSnapshot
 {
     // Snapshots the caller's list so subsequent mutation on the emitter doesn't leak into the pipeline,
     // and deduplicates by the supplied UniqueId accessor.
-    public static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> messages, Func<T, string> uniqueId)
+    public static IReadOnlyList<T> Snapshot<T>(IReadOnlyList<T> events, Func<T, string> uniqueId)
     {
-        return messages.Count switch
+        return events.Count switch
         {
             0 => [],
-            1 => [messages[0]],
-            _ => messages.DistinctBy(uniqueId, StringComparer.Ordinal).ToArray(),
+            1 => [events[0]],
+            _ => events.DistinctBy(uniqueId, StringComparer.Ordinal).ToArray(),
         };
     }
 }

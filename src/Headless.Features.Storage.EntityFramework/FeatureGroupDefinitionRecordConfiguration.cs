@@ -14,7 +14,9 @@ internal sealed class FeatureGroupDefinitionRecordConfiguration(FeaturesStorageO
         b.ToTable(options.FeatureGroupDefinitionsTableName, options.Schema);
         b.TryConfigureExtraProperties();
         b.Property(x => x.Name).HasMaxLength(FeatureGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.DisplayName).HasMaxLength(FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength).IsRequired();
+        b.Property(x => x.DisplayName)
+            .HasMaxLength(FeatureGroupDefinitionRecordConstants.DisplayNameMaxLength)
+            .IsRequired();
         b.HasIndex(x => new { x.Name }).IsUnique();
     }
 }

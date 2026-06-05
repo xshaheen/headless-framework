@@ -44,11 +44,17 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
     private sealed class NatsStackComponent : IAsyncLifetime
     {
+        private const int _ConnectionAttempts = 10;
+
         private readonly NatsContainer _container = new NatsBuilder(TestImages.Nats)
             .WithLabel("type", "nats-postgresql-nats")
             .WithResourceMapping(_NatsConfig, "/etc/nats/nats-server.conf")
             .WithReuse(true)
-            .WithWaitStrategy(Wait.ForUnixContainer().UntilMessageIsLogged("Server is ready"))
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .UntilMessageIsLogged("Server is ready")
+                    .UntilExternalTcpPortIsAvailable(NatsBuilder.NatsClientPort)
+            )
             .Build();
 
         private NatsConnection? _connection;
@@ -101,9 +107,30 @@ public sealed class NatsPostgreSqlFixture : MessagingStackFixtureBase
 
             var options = NatsOpts.Default with { Url = ConnectionString, ConnectTimeout = TimeSpan.FromSeconds(30) };
 
-            _connection = new NatsConnection(options);
-            await _connection.ConnectAsync();
-            return _connection;
+            for (var attempt = 1; attempt <= _ConnectionAttempts; attempt++)
+            {
+                var connection = new NatsConnection(options);
+
+                try
+                {
+                    await connection.ConnectAsync();
+                    _connection = connection;
+
+                    return connection;
+                }
+                catch (NatsException) when (attempt == _ConnectionAttempts)
+                {
+                    await connection.DisposeAsync();
+                    throw;
+                }
+                catch (NatsException)
+                {
+                    await connection.DisposeAsync();
+                    await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt));
+                }
+            }
+
+            throw new InvalidOperationException("NATS connection attempts were exhausted.");
         }
     }
 

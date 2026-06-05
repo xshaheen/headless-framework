@@ -31,8 +31,18 @@ public sealed class OptimisticConnectionMultiplexingDbDistributedLockTests : Tes
         var lockB = _CreateLock("resource-b", pool);
 
         // when
-        var handleA = await lockA.TryAcquireAsync(_Timeout, strategy, contextHandle: null, TestContext.Current.CancellationToken);
-        var handleB = await lockB.TryAcquireAsync(_Timeout, strategy, contextHandle: null, TestContext.Current.CancellationToken);
+        var handleA = await lockA.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: null,
+            TestContext.Current.CancellationToken
+        );
+        var handleB = await lockB.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: null,
+            TestContext.Current.CancellationToken
+        );
 
         // then
         handleA.Should().NotBeNull();
@@ -54,8 +64,18 @@ public sealed class OptimisticConnectionMultiplexingDbDistributedLockTests : Tes
         var lockB = _CreateLock("resource-b", pool);
 
         // when
-        var handleA = await lockA.TryAcquireAsync(_Timeout, strategy, contextHandle: null, TestContext.Current.CancellationToken);
-        var handleB = await lockB.TryAcquireAsync(_Timeout, strategy, contextHandle: null, TestContext.Current.CancellationToken);
+        var handleA = await lockA.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: null,
+            TestContext.Current.CancellationToken
+        );
+        var handleB = await lockB.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: null,
+            TestContext.Current.CancellationToken
+        );
 
         // then (each acquire opened its own dedicated connection; the pool was never used)
         handleA.Should().NotBeNull();
@@ -75,17 +95,29 @@ public sealed class OptimisticConnectionMultiplexingDbDistributedLockTests : Tes
         var pool = _CreatePool();
 
         var outerLock = _CreateLock("resource-a", pool);
-        var outerHandle = await outerLock.TryAcquireAsync(_Timeout, strategy, contextHandle: null, TestContext.Current.CancellationToken);
+        var outerHandle = await outerLock.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: null,
+            TestContext.Current.CancellationToken
+        );
         outerHandle.Should().NotBeNull();
         var connectionsAfterOuter = _connections.Count;
 
         // when (a nested acquire reusing the outer handle's connection)
         var nestedLock = _CreateLock("resource-b", pool);
-        var nestedHandle = await nestedLock.TryAcquireAsync(_Timeout, strategy, contextHandle: outerHandle, TestContext.Current.CancellationToken);
+        var nestedHandle = await nestedLock.TryAcquireAsync(
+            _Timeout,
+            strategy,
+            contextHandle: outerHandle,
+            TestContext.Current.CancellationToken
+        );
 
         // then (no new connection opened — the nested acquire reused the outer handle's connection rather than the pool)
         nestedHandle.Should().NotBeNull();
-        _connections.Should().HaveCount(connectionsAfterOuter, "the nested acquire reuses the context handle's connection");
+        _connections
+            .Should()
+            .HaveCount(connectionsAfterOuter, "the nested acquire reuses the context handle's connection");
 
         await nestedHandle!.DisposeAsync();
         await outerHandle!.DisposeAsync();
@@ -102,7 +134,10 @@ public sealed class OptimisticConnectionMultiplexingDbDistributedLockTests : Tes
         });
     }
 
-    private OptimisticConnectionMultiplexingDbDistributedLock _CreateLock(string resource, MultiplexedConnectionLockPool pool)
+    private OptimisticConnectionMultiplexingDbDistributedLock _CreateLock(
+        string resource,
+        MultiplexedConnectionLockPool pool
+    )
     {
         return new OptimisticConnectionMultiplexingDbDistributedLock(
             resource,

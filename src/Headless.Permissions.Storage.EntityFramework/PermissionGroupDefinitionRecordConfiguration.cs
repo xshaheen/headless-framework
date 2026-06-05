@@ -14,7 +14,9 @@ internal sealed class PermissionGroupDefinitionRecordConfiguration(PermissionsSt
         b.ToTable(options.PermissionGroupDefinitionsTableName, options.Schema);
         b.TryConfigureExtraProperties();
         b.Property(x => x.Name).HasMaxLength(PermissionGroupDefinitionRecordConstants.NameMaxLength).IsRequired();
-        b.Property(x => x.DisplayName).HasMaxLength(PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength).IsRequired();
+        b.Property(x => x.DisplayName)
+            .HasMaxLength(PermissionGroupDefinitionRecordConstants.DisplayNameMaxLength)
+            .IsRequired();
         b.HasIndex(x => new { x.Name }).IsUnique();
     }
 }

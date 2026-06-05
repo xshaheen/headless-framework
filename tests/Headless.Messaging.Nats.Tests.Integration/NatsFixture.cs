@@ -11,6 +11,8 @@ namespace Tests;
 [UsedImplicitly]
 public sealed class NatsFixture : HeadlessNatsFixture
 {
+    private const int _ConnectionAttempts = 10;
+
     private static readonly byte[] _NatsConfig = Encoding.UTF8.GetBytes(
         """
         port: 4222
@@ -69,9 +71,31 @@ public sealed class NatsFixture : HeadlessNatsFixture
         }
 
         var opts = NatsOpts.Default with { Url = ConnectionString, ConnectTimeout = TimeSpan.FromSeconds(30) };
-        _connection = new NatsConnection(opts);
-        await _connection.ConnectAsync();
-        return _connection;
+
+        for (var attempt = 1; attempt <= _ConnectionAttempts; attempt++)
+        {
+            var connection = new NatsConnection(opts);
+
+            try
+            {
+                await connection.ConnectAsync();
+                _connection = connection;
+
+                return connection;
+            }
+            catch (NatsException) when (attempt == _ConnectionAttempts)
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
+            catch (NatsException)
+            {
+                await connection.DisposeAsync();
+                await Task.Delay(TimeSpan.FromMilliseconds(250 * attempt));
+            }
+        }
+
+        throw new InvalidOperationException("NATS connection attempts were exhausted.");
     }
 
     protected override async ValueTask DisposeAsyncCore()

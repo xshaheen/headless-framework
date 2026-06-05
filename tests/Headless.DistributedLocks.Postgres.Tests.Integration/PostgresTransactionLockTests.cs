@@ -26,7 +26,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             // Assert release while the holding connection is still open. If we counted after the
             // `using` block disposed the connection, connection-close would release the lock
             // regardless of commit/rollback — this proves the xact-lock drops at COMMIT itself.
-            (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+            (await _CountAdvisoryLocksAsync(key))
+                .Should()
+                .Be(0);
         }
     }
 
@@ -46,7 +48,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
             // Assert release while the holding connection is still open so connection-close cannot be
             // the thing that drops the lock — this proves the xact-lock is released at ROLLBACK itself.
-            (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+            (await _CountAdvisoryLocksAsync(key))
+                .Should()
+                .Be(0);
         }
     }
 

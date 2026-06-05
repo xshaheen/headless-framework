@@ -72,14 +72,11 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         entity.DateSuspended.Should().BeNull();
         entity.SuspendedById.Should().BeNull();
 
-        // Local messages: Created + Changed
-        db.EmittedLocalMessages.Should().ContainSingle();
-        var local = db.EmittedLocalMessages.Single();
-        local.Emitter.Should().Be(entity);
-        local.Messages.Should().HaveCount(2);
-        var createdMessage = local.Messages.OfType<EntityCreatedEventData<TestEntity>>().Single();
+        // Local domain events: Created + Changed
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var createdMessage = db.EmittedLocalMessages.OfType<EntityCreatedEventData<TestEntity>>().Single();
         createdMessage.Entity.Should().Be(entity);
-        var changedMessage = local.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -151,6 +148,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         db.Tests.Add(entity);
         await db.SaveChangesAsync(AbortToken);
         var oldStamp = entity.ConcurrencyStamp;
+        db.EmittedLocalMessages.Clear();
 
         // when
         entity.Name = "updated";
@@ -162,13 +160,11 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
         entity.ConcurrencyStamp.Should().NotBe(oldStamp);
 
-        // Local messages: Updated + Changed
-        db.EmittedLocalMessages.Should().NotBeEmpty();
-        var last = db.EmittedLocalMessages[^1];
-        last.Messages.Should().HaveCount(2);
-        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
+        // Local domain events: Updated + Changed
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var updatedMessage = db.EmittedLocalMessages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
         updatedMessage.Entity.Should().Be(entity);
-        var changedMessage = last.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -184,6 +180,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         var entity = new TestEntity { Name = "to-delete", TenantId = "T1" };
         db.Tests.Add(entity);
         await db.SaveChangesAsync(AbortToken);
+        db.EmittedLocalMessages.Clear();
 
         // when
         entity.MarkDeleted();
@@ -195,11 +192,10 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         entity.DateDeleted.Should().Be(fixture.Now);
         entity.DeletedById.Should().Be(fixture.UserId);
 
-        var last = db.EmittedLocalMessages[^1];
-        last.Messages.Should().HaveCount(2);
-        var updatedMessage = last.Messages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
+        db.EmittedLocalMessages.Should().HaveCount(2);
+        var updatedMessage = db.EmittedLocalMessages.OfType<EntityUpdatedEventData<TestEntity>>().Single();
         updatedMessage.Entity.Should().Be(entity);
-        var changedMessage = last.Messages.OfType<EntityChangedEventData<TestEntity>>().Single();
+        var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
     }
 
@@ -237,7 +233,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
 
         var entity = new TestEntity { Name = "with-msgs", TenantId = "T1" };
-        entity.AddMessage(new TestDistributedMessage("hello"));
+        entity.AddIntegrationEvent(new TestDistributedMessage("hello"));
         db.Tests.Add(entity);
 
         await using var tx = await db.Database.BeginTransactionAsync(AbortToken);
@@ -248,10 +244,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         // then
         db.EmittedLocalMessages.Should().NotBeEmpty();
         db.EmittedDistributedMessages.Should().ContainSingle();
-        var dist = db.EmittedDistributedMessages.Single();
-        dist.Emitter.Should().Be(entity);
-        dist.Messages.Should().ContainSingle();
-        dist.Messages.Single().Should().BeOfType<TestDistributedMessage>();
+        db.EmittedDistributedMessages.Single().Should().BeOfType<TestDistributedMessage>();
 
         await tx.CommitAsync(AbortToken);
     }

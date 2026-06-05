@@ -59,8 +59,12 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
             wake: both.Token
         );
 
-        first.HandleLostToken.IsCancellationRequested.Should().BeTrue("the first multiplexed handle must observe the backend death");
-        second.HandleLostToken.IsCancellationRequested.Should().BeTrue("the second multiplexed handle must observe the backend death");
+        first
+            .HandleLostToken.IsCancellationRequested.Should()
+            .BeTrue("the first multiplexed handle must observe the backend death");
+        second
+            .HandleLostToken.IsCancellationRequested.Should()
+            .BeTrue("the second multiplexed handle must observe the backend death");
     }
 
     /// <summary>
@@ -74,7 +78,9 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
 
         pidsForA.Should().ContainSingle("resource A must be held by exactly one backend");
         pidsForB.Should().ContainSingle("resource B must be held by exactly one backend");
-        pidsForB.Should().BeEquivalentTo(pidsForA, "both locks must be multiplexed onto one shared backend before termination");
+        pidsForB
+            .Should()
+            .BeEquivalentTo(pidsForA, "both locks must be multiplexed onto one shared backend before termination");
 
         return pidsForA[0];
     }

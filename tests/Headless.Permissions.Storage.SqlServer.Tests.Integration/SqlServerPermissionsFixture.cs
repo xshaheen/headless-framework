@@ -6,4 +6,6 @@ namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class SqlServerPermissionsFixture : HeadlessSqlServerFixture, ICollectionFixture<SqlServerPermissionsFixture>;
+public sealed class SqlServerPermissionsFixture
+    : HeadlessSqlServerFixture,
+        ICollectionFixture<SqlServerPermissionsFixture>;

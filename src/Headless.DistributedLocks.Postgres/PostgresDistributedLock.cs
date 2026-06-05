@@ -14,7 +14,8 @@ public static class PostgresDistributedLock
         CancellationToken cancellationToken = default
     )
     {
-        var connection = transaction.Connection
+        var connection =
+            transaction.Connection
             ?? throw new InvalidOperationException(
                 "The transaction has no associated open connection (already committed, rolled back, or disposed)."
             );
@@ -31,7 +32,8 @@ public static class PostgresDistributedLock
         CancellationToken cancellationToken = default
     )
     {
-        var connection = transaction.Connection
+        var connection =
+            transaction.Connection
             ?? throw new InvalidOperationException(
                 "The transaction has no associated open connection (already committed, rolled back, or disposed)."
             );

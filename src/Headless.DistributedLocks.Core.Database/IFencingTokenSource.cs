@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -22,5 +24,16 @@ public interface IFencingTokenSource
     /// <see langword="null"/> if this source does not issue a token for it (the handle is then unfenced).
     /// Implementations must guarantee monotonicity across acquisitions and processes for a given resource.
     /// </summary>
-    ValueTask<long?> NextAsync(string resource, CancellationToken cancellationToken = default);
+    /// <param name="resource">The resource whose exclusive acquisition is being stamped.</param>
+    /// <param name="connection">
+    /// Optional open connection already owned by the just-acquired lock handle. When supplied and compatible with the
+    /// source's backend, the implementation may issue the token on it to avoid opening a second connection; when
+    /// <see langword="null"/> (or incompatible), the implementation opens its own connection.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel issuing the token.</param>
+    ValueTask<long?> NextAsync(
+        string resource,
+        DbConnection? connection = null,
+        CancellationToken cancellationToken = default
+    );
 }

@@ -41,8 +41,8 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         // The cached EVALSHA path (LoadedLuaScript) fails with NOSCRIPT — e.g. the serving node is
         // missing the script after a failover.
         db.ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>())
-            .Returns<Task<RedisResult>>(
-                _ => throw new RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD.")
+            .Returns<Task<RedisResult>>(_ =>
+                throw new RedisServerException("NOSCRIPT No matching script. Please use SCRIPT LOAD.")
             );
 
         // The recovery path re-runs the full body via EVAL (LuaScript overload), which succeeds.
@@ -50,10 +50,17 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         // when
-        var result = await sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var result = await sut.EvaluateAsync(
+            db,
+            ReplaceIfEqualScriptDefinition.Instance,
+            _SampleParameters,
+            AbortToken
+        );
 
         // then
-        ((int)result).Should().Be(1);
+        ((int)result)
+            .Should()
+            .Be(1);
 
         // Recovery does NOT reload the script — it falls straight back to EVAL, so the script is
         // loaded only once (the initial preload) and the EVALSHA path is attempted only once.

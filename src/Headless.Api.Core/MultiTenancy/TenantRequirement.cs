@@ -14,6 +14,4 @@ public sealed class TenantRequirement : IAuthorizationRequirement
     /// for a <see cref="TenantRequirement"/> instance instead of matching this string.
     /// </summary>
     internal const string FailureReason = "TenantContextRequired";
-
-
 }

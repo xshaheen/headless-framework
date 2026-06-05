@@ -1,0 +1,99 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Abstractions;
+using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Time.Testing;
+
+namespace Tests;
+
+public sealed class InMemoryReaderWriterLockProviderTests : DistributedReaderWriterLockProviderTestsBase
+{
+    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly SnowflakeIdLongIdGenerator _idGenerator = new(1);
+
+    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
+        DistributedLockOptions? options = null
+    )
+    {
+        return new DistributedReaderWriterLockProvider(
+            new InMemoryDistributedReaderWriterLockStorage(_timeProvider),
+            outboxBus: null,
+            options ?? new DistributedLockOptions(),
+            _idGenerator,
+            _timeProvider,
+            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+        );
+    }
+
+    protected override TimeProvider TimeProvider => _timeProvider;
+
+    protected override async Task AdvanceTimeAsync(TimeSpan amount, CancellationToken cancellationToken)
+    {
+        var step = TimeSpan.FromMilliseconds(100);
+        var remaining = amount;
+
+        while (remaining > TimeSpan.Zero)
+        {
+            var currentStep = remaining < step ? remaining : step;
+            _timeProvider.Advance(currentStep);
+            remaining -= currentStep;
+
+            await DrainUntilAsync(() => false, cancellationToken);
+        }
+    }
+
+    [Fact]
+    public override Task should_allow_multiple_readers_and_release_on_dispose() =>
+        base.should_allow_multiple_readers_and_release_on_dispose();
+
+    [Fact]
+    public override Task should_acquire_write_lock_exclusively() => base.should_acquire_write_lock_exclusively();
+
+    [Fact]
+    public override Task should_release_read_lock_and_allow_writer() =>
+        base.should_release_read_lock_and_allow_writer();
+
+    [Fact]
+    public override Task should_queue_second_writer_and_unblock_after_first_releases() =>
+        base.should_queue_second_writer_and_unblock_after_first_releases();
+
+    [Fact]
+    public override Task should_leave_lock_held_when_release_on_dispose_is_false() =>
+        base.should_leave_lock_held_when_release_on_dispose_is_false();
+
+    [Fact]
+    public override Task should_be_idempotent_for_stale_release() => base.should_be_idempotent_for_stale_release();
+
+    [Fact]
+    public override Task should_throw_when_acquire_read_blocked_by_writer() =>
+        base.should_throw_when_acquire_read_blocked_by_writer();
+
+    [Fact]
+    public override Task should_throw_when_acquire_write_blocked_by_reader() =>
+        base.should_throw_when_acquire_write_blocked_by_reader();
+
+    [Fact]
+    public override Task should_prefer_queued_writer_over_new_reader() =>
+        base.should_prefer_queued_writer_over_new_reader();
+
+    [Fact]
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_times_out() =>
+        base.should_clear_writer_waiting_marker_when_try_acquire_write_times_out();
+
+    [Fact]
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled() =>
+        base.should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled();
+
+    [Fact]
+    public override Task should_fire_handle_lost_token_when_read_lock_ttl_expires() =>
+        base.should_fire_handle_lost_token_when_read_lock_ttl_expires();
+
+    [Fact]
+    public override Task should_fire_handle_lost_token_when_write_lock_ttl_expires() =>
+        base.should_fire_handle_lost_token_when_write_lock_ttl_expires();
+
+    [Fact]
+    public override Task should_auto_extend_write_lock() => base.should_auto_extend_write_lock();
+}

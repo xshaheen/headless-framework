@@ -1,6 +1,6 @@
 ---
 domain: Caching
-packages: Caching.Abstractions, Caching.Core, Caching.Memory, Caching.Redis, Caching.Hybrid
+packages: Caching.Abstractions, Caching.Core, Caching.InMemory, Caching.Redis, Caching.Hybrid
 ---
 
 # Caching
@@ -27,7 +27,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.Memory, Caching.Redis, Cac
     - [Configuration](#configuration-1)
     - [Dependencies](#dependencies-1)
     - [Side Effects](#side-effects-1)
-- [Headless.Caching.Memory](#headlesscachingmemory)
+- [Headless.Caching.InMemory](#headlesscachinginmemory)
     - [Problem Solved](#problem-solved-2)
     - [Key Features](#key-features-2)
     - [Design Notes](#design-notes-2)
@@ -68,7 +68,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.Memory, Caching.Redis, Cac
 
 Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache` for all cache operations.
 
-- **Single-instance / development**: `Headless.Caching.Memory` — call `AddInMemoryCache()`. High performance, per-process, LRU eviction.
+- **Single-instance / development**: `Headless.Caching.InMemory` — call `AddInMemoryCache()`. High performance, per-process, LRU eviction.
 - **Multi-instance / production**: `Headless.Caching.Redis` — call `AddRedisCache(...)`. Distributed cache shared across instances via StackExchange.Redis.
 - **L1 + L2 hybrid**: `Headless.Caching.Hybrid` — call `AddHybridCache()`. Combines in-memory L1 with Redis L2 and automatic cross-instance invalidation via pub/sub messaging.
 
@@ -79,7 +79,7 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 ## Agent Instructions
 
 - Use `ICache` from `Headless.Caching.Abstractions` — NOT `Microsoft.Extensions.Caching.Distributed.IDistributedCache`. Use `IRemoteCache` only when a remote/L2 implementation is required.
-- Use `Caching.Memory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCaching()`) for production multi-instance deployments.
+- Use `Caching.InMemory` (`AddInMemoryCache()`) for development and single-instance deployments. Use `Caching.Redis` (`AddRedisCache()`) for production multi-instance deployments.
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value` — cache misses return `HasValue = false`, not null.
 - `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
@@ -234,7 +234,7 @@ None.
 
 None. Providers own coordinator construction.
 
-# Headless.Caching.Memory
+# Headless.Caching.InMemory
 
 In-memory cache implementation for single-instance applications.
 
@@ -260,7 +260,7 @@ Long `FailSafeMaxDuration` values can retain more entries in process memory. Use
 ## Installation
 
 ```bash
-dotnet add package Headless.Caching.Memory
+dotnet add package Headless.Caching.InMemory
 ```
 
 ## Quick Start
@@ -417,7 +417,7 @@ dotnet add package Headless.Caching.Hybrid
 
 ## Prerequisites
 
-- In-memory cache: `Headless.Caching.Memory`
+- In-memory cache: `Headless.Caching.InMemory`
 - Distributed cache: `Headless.Caching.Redis`
 - Messaging: Any messaging provider (e.g., `Headless.Messaging.Redis`)
 

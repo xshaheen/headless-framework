@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Tests.Fakes;
 
 namespace Tests.RegularLocks;
 
@@ -20,7 +20,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -39,8 +39,8 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
 
         // then
         services.Count(x => x.ServiceType == typeof(IDistributedSemaphoreProvider)).Should().Be(1);
@@ -64,7 +64,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(configuration);
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(configuration);
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -84,12 +84,14 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddSingleton<IMyMarker>(new _MyMarkerImpl());
 
         // when
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>((opts, sp) =>
-        {
-            // verify IServiceProvider is functional (resolves a registered dependency)
-            sp.GetRequiredService<IMyMarker>().Should().NotBeNull();
-            opts.KeyPrefix = "sp-overload:";
-        });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(
+            (opts, sp) =>
+            {
+                // verify IServiceProvider is functional (resolves a registered dependency)
+                sp.GetRequiredService<IMyMarker>().Should().NotBeNull();
+                opts.KeyPrefix = "sp-overload:";
+            }
+        );
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -105,7 +107,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(_ => { });
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
         using var provider = services.BuildServiceProvider();
 
         // then — the provider is registered under the ICanReceiveLockReleased seam so the
@@ -125,7 +127,7 @@ public sealed class DistributedSemaphoreSetupTests : TestBase
         // given — set PollingCadenceFraction to an out-of-range value (validator: 0.1..0.5)
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDistributedSemaphore<FakeDistributedSemaphoreStorage>(opts =>
+        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(opts =>
         {
             opts.PollingCadenceFraction = 0.99; // > 0.5 — invalid per DistributedLockOptionsValidator
         });

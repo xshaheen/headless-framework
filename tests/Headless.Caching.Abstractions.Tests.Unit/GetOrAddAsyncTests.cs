@@ -28,12 +28,7 @@ public sealed class GetOrAddAsyncTests : TestBase
 
         // when
         var act = async () =>
-            await cache.GetOrAddAsync<string>(
-                "key",
-                _ => ValueTask.FromResult<string?>("value"),
-                options,
-                AbortToken
-            );
+            await cache.GetOrAddAsync<string>("key", _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();

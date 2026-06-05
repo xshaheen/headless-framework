@@ -113,7 +113,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [payments.md](payments.md) — Paymob Accept (cash-in / cash-out).
 - [permissions.md](permissions.md) — Permission management with caching, authorization, EF Core storage.
 - [push-notifications.md](push-notifications.md) — Push notifications (Firebase FCM, dev no-op).
-- [distributed-locks.md](distributed-locks.md) — Distributed locking (Redis, Postgres, cache-based, in-memory).
+- [distributed-locks.md](distributed-locks.md) — Distributed locking (Redis, Postgres, in-memory).
 - [serialization.md](serialization.md) — Serialization (System.Text.Json, MessagePack).
 - [settings.md](settings.md) — Dynamic runtime settings with hierarchical providers and EF Core storage.
 - [sms.md](sms.md) — SMS sending (Twilio, AWS SNS, Infobip, regional providers).
@@ -143,7 +143,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Security` — String encryption and hashing services.
 - `Headless.Checks` — Guard clauses (`Argument.*`, `Ensure.*`).
 - `Headless.Domain` — DDD entities, aggregate roots, value objects, auditing.
-- `Headless.Domain.LocalPublisher` — DI-based `ILocalMessagePublisher` for in-process domain events.
+- `Headless.Domain.LocalEventBus` — DI-based `ILocalEventBus` for in-process domain events.
 
 ### Audit Log
 - `Headless.AuditLog.Abstractions` — Audit log contracts.
@@ -162,7 +162,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Caching
 - `Headless.Caching.Abstractions` — `ICache` interface.
 - `Headless.Caching.Core` — Shared factory-backed cache orchestration.
-- `Headless.Caching.Memory` — In-process single-instance cache.
+- `Headless.Caching.InMemory` — In-process single-instance cache.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
 
@@ -222,6 +222,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### ORM
 - `Headless.Orm.EntityFramework` — EF Core with framework conventions, global filters, DDD support.
+- `Headless.Orm.EntityFramework.Messaging` — outbox bridge: dispatches integration events to the messaging outbox within the EF save transaction.
 - `Headless.Orm.Couchbase` — Couchbase with bucket context and cluster management.
 
 ### Payments
@@ -244,9 +245,11 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 ### Distributed Locks
 - `Headless.DistributedLocks.Abstractions` — Distributed lock interface.
 - `Headless.DistributedLocks.Core` — Core implementation with storage abstraction.
+- `Headless.DistributedLocks.InMemory` — In-process lock storage.
 - `Headless.DistributedLocks.Core.Database` — Shared connection-scoped database lock engine.
 - `Headless.DistributedLocks.Postgres` — PostgreSQL advisory-lock provider.
 - `Headless.DistributedLocks.Redis` — Redis-based lock storage.
+- `Headless.DistributedLocks.SqlServer` — SQL Server application-lock provider.
 
 ### Serialization
 - `Headless.Serializer.Abstractions` — `ISerializer` interface.

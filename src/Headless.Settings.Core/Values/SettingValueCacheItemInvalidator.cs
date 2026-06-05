@@ -7,7 +7,7 @@ using Headless.Settings.Entities;
 namespace Headless.Settings.Values;
 
 public sealed class SettingValueCacheItemInvalidator(ICache<SettingValueCacheItem> cache)
-    : ILocalMessageHandler<EntityChangedEventData<SettingValueRecord>>
+    : IDomainEventHandler<EntityChangedEventData<SettingValueRecord>>
 {
     public async ValueTask HandleAsync(
         EntityChangedEventData<SettingValueRecord> message,
