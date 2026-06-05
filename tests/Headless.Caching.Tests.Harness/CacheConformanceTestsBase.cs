@@ -91,11 +91,7 @@ public abstract class CacheConformanceTestsBase : TestBase
         var cache = CreateCache(Faker.Random.AlphaNumeric(8));
         var firstKey = Faker.Random.AlphaNumeric(10);
         var nullKey = Faker.Random.AlphaNumeric(10);
-        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [firstKey] = "value",
-            [nullKey] = null,
-        };
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { [firstKey] = "value", [nullKey] = null };
 
         var written = await cache.UpsertAllAsync(values, TimeSpan.FromMinutes(5), AbortToken);
         var cached = await cache.GetAllAsync<string>(values.Keys, AbortToken);

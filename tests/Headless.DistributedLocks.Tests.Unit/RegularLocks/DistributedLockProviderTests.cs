@@ -1215,9 +1215,7 @@ public sealed class DistributedLockProviderTests : TestBase
 #pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 cts.Cancel();
 #pragma warning restore CA1849, VSTHRD103
-                return ValueTask.FromException<DistributedLockAcquireResult>(
-                    new OperationCanceledException(cts.Token)
-                );
+                return ValueTask.FromException<DistributedLockAcquireResult>(new OperationCanceledException(cts.Token));
             });
 
         // when

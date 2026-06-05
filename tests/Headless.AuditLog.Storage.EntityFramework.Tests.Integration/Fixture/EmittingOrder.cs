@@ -9,27 +9,27 @@ namespace Tests.Fixture;
 /// when at least one emitter is present, and the catch-time discard only fires
 /// after audit persistence has populated <c>auditSave.AuditEntries</c>.
 /// </summary>
-public sealed class EmittingOrder : IAuditTracked, IDistributedMessageEmitter
+public sealed class EmittingOrder : IAuditTracked, IIntegrationEventEmitter
 {
-    private readonly List<IDistributedMessage> _messages = [];
+    private readonly List<IIntegrationEvent> _messages = [];
 
     public Guid Id { get; set; }
 
     public string Name { get; set; } = "";
 
-    public void AddMessage(IDistributedMessage message)
+    public void AddIntegrationEvent(IIntegrationEvent message)
     {
         _messages.Add(message);
     }
 
-    public void ClearDistributedMessages()
+    public void ClearIntegrationEvents()
     {
         _messages.Clear();
     }
 
-    public IReadOnlyList<IDistributedMessage> GetDistributedMessages() => _messages;
+    public IReadOnlyList<IIntegrationEvent> GetIntegrationEvents() => _messages;
 
-    public void Emit(IDistributedMessage message) => _messages.Add(message);
+    public void Emit(IIntegrationEvent message) => _messages.Add(message);
 }
 
-internal sealed record TestDistributedMessage(string UniqueId) : IDistributedMessage;
+internal sealed record TestDistributedMessage(string UniqueId) : IIntegrationEvent;

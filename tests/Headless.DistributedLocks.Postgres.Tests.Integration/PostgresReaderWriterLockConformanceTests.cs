@@ -31,7 +31,9 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReader
         _provider = _services.GetRequiredService<IDistributedReaderWriterLockProvider>();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(DistributedLockOptions? options = null) => _provider;
+    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
+        DistributedLockOptions? options = null
+    ) => _provider;
 
     protected override TimeProvider TimeProvider => TimeProvider.System;
 
@@ -51,28 +53,34 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReader
     }
 
     [Fact]
-    public override Task should_allow_multiple_readers_and_release_on_dispose() => base.should_allow_multiple_readers_and_release_on_dispose();
+    public override Task should_allow_multiple_readers_and_release_on_dispose() =>
+        base.should_allow_multiple_readers_and_release_on_dispose();
 
     [Fact]
     public override Task should_acquire_write_lock_exclusively() => base.should_acquire_write_lock_exclusively();
 
     [Fact]
-    public override Task should_release_read_lock_and_allow_writer() => base.should_release_read_lock_and_allow_writer();
+    public override Task should_release_read_lock_and_allow_writer() =>
+        base.should_release_read_lock_and_allow_writer();
 
     [Fact]
-    public override Task should_queue_second_writer_and_unblock_after_first_releases() => base.should_queue_second_writer_and_unblock_after_first_releases();
+    public override Task should_queue_second_writer_and_unblock_after_first_releases() =>
+        base.should_queue_second_writer_and_unblock_after_first_releases();
 
     [Fact]
-    public override Task should_leave_lock_held_when_release_on_dispose_is_false() => base.should_leave_lock_held_when_release_on_dispose_is_false();
+    public override Task should_leave_lock_held_when_release_on_dispose_is_false() =>
+        base.should_leave_lock_held_when_release_on_dispose_is_false();
 
     [Fact]
     public override Task should_be_idempotent_for_stale_release() => base.should_be_idempotent_for_stale_release();
 
     [Fact]
-    public override Task should_throw_when_acquire_read_blocked_by_writer() => base.should_throw_when_acquire_read_blocked_by_writer();
+    public override Task should_throw_when_acquire_read_blocked_by_writer() =>
+        base.should_throw_when_acquire_read_blocked_by_writer();
 
     [Fact]
-    public override Task should_throw_when_acquire_write_blocked_by_reader() => base.should_throw_when_acquire_write_blocked_by_reader();
+    public override Task should_throw_when_acquire_write_blocked_by_reader() =>
+        base.should_throw_when_acquire_write_blocked_by_reader();
 
     // Intentionally not overridden (not portable to the connection-scoped provider):
     //  - should_prefer_queued_writer_over_new_reader / should_clear_writer_waiting_marker_when_try_acquire_write_times_out / should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled:

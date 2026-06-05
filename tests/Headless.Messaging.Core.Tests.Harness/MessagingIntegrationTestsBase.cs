@@ -505,11 +505,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "callback-request",
-                CallbackName = "callback-response",
-            },
+            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
             AbortToken
         );
 
@@ -535,11 +531,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await QueuePublisher.EnqueueAsync(
             request,
-            new EnqueueOptions
-            {
-                MessageName = "callback-queue-request",
-                CallbackName = "callback-response",
-            },
+            new EnqueueOptions { MessageName = "callback-queue-request", CallbackName = "callback-response" },
             AbortToken
         );
 
@@ -566,11 +558,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "callback-request",
-                CallbackName = "callback-response",
-            },
+            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
             AbortToken
         );
 
@@ -595,11 +583,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "callback-request",
-                CallbackName = "callback-response",
-            },
+            new PublishOptions { MessageName = "callback-request", CallbackName = "callback-response" },
             AbortToken
         );
 
@@ -624,11 +608,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         var request = new CallbackRequestMessage(Guid.NewGuid().ToString("N"), CallbackRequestMode.Normal);
 
         // when
-        await Publisher.PublishAsync(
-            request,
-            new PublishOptions { MessageName = "callback-request" },
-            AbortToken
-        );
+        await Publisher.PublishAsync(request, new PublishOptions { MessageName = "callback-request" }, AbortToken);
 
         // Gate the absence poll on the request consumer actually running, so the negative assertion below
         // only runs after the consumer body has executed SetResponse (with no callback name present).
@@ -651,11 +631,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "fanout-request",
-                CallbackName = "fanout-response",
-            },
+            new PublishOptions { MessageName = "fanout-request", CallbackName = "fanout-response" },
             AbortToken
         );
 
@@ -678,11 +654,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "isolation-request",
-                CallbackName = "isolation-callback",
-            },
+            new PublishOptions { MessageName = "isolation-request", CallbackName = "isolation-callback" },
             AbortToken
         );
 
@@ -706,11 +678,7 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         // when
         await Publisher.PublishAsync(
             request,
-            new PublishOptions
-            {
-                MessageName = "chain-request",
-                CallbackName = "chain-intermediate-callback",
-            },
+            new PublishOptions { MessageName = "chain-request", CallbackName = "chain-intermediate-callback" },
             AbortToken
         );
 
@@ -826,7 +794,8 @@ public abstract class MessagingIntegrationTestsBase : TestBase
 
         // MessageQuery has no MessageId predicate, so we page by status and filter in memory. Guard against
         // silent truncation: if more rows than a page exist, the target could be paged out, yielding a false empty.
-        page.TotalItems.Should().BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk silent truncation");
+        page.TotalItems.Should()
+            .BeLessThan(100, "MessageId filtering is in-memory; rows beyond one page risk silent truncation");
 
         return page.Items.Where(message => message.MessageId == messageId).ToArray();
     }

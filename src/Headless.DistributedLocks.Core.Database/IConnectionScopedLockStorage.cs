@@ -49,7 +49,11 @@ public interface IConnectionScopedLockStorage
     /// Reports whether <paramref name="resource"/> is currently locked. When <paramref name="isShared"/> is
     /// <see langword="null"/>, any mode counts; otherwise the query is scoped to the given mode.
     /// </summary>
-    ValueTask<bool> IsLockedAsync(string resource, bool? isShared = null, CancellationToken cancellationToken = default);
+    ValueTask<bool> IsLockedAsync(
+        string resource,
+        bool? isShared = null,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Returns how many holders currently own <paramref name="resource"/> (for example the reader count of a

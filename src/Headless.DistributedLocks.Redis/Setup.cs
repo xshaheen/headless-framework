@@ -174,11 +174,12 @@ public static class SetupRedisDistributedLock
     {
         services.TryAddKeyedSingleton(
             RedisDistributedLockServiceKeys.ScriptsLoader,
-            (sp, _) => new HeadlessRedisScriptsLoader(
-                sp.GetRequiredService<IConnectionMultiplexer>(),
-                sp.GetService<TimeProvider>(),
-                sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
-            )
+            (sp, _) =>
+                new HeadlessRedisScriptsLoader(
+                    sp.GetRequiredService<IConnectionMultiplexer>(),
+                    sp.GetService<TimeProvider>(),
+                    sp.GetService<ILogger<HeadlessRedisScriptsLoader>>()
+                )
         );
 
         _AddScriptsInitializer(services, scriptDefinitions);

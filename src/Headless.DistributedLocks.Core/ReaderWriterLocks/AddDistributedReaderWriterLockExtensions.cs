@@ -51,8 +51,8 @@ public static class AddDistributedReaderWriterLockExtensions
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
-            services.TryAddSingleton<DistributedReaderWriterLockProvider>(provider =>
-                new DistributedReaderWriterLockProvider(
+            services.TryAddSingleton<DistributedReaderWriterLockProvider>(
+                provider => new DistributedReaderWriterLockProvider(
                     provider.GetRequiredService<TStorage>(),
                     provider.GetService<IOutboxBus>(),
                     provider.GetRequiredService<DistributedLockOptions>(),

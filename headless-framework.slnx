@@ -161,7 +161,7 @@
         <Project Path="src\Headless.Extensions\Headless.Extensions.csproj" />
         <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
-        <Project Path="src\Headless.Domain.LocalPublisher\Headless.Domain.LocalPublisher.csproj" />
+        <Project Path="src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
         <Project Path="src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
@@ -175,7 +175,7 @@
         <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Domain.LocalPublisher.Tests.Unit\Headless.Domain.LocalPublisher.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Domain.LocalEventBus.Tests.Unit\Headless.Domain.LocalEventBus.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.MultiTenancy.Tests.Unit\Headless.MultiTenancy.Tests.Unit.csproj" />
@@ -260,6 +260,9 @@
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />
         <Project Path="src\Headless.Orm.Couchbase\Headless.Orm.Couchbase.csproj" />
         <Project Path="src\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
+        <Project Path="src\Headless.Orm.EntityFramework.Messaging\Headless.Orm.EntityFramework.Messaging.csproj" />
+        <Project Path="tests\Headless.Orm.EntityFramework.Messaging.Tests.Unit\Headless.Orm.EntityFramework.Messaging.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Orm.EntityFramework.Messaging.Tests.Integration\Headless.Orm.EntityFramework.Messaging.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Orm.EntityFramework.Tests.Integration\Headless.Orm.EntityFramework.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Orm.Tests.Harness\Headless.Orm.Tests.Harness.csproj" />
     </Folder>

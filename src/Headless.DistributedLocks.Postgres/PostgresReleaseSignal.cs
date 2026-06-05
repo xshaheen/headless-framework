@@ -92,7 +92,9 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         {
             try
             {
-                await using var connection = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+                await using var connection = await _dataSource
+                    .OpenConnectionAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 connection.Notification += OnNotification;
 
                 await using (var listen = connection.CreateCommand())
@@ -123,7 +125,9 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
                 // Exponential backoff with jitter so a PG restart does not trigger a synchronized
                 // reconnect storm across every instance: min(1s * 2^n, 30s) * [0.8, 1.2).
-                var exponential = TimeSpan.FromSeconds(Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds));
+                var exponential = TimeSpan.FromSeconds(
+                    Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds)
+                );
                 consecutiveFailures++;
                 var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
                 var delay = TimeSpan.FromMilliseconds(exponential.TotalMilliseconds * jitter);

@@ -67,7 +67,10 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         {
             _PruneExpired(state);
 
-            if (state.Entry is not { } existing || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal))
+            if (
+                state.Entry is not { } existing
+                || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal)
+            )
             {
                 return ValueTask.FromResult(false);
             }
@@ -97,7 +100,10 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
         {
             _PruneExpired(state);
 
-            if (state.Entry is not { } existing || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal))
+            if (
+                state.Entry is not { } existing
+                || !string.Equals(existing.LockId, expectedId, StringComparison.Ordinal)
+            )
             {
                 return ValueTask.FromResult(false);
             }
@@ -228,7 +234,10 @@ public sealed class InMemoryDistributedLockStorage(TimeProvider timeProvider) : 
                 }
 
                 var remaining = entry.Expiration is { } expiration ? expiration - now : (TimeSpan?)null;
-                var ttl = remaining > TimeSpan.Zero ? remaining : remaining.HasValue ? TimeSpan.Zero : null;
+                var ttl =
+                    remaining > TimeSpan.Zero ? remaining
+                    : remaining.HasValue ? TimeSpan.Zero
+                    : null;
 
                 result[key] = (entry.LockId, ttl);
             }

@@ -7,7 +7,7 @@ using Headless.Features.Entities;
 namespace Headless.Features.Values;
 
 public sealed class FeatureValueCacheItemInvalidator(ICache<FeatureValueCacheItem> cache)
-    : ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>
+    : IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>
 {
     public async ValueTask HandleAsync(
         EntityChangedEventData<FeatureValueRecord> message,

@@ -78,12 +78,13 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
 
         var engine = _enginesByName.GetOrAdd(
             name,
-            static (key, state) => new OptimisticConnectionMultiplexingDbDistributedLock(
-                key,
-                state._connectionString,
-                state._multiplexedConnectionLockPool,
-                state._keepaliveCadence
-            ),
+            static (key, state) =>
+                new OptimisticConnectionMultiplexingDbDistributedLock(
+                    key,
+                    state._connectionString,
+                    state._multiplexedConnectionLockPool,
+                    state._keepaliveCadence
+                ),
             this
         );
 
@@ -126,7 +127,10 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
         }
     }
 
-    public async ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
+    public async ValueTask ReleaseAsync(
+        ConnectionScopedLockHandle handle,
+        CancellationToken cancellationToken = default
+    )
     {
         await ReleaseAsync(handle.Resource, handle.LockId, cancellationToken).ConfigureAwait(false);
     }
@@ -188,7 +192,9 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     public ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var lockId = _heldByLockId.Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))?.LockId;
+        var lockId = _heldByLockId
+            .Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))
+            ?.LockId;
 
         return ValueTask.FromResult(lockId);
     }

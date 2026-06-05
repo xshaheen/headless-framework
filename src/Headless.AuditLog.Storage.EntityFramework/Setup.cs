@@ -30,7 +30,10 @@ public static class SetupAuditLogEntityFramework
         {
             services.AddOptions<AuditLogStorageOptions, EntityFrameworkAuditLogStorageOptionsValidator>();
             services.TryAddScoped<IAuditLogStore, EfAuditLogStore>();
-            services.TryAddScoped(typeof(IAuditLog<>).MakeGenericType(dbContextType), typeof(EfAuditLog<>).MakeGenericType(dbContextType));
+            services.TryAddScoped(
+                typeof(IAuditLog<>).MakeGenericType(dbContextType),
+                typeof(EfAuditLog<>).MakeGenericType(dbContextType)
+            );
             services.TryAddSingleton(
                 typeof(IReadAuditLog<>).MakeGenericType(dbContextType),
                 typeof(EfReadAuditLog<>).MakeGenericType(dbContextType)

@@ -10,8 +10,10 @@ namespace Tests;
 public sealed class RedisCacheEntryFrameTests
 {
     private const int _HeaderLength = 19;
-    private static readonly Type _FrameType =
-        Type.GetType("Headless.Caching.RedisCacheEntryFrame, Headless.Caching.Redis", throwOnError: true)!;
+    private static readonly Type _FrameType = Type.GetType(
+        "Headless.Caching.RedisCacheEntryFrame, Headless.Caching.Redis",
+        throwOnError: true
+    )!;
 
     private static readonly MethodInfo _EncodeMethod = _FrameType.GetMethod(
         "Encode",
@@ -125,8 +127,7 @@ public sealed class RedisCacheEntryFrameTests
         bool isNull,
         DateTime? logicalExpiresAt,
         DateTime? physicalExpiresAt
-    ) =>
-        (byte[])_EncodeMethod.Invoke(null, [value, isNull, logicalExpiresAt, physicalExpiresAt])!;
+    ) => (byte[])_EncodeMethod.Invoke(null, [value, isNull, logicalExpiresAt, physicalExpiresAt])!;
 
     private static RedisValue _RedisValue(byte[] value) => value;
 

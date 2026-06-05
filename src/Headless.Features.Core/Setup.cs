@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Domain;
 using Headless.Checks;
+using Headless.Domain;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Filters;
@@ -115,7 +115,7 @@ public static class SetupCore
         services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
 
         services.AddTransient<
-            ILocalMessageHandler<EntityChangedEventData<FeatureValueRecord>>,
+            IDomainEventHandler<EntityChangedEventData<FeatureValueRecord>>,
             FeatureValueCacheItemInvalidator
         >();
 

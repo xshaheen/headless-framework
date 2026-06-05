@@ -127,7 +127,9 @@ internal sealed class PostgreSqlAuditLogWriter(
 
         var builder = new StringBuilder(256 + rowCount * 256);
         builder.Append("INSERT INTO ").Append(table);
-        builder.Append(" (\"CreatedAt\",\"UserId\",\"AccountId\",\"TenantId\",\"IpAddress\",\"UserAgent\",\"CorrelationId\",\"Action\",\"ChangeType\",\"EntityType\",\"EntityId\",\"OldValues\",\"NewValues\",\"ChangedFields\",\"Success\",\"ErrorCode\") VALUES ");
+        builder.Append(
+            " (\"CreatedAt\",\"UserId\",\"AccountId\",\"TenantId\",\"IpAddress\",\"UserAgent\",\"CorrelationId\",\"Action\",\"ChangeType\",\"EntityType\",\"EntityId\",\"OldValues\",\"NewValues\",\"ChangedFields\",\"Success\",\"ErrorCode\") VALUES "
+        );
 
         for (var i = 0; i < rowCount; i++)
         {
@@ -136,22 +138,48 @@ internal sealed class PostgreSqlAuditLogWriter(
                 builder.Append(',');
             }
 
-            builder.Append("(@CreatedAt_").Append(i)
-                .Append(",@UserId_").Append(i)
-                .Append(",@AccountId_").Append(i)
-                .Append(",@TenantId_").Append(i)
-                .Append(",@IpAddress_").Append(i)
-                .Append(",@UserAgent_").Append(i)
-                .Append(",@CorrelationId_").Append(i)
-                .Append(",@Action_").Append(i)
-                .Append(",@ChangeType_").Append(i)
-                .Append(",@EntityType_").Append(i)
-                .Append(",@EntityId_").Append(i)
-                .Append(",CAST(@OldValues_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
-                .Append(",CAST(@NewValues_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
-                .Append(",CAST(@ChangedFields_").Append(i).Append(" AS ").Append(jsonColumnType).Append(')')
-                .Append(",@Success_").Append(i)
-                .Append(",@ErrorCode_").Append(i)
+            builder
+                .Append("(@CreatedAt_")
+                .Append(i)
+                .Append(",@UserId_")
+                .Append(i)
+                .Append(",@AccountId_")
+                .Append(i)
+                .Append(",@TenantId_")
+                .Append(i)
+                .Append(",@IpAddress_")
+                .Append(i)
+                .Append(",@UserAgent_")
+                .Append(i)
+                .Append(",@CorrelationId_")
+                .Append(i)
+                .Append(",@Action_")
+                .Append(i)
+                .Append(",@ChangeType_")
+                .Append(i)
+                .Append(",@EntityType_")
+                .Append(i)
+                .Append(",@EntityId_")
+                .Append(i)
+                .Append(",CAST(@OldValues_")
+                .Append(i)
+                .Append(" AS ")
+                .Append(jsonColumnType)
+                .Append(')')
+                .Append(",CAST(@NewValues_")
+                .Append(i)
+                .Append(" AS ")
+                .Append(jsonColumnType)
+                .Append(')')
+                .Append(",CAST(@ChangedFields_")
+                .Append(i)
+                .Append(" AS ")
+                .Append(jsonColumnType)
+                .Append(')')
+                .Append(",@Success_")
+                .Append(i)
+                .Append(",@ErrorCode_")
+                .Append(i)
                 .Append(')');
         }
 
@@ -172,21 +200,47 @@ internal sealed class PostgreSqlAuditLogWriter(
         {
             var entry = entries[offset + i];
             parameters.Add(_Param($"CreatedAt_{i}", entry.CreatedAt));
-            parameters.Add(_Param($"UserId_{i}", AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId)));
-            parameters.Add(_Param($"AccountId_{i}", AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId)));
-            parameters.Add(_Param($"TenantId_{i}", AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId)));
-            parameters.Add(_Param($"IpAddress_{i}", AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress)));
-            parameters.Add(_Param($"UserAgent_{i}", AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent)));
-            parameters.Add(_Param($"CorrelationId_{i}", AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId)));
-            parameters.Add(_Param($"Action_{i}", AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action)));
+            parameters.Add(
+                _Param($"UserId_{i}", AuditLogFieldLimits.Truncate(entry.UserId, AuditLogFieldLimits.UserId))
+            );
+            parameters.Add(
+                _Param($"AccountId_{i}", AuditLogFieldLimits.Truncate(entry.AccountId, AuditLogFieldLimits.AccountId))
+            );
+            parameters.Add(
+                _Param($"TenantId_{i}", AuditLogFieldLimits.Truncate(entry.TenantId, AuditLogFieldLimits.TenantId))
+            );
+            parameters.Add(
+                _Param($"IpAddress_{i}", AuditLogFieldLimits.Truncate(entry.IpAddress, AuditLogFieldLimits.IpAddress))
+            );
+            parameters.Add(
+                _Param($"UserAgent_{i}", AuditLogFieldLimits.Truncate(entry.UserAgent, AuditLogFieldLimits.UserAgent))
+            );
+            parameters.Add(
+                _Param(
+                    $"CorrelationId_{i}",
+                    AuditLogFieldLimits.Truncate(entry.CorrelationId, AuditLogFieldLimits.CorrelationId)
+                )
+            );
+            parameters.Add(
+                _Param($"Action_{i}", AuditLogFieldLimits.Truncate(entry.Action, AuditLogFieldLimits.Action))
+            );
             parameters.Add(_Param($"ChangeType_{i}", entry.ChangeType is null ? null : (int)entry.ChangeType.Value));
-            parameters.Add(_Param($"EntityType_{i}", AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType)));
-            parameters.Add(_Param($"EntityId_{i}", AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId)));
+            parameters.Add(
+                _Param(
+                    $"EntityType_{i}",
+                    AuditLogFieldLimits.Truncate(entry.EntityType, AuditLogFieldLimits.EntityType)
+                )
+            );
+            parameters.Add(
+                _Param($"EntityId_{i}", AuditLogFieldLimits.Truncate(entry.EntityId, AuditLogFieldLimits.EntityId))
+            );
             parameters.Add(_Param($"OldValues_{i}", _Serialize(entry.OldValues)));
             parameters.Add(_Param($"NewValues_{i}", _Serialize(entry.NewValues)));
             parameters.Add(_Param($"ChangedFields_{i}", _Serialize(entry.ChangedFields)));
             parameters.Add(_Param($"Success_{i}", entry.Success));
-            parameters.Add(_Param($"ErrorCode_{i}", AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode)));
+            parameters.Add(
+                _Param($"ErrorCode_{i}", AuditLogFieldLimits.Truncate(entry.ErrorCode, AuditLogFieldLimits.ErrorCode))
+            );
         }
     }
 

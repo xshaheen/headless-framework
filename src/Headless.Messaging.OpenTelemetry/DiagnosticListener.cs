@@ -103,9 +103,7 @@ internal sealed class DiagnosticListener(
                         new ActivityEvent(
                             "message.persist.success",
                             DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                            [
-                                new(MessagingTags.PersistenceDurationMs, eventData.ElapsedTimeMs),
-                            ]
+                            [new(MessagingTags.PersistenceDurationMs, eventData.ElapsedTimeMs)]
                         )
                     );
 
@@ -218,9 +216,7 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "message.publish.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                [
-                                    new(MessagingTags.SendDurationMs, eventData.ElapsedTimeMs),
-                                ]
+                                [new(MessagingTags.SendDurationMs, eventData.ElapsedTimeMs)]
                             )
                         );
 
@@ -332,9 +328,7 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "message.consume.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                [
-                                    new(MessagingTags.ReceiveDurationMs, eventData.ElapsedTimeMs),
-                                ]
+                                [new(MessagingTags.ReceiveDurationMs, eventData.ElapsedTimeMs)]
                             )
                         );
 
@@ -445,9 +439,7 @@ internal sealed class DiagnosticListener(
                             new ActivityEvent(
                                 "subscriber.invoke.success",
                                 DateTimeOffset.FromUnixTimeMilliseconds(eventData.OperationTimestamp!.Value),
-                                [
-                                    new(MessagingTags.InvokeDurationMs, eventData.ElapsedTimeMs),
-                                ]
+                                [new(MessagingTags.InvokeDurationMs, eventData.ElapsedTimeMs)]
                             )
                         );
 

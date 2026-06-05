@@ -99,7 +99,10 @@ public static class SetupPermissionsPostgreSql
             services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
             services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
             services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
-            services.TryAddSingleton<IPermissionDefinitionRecordRepository, PostgreSqlPermissionDefinitionRecordRepository>();
+            services.TryAddSingleton<
+                IPermissionDefinitionRecordRepository,
+                PostgreSqlPermissionDefinitionRecordRepository
+            >();
         }
     }
 

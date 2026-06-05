@@ -36,11 +36,7 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
         return _inner.TryExtendReadAsync(_NormalizeResource(resource), lockId, ttl, cancellationToken);
     }
 
-    public ValueTask ReleaseReadAsync(
-        string resource,
-        string lockId,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask ReleaseReadAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         return _inner.ReleaseReadAsync(_NormalizeResource(resource), lockId, cancellationToken);
     }
@@ -74,11 +70,7 @@ internal sealed class ScopedDistributedReaderWriterLockStorage : IDistributedRea
         return _inner.TryExtendWriteAsync(_NormalizeResource(resource), lockId, ttl, cancellationToken);
     }
 
-    public ValueTask ReleaseWriteAsync(
-        string resource,
-        string lockId,
-        CancellationToken cancellationToken = default
-    )
+    public ValueTask ReleaseWriteAsync(string resource, string lockId, CancellationToken cancellationToken = default)
     {
         return _inner.ReleaseWriteAsync(_NormalizeResource(resource), lockId, cancellationToken);
     }

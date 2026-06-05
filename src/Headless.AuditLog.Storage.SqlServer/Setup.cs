@@ -64,12 +64,17 @@ public static class SetupAuditLogSqlServer
             RuleFor(x => x.Schema).IsValidSqlServerIdentifier();
             RuleFor(x => x.TableName).IsValidSqlServerIdentifier();
             // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
-            When(x => x.JsonColumnType.HasValue, () =>
-            {
-                RuleFor(x => x.JsonColumnType!.Value)
-                    .Must(t => t is AuditLogJsonColumnType.NvarcharMax)
-                    .WithMessage($"{nameof(AuditLogStorageOptions.JsonColumnType)} must be NvarcharMax for the SqlServer audit-log provider.");
-            });
+            When(
+                x => x.JsonColumnType.HasValue,
+                () =>
+                {
+                    RuleFor(x => x.JsonColumnType!.Value)
+                        .Must(t => t is AuditLogJsonColumnType.NvarcharMax)
+                        .WithMessage(
+                            $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be NvarcharMax for the SqlServer audit-log provider."
+                        );
+                }
+            );
             RuleFor(x => x.CreatedAtColumnType!)
                 .MaximumLength(64)
                 .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")

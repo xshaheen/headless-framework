@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
+using Headless.Domain;
 using Headless.EntityFramework.Contexts.Processors;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -60,11 +62,21 @@ public interface IHeadlessSaveChangesPipeline
 internal sealed partial class HeadlessSaveChangesPipeline(
     IServiceProvider serviceProvider,
     HeadlessDbContextOptions options,
-    IHeadlessMessageDispatcher messageDispatcher,
     IHeadlessAuditPersistence auditPersistence,
+    ILocalEventBus? localEventBus = null,
+    IHeadlessOutboxDispatcher? outboxDispatcher = null,
     ILogger<HeadlessSaveChangesPipeline>? logger = null
 ) : IHeadlessSaveChangesPipeline
 {
+    private const string _MissingLocalEventBusMessage =
+        "Headless EF collected domain events to publish, but no ILocalEventBus is registered. "
+        + "Call AddHeadlessDbContextServices(...).AddDomainEvents() (or services.AddHeadlessLocalEventBus()).";
+
+    private const string _MissingOutboxDispatcherMessage =
+        "Headless EF collected integration events to enqueue, but no IHeadlessOutboxDispatcher is registered. "
+        + "Reference the Headless.Orm.EntityFramework.Messaging package and call "
+        + "AddHeadlessDbContextServices(...).AddIntegrationEventOutbox().";
+
     private readonly IReadOnlyList<IHeadlessSaveEntryProcessor> _entryProcessors = options.ResolveSaveEntryProcessors(
         serviceProvider
     );
@@ -100,6 +112,7 @@ internal sealed partial class HeadlessSaveChangesPipeline(
             auditEntries,
             acceptAllChangesOnSuccess,
             baseSaveChangesAsync,
+            new StrongBox<bool>(),
             cancellationToken
         );
 
@@ -129,7 +142,14 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         var saveContext = _ProcessEntries(context, trackedEntries);
         var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
 
-        var state = new SaveState(context, saveContext, auditEntries, acceptAllChangesOnSuccess, baseSaveChanges);
+        var state = new SaveState(
+            context,
+            saveContext,
+            auditEntries,
+            acceptAllChangesOnSuccess,
+            baseSaveChanges,
+            new StrongBox<bool>()
+        );
 
         if (context.Database.CurrentTransaction is not null)
         {
@@ -202,6 +222,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 #pragma warning restore MA0045
     }
 
+    // Intentional sync/async twin of _SaveWithinTransaction below: identical save policy (at-most-once
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the sync twin.
     private async Task<int> _SaveWithinTransactionAsync(
         AsyncSaveState state,
         IDbContextTransaction transaction,
@@ -217,11 +240,27 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.LocalEmitters.Count > 0)
+            // Domain-event handlers are at-most-once. They run before baseSaveChanges so handlers can enlist
+            // changes into this same save, but this method is the execution strategy's retried operation: a
+            // transient fault during save/commit replays it. The DomainEventsPublished flag (shared across the
+            // by-value state copies) ensures handlers are NOT re-invoked on a replay. The contract trade-off:
+            // handlers may run even if a later attempt ultimately fails to commit, so domain-event side effects
+            // must tolerate a rolled-back save (keep them idempotent / replay-safe). For commit-coupled,
+            // exactly-once delivery use integration events (the transactional outbox), not domain events.
+            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
             {
-                await messageDispatcher
-                    .PublishLocalAsync(state.SaveContext.LocalEmitters, transaction, state.CancellationToken)
-                    .ConfigureAwait(false);
+                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+
+                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                {
+                    foreach (var domainEvent in emitter.Events)
+                    {
+                        state.CancellationToken.ThrowIfCancellationRequested();
+                        await bus.PublishAsync(domainEvent, state.CancellationToken).ConfigureAwait(false);
+                    }
+                }
+
+                state.DomainEventsPublished.Value = true;
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
@@ -241,14 +280,17 @@ internal sealed partial class HeadlessSaveChangesPipeline(
                 )
                 .ConfigureAwait(false);
 
-            if (state.SaveContext.DistributedEmitters.Count > 0)
+            if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
-                await messageDispatcher
-                    .EnqueueDistributedAsync(
-                        state.SaveContext.DistributedEmitters,
-                        transaction,
-                        state.CancellationToken
-                    )
+                var dispatcher =
+                    outboxDispatcher ?? throw new InvalidOperationException(_MissingOutboxDispatcherMessage);
+
+                var integrationEvents = state
+                    .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .ToArray();
+
+                await dispatcher
+                    .DispatchAsync(integrationEvents, transaction, state.CancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -279,6 +321,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         }
     }
 
+    // Intentional sync/async twin of _SaveWithinTransactionAsync above: identical save policy (at-most-once
+    // domain-event loop, integration flatten+dispatch, audit capture, missing-bus/dispatcher guards). The two
+    // are kept in lockstep by hand rather than extracted — any change here must be mirrored in the async twin.
     private int _SaveWithinTransaction(SaveState state, IDbContextTransaction transaction, bool commitTransaction)
     {
 #pragma warning disable MA0045 // Sync intentionally.
@@ -291,18 +336,38 @@ internal sealed partial class HeadlessSaveChangesPipeline(
 
         try
         {
-            if (state.SaveContext.LocalEmitters.Count > 0)
+            // At-most-once domain-event guard — see the async twin for the full rationale. The shared
+            // DomainEventsPublished flag prevents re-invoking handlers when the execution strategy replays
+            // this operation after a transient save/commit fault.
+            if (!state.DomainEventsPublished.Value && state.SaveContext.DomainEventEmitters.Count > 0)
             {
-                messageDispatcher.PublishLocal(state.SaveContext.LocalEmitters, transaction);
+                var bus = localEventBus ?? throw new InvalidOperationException(_MissingLocalEventBusMessage);
+
+                foreach (var emitter in state.SaveContext.DomainEventEmitters)
+                {
+                    foreach (var domainEvent in emitter.Events)
+                    {
+                        bus.Publish(domainEvent);
+                    }
+                }
+
+                state.DomainEventsPublished.Value = true;
             }
 
             var deferAcceptAllChanges = _HasAuditEntries(state.AuditEntries);
             var result = state.BaseSaveChanges(!deferAcceptAllChanges && state.AcceptAllChangesOnSuccess);
             auditSave = auditPersistence.ResolveAndPersist(state.Context, state.AuditEntries, state.BaseSaveChanges);
 
-            if (state.SaveContext.DistributedEmitters.Count > 0)
+            if (state.SaveContext.IntegrationEventEmitters.Count > 0)
             {
-                messageDispatcher.EnqueueDistributed(state.SaveContext.DistributedEmitters, transaction);
+                var dispatcher =
+                    outboxDispatcher ?? throw new InvalidOperationException(_MissingOutboxDispatcherMessage);
+
+                var integrationEvents = state
+                    .SaveContext.IntegrationEventEmitters.SelectMany(static emitter => emitter.Events)
+                    .ToArray();
+
+                dispatcher.Dispatch(integrationEvents, transaction);
             }
 
             if (commitTransaction)
@@ -338,8 +403,8 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         HeadlessSaveEntryContext saveContext
     ) =>
         _HasAuditEntries(auditEntries)
-        || saveContext.DistributedEmitters.Count > 0
-        || saveContext.LocalEmitters.Count > 0;
+        || saveContext.IntegrationEventEmitters.Count > 0
+        || saveContext.DomainEventEmitters.Count > 0;
 
     private static bool _HasAuditEntries(IReadOnlyList<AuditLogEntryData>? auditEntries)
     {
@@ -363,6 +428,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         IReadOnlyList<AuditLogEntryData>? AuditEntries,
         bool AcceptAllChangesOnSuccess,
         Func<bool, CancellationToken, Task<int>> BaseSaveChangesAsync,
+        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
+        // domain-event guard in _SaveWithinTransactionAsync survives a replay. See the publish loop there.
+        StrongBox<bool> DomainEventsPublished,
         CancellationToken CancellationToken
     );
 
@@ -371,6 +439,9 @@ internal sealed partial class HeadlessSaveChangesPipeline(
         HeadlessSaveEntryContext SaveContext,
         IReadOnlyList<AuditLogEntryData>? AuditEntries,
         bool AcceptAllChangesOnSuccess,
-        Func<bool, int> BaseSaveChanges
+        Func<bool, int> BaseSaveChanges,
+        // Shared across the by-value state copies the execution strategy makes on retry, so the at-most-once
+        // domain-event guard in _SaveWithinTransaction survives a replay. See the publish loop there.
+        StrongBox<bool> DomainEventsPublished
     );
 }

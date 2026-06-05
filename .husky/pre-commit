@@ -1,0 +1,13 @@
+#!/bin/sh
+# Format staged C# files with CSharpier before commit.
+# Committed hook (no Husky.Net). `make hooks` / `make bootstrap` points
+# core.hooksPath here, so this runs in every clone and worktree.
+set -eu
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.cs')
+[ -z "$files" ] && exit 0
+
+# shellcheck disable=SC2086 # intentional word-splitting; repo paths have no spaces
+dotnet csharpier format $files
+# shellcheck disable=SC2086
+git add -- $files

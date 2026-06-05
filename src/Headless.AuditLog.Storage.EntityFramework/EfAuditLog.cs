@@ -41,9 +41,15 @@ internal sealed class EfAuditLog<TContext>(
                 {
                     CreatedAt = clock.UtcNow.UtcDateTime,
                     UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
-                    AccountId = AuditLogFieldLimits.Truncate(currentUser.AccountId?.ToString(), AuditLogFieldLimits.AccountId),
+                    AccountId = AuditLogFieldLimits.Truncate(
+                        currentUser.AccountId?.ToString(),
+                        AuditLogFieldLimits.AccountId
+                    ),
                     TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),
-                    CorrelationId = AuditLogFieldLimits.Truncate(correlationIdProvider.CorrelationId, AuditLogFieldLimits.CorrelationId),
+                    CorrelationId = AuditLogFieldLimits.Truncate(
+                        correlationIdProvider.CorrelationId,
+                        AuditLogFieldLimits.CorrelationId
+                    ),
                     Action = AuditLogFieldLimits.Truncate(action, AuditLogFieldLimits.Action),
                     ChangeType = null,
                     EntityType = AuditLogFieldLimits.Truncate(entityType, AuditLogFieldLimits.EntityType),

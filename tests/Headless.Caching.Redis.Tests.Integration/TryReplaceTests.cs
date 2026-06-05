@@ -122,7 +122,13 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         await cache.UpsertAsync<string?>(key, null, TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await cache.TryReplaceIfEqualAsync<string?>(key, null, "value", TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.TryReplaceIfEqualAsync<string?>(
+            key,
+            null,
+            "value",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         // then
         result.Should().BeTrue();
@@ -183,7 +189,13 @@ public sealed class TryReplaceTests(RedisCacheFixture fixture) : RedisCacheTestB
         await cache.UpsertAsync(key, "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // when
-        var result = await cache.TryReplaceIfEqualAsync<string?>(key, null, "new-value", TimeSpan.FromMinutes(5), AbortToken);
+        var result = await cache.TryReplaceIfEqualAsync<string?>(
+            key,
+            null,
+            "new-value",
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         // then
         result.Should().BeFalse();

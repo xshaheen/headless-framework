@@ -19,7 +19,8 @@ public sealed class CoreSettingsSetupTests
         var builder = Host.CreateApplicationBuilder();
 
         // when - the management core (auto-registered by AddHeadlessSettings) requires encryption
-        var action = () => builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
+        var action = () =>
+            builder.Services.AddHeadlessSettings(setup => setup.UseEntityFramework<OptionsTestDbContext>());
 
         // then
         action.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(IStringEncryptionService)}*");

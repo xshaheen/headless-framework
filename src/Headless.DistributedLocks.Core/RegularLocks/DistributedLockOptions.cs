@@ -80,11 +80,7 @@ internal sealed class DistributedLockOptionsValidator : AbstractValidator<Distri
         RuleFor(x => x.MaxWaitersPerResource).InclusiveBetween(1, 100_000);
         RuleFor(x => x.PollingCadenceFraction).InclusiveBetween(0.1, 0.5);
         RuleFor(x => x.AutoExtensionCadenceFraction).InclusiveBetween(0.1, 0.5);
-        RuleFor(x => x.WriterWaitingMarkerTtl)
-            .GreaterThan(TimeSpan.Zero)
-            .LessThanOrEqualTo(TimeSpan.FromMinutes(5));
-        RuleFor(x => x.DisposeTimeout)
-            .GreaterThan(TimeSpan.Zero)
-            .LessThanOrEqualTo(TimeSpan.FromMinutes(5));
+        RuleFor(x => x.WriterWaitingMarkerTtl).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(5));
+        RuleFor(x => x.DisposeTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(5));
     }
 }

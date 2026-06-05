@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
+using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
@@ -18,7 +19,7 @@ public static class SetupEntityFramework
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
@@ -33,7 +34,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -49,7 +50,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
             ServiceLifetime optionsLifetime = ServiceLifetime.Scoped
@@ -64,7 +65,7 @@ public static class SetupEntityFramework
             );
         }
 
-        public IServiceCollection AddHeadlessDbContext<TDbContext>(
+        public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
             Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
             Action<HeadlessDbContextOptions>? configureHeadlessOptions,
             ServiceLifetime contextLifetime = ServiceLifetime.Scoped,
@@ -72,7 +73,7 @@ public static class SetupEntityFramework
         )
             where TDbContext : HeadlessDbContext
         {
-            services.AddHeadlessDbContextServices(configureHeadlessOptions);
+            var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
 
             services.AddDbContext<TDbContext>(
                 (serviceProvider, optionsBuilder) =>
@@ -90,15 +91,17 @@ public static class SetupEntityFramework
             // call and transfers ownership to the returned context.
             services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
 
-            return services;
+            return builder;
         }
 
-        public IServiceCollection AddHeadlessDbContextServices()
+        public IHeadlessDbContextBuilder AddHeadlessDbContextServices()
         {
             return services.AddHeadlessDbContextServices(configureOptions: null);
         }
 
-        public IServiceCollection AddHeadlessDbContextServices(Action<HeadlessDbContextOptions>? configureOptions)
+        public IHeadlessDbContextBuilder AddHeadlessDbContextServices(
+            Action<HeadlessDbContextOptions>? configureOptions
+        )
         {
             var options = _GetOrAddHeadlessDbContextOptions(services);
             configureOptions?.Invoke(options);
@@ -112,7 +115,6 @@ public static class SetupEntityFramework
             // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based
             // consumer gets it wired regardless of which IAuditLogStore (EF/PG/SqlServer) they pick.
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();
-            services.TryAddScoped<IHeadlessMessageDispatcher, ThrowHeadlessMessageDispatcher>();
             services.TryAddSingleton<ITenantWriteGuardBypass, TenantWriteGuardBypass>();
 
             services.TryAddSingleton(TimeProvider.System);
@@ -126,7 +128,7 @@ public static class SetupEntityFramework
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services.ReplaceCompiledQueryCacheKeyGenerator();
 
-            return services;
+            return new HeadlessDbContextBuilder(services);
         }
 
         public IServiceCollection AddHeadlessTenantWriteGuard(Action<TenantWriteGuardOptions>? configure = null)
@@ -186,46 +188,19 @@ public static class SetupEntityFramework
 
             return services;
         }
+    }
 
-        public IServiceCollection AddHeadlessMessageDispatcher<TDispatcher>(
-            ServiceLifetime lifetime = ServiceLifetime.Scoped
-        )
-            where TDispatcher : class, IHeadlessMessageDispatcher
-        {
-            services.TryAdd(ServiceDescriptor.Describe(typeof(TDispatcher), typeof(TDispatcher), lifetime));
-            services.Replace(
-                ServiceDescriptor.Describe(
-                    typeof(IHeadlessMessageDispatcher),
-                    provider => provider.GetRequiredService<TDispatcher>(),
-                    lifetime
-                )
-            );
+    /// <summary>
+    /// Registers the in-process domain-event bus (<see cref="ILocalEventBus"/>) so entities implementing
+    /// <see cref="IDomainEventEmitter"/> have their domain events published within the save transaction.
+    /// </summary>
+    public static IHeadlessDbContextBuilder AddDomainEvents(this IHeadlessDbContextBuilder builder)
+    {
+        Argument.IsNotNull(builder);
 
-            return services;
-        }
+        builder.Services.AddHeadlessLocalEventBus();
 
-        public IServiceCollection AddHeadlessMessageDispatcher(
-            Func<IServiceProvider, IHeadlessMessageDispatcher> implementationFactory,
-            ServiceLifetime lifetime = ServiceLifetime.Scoped
-        )
-        {
-            Argument.IsNotNull(implementationFactory);
-
-            services.Replace(
-                ServiceDescriptor.Describe(typeof(IHeadlessMessageDispatcher), implementationFactory, lifetime)
-            );
-
-            return services;
-        }
-
-        public IServiceCollection AddHeadlessMessageDispatcher(IHeadlessMessageDispatcher dispatcher)
-        {
-            Argument.IsNotNull(dispatcher);
-
-            services.Replace(ServiceDescriptor.Singleton(dispatcher));
-
-            return services;
-        }
+        return builder;
     }
 
     private static HeadlessDbContextOptions _GetOrAddHeadlessDbContextOptions(IServiceCollection services)

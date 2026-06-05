@@ -48,7 +48,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentUser>());
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
-        services.AddServiceProviderLocalMessagePublisher();
+        services.AddHeadlessLocalEventBus();
 
         // Messages
         services.AddHeadlessMessaging(setup =>
@@ -65,9 +65,7 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
         services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
-        services.AddDbContextFactory<SettingsTestDbContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        services.AddDbContextFactory<SettingsTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.AddHeadlessSettings(setup =>
         {

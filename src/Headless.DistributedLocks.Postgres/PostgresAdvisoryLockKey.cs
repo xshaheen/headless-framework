@@ -27,8 +27,9 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
     // Memoizes the SHA256-hashed keys for long names so the provider's retry loop (one FromString per
     // poll) does not re-hash the same resource string every attempt. Unbounded: the distinct-resource
     // count is bounded in practice by the application's lock-key cardinality, which is small.
-    private static readonly ConcurrentDictionary<string, PostgresAdvisoryLockKey> _HashedKeyCache =
-        new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, PostgresAdvisoryLockKey> _HashedKeyCache = new(
+        StringComparer.Ordinal
+    );
 
     private readonly long _key;
     private readonly KeyEncoding _keyEncoding;
@@ -75,7 +76,8 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     public bool HasSingleKey => _keyEncoding is KeyEncoding.Int64 or KeyEncoding.Ascii;
 
-    public long Key => HasSingleKey ? _key : throw new InvalidOperationException("This advisory key uses two int keys.");
+    public long Key =>
+        HasSingleKey ? _key : throw new InvalidOperationException("This advisory key uses two int keys.");
 
     public (int Key1, int Key2) Keys => _SplitKeys(_key);
 
@@ -290,10 +292,7 @@ public readonly struct PostgresAdvisoryLockKey : IEquatable<PostgresAdvisoryLock
 
     private static string _ToHashString((int Key1, int Key2) keys)
     {
-        return string.Create(
-            CultureInfo.InvariantCulture,
-            $"{keys.Key1:x8},{keys.Key2:x8}"
-        );
+        return string.Create(CultureInfo.InvariantCulture, $"{keys.Key1:x8},{keys.Key2:x8}");
     }
 
     private enum KeyEncoding

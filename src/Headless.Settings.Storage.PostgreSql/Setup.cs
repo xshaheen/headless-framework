@@ -45,9 +45,7 @@ public static class SetupSettingsPostgreSql
             return setup;
         }
 
-        public HeadlessSettingsSetupBuilder UsePostgreSql(
-            Action<PostgreSqlSettingsOptions, IServiceProvider> configure
-        )
+        public HeadlessSettingsSetupBuilder UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)
         {
             Argument.IsNotNull(configure);
 

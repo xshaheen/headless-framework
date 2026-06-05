@@ -66,7 +66,9 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
 
         // Both readers are confirmed held server-side (count == 2), and they sit on two distinct backend pids — the
         // colliding second acquirer was dedicated to its own physical connection rather than sharing the first's.
-        (await locks.GetReaderCountAsync(resource, AbortToken)).Should().Be(2);
+        (await locks.GetReaderCountAsync(resource, AbortToken))
+            .Should()
+            .Be(2);
         pids.Should().HaveCount(2, "the colliding shared lock must be dedicated to a separate backend connection");
     }
 
@@ -87,8 +89,12 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
         _ = await locks.AcquireAsync(resourceB, cancellationToken: AbortToken);
 
         // sanity: both are genuinely held server-side before disposal (otherwise the post-dispose assertion is vacuous)
-        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA)).Should().NotBeEmpty("resource A is held before dispose");
-        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Should().NotBeEmpty("resource B is held before dispose");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA))
+            .Should()
+            .NotBeEmpty("resource A is held before dispose");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB))
+            .Should()
+            .NotBeEmpty("resource B is held before dispose");
 
         // when (the provider is disposed while both handles are still outstanding)
         await provider.DisposeAsync();
@@ -99,8 +105,12 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
             && (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Count == 0
         );
 
-        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA)).Should().BeEmpty("provider disposal must release resource A");
-        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB)).Should().BeEmpty("provider disposal must release resource B");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceA))
+            .Should()
+            .BeEmpty("provider disposal must release resource A");
+        (await _GetBackendPidsHoldingAsync(keyPrefix + resourceB))
+            .Should()
+            .BeEmpty("provider disposal must release resource B");
     }
 
     /// <summary>Polls <paramref name="condition"/> until true or a bounded deadline, linked to the test abort token.</summary>
@@ -123,7 +133,8 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), linked.Token);
             }
-            catch (OperationCanceledException) when (deadlineCts.IsCancellationRequested && !AbortToken.IsCancellationRequested)
+            catch (OperationCanceledException)
+                when (deadlineCts.IsCancellationRequested && !AbortToken.IsCancellationRequested)
             {
                 Assert.Fail("Condition was not satisfied within the 15s deadline.");
             }

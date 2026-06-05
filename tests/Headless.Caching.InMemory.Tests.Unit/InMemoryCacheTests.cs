@@ -79,25 +79,21 @@ public sealed class InMemoryCacheTests : TestBase
         );
         constructor
             .Should()
-            .NotBeNull(
-                "the private CacheEntry constructor signature changed — update _ReplaceEntryEnvelope to match"
-            );
+            .NotBeNull("the private CacheEntry constructor signature changed — update _ReplaceEntryEnvelope to match");
 
-        var entry = constructor!.Invoke(
-            [
-                value,
-                logicalExpiresAt,
-                physicalExpiresAt,
-                typeof(InMemoryCache)
-                    .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
-                    .GetValue(cache),
-                false,
-                true,
-                0L,
-                null,
-                null,
-            ]
-        );
+        var entry = constructor!.Invoke([
+            value,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            typeof(InMemoryCache)
+                .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(cache),
+            false,
+            true,
+            0L,
+            null,
+            null,
+        ]);
         memory.GetType().GetProperty("Item")!.SetValue(memory, entry, [key]);
     }
 
@@ -303,7 +299,13 @@ public sealed class InMemoryCacheTests : TestBase
         using var cache = _CreateCache();
         var key = Faker.Random.AlphaNumeric(10);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        _ReplaceEntryEnvelope(cache, key, "value", logicalExpiresAt: now.AddMinutes(-1), physicalExpiresAt: now.AddMinutes(5));
+        _ReplaceEntryEnvelope(
+            cache,
+            key,
+            "value",
+            logicalExpiresAt: now.AddMinutes(-1),
+            physicalExpiresAt: now.AddMinutes(5)
+        );
 
         // when
         var cached = await cache.GetAsync<string>(key, AbortToken);

@@ -437,7 +437,8 @@ public sealed class AuditLogIntegrationTests : TestBase
         // given
         var (sp, conn) = await AuditIntegrationFixture.CreateAsync<ThrowingPublishAuditTestDbContext>(
             configure: null,
-            configureServices: services => services.AddHeadlessMessageDispatcher<ThrowingHeadlessMessageDispatcher>()
+            configureServices: services =>
+                services.AddScoped<IHeadlessOutboxDispatcher, ThrowingHeadlessMessageDispatcher>()
         );
         await using var _ = conn;
         await using var __ = sp;

@@ -114,10 +114,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         await sut.LoadAsync(scripts);
 
         // then
-        await writableServer.Received(scripts.Length).ScriptLoadAsync(
-            Arg.Any<string>(),
-            Arg.Any<CommandFlags>()
-        );
+        await writableServer.Received(scripts.Length).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
         await replicaServer.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
         await disconnectedServer.DidNotReceive().ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
     }
@@ -141,10 +138,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         await sut.LoadAsync(scripts);
 
         // then
-        await server.Received(scripts.Length).ScriptLoadAsync(
-            Arg.Any<string>(),
-            Arg.Any<CommandFlags>()
-        );
+        await server.Received(scripts.Length).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -195,7 +189,9 @@ public sealed class HeadlessRedisScriptsLoaderTests
         var result = await sut.EvaluateAsync(db, customScript, parameters: null);
 
         // then
-        ((int)result).Should().Be(1);
+        ((int)result)
+            .Should()
+            .Be(1);
         await server.Received(1).ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>());
         await db.Received(1).ScriptEvaluateAsync(Arg.Any<LoadedLuaScript>(), Arg.Any<object>());
     }
@@ -235,7 +231,8 @@ public sealed class HeadlessRedisScriptsLoaderTests
         var releaseFirstOtherScriptLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var otherScriptLoadCount = 0;
 
-        server.ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
+        server
+            .ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
             .Returns(callInfo =>
             {
                 var source = callInfo.ArgAt<string>(0);
@@ -275,14 +272,18 @@ public sealed class HeadlessRedisScriptsLoaderTests
         _ = await sut.EvaluateAsync(db, script, parameters: null);
 
         // then
-        await server.Received(2).ScriptLoadAsync(
-            Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
-            Arg.Any<CommandFlags>()
-        );
-        await server.Received(2).ScriptLoadAsync(
-            Arg.Is<string>(source => source.Contains("return 2", StringComparison.Ordinal)),
-            Arg.Any<CommandFlags>()
-        );
+        await server
+            .Received(2)
+            .ScriptLoadAsync(
+                Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
+                Arg.Any<CommandFlags>()
+            );
+        await server
+            .Received(2)
+            .ScriptLoadAsync(
+                Arg.Is<string>(source => source.Contains("return 2", StringComparison.Ordinal)),
+                Arg.Any<CommandFlags>()
+            );
     }
 
     [Fact]
@@ -296,7 +297,8 @@ public sealed class HeadlessRedisScriptsLoaderTests
         var releaseSecondScriptLoad = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var scriptLoadCount = 0;
 
-        server.ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
+        server
+            .ScriptLoadAsync(Arg.Any<string>(), Arg.Any<CommandFlags>())
             .Returns(callInfo =>
             {
                 var source = callInfo.ArgAt<string>(0);
@@ -336,10 +338,12 @@ public sealed class HeadlessRedisScriptsLoaderTests
         _ = await reloadTask;
 
         // then
-        await server.Received(3).ScriptLoadAsync(
-            Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
-            Arg.Any<CommandFlags>()
-        );
+        await server
+            .Received(3)
+            .ScriptLoadAsync(
+                Arg.Is<string>(source => source.Contains("return 1", StringComparison.Ordinal)),
+                Arg.Any<CommandFlags>()
+            );
     }
 
     [Fact]

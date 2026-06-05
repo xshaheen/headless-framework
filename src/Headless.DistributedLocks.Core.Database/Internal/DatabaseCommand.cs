@@ -38,9 +38,8 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
     /// </summary>
     public void SetTimeout(TimeSpan operationTimeout)
     {
-        _command.CommandTimeout = operationTimeout == Timeout.InfiniteTimeSpan
-            ? 0
-            : (int)Math.Ceiling(operationTimeout.TotalSeconds) + 30;
+        _command.CommandTimeout =
+            operationTimeout == Timeout.InfiniteTimeSpan ? 0 : (int)Math.Ceiling(operationTimeout.TotalSeconds) + 30;
     }
 
     /// <summary>
@@ -96,7 +95,10 @@ internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection conn
         ExecuteNonQueryAsync(isConnectionMonitoringQuery: false, cancellationToken);
 
     /// <summary>Internal API for <see cref="ConnectionMonitor"/>: skips taking the connection lock the monitor already holds.</summary>
-    internal ValueTask<int> ExecuteNonQueryAsync(bool isConnectionMonitoringQuery, CancellationToken cancellationToken) =>
+    internal ValueTask<int> ExecuteNonQueryAsync(
+        bool isConnectionMonitoringQuery,
+        CancellationToken cancellationToken
+    ) =>
         _ExecuteAsync(
             static (command, token) => command.ExecuteNonQueryAsync(token),
             isConnectionMonitoringQuery,

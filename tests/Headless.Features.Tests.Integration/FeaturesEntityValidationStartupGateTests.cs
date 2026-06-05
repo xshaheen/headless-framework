@@ -22,9 +22,7 @@ public sealed class FeaturesEntityValidationStartupGateTests(FeaturesTestFixture
         builder.Services.AddDbContextFactory<MissingFeaturesEntityDbContext>(options =>
             options.UseNpgsql(Fixture.SqlConnectionString)
         );
-        builder.Services.AddHeadlessFeatures(setup =>
-            setup.UseEntityFramework<MissingFeaturesEntityDbContext>()
-        );
+        builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<MissingFeaturesEntityDbContext>());
         using var host = builder.Build();
 
         // when

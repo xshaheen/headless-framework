@@ -36,7 +36,10 @@ internal sealed class PostgreSqlAuditLog<TContext>(
             UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
             AccountId = AuditLogFieldLimits.Truncate(currentUser.AccountId?.ToString(), AuditLogFieldLimits.AccountId),
             TenantId = AuditLogFieldLimits.Truncate(currentTenant.Id, AuditLogFieldLimits.TenantId),
-            CorrelationId = AuditLogFieldLimits.Truncate(correlationIdProvider.CorrelationId, AuditLogFieldLimits.CorrelationId),
+            CorrelationId = AuditLogFieldLimits.Truncate(
+                correlationIdProvider.CorrelationId,
+                AuditLogFieldLimits.CorrelationId
+            ),
             Action = AuditLogFieldLimits.Truncate(action, AuditLogFieldLimits.Action),
             EntityType = AuditLogFieldLimits.Truncate(entityType, AuditLogFieldLimits.EntityType),
             EntityId = AuditLogFieldLimits.Truncate(entityId, AuditLogFieldLimits.EntityId),

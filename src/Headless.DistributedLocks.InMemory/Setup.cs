@@ -32,9 +32,7 @@ public static class SetupInMemoryDistributedLock
         }
 
         /// <summary>Adds an in-process resource lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedLock(
-            Action<DistributedLockOptions>? optionSetupAction = null
-        )
+        public IServiceCollection AddInMemoryDistributedLock(Action<DistributedLockOptions>? optionSetupAction = null)
         {
             return services._AddInMemoryDistributedLockCore(s =>
                 s.AddDistributedLock<InMemoryDistributedLockStorage>(optionSetupAction ?? (static _ => { }))

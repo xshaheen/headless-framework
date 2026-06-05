@@ -61,7 +61,10 @@ public static class SetupMiddlewares
     public static IApplicationBuilder UseStatusCodesRewriter(this IApplicationBuilder app)
     {
         // Notify any registered observer (e.g. HeadlessServiceDefaultsValidationStartupFilter) that the middleware was wired.
-        if (app.ApplicationServices.GetService(typeof(IStatusCodesRewriterCalledNotifier)) is IStatusCodesRewriterCalledNotifier notifier)
+        if (
+            app.ApplicationServices.GetService(typeof(IStatusCodesRewriterCalledNotifier))
+            is IStatusCodesRewriterCalledNotifier notifier
+        )
         {
             notifier.OnCalled();
         }

@@ -18,7 +18,10 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
     private readonly TimeSpan _keepaliveCadence;
 
     /// <summary>Constructs an instance using the given EXTERNALLY OWNED connection factory.</summary>
-    public DedicatedConnectionOrTransactionDbDistributedLock(string name, Func<DatabaseConnection> externalConnectionFactory)
+    public DedicatedConnectionOrTransactionDbDistributedLock(
+        string name,
+        Func<DatabaseConnection> externalConnectionFactory
+    )
         // useTransaction is irrelevant for the external-connection flow (it never creates a transaction itself).
         : this(name, externalConnectionFactory, useTransaction: true, keepaliveCadence: Timeout.InfiniteTimeSpan) { }
 
@@ -62,7 +65,9 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                 {
                     if (!connection.CanExecuteQueries)
                     {
-                        throw new InvalidOperationException("The connection and/or transaction are disposed or closed.");
+                        throw new InvalidOperationException(
+                            "The connection and/or transaction are disposed or closed."
+                        );
                     }
                 }
                 else
@@ -135,7 +140,14 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
             IAsyncDisposable? connectionResource
         )
         {
-            _innerHandle = new InnerHandle(connection, strategy, name, lockCookie, transactionScoped, connectionResource);
+            _innerHandle = new InnerHandle(
+                connection,
+                strategy,
+                name,
+                lockCookie,
+                transactionScoped,
+                connectionResource
+            );
             LockId = Guid.NewGuid().ToString("N");
             Resource = name;
             DateAcquired = connection.TimeProvider.GetUtcNow();
@@ -262,8 +274,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock : IDbDis
                     // scope, a connection that can no longer execute queries has already dropped its advisory locks
                     // server-side, so the explicit unlock is unnecessary and would only fault.
                     var canSkipExplicitRelease =
-                        !Connection.CanExecuteQueries
-                        || (_transactionScoped && !Connection.IsExternallyOwned);
+                        !Connection.CanExecuteQueries || (_transactionScoped && !Connection.IsExternallyOwned);
 
                     if (!canSkipExplicitRelease)
                     {

@@ -43,7 +43,8 @@ public abstract class HostedInitializer : IHostedLifecycleService, IInitializer
         {
             var previous = Interlocked.Exchange(
                 ref _completion,
-                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
+                new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+            );
 
             // Pass CancellationToken.None so the prior promise's OperationCanceledException is not
             // misleadingly attributed to the current run's startup token.

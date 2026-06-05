@@ -8,6 +8,8 @@ using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +25,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
         // ChangeTracker handlers, no observable state change).
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddHeadlessDbContextServices();
         services.AddDbContext<RuntimeTestDbContext>(o =>
         {
@@ -160,16 +163,116 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IHeadlessMessageDispatcher*");
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*ILocalEventBus*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_throw_when_integration_events_emitted_without_outbox_dispatcher()
+    {
+        // given — ILocalEventBus is registered (so the AggregateRoot lifecycle domain events drained
+        // by the first save are satisfied), but no IHeadlessOutboxDispatcher. The second save queues an
+        // integration event on the tracked entity; collecting it must fail naming the missing dispatcher.
+        var (provider, connection) = await _CreateProviderAsync(services =>
+            services.AddScoped<ILocalEventBus, RuntimeRecordingMessageDispatcher>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "integration-emits" };
+
+        db.Entities.Add(entity);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*IHeadlessOutboxDispatcher*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_name_add_domain_events_when_domain_event_emitted_without_local_event_bus()
+    {
+        // given — the default pipeline emits lifecycle domain events for the tracked AggregateRoot, but
+        // no ILocalEventBus is registered. The guard message must point the consumer at the actionable
+        // registration call (AddDomainEvents), not just the bus interface name.
+        var (provider, connection) = await _CreateProviderAsync();
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "names-add-domain-events" };
+
+        db.Entities.Add(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddDomainEvents*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_name_add_integration_event_outbox_when_integration_event_emitted_without_outbox_dispatcher()
+    {
+        // given — ILocalEventBus is registered so the first save's lifecycle domain events drain, but no
+        // IHeadlessOutboxDispatcher. Queuing an integration event on the tracked entity must fail with a
+        // message naming the actionable registration call (AddIntegrationEventOutbox).
+        var (provider, connection) = await _CreateProviderAsync(services =>
+            services.AddScoped<ILocalEventBus, RuntimeRecordingMessageDispatcher>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "names-add-integration-outbox" };
+
+        db.Entities.Add(entity);
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("needs-outbox"));
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage("*AddIntegrationEventOutbox*");
+    }
+
+    [Fact]
+    public async Task save_changes_should_not_throw_when_aggregate_root_emits_no_events_and_no_buses_registered()
+    {
+        // given — an AggregateRoot is tracked and saved, but the lifecycle local-event processor is
+        // removed so it emits zero domain events and (untouched) zero integration events. With neither
+        // ILocalEventBus nor IHeadlessOutboxDispatcher registered the guards must stay silent: emitting
+        // nothing is the common case and must never require either bus.
+        var (provider, connection) = await _CreateProviderAsync(configureHeadlessOptions: options =>
+            options.RemoveSaveEntryProcessor<HeadlessLocalEventSaveEntryProcessor>()
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "emits-nothing" };
+
+        db.Entities.Add(entity);
+
+        // when
+        var act = async () => await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        (await db.Entities.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
     }
 
     [Fact]
     public async Task save_changes_should_use_registered_message_dispatcher_when_messages_are_emitted()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services =>
-            services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>()
-        );
+        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -183,7 +286,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle();
+        // Flat domain events: AggregateRoot emits EntityCreated + EntityChanged on add.
+        dispatcher.LocalEmitters.Should().HaveCount(2);
         dispatcher.DistributedEmitters.Should().BeEmpty();
     }
 
@@ -191,9 +295,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     public async Task save_changes_should_publish_messages_queued_on_unchanged_tracked_emitters()
     {
         // given
-        var (provider, connection) = await _CreateProviderAsync(services =>
-            services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>()
-        );
+        var (provider, connection) = await _CreateProviderAsync(services => _AddRuntimeRecorder(services));
         await using var _ = connection;
         await using var __ = provider;
         await using var scope = provider.CreateAsyncScope();
@@ -207,17 +309,15 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         dispatcher.LocalEmitters.Clear();
         dispatcher.DistributedEmitters.Clear();
 
-        entity.AddMessage(new RuntimeLocalMessage("local-later"));
-        entity.AddMessage(new RuntimeDistributedMessage("distributed-later"));
+        entity.AddDomainEvent(new RuntimeLocalMessage("local-later"));
+        entity.AddIntegrationEvent(new RuntimeDistributedMessage("distributed-later"));
 
         // when
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher.LocalEmitters.Should().ContainSingle();
-        dispatcher.LocalEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "local-later");
-        dispatcher.DistributedEmitters.Should().ContainSingle();
-        dispatcher.DistributedEmitters[0].Messages.Should().ContainSingle(x => x.UniqueId == "distributed-later");
+        dispatcher.LocalEmitters.Should().ContainSingle(x => x.UniqueId == "local-later");
+        dispatcher.DistributedEmitters.Should().ContainSingle(x => x.UniqueId == "distributed-later");
     }
 
     [Fact]
@@ -225,7 +325,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
     {
         // given
         var (provider, connection) = await _CreateProviderAsync(
-            services => services.AddHeadlessMessageDispatcher<RuntimeRecordingMessageDispatcher>(),
+            services => _AddRuntimeRecorder(services),
             options => options.AddSaveEntryProcessor<RuntimeQueuedMessageSaveEntryProcessor>(ServiceLifetime.Singleton)
         );
         await using var _ = connection;
@@ -241,28 +341,65 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // then
-        dispatcher
-            .LocalEmitters.Should()
-            .ContainSingle(x =>
-                ReferenceEquals(x.Emitter, entity) && x.Messages.Any(message => message.UniqueId == "custom-local")
-            );
-        dispatcher
-            .DistributedEmitters.Should()
-            .ContainSingle(x =>
-                ReferenceEquals(x.Emitter, entity)
-                && x.Messages.Any(message => message.UniqueId == "custom-distributed")
-            );
+        dispatcher.LocalEmitters.Should().ContainSingle(message => message.UniqueId == "custom-local");
+        dispatcher.DistributedEmitters.Should().ContainSingle(message => message.UniqueId == "custom-distributed");
+    }
+
+    [Fact]
+    public async Task save_changes_should_publish_domain_events_at_most_once_when_execution_strategy_retries()
+    {
+        // given — SQLite has no built-in retrying strategy, so we wire a one-shot retrying execution strategy
+        // (ReplaceService<IExecutionStrategyFactory>) plus a SaveChanges interceptor that throws a marker
+        // exception on its FIRST invocation and passes through on the second. The interceptor fires inside
+        // baseSaveChanges, which the pipeline calls AFTER its domain-event publish loop. So attempt 1:
+        // publish domain events -> baseSaveChanges throws the marker -> execution strategy classifies it as
+        // transient and replays the whole operation. Attempt 2: the at-most-once guard skips the publish loop,
+        // the interceptor passes through, the save commits. A correct guard fires each handler exactly once.
+        var bus = new CountingLocalEventBus();
+        var interceptor = new OneShotTransientFailureInterceptor();
+        var (provider, connection) = await _CreateProviderAsync(
+            configureServices: services => services.AddSingleton<ILocalEventBus>(bus),
+            configureDbContext: options =>
+                options
+                    .ReplaceService<IExecutionStrategyFactory, OneShotRetryExecutionStrategyFactory>()
+                    .AddInterceptors(interceptor)
+        );
+        await using var _ = connection;
+        await using var __ = provider;
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
+        var entity = new RuntimeEntity { Name = "retries-once" };
+
+        db.Entities.Add(entity);
+
+        // when
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // then — the interceptor actually fired and the strategy replayed (guards against a silently-green
+        // test where no retry happened at all).
+        interceptor.InvocationCount.Should().Be(2, "the operation must be replayed once");
+
+        // AggregateRoot.Add emits EntityCreated + EntityChanged = 2 domain events. Each handler must fire
+        // exactly once across BOTH attempts — a re-fire on the replay would double the count to 4.
+        bus.PublishCount.Should().Be(2, "each domain event must be published exactly once despite the retry");
+
+        // and the row is persisted (the save ultimately succeeded on the replayed attempt).
+        (await db.Entities.CountAsync(TestContext.Current.CancellationToken))
+            .Should()
+            .Be(1);
     }
 
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(
         Action<IServiceCollection>? configureServices = null,
-        Action<HeadlessDbContextOptions>? configureHeadlessOptions = null
+        Action<HeadlessDbContextOptions>? configureHeadlessOptions = null,
+        Action<DbContextOptionsBuilder>? configureDbContext = null
     )
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync(TestContext.Current.CancellationToken);
 
         var services = new ServiceCollection();
+        services.AddLogging();
         services.AddSingleton(connection);
         // Recorder lifetime must match the processor lifetimes (singleton) so test queries observe
         // the same instance the processors write to.
@@ -274,7 +411,11 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
             configureHeadlessOptions?.Invoke(options);
         });
         configureServices?.Invoke(services);
-        services.AddDbContext<RuntimeTestDbContext>(options => options.UseSqlite(connection).AddHeadlessExtension());
+        services.AddDbContext<RuntimeTestDbContext>(options =>
+        {
+            options.UseSqlite(connection).AddHeadlessExtension();
+            configureDbContext?.Invoke(options);
+        });
 
         var provider = services.BuildServiceProvider();
 
@@ -325,49 +466,138 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
         }
     }
 
-    private sealed class RuntimeRecordingMessageDispatcher : IHeadlessMessageDispatcher
+    private sealed class RuntimeRecordingMessageDispatcher : ILocalEventBus, IHeadlessOutboxDispatcher
     {
-        public List<EmitterLocalMessages> LocalEmitters { get; } = [];
+        public List<IDomainEvent> LocalEmitters { get; } = [];
 
-        public List<EmitterDistributedMessages> DistributedEmitters { get; } = [];
+        public List<IIntegrationEvent> DistributedEmitters { get; } = [];
 
-        public Task PublishLocalAsync(
-            IReadOnlyList<EmitterLocalMessages> emitters,
+        public void Publish<T>(T domainEvent)
+            where T : class, IDomainEvent => LocalEmitters.Add(domainEvent);
+
+        public void Publish(IDomainEvent domainEvent) => LocalEmitters.Add(domainEvent);
+
+        public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent
+        {
+            LocalEmitters.Add(domainEvent);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        {
+            LocalEmitters.Add(domainEvent);
+            return ValueTask.CompletedTask;
+        }
+
+        public Task DispatchAsync(
+            IReadOnlyList<IIntegrationEvent> integrationEvents,
             IDbContextTransaction currentTransaction,
             CancellationToken cancellationToken
         )
         {
-            LocalEmitters.AddRange(emitters);
+            DistributedEmitters.AddRange(integrationEvents);
             return Task.CompletedTask;
         }
 
-        public void PublishLocal(IReadOnlyList<EmitterLocalMessages> emitters, IDbContextTransaction currentTransaction)
-        {
-            LocalEmitters.AddRange(emitters);
-        }
-
-        public Task EnqueueDistributedAsync(
-            IReadOnlyList<EmitterDistributedMessages> emitters,
-            IDbContextTransaction currentTransaction,
-            CancellationToken cancellationToken
-        )
-        {
-            DistributedEmitters.AddRange(emitters);
-            return Task.CompletedTask;
-        }
-
-        public void EnqueueDistributed(
-            IReadOnlyList<EmitterDistributedMessages> emitters,
+        public void Dispatch(
+            IReadOnlyList<IIntegrationEvent> integrationEvents,
             IDbContextTransaction currentTransaction
         )
         {
-            DistributedEmitters.AddRange(emitters);
+            DistributedEmitters.AddRange(integrationEvents);
         }
     }
 
-    private sealed record RuntimeLocalMessage(string UniqueId) : ILocalMessage;
+    private static IServiceCollection _AddRuntimeRecorder(IServiceCollection services)
+    {
+        services.AddScoped<RuntimeRecordingMessageDispatcher>();
+        services.AddScoped<ILocalEventBus>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
+        services.AddScoped<IHeadlessOutboxDispatcher>(sp => sp.GetRequiredService<RuntimeRecordingMessageDispatcher>());
 
-    private sealed record RuntimeDistributedMessage(string UniqueId) : IDistributedMessage;
+        return services;
+    }
+
+    // Counts every domain-event publish so the test can prove handlers fire exactly once across the retry.
+    private sealed class CountingLocalEventBus : ILocalEventBus
+    {
+        private int _publishCount;
+
+        public int PublishCount => _publishCount;
+
+        public void Publish<T>(T domainEvent)
+            where T : class, IDomainEvent => Interlocked.Increment(ref _publishCount);
+
+        public void Publish(IDomainEvent domainEvent) => Interlocked.Increment(ref _publishCount);
+
+        public ValueTask PublishAsync<T>(T domainEvent, CancellationToken cancellationToken = default)
+            where T : class, IDomainEvent
+        {
+            Interlocked.Increment(ref _publishCount);
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask PublishAsync(IDomainEvent domainEvent, CancellationToken cancellationToken = default)
+        {
+            Interlocked.Increment(ref _publishCount);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    // Marker exception the one-shot strategy classifies as transient.
+    private sealed class TransientMarkerException() : Exception("Simulated transient save fault.");
+
+    // SaveChanges interceptor that throws the transient marker on its FIRST invocation and passes through on
+    // the second. Because the pipeline runs its domain-event publish loop BEFORE baseSaveChanges (where this
+    // interceptor fires), the throw forces a real replay AFTER the events have already published on attempt 1.
+    private sealed class OneShotTransientFailureInterceptor : ISaveChangesInterceptor
+    {
+        private int _invocationCount;
+
+        public int InvocationCount => _invocationCount;
+
+        public InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+        {
+            if (Interlocked.Increment(ref _invocationCount) == 1)
+            {
+                throw new TransientMarkerException();
+            }
+
+            return result;
+        }
+
+        public ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            if (Interlocked.Increment(ref _invocationCount) == 1)
+            {
+                throw new TransientMarkerException();
+            }
+
+            return new ValueTask<InterceptionResult<int>>(result);
+        }
+    }
+
+    // Retries the wrapped operation at most once, treating TransientMarkerException as transient. Zero retry
+    // delay keeps the test fast and deterministic.
+    private sealed class OneShotRetryExecutionStrategy(ExecutionStrategyDependencies dependencies)
+        : ExecutionStrategy(dependencies, maxRetryCount: 1, maxRetryDelay: TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => exception is TransientMarkerException;
+    }
+
+    private sealed class OneShotRetryExecutionStrategyFactory(ExecutionStrategyDependencies dependencies)
+        : IExecutionStrategyFactory
+    {
+        public IExecutionStrategy Create() => new OneShotRetryExecutionStrategy(dependencies);
+    }
+
+    private sealed record RuntimeLocalMessage(string UniqueId) : IDomainEvent;
+
+    private sealed record RuntimeDistributedMessage(string UniqueId) : IIntegrationEvent;
 
     private sealed class RuntimeQueuedMessageSaveEntryProcessor : IHeadlessSaveEntryProcessor
     {
@@ -378,8 +608,8 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests
                 return;
             }
 
-            entity.AddMessage(new RuntimeLocalMessage("custom-local"));
-            entity.AddMessage(new RuntimeDistributedMessage("custom-distributed"));
+            entity.AddDomainEvent(new RuntimeLocalMessage("custom-local"));
+            entity.AddIntegrationEvent(new RuntimeDistributedMessage("custom-distributed"));
         }
     }
 

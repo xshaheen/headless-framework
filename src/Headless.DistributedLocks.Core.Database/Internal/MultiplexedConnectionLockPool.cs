@@ -82,7 +82,11 @@ internal sealed class MultiplexedConnectionLockPool
             finally
             {
                 // We took this lock from the pool, so always return it (or dispose if it is no longer useful).
-                await _StoreOrDisposeLockAsync(connectionString, existingLock, shouldDispose: canSafelyDisposeExistingLock)
+                await _StoreOrDisposeLockAsync(
+                        connectionString,
+                        existingLock,
+                        shouldDispose: canSafelyDisposeExistingLock
+                    )
                     .ConfigureAwait(false);
             }
         }
@@ -110,8 +114,10 @@ internal sealed class MultiplexedConnectionLockPool
 
         return result.Value.Handle;
 
-        ValueTask<MultiplexedConnectionLock.Result> _TryAcquireAsync(MultiplexedConnectionLock instance, bool opportunistic) =>
-            instance.TryAcquireAsync(name, timeout, strategy, keepaliveCadence, opportunistic, cancellationToken);
+        ValueTask<MultiplexedConnectionLock.Result> _TryAcquireAsync(
+            MultiplexedConnectionLock instance,
+            bool opportunistic
+        ) => instance.TryAcquireAsync(name, timeout, strategy, keepaliveCadence, opportunistic, cancellationToken);
     }
 
     private async ValueTask<MultiplexedConnectionLock?> _GetExistingLockOrDefaultAsync(string connectionString)

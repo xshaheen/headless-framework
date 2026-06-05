@@ -38,7 +38,9 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var writerId = Guid.NewGuid().ToString("N");
         var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
 
-        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
+        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(5), AbortToken))
+            .Should()
+            .BeTrue();
         var queued = await storage.TryAcquireWriteAsync(
             resource,
             writerId,
@@ -47,7 +49,12 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
             TimeSpan.FromSeconds(2),
             AbortToken
         );
-        var blockedReader = await storage.TryAcquireReadAsync(resource, "reader-2", TimeSpan.FromSeconds(5), AbortToken);
+        var blockedReader = await storage.TryAcquireReadAsync(
+            resource,
+            "reader-2",
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
 
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
         var readerAfterMarkerExpiry = await storage.TryAcquireReadAsync(
@@ -72,14 +79,18 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerId,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromSeconds(2),
-            AbortToken
-        )).Should().BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
+                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(2),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
 
         var shortExtend = await storage.TryExtendWriteAsync(resource, writerId, TimeSpan.FromSeconds(1), AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -100,15 +111,21 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
-        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(10), AbortToken)).Should().BeTrue();
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerId,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
-            TimeSpan.FromSeconds(10),
-            TimeSpan.FromSeconds(5),
-            AbortToken
-        )).Should().BeFalse();
+        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(10), AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
+                TimeSpan.FromSeconds(10),
+                TimeSpan.FromSeconds(5),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
 
         var renewed = await storage.TryExtendReadAsync(resource, "reader-1", TimeSpan.FromSeconds(10), AbortToken);
 
@@ -122,14 +139,18 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerId,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
-            ttl: null,
-            TimeSpan.FromSeconds(5),
-            AbortToken
-        )).Should().BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
+                ttl: null,
+                TimeSpan.FromSeconds(5),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
 
         var renewed = await storage.TryExtendWriteAsync(resource, writerId, TimeSpan.FromSeconds(1), AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
@@ -195,26 +216,36 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var writerB = Guid.NewGuid().ToString("N");
 
         // Reader present -> writer A plants a marker but cannot claim.
-        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(30), AbortToken)).Should().BeTrue();
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerA,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerA),
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(30),
-            AbortToken
-        )).Should().BeFalse();
+        (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(30), AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerA,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerA),
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeFalse();
 
         // Reader released -> writer B claims (clearing the stale marker) then releases.
         await storage.ReleaseReadAsync(resource, "reader-1", AbortToken);
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerB,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerB),
-            TimeSpan.FromSeconds(30),
-            TimeSpan.FromSeconds(30),
-            AbortToken
-        )).Should().BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerB,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerB),
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromSeconds(30),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
         await storage.ReleaseWriteAsync(resource, writerB, AbortToken);
 
         // No stale marker from writer A may block a fresh reader.
@@ -234,12 +265,16 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
             .BeTrue();
 
         // A null ttl must NOT promote a reader lease to infinite (zombie-reader hazard).
-        (await storage.TryExtendReadAsync(resource, "reader-1", ttl: null, AbortToken)).Should().BeTrue();
+        (await storage.TryExtendReadAsync(resource, "reader-1", ttl: null, AbortToken))
+            .Should()
+            .BeTrue();
 
         _timeProvider.Advance(TimeSpan.FromSeconds(6));
 
         // The reader stayed finite and is now expired.
-        (await storage.ValidateReadAsync(resource, "reader-1", AbortToken)).Should().BeFalse();
+        (await storage.ValidateReadAsync(resource, "reader-1", AbortToken))
+            .Should()
+            .BeFalse();
         (await storage.GetReaderCountAsync(resource, AbortToken)).Should().Be(0);
     }
 
@@ -250,17 +285,23 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
-        (await storage.TryAcquireWriteAsync(
-            resource,
-            writerId,
-            DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
-            TimeSpan.FromSeconds(5),
-            TimeSpan.FromSeconds(5),
-            AbortToken
-        )).Should().BeTrue();
+        (
+            await storage.TryAcquireWriteAsync(
+                resource,
+                writerId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(writerId),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
 
         // Writers may go infinite: a null ttl extends to a non-expiring lease.
-        (await storage.TryExtendWriteAsync(resource, writerId, ttl: null, AbortToken)).Should().BeTrue();
+        (await storage.TryExtendWriteAsync(resource, writerId, ttl: null, AbortToken))
+            .Should()
+            .BeTrue();
 
         _timeProvider.Advance(TimeSpan.FromSeconds(60));
 

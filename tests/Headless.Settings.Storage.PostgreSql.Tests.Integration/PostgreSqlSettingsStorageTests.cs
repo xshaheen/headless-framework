@@ -1,15 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
 using Headless.Settings.Entities;
 using Headless.Settings.Repositories;
+using Headless.Settings.Seeders;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
-using Headless;
-using Microsoft.Extensions.Configuration;
-using Headless.Settings.Seeders;
 
 namespace Tests;
 
@@ -27,7 +27,8 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>()
+        var initializer = host
+            .Services.GetRequiredService<IEnumerable<IInitializer>>()
             .Single(x => x is not SettingsInitializationBackgroundService);
         var repository = host.Services.GetRequiredService<ISettingValueRecordRepository>();
         var record = new SettingValueRecord(Guid.NewGuid(), "Theme", "Dark", "Global");
@@ -85,7 +86,9 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         await host.StartAsync(TestContext.Current.CancellationToken);
 
         // then
-        (await _IndexExistsAsync("IX_SettingDefinitions_Name")).Should().BeTrue();
+        (await _IndexExistsAsync("IX_SettingDefinitions_Name"))
+            .Should()
+            .BeTrue();
         (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_ProviderKey")).Should().BeTrue();
         (await _IndexExistsAsync("IX_SettingValues_Name_ProviderName_NullProviderKey")).Should().BeTrue();
     }
@@ -96,14 +99,14 @@ public sealed class PostgreSqlSettingsStorageTests(PostgreSqlSettingsFixture fix
         // unify: management-core deps
         builder.Services.AddSingleton(TimeProvider.System);
         // AddHeadlessSettings now registers the management core, which requires IStringEncryptionService.
-        builder.Configuration.AddInMemoryCollection(
-            [
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-                new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            ]
+        builder.Configuration.AddInMemoryCollection([
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
+            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
+        ]);
+        builder.Services.AddStringEncryptionService(
+            builder.Configuration.GetRequiredSection("Headless:StringEncryption")
         );
-        builder.Services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
         builder.Services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(options => options.Schema = _Schema);

@@ -48,7 +48,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         services.AddSingleton(Substitute.For<ICurrentTenant>());
         services.AddSingleton(Substitute.For<IApplicationInformationAccessor>());
         services.AddSingleton(Substitute.For<ICurrentPrincipalAccessor>());
-        services.AddServiceProviderLocalMessagePublisher();
+        services.AddHeadlessLocalEventBus();
 
         // Messages
         services.AddHeadlessMessaging(setup =>
@@ -64,9 +64,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         // Resource Lock
         services.AddDistributedLock<RedisDistributedLockStorage>(static _ => { });
 
-        services.AddDbContextFactory<FeaturesTestDbContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        services.AddDbContextFactory<FeaturesTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
 
         services.AddHeadlessFeatures(setup =>
         {

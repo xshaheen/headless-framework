@@ -71,7 +71,13 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
         var resource = Faker.Random.AlphaNumeric(10);
         var first = await SemaphoreStorage.TryAcquireAsync(resource, "lock-1", 1, TimeSpan.FromMinutes(5), AbortToken);
 
-        var rejected = await SemaphoreStorage.TryAcquireAsync(resource, "lock-2", 1, TimeSpan.FromMinutes(5), AbortToken);
+        var rejected = await SemaphoreStorage.TryAcquireAsync(
+            resource,
+            "lock-2",
+            1,
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
 
         await SemaphoreStorage.ReleaseAsync(resource, "lock-1", AbortToken);
         var second = await SemaphoreStorage.TryAcquireAsync(resource, "lock-3", 1, TimeSpan.FromMinutes(5), AbortToken);
@@ -112,7 +118,12 @@ public abstract class DistributedSemaphoreStorageTestsBase : TestBase
 
         // A shorter extend must not move the slot's expiry earlier (GREATEST semantics): after the shorter
         // extend's own window would have lapsed, the original longer lease still validates as live.
-        var shorterExtend = await SemaphoreStorage.TryExtendAsync(resource, "lock-1", TimeSpan.FromMilliseconds(100), AbortToken);
+        var shorterExtend = await SemaphoreStorage.TryExtendAsync(
+            resource,
+            "lock-1",
+            TimeSpan.FromMilliseconds(100),
+            AbortToken
+        );
         await AdvanceTimeAsync(TimeSpan.FromMilliseconds(400), AbortToken);
         var stillValid = await SemaphoreStorage.ValidateAsync(resource, "lock-1", AbortToken);
 

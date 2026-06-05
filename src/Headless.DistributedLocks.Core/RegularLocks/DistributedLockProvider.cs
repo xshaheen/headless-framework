@@ -23,10 +23,7 @@ public sealed class DistributedLockProvider(
 ) : IDistributedLockProvider, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
 {
     private readonly ScopedDistributedLockStorage _storage = new(storage, lockOptions.KeyPrefix);
-    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(
-        outboxBus,
-        logger
-    );
+    private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
     private readonly TimeSpan _disposeTimeout = lockOptions.DisposeTimeout;
 
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
@@ -768,8 +765,7 @@ public sealed class DistributedLockProvider(
                 new RetryStrategyOptions
                 {
                     ShouldHandle = static args => new ValueTask<bool>(
-                        args.Outcome.Exception is { } ex
-                            && DistributedLockCoreHelpers.IsTransientStorageException(ex)
+                        args.Outcome.Exception is { } ex && DistributedLockCoreHelpers.IsTransientStorageException(ex)
                     ),
                     MaxRetryAttempts = 4, // 5 total attempts (1 initial + 4 retries)
                     BackoffType = DelayBackoffType.Exponential,
@@ -837,8 +833,7 @@ public sealed class DistributedLockProvider(
     internal sealed class LockReleasedConsumer(
         IEnumerable<ICanReceiveLockReleased> receivers,
         ILogger<LockReleasedConsumer> logger
-    )
-        : IConsume<DistributedLockReleased>
+    ) : IConsume<DistributedLockReleased>
     {
         public ValueTask ConsumeAsync(
             ConsumeContext<DistributedLockReleased> context,

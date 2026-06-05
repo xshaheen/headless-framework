@@ -2,7 +2,7 @@ using Headless.Domain;
 
 namespace Tests.Fixture;
 
-public sealed record TestDistributedMessage(string Text) : IDistributedMessage
+public sealed record TestDistributedMessage(string Text) : IIntegrationEvent
 {
     public string UniqueId { get; } = Guid.NewGuid().ToString();
 
