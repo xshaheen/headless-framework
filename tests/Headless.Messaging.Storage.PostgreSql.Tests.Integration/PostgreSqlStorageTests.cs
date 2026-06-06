@@ -152,7 +152,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System
         );
     }

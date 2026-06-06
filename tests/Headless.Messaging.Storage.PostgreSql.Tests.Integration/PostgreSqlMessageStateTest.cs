@@ -40,7 +40,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System
         );
 

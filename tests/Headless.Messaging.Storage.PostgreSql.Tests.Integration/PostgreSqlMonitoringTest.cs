@@ -409,7 +409,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System
         );
     }
