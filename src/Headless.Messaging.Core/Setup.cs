@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -270,7 +271,10 @@ public static class SetupMessaging
         services.TryAddSingleton(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
-        services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+        // GUID ordering must match each storage backend's index sort order, so register both strategies keyed and
+        // let the storage resolve the one it needs ([FromKeyedServices]): PostgreSql -> Version7 (uuid byte order),
+        // SqlServer -> SqlServer comb. The unkeyed default (Version7) serves backend-agnostic consumers.
+        services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton

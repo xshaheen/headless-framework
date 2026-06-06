@@ -78,111 +78,6 @@ public sealed class SequentialGuidTests
     }
 
     [Fact]
-    public void next_sequential_as_string_should_return_unique_guids()
-    {
-        // given
-        const int count = 1000;
-        var guids = new HashSet<Guid>();
-
-        // when
-        for (var i = 0; i < count; i++)
-        {
-            guids.Add(SequentialGuid.NextSequentialAsString());
-        }
-
-        // then
-        guids.Should().HaveCount(count);
-    }
-
-    [Fact]
-    public void next_sequential_as_string_should_be_mostly_sequential_over_time()
-    {
-        // given - collect GUIDs over a span of time to ensure timestamp differences
-        var guids = new List<string>();
-
-        // when - generate GUIDs with small delays to ensure timestamp progression
-        for (var i = 0; i < 10; i++)
-        {
-            guids.Add(SequentialGuid.NextSequentialAsString().ToString());
-            if (i < 9)
-            {
-                Thread.Sleep(2); // Small delay to ensure timestamp advances
-            }
-        }
-
-        // then - verify they are in ascending order when sorted
-        // The timestamp is in the first 6 bytes, so string comparison should work
-        var sorted = guids.OrderBy(g => g, StringComparer.Ordinal).ToList();
-        guids.Should().Equal(sorted, "GUIDs generated over time should be sequential in string format");
-    }
-
-    [Fact]
-    public void next_sequential_as_binary_should_return_unique_guids()
-    {
-        // given
-        const int count = 1000;
-        var guids = new HashSet<Guid>();
-
-        // when
-        for (var i = 0; i < count; i++)
-        {
-            guids.Add(SequentialGuid.NextSequentialAsBinary());
-        }
-
-        // then
-        guids.Should().HaveCount(count);
-    }
-
-    [Fact]
-    public void next_sequential_as_binary_should_have_monotonic_timestamps()
-    {
-        // given - binary sequential places timestamp in bytes 0-5
-        var guids = new List<Guid>();
-        for (var i = 0; i < 100; i++)
-        {
-            guids.Add(SequentialGuid.NextSequentialAsBinary());
-        }
-
-        // when - extract and compare timestamp portions
-        var allMonotonic = true;
-        for (var i = 0; i < guids.Count - 1; i++)
-        {
-            var firstBytes = guids[i].ToByteArray();
-            var secondBytes = guids[i + 1].ToByteArray();
-
-            // Timestamp is in bytes 0-5 (6 bytes, big-endian)
-            var firstTimestamp = new[]
-            {
-                firstBytes[0],
-                firstBytes[1],
-                firstBytes[2],
-                firstBytes[3],
-                firstBytes[4],
-                firstBytes[5],
-            };
-            var secondTimestamp = new[]
-            {
-                secondBytes[0],
-                secondBytes[1],
-                secondBytes[2],
-                secondBytes[3],
-                secondBytes[4],
-                secondBytes[5],
-            };
-
-            var comparison = _CompareByteArrays(firstTimestamp, secondTimestamp);
-            if (comparison > 0) // timestamp should never decrease
-            {
-                allMonotonic = false;
-                break;
-            }
-        }
-
-        // then
-        allMonotonic.Should().BeTrue("timestamps in sequential binary GUIDs should be monotonically non-decreasing");
-    }
-
-    [Fact]
     public void should_be_thread_safe()
     {
         // given
@@ -199,15 +94,13 @@ public sealed class SequentialGuidTests
                 for (var i = 0; i < guidsPerThread; i++)
                 {
                     allGuids.Add(SequentialGuid.NextSequentialAtEnd());
-                    allGuids.Add(SequentialGuid.NextSequentialAsString());
-                    allGuids.Add(SequentialGuid.NextSequentialAsBinary());
                 }
             }
         );
 
         // then
         var uniqueGuids = new HashSet<Guid>(allGuids);
-        uniqueGuids.Should().HaveCount(threadCount * guidsPerThread * 3);
+        uniqueGuids.Should().HaveCount(threadCount * guidsPerThread);
     }
 
     private static int _CompareByteArrays(byte[] first, byte[] second)

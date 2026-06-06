@@ -52,7 +52,7 @@ public static class AuditIntegrationFixture
         services.AddSingleton<IClock>(clock);
         services.AddSingleton<ICurrentTenant>(currentTenant);
         services.AddSingleton<ICurrentUser>(currentUser);
-        services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
         services.AddHeadlessDbContextServices();
 
         // Audit services

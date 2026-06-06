@@ -68,7 +68,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 ## Quick Orientation
 
 - **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), GUID generation (`SequentialGuid`, `IGuidGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
-- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging).
+- **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration.
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
@@ -84,7 +84,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 - For local (in-process) domain events, register `AddHeadlessLocalEventBus()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit `IIntegrationEvent` via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically.
-- `Headless.Extensions` has no configuration. `Headless.Core` implementations are registered by `Headless.Api.Core` or other host packages — do not register them manually.
+- `Headless.Extensions` has no configuration. Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default.
 - `Headless.Settings.Core` requires `IStringEncryptionService` to be registered before `AddHeadlessSettings(...)`. Recommended: bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
 - Use `LogState` with `LoggerExtensions` for structured logging with tags and properties.
@@ -117,7 +117,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
     - `TenantInformation` - Tenant data
 
 - **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
-- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle)
+- **ID Generation**: `IGuidGenerator` (`SequentialGuidGenerator` supporting time-ordered `Version7` and SQL Server comb `SqlServer` strategies)
 - **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
 - **Collections**: `ParallelForEachAsync`, `DetectChanges`, `EquatableArray<T>`, `ComparerFactory`, `TypeList`
 - **LINQ**: `PredicateBuilder` for composing EF Core expressions (`And`, `Or`, `Not`)
@@ -224,6 +224,7 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
     - `Run.DelayedAsync` - Deferred async invocation honoring `TimeProvider` and cancellation
     - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
     - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+    - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
 ## Installation
 
@@ -294,7 +295,7 @@ var result = await _RetryPipeline.ExecuteAsync(
 
 ## Configuration
 
-No configuration required. Implementations are registered by `Headless.Api.Core` or other host packages.
+No configuration required for the abstractions. Host/package setup can call `AddHeadlessGuidGenerator()` when it needs the framework GUID generator defaults.
 
 ## Dependencies
 
@@ -302,12 +303,14 @@ No configuration required. Implementations are registered by `Headless.Api.Core`
 - `Headless.Extensions`
 - `Headless.Serializer.Json`
 - `FluentValidation`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
 
 ## Side Effects
 
-## None. This is an abstractions package.
+- `AddHeadlessGuidGenerator()` registers keyed singleton `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`
+- `AddHeadlessGuidGenerator()` also registers an unkeyed singleton `IGuidGenerator` using `Version7` unless a caller supplies another default strategy
 
 # Headless.Checks
 

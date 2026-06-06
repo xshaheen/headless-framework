@@ -110,7 +110,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 
 - `HeadlessDbContext` base context (requires `HeadlessDbContextServices` ctor parameter and `DefaultSchema` override)
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)`
-- Application-generated Guid keys: every `IEntity<Guid>` mapped in a `HeadlessDbContext` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side as the entity transitions to `Added` (via `Add`, a direct state change, or attach-then-promote) — never database-generated. Guid keys come from `IGuidGenerator` (sequential, index-friendly). The id is therefore known before `SaveChanges` (usable for foreign keys, outbox, and domain events in the same unit of work) and is provider-portable.
+- Application-generated Guid keys: every `IEntity<Guid>` mapped in a `HeadlessDbContext` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side as the entity transitions to `Added` (via `Add`, a direct state change, or attach-then-promote) — never database-generated. Guid keys come from provider-keyed `IGuidGenerator` strategies (`SqlServer` comb for SQL Server, `Version7` for other providers). The id is therefore known before `SaveChanges` (usable for foreign keys, outbox, and domain events in the same unit of work) and is provider-portable.
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
 - Three named global filters: `MultiTenancyFilter` (`IMultiTenant`), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
 - Composable save pipeline driven by `HeadlessDbContextOptions` and a fixed default chain of `IHeadlessSaveEntryProcessor` instances
@@ -258,7 +258,7 @@ Known gaps:
 - Registers `HeadlessDbContextServices`, `IHeadlessSaveChangesPipeline`, and the default save-entry processor chain (`HeadlessEntitySaveEntryProcessor`, `HeadlessAuditSaveEntryProcessor`, `HeadlessLocalEventSaveEntryProcessor`, `HeadlessMessageCollectorSaveEntryProcessor`)
 - `.AddDomainEvents()` registers `ILocalEventBus` (via `services.AddHeadlessLocalEventBus()`); `.AddIntegrationEventOutbox()` (from `Headless.Orm.EntityFramework.Messaging`) registers `IHeadlessOutboxDispatcher`. Neither is registered by default — emitting events without the matching tier throws at save
 - Registers `TenantWriteGuardOptions` and `ITenantWriteGuardBypass` for opt-in tenant write protection
-- Registers framework defaults via `TryAddSingleton`: `IClock`, `IGuidGenerator` (`SequentialAtEndGuidGenerator`), `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
+- Registers framework defaults via `TryAddSingleton`: `IClock`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenant`, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`, `TimeProvider.System`
 - Replaces compiled query cache key generator so tenant-scoped queries share plans correctly
 - Forwards `DbContext` to registered `TDbContext` via scoped registration
 

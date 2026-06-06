@@ -9,6 +9,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -24,7 +25,8 @@ public sealed class PostgreSqlDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
-    IGuidGenerator guidGenerator,
+    // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
+    [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {

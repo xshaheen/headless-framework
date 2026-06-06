@@ -138,7 +138,7 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             sqlServerOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            new SequentialAtEndGuidGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System
         );
     }

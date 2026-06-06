@@ -394,7 +394,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         IOptions<MessagingOptions> optionsAccessor
     ) =>
         new MessagePublishRequestFactory(
-            new SequentialAtEndGuidGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()
