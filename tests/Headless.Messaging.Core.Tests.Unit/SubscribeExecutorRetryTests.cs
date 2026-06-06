@@ -31,7 +31,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = IntentType.Bus,

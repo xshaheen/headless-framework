@@ -691,7 +691,7 @@ internal static partial class RetryProcessorLog
         Level = LogLevel.Debug,
         Message = "Skipping retry for message {StorageId} — circuit open for group {Group}"
     )]
-    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, long storageId, string? group);
+    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, Guid storageId, string? group);
 
     [LoggerMessage(EventId = 3110, Level = LogLevel.Warning, Message = "Get messages from storage failed. Retrying...")]
     public static partial void GetMessagesFromStorageFailed(this ILogger logger, Exception ex);

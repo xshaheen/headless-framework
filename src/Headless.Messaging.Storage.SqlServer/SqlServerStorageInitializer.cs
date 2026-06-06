@@ -86,7 +86,7 @@ public sealed class SqlServerStorageInitializer(
 
             BEGIN TRY
                 IF TYPE_ID(N'{schema}.HeadlessMessagingIdList') IS NULL
-                    CREATE TYPE [{schema}].[HeadlessMessagingIdList] AS TABLE ([Id] BIGINT NOT NULL PRIMARY KEY);
+                    CREATE TYPE [{schema}].[HeadlessMessagingIdList] AS TABLE ([Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY);
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() <> 2714 THROW;
@@ -96,7 +96,7 @@ public sealed class SqlServerStorageInitializer(
                 IF OBJECT_ID(N'{GetReceivedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetReceivedTableName()}(
-                        [Id] [bigint] NOT NULL,
+                        [Id] [uniqueidentifier] NOT NULL,
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
                         [Group] [nvarchar](200) NULL,
@@ -155,7 +155,7 @@ public sealed class SqlServerStorageInitializer(
                 IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetPublishedTableName()}(
-                        [Id] [bigint] NOT NULL,
+                        [Id] [uniqueidentifier] NOT NULL,
                         [Version] [nvarchar](20) NOT NULL,
                         [Name] [nvarchar](200) NOT NULL,
                         [Content] [nvarchar](max) NULL,

@@ -70,7 +70,7 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         ((RecordingDbTransaction)transaction.DbTransaction!).RollbackCount.Should().Be(1);
     }
 
-    private static MediumMessage _CreateMessage(long storageId)
+    private static MediumMessage _CreateMessage(Guid storageId)
     {
         return new MediumMessage
         {

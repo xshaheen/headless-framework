@@ -248,7 +248,7 @@ public sealed class RetryHelperTests : TestBase
     private static MediumMessage _CreateMessage() =>
         new()
         {
-            StorageId = 1,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(new Dictionary<string, string?>(StringComparer.Ordinal), null),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -598,7 +598,7 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
-            StorageId = 0,
+            StorageId = Guid.Empty,
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
@@ -610,7 +610,7 @@ public sealed class RetryHelperTests : TestBase
             (_, _) => throw new InvalidOperationException("callback fault"),
             failed,
             timeout: TimeSpan.FromSeconds(1),
-            storageId: 42,
+            storageId: Guid.Parse("00000000-0000-0000-0000-000000000042"),
             logger,
             cancellationToken: CancellationToken.None
         );
@@ -630,7 +630,7 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
-            StorageId = 0,
+            StorageId = Guid.Empty,
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
@@ -661,7 +661,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromSeconds(30),
-            storageId: 7,
+            storageId: Guid.Parse("00000000-0000-0000-0000-000000000007"),
             Substitute.For<ILogger>(),
             cancellationToken: hostCts.Token
         );
@@ -682,7 +682,7 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
-            StorageId = 0,
+            StorageId = Guid.Empty,
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
@@ -698,7 +698,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromMilliseconds(100),
-            storageId: 99,
+            storageId: Guid.Parse("00000000-0000-0000-0000-000000000099"),
             Substitute.For<ILogger>(),
             cancellationToken: CancellationToken.None
         );
@@ -723,7 +723,7 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
-            StorageId = 0,
+            StorageId = Guid.Empty,
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
@@ -747,7 +747,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromMilliseconds(50),
-            storageId: 101,
+            storageId: Guid.Parse("00000000-0000-0000-0000-000000000101"),
             Substitute.For<ILogger>(),
             cancellationToken: CancellationToken.None
         );
@@ -780,7 +780,7 @@ public sealed class RetryHelperTests : TestBase
             MessageType = MessageType.Subscribe,
             ServiceProvider = new ServiceCollection().BuildServiceProvider(),
             Exception = new InvalidOperationException("orig"),
-            StorageId = 0,
+            StorageId = Guid.Empty,
             RetryCount = 0,
             IntentType = IntentType.Bus,
         };
@@ -801,7 +801,7 @@ public sealed class RetryHelperTests : TestBase
             },
             failed,
             timeout: TimeSpan.FromSeconds(30),
-            storageId: 202,
+            storageId: Guid.Parse("00000000-0000-0000-0000-000000000202"),
             logger,
             cancellationToken: hostCts.Token
         );

@@ -57,7 +57,6 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             _timeProvider
         );
         _monitoringApi = _storage.GetMonitoringApi();
@@ -194,7 +193,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     public async Task should_return_null_for_nonexistent_published_message()
     {
         // when
-        var retrieved = await _monitoringApi.GetPublishedMessageAsync(999999999L, AbortToken);
+        var retrieved = await _monitoringApi.GetPublishedMessageAsync(Guid.NewGuid(), AbortToken);
 
         // then
         retrieved.Should().BeNull();

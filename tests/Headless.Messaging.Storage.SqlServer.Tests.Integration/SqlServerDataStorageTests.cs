@@ -55,7 +55,6 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             _timeProvider
         );
 
@@ -89,7 +88,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
 
         // then
         stored.Should().NotBeNull();
-        stored.StorageId.Should().BeGreaterThan(0);
+        stored.StorageId.Should().NotBe(Guid.Empty);
         stored.Origin.Should().NotBeNull();
         stored.Retries.Should().Be(0);
     }
@@ -130,7 +129,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_return_zero_when_deleting_nonexistent_published_message()
     {
         // when
-        var deleted = await _storage.DeletePublishedMessageAsync(999999999L, AbortToken);
+        var deleted = await _storage.DeletePublishedMessageAsync(Guid.NewGuid(), AbortToken);
 
         // then
         deleted.Should().Be(0);

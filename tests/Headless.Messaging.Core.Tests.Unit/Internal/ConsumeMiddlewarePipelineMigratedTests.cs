@@ -294,7 +294,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
             descriptor,
             new MediumMessage
             {
-                StorageId = 10,
+                StorageId = Guid.NewGuid(),
                 Origin = new Message(headers, new MigratedConsumeMessage("stored")),
                 Content = "{}",
                 IntentType = IntentType.Bus,

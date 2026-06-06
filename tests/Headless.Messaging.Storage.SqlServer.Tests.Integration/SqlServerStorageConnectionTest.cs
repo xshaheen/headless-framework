@@ -45,7 +45,6 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             TimeProvider.System
         );
 

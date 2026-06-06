@@ -49,7 +49,6 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             TimeProvider.System
         );
 
@@ -146,7 +145,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_published_message()
     {
         // given
-        const long nonExistentId = 999999999L;
+        var nonExistentId = Guid.NewGuid();
 
         // when
         var deleted = await _storage.DeletePublishedMessageAsync(nonExistentId, AbortToken);
@@ -159,7 +158,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_received_message()
     {
         // given
-        const long nonExistentId = 999999999L;
+        var nonExistentId = Guid.NewGuid();
 
         // when
         var deleted = await _storage.DeleteReceivedMessageAsync(nonExistentId, AbortToken);
@@ -176,7 +175,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var expiredTime = DateTime.UtcNow.AddDays(-1);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
 
         await connection.ExecuteAsync(
@@ -243,7 +242,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
 
@@ -281,7 +280,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
@@ -318,7 +317,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(

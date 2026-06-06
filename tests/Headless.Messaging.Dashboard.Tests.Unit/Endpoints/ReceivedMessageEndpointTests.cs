@@ -27,7 +27,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedMessageDetails_should_return_message_content()
     {
         // given
-        const long messageId = 456;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111456");
         var message = new MediumMessage
         {
             StorageId = messageId,
@@ -69,7 +69,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedMessageDetails_should_return_404_for_missing_message()
     {
         // given
-        const long messageId = 888;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111888");
         _monitoringApi
             .GetReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<MediumMessage?>(null));
@@ -94,7 +94,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             [
                 new MessageView
                 {
-                    StorageId = 456,
+                    StorageId = Guid.Parse("11111111-1111-1111-1111-111111111456"),
                     MessageId = "logical-rec-456",
                     Version = "v1",
                     Name = "orders.received",
@@ -137,7 +137,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         payload["totals"].GetInt32().Should().Be(1);
 
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
-        item.GetProperty("storageId").GetString().Should().Be("456");
+        item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111456");
         item.GetProperty("messageId").GetString().Should().Be("logical-rec-456");
         item.GetProperty("group").GetString().Should().Be("workers");
         item.GetProperty("intentType").GetInt32().Should().Be((int)IntentType.Queue);
@@ -232,7 +232,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
     public async Task ReceivedDelete_should_return_204_on_success()
     {
         // given
-        const long messageId = 789;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111789");
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
         _dataStorage
             .DeleteReceivedMessageAsync(messageId, Arg.Any<CancellationToken>())

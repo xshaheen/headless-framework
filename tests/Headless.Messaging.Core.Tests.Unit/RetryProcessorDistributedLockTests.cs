@@ -30,7 +30,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             storage,
             Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialAtEndGuidGenerator(),
             TimeProvider.System,
             NullLogger<DistributedLock>.Instance
         );

@@ -12,7 +12,7 @@ public interface IDataStorage
     // Dashboard api
     IMonitoringApi GetMonitoringApi();
 
-    ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default);
+    ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Updates the status of a published message in storage.
@@ -150,7 +150,7 @@ public interface IDataStorage
             name,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -199,7 +199,7 @@ public interface IDataStorage
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -277,11 +277,11 @@ public interface IDataStorage
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default);
 
-    ValueTask<int> DeleteReceivedMessagesAsync(IReadOnlyList<long> ids, CancellationToken cancellationToken = default);
+    ValueTask<int> DeleteReceivedMessagesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
 
-    ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default);
+    ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default);
 
-    ValueTask<int> DeletePublishedMessagesAsync(IReadOnlyList<long> ids, CancellationToken cancellationToken = default);
+    ValueTask<int> DeletePublishedMessagesAsync(IReadOnlyList<Guid> ids, CancellationToken cancellationToken = default);
 }

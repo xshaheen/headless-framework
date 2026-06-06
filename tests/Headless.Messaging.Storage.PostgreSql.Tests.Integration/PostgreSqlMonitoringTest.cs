@@ -138,7 +138,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
     public async Task should_return_null_for_nonexistent_message()
     {
         var monitoringApi = _storage!.GetMonitoringApi();
-        var result = await monitoringApi.GetPublishedMessageAsync(999_999_999, AbortToken);
+        var result = await monitoringApi.GetPublishedMessageAsync(Guid.NewGuid(), AbortToken);
         result.Should().BeNull();
     }
 
@@ -291,7 +291,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
 
         // then — message is visible within the transaction
         result.Should().NotBeNull();
-        result.StorageId.Should().BeGreaterThan(0);
+        result.StorageId.Should().NotBe(Guid.Empty);
 
         await transaction.CommitAsync(AbortToken);
 
@@ -410,7 +410,6 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            provider.GetRequiredService<ILongIdGenerator>(),
             TimeProvider.System
         );
     }

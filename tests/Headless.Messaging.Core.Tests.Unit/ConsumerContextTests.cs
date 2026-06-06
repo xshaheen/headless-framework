@@ -111,7 +111,7 @@ public sealed class ConsumerContextTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = message,
             Content = "{}",
             IntentType = IntentType.Bus,

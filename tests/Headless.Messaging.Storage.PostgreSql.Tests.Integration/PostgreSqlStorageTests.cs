@@ -156,7 +156,6 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             TimeProvider.System
         );
     }

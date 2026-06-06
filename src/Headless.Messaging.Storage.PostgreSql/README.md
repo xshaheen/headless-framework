@@ -10,6 +10,7 @@ Provides durable, transactional message storage using PostgreSQL with automatic 
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
 - **Schema Bootstrap**: Automatic table and index creation, including durable bus/queue intent columns
+- **GUID Row IDs**: Message storage identifiers are `Guid` values persisted as PostgreSQL `UUID` columns
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
@@ -58,6 +59,7 @@ options.UsePostgreSql(config =>
   - `{schema}.published` - Published messages
   - `{schema}.received` - Received messages
   - `{schema}.lock` - Distributed lock table
+- Uses PostgreSQL `UUID` primary keys for message row IDs
 - Creates indexes for message queries
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages

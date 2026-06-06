@@ -154,7 +154,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                 return ValueTask.FromResult(
                     new MediumMessage
                     {
-                        StorageId = 1L,
+                        StorageId = Guid.NewGuid(),
                         Origin = content,
                         Content = "{}",
                         IntentType = IntentType.Bus,

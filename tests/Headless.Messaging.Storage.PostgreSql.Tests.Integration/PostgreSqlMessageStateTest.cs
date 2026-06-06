@@ -44,7 +44,6 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
             TimeProvider.System
         );
 
@@ -260,7 +259,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_change_multiple_messages_to_delayed_state()
     {
         // given
-        var ids = new List<long>();
+        var ids = new List<Guid>();
         for (var i = 0; i < 5; i++)
         {
             var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);

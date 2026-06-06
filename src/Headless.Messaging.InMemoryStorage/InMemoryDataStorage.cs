@@ -15,13 +15,12 @@ namespace Headless.Messaging.InMemoryStorage;
 internal sealed class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
-    public ConcurrentDictionary<long, MemoryMessage> PublishedMessages { get; } = new();
+    public ConcurrentDictionary<Guid, MemoryMessage> PublishedMessages { get; } = new();
 
-    public ConcurrentDictionary<long, MemoryMessage> ReceivedMessages { get; } = new();
+    public ConcurrentDictionary<Guid, MemoryMessage> ReceivedMessages { get; } = new();
 
     // Secondary index keyed on the SQL-providers' upsert identity (Version, MessageId, Group?, IntentType).
     // Maps to the primary row id in <see cref="ReceivedMessages"/>. The lookup that backs
@@ -31,7 +30,7 @@ internal sealed class InMemoryDataStorage(
     // equality for each component, matching the SQL providers' BINARY-collation key semantics.
     private readonly ConcurrentDictionary<
         (string Version, string MessageId, string? Group, IntentType IntentType),
-        long
+        Guid
     > _receivedIdentityIndex = new();
 
     // Serializes the lookup-then-insert/update paths in BOTH StoreReceivedExceptionMessageAsync
@@ -48,7 +47,7 @@ internal sealed class InMemoryDataStorage(
         _receivedIdentityIndex.Clear();
     }
 
-    public ValueTask ChangePublishStateToDelayedAsync(long[] storageIds, CancellationToken cancellationToken = default)
+    public ValueTask ChangePublishStateToDelayedAsync(Guid[] storageIds, CancellationToken cancellationToken = default)
     {
         foreach (var storageId in storageIds)
         {
@@ -181,7 +180,7 @@ internal sealed class InMemoryDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = Guid.NewGuid(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -221,7 +220,7 @@ internal sealed class InMemoryDataStorage(
             name,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -247,7 +246,7 @@ internal sealed class InMemoryDataStorage(
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = origin,
                 Content = content,
                 IntentType = IntentType.Bus,
@@ -330,7 +329,7 @@ internal sealed class InMemoryDataStorage(
                 return ValueTask.FromResult(true);
             }
 
-            var id = longIdGenerator.Create();
+            var id = Guid.NewGuid();
             ReceivedMessages[id] = new MemoryMessage
             {
                 StorageId = id,
@@ -497,7 +496,7 @@ internal sealed class InMemoryDataStorage(
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -517,7 +516,7 @@ internal sealed class InMemoryDataStorage(
     {
         var mdMessage = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = Guid.NewGuid(),
             Origin = message.Origin,
             Content = serialized,
             IntentType = message.IntentType,
@@ -606,7 +605,7 @@ internal sealed class InMemoryDataStorage(
     }
 
     private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(
-        ConcurrentDictionary<long, MemoryMessage> source,
+        ConcurrentDictionary<Guid, MemoryMessage> source,
         CancellationToken cancellationToken
     )
     {
@@ -691,7 +690,7 @@ internal sealed class InMemoryDataStorage(
         };
 
     private static ValueTask<bool> _LeaseAsync(
-        ConcurrentDictionary<long, MemoryMessage> messages,
+        ConcurrentDictionary<Guid, MemoryMessage> messages,
         MediumMessage message,
         DateTime lockedUntil,
         TimeProvider timeProvider,
@@ -728,7 +727,7 @@ internal sealed class InMemoryDataStorage(
         }
     }
 
-    public ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (ReceivedMessages.TryRemove(id, out var removed))
@@ -740,7 +739,7 @@ internal sealed class InMemoryDataStorage(
     }
 
     public ValueTask<int> DeleteReceivedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -773,7 +772,7 @@ internal sealed class InMemoryDataStorage(
         }
     }
 
-    public ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var deleteResult = PublishedMessages.TryRemove(id, out _);
@@ -781,7 +780,7 @@ internal sealed class InMemoryDataStorage(
     }
 
     public ValueTask<int> DeletePublishedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
