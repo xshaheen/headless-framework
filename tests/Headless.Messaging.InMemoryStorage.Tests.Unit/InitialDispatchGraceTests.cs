@@ -106,7 +106,6 @@ public sealed class InitialDispatchGraceTests
             x.RetryPolicy.MaxPersistedRetries = 4;
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton<TimeProvider>(fakeClock);
 
         var provider = services.BuildServiceProvider();

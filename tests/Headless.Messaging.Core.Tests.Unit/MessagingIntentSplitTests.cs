@@ -394,7 +394,7 @@ public sealed class MessagingIntentSplitTests : TestBase
         IOptions<MessagingOptions> optionsAccessor
     ) =>
         new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialAtEndGuidGenerator(),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()

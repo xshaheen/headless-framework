@@ -182,7 +182,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         var resolvedTenant = currentTenant ?? new StubCurrentTenant(ambientTenantId);
 
         return new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialAtEndGuidGenerator(),
             TimeProvider.System,
             Options.Create(options),
             resolvedTenant

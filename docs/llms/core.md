@@ -67,7 +67,7 @@ packages: Base, BuildingBlocks, Checks, Domain, Domain.LocalEventBus, Security.A
 
 ## Quick Orientation
 
-- **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), ID generation (`SnowflakeId`, `SequentialGuid`, `IGuidGenerator`, `ILongIdGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
+- **`Headless.Extensions`** — utility extensions, domain primitives (`UserId`, `AccountId`, `Money`, `PhoneNumber`), result pattern (`ApiResult<T>`, `Result<TValue, TError>`), error hierarchy (`ResultError`, `NotFoundError`, `ValidationError`), GUID generation (`SequentialGuid`, `IGuidGenerator`), collection helpers, pagination, constants (`JwtClaimTypes`, `RegexPatterns`, `HttpHeaderNames`), and validators.
 - **`Headless.Core`** — cross-cutting abstractions: `IClock`, `ICurrentUser`, `ICurrentTenant`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`Run` retry helper, `SnappyCompressor`, `LogState` structured logging).
 - **`Headless.Security.Abstractions`** — security contracts and options: `IStringEncryptionService`, `IStringHashService`, `StringEncryptionOptions`, `StringHashOptions`, and their validators. `IStringHashService.Create(...)` supports an optional salt and can fall back to `StringHashOptions.DefaultSalt` or an empty salt when no default is configured.
 - **`Headless.Security`** — default implementations and DI helpers for string encryption and hashing. `AddStringEncryptionService(...)` and `AddStringHashService(...)` are idempotent: the first registration wins.
@@ -117,7 +117,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
     - `TenantInformation` - Tenant data
 
 - **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
-- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle), `ILongIdGenerator` (`SnowflakeId`)
+- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle)
 - **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
 - **Collections**: `ParallelForEachAsync`, `DetectChanges`, `EquatableArray<T>`, `ComparerFactory`, `TypeList`
 - **LINQ**: `PredicateBuilder` for composing EF Core expressions (`And`, `Or`, `Not`)
@@ -182,7 +182,6 @@ No configuration required.
 - `Headless.Generator.Primitives.Abstractions`
 - `CommunityToolkit.HighPerformance`
 - `Humanizer.Core`
-- `IdGen`
 - `libphonenumber-csharp`
 - `Microsoft.Bcl.TimeProvider`
 - `MimeTypes`

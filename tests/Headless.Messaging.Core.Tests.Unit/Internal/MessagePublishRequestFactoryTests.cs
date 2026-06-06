@@ -33,7 +33,7 @@ public sealed class MessagePublishRequestFactoryTests
         var options = new MessagingOptions();
 
         return new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialAtEndGuidGenerator(),
             TimeProvider.System,
             Options.Create(options),
             new NullCurrentTenant()

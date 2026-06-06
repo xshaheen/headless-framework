@@ -224,7 +224,6 @@ public static class SetupApi
             );
 
             builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-            builder.Services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
             builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
             builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
             builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();

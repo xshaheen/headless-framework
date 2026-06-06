@@ -41,7 +41,6 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         var services = builder.Services;
 
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
         services.AddSingleton(Substitute.For<ICurrentUser>());

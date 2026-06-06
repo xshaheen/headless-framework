@@ -392,7 +392,6 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             x.UseStorageLock = true;
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();

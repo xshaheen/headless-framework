@@ -17,12 +17,11 @@ mode: design-spec (no implementation)
 Two problems were originally stacked. They have different urgency and must not be
 conflated.
 
-1. **The acute trigger (Snowflake worker-id collision).** `SnowflakeId` derives its
-   10-bit worker-id (0–1023) from the host NIC MAC's low bits, falling back to
-   `random(0,1024)`. Containers virtualize/randomize MACs → two instances silently
-   pick the same worker-id → duplicate `long` values in production. **Resolution:
-   remove Snowflake/`ILongIdGenerator` from the framework default path instead of
-   coordinating worker ids.** This is a breaking greenfield simplification:
+1. **The acute trigger (legacy worker-id collision).** The old numeric ID path
+   depended on a small per-instance worker-id space that containers could duplicate
+   silently, producing duplicate `long` values in production. **Resolution:
+   remove framework-owned numeric ID generation instead of coordinating worker ids.**
+   This is a breaking greenfield simplification:
    `IEntity<long>` add-time generation is dropped, Messaging storage ids move to
    `Guid`, and lock lease ids use `IGuidGenerator`.
 
@@ -35,8 +34,8 @@ conflated.
 
 **Framing decision (agreed):** we are building the *correct shape* for a maybe-soon
 multi-service world, not merely patching the bug. The bug is the forcing function;
-the de-silo is the point. Snowflake is treated as a removed implementation detail,
-not as a concern Coordination must make safe.
+the de-silo is the point. Legacy numeric ID generation is treated as a removed
+implementation detail, not as a concern Coordination must make safe.
 
 ## 1.5 Non-goals & safety ceiling (Decision 7 — RESOLVED)
 
@@ -101,7 +100,7 @@ Load-bearing (resolve first): 1–3. Downstream (gated): 4–8.
 | 0 | DistributedLocks-first primitive shape (lock vs lease naming, owner token, fencing) | **RESOLVED** (§3a) |
 | 1 | Membership/liveness model (substrate shape, identity, clocks) | **RESOLVED** (§4) |
 | 1b | Substrate read contract (liveness-tracker vs ownership-ledger) | **RESOLVED** (§4b) |
-| 2 | Snowflake/long-id boundary — remove instead of coordinate | **RESOLVED** (§5) |
+| 2 | Numeric ID boundary — remove instead of coordinate | **RESOLVED** (§5) |
 | 3 | Mutual exclusion + package decomposition | **RESOLVED** (§6) |
 | 4 | Correctness invariants & where enforced (fail-stop, graceful release, GUID uniqueness) | **RESOLVED** (§7) |
 | 5 | Consumer integration contracts (ID cleanup / Jobs / Messaging) | **RESOLVED** (§9, verified vs code) |
@@ -273,12 +272,12 @@ coordination decisions and must be marked as degraded or unsupported for failove
 
 **Invariant:** no failover decision may be made from stale reads.
 
-### Removed residual: Snowflake worker-id reuse
+### Removed residual: worker-id reuse
 Fork 2 makes **liveness/takeover** clock-safe. It deliberately does **not** solve
-Snowflake worker-id reuse, because the framework no longer coordinates Snowflake
-worker ids. Snowflake/`ILongIdGenerator` is removed from the default architecture
+worker-id reuse, because the framework no longer coordinates numeric ID workers.
+Framework-owned numeric ID generation is removed from the default architecture
 instead. This deletes the need for slot leases, durable timestamp reservations,
-IdGen time-source replacement, and mint-site Snowflake gates.
+custom time-source replacement, and mint-site gates.
 
 ## 4b. Decision 1b — Substrate read contract — RESOLVED (option C)
 
@@ -314,28 +313,28 @@ not just the node id. Keying recovery on node-id alone would let a fast restart
 survivor reacting to the *previous* incarnation's death. Recovery predicates must
 match `owner = node@inc` exactly.
 
-## 5. Decision 2 — Snowflake/long-id boundary — RESOLVED (remove, do not coordinate)
+## 5. Decision 2 — Numeric ID boundary — RESOLVED (remove, do not coordinate)
 
-Snowflake worker ids are **not** part of the Coordination membership primitive, and
+Numeric ID worker ids are **not** part of the Coordination membership primitive, and
 the framework does not introduce `IWorkerIdProvider`.
 
 **Resolution:**
-- Remove Snowflake/`IdGen` from the framework-owned ID-generation path.
+- Remove framework-owned numeric ID generation.
 - Remove framework add-time generation for `IEntity<long>` rather than preserving
-  `ILongIdGenerator` as a compatibility layer.
+  a compatibility layer.
 - Use `IGuidGenerator` as the framework-owned ID source.
 - Use `Guid` for Messaging storage ids.
 - Use GUID-derived opaque strings for DistributedLocks lease ids where the storage
   contract already expects `string`.
 
 **Rationale:** coordinating worker ids is accidental complexity caused by preserving
-a 64-bit Snowflake contract. The project is greenfield, so the cleaner architecture
+a 64-bit numeric ID contract. The project is greenfield, so the cleaner architecture
 is to break the `long` contract and standardize on the existing sequential GUID
 abstraction. Coordination should solve liveness and incarnation identity, not make a
-Snowflake generator safe across restarts and containers.
+numeric generator safe across restarts and containers.
 
 **Consequence:** there is no worker-id bridge package, no lease-backed worker-id
-provider, no durable per-worker-id timestamp bound, no IdGen time-source replacement,
+provider, no durable per-worker-id timestamp bound, no custom time-source replacement,
 and no degraded bounded-skew production mode. Consumers that still want numeric
 database-generated IDs must own that provider-specific choice outside the framework
 default.
@@ -383,7 +382,7 @@ fencing tokens, and incarnation-qualified recovery predicates.
 ### 4.3 GUID uniqueness instead of clock-safe worker-id reuse
 Framework-owned ID generation uses `IGuidGenerator` and does not require a shared
 worker-id namespace. Sequential GUID implementations keep database inserts
-index-friendly while avoiding the Snowflake worker-id collision class.
+index-friendly while avoiding the legacy worker-id collision class.
 
 There is no app-clock monotonicity proof to maintain across restarts: the GUID
 generator is responsible for uniqueness, and Coordination is responsible only for
@@ -437,12 +436,6 @@ Coordination intentionally does not know what "not terminal" means. Jobs and
 Messaging each keep their own terminal-state predicate.
 
 ### 5.1 ID generation — breaking GUID pivot
-- **Current:** `ILongIdGenerator.Create()` returns `long`; `SnowflakeIdLongIdGenerator`
-  derives a worker id from MAC or random fallback (`ILongIdGenerator.cs:24-51`) and
-  wraps IdGen (`SnowflakeId.cs:20-36`). EF long keys use this path
-  (`HeadlessEntityIdValueGenerators.cs:48-70`), Messaging `StorageId` is `long`
-  (`MediumMessage.cs:6-41`), and Messaging SQL schemas use `BIGINT`
-  (`PostgreSqlStorageInitializer.cs:204-256`; SqlServer equivalent).
 - **Resolution:** remove the framework-owned `long` generator path instead of making
   it production-safe. `IEntity<long>` no longer receives framework add-time key
   generation. Messaging `StorageId` becomes `Guid`. DistributedLocks lease ids are
@@ -489,9 +482,9 @@ membership logic inside Jobs.
 
 ### 5.3 Messaging — fits-with-friction (net-new; 3-store schema migration)
 - **Current:** CAP-derived outbox/inbox (`published`/`received`, `MediumMessage` row).
-  `StorageId` is currently `long`/`BIGINT`, and there is **no owner/node column
-  anywhere** (`MediumMessage.cs:6-41`; PG DDL `PostgreSqlStorageInitializer.cs:204-256`).
-  Orphan recovery today = the per-row `LockedUntil` visibility-lease + `NextRetryAt`:
+  Storage IDs now use provider-native GUID columns, and there is **no owner/node
+  column anywhere**. Orphan recovery today = the per-row `LockedUntil`
+  visibility-lease + `NextRetryAt`:
   a dead node's row is re-pickable when its lease expires via atomic
   `UPDATE … SET LockedUntil … FOR UPDATE SKIP LOCKED` (`PostgreSqlDataStorage.cs:796-810`).
   **No sweeper, no node concept** — genuinely net-new. Terminal-state scar predicate:

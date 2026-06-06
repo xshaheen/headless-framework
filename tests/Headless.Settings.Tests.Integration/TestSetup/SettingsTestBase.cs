@@ -42,7 +42,6 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         _AddDefaultStringEncryptionConfiguration(builder.Configuration);
 
         services.AddSingleton(TimeProvider.System);
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator(1));
         services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
         services.AddSingleton<ICancellationTokenProvider>(DefaultCancellationTokenProvider.Instance);
         services.AddSingleton(Substitute.For<ICurrentUser>());

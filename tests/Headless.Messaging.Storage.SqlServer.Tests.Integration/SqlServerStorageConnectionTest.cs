@@ -18,7 +18,6 @@ namespace Tests;
 public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture) : TestBase
 {
     private SqlServerDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -33,13 +32,10 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
@@ -63,7 +59,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_store_published_message()
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -74,7 +70,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_store_received_message()
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -85,7 +81,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_store_received_exception_message()
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await _storage.StoreReceivedExceptionMessageAsync(
             "test.name",
@@ -98,7 +94,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_change_publish_state()
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -110,7 +106,7 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
     [Fact]
     public async Task should_change_receive_state()
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 

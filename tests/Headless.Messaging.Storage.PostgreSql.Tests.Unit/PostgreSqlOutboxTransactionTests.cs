@@ -23,7 +23,9 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         var accessor = new RecordingOutboxTransactionAccessor();
         using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
         transaction.DbTransaction = new RecordingDbTransaction();
-        ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(1));
+        ((IOutboxMessageBuffer)transaction).AddToSent(
+            _CreateMessage(Guid.Parse("11111111-1111-1111-1111-111111111001"))
+        );
 
         // when
         transaction.Commit();
@@ -42,7 +44,9 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         var accessor = new RecordingOutboxTransactionAccessor();
         await using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
         transaction.DbTransaction = new RecordingDbContextTransaction();
-        ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(2));
+        ((IOutboxMessageBuffer)transaction).AddToSent(
+            _CreateMessage(Guid.Parse("11111111-1111-1111-1111-111111111002"))
+        );
 
         // when
         await transaction.CommitAsync();
@@ -60,7 +64,9 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
         var accessor = new RecordingOutboxTransactionAccessor();
         using var transaction = new PostgreSqlOutboxTransaction(dispatcher, accessor);
         transaction.DbTransaction = new RecordingDbTransaction();
-        ((IOutboxMessageBuffer)transaction).AddToSent(_CreateMessage(3));
+        ((IOutboxMessageBuffer)transaction).AddToSent(
+            _CreateMessage(Guid.Parse("11111111-1111-1111-1111-111111111003"))
+        );
 
         // when
         transaction.Rollback();
@@ -78,7 +84,7 @@ public sealed class PostgreSqlOutboxTransactionTests : TestBase
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
-                    [Headers.MessageId] = storageId.ToString(CultureInfo.InvariantCulture),
+                    [Headers.MessageId] = storageId.ToString("D"),
                     [Headers.MessageName] = $"message-{storageId}",
                 },
                 null

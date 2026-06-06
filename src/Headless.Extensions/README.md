@@ -25,7 +25,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 
 - **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
 
-- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle), `ILongIdGenerator` (`SnowflakeId`)
+- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle)
 
 - **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
 
@@ -109,7 +109,6 @@ No configuration required.
 - `Headless.Generator.Primitives.Abstractions`
 - `CommunityToolkit.HighPerformance`
 - `Humanizer.Core`
-- `IdGen`
 - `libphonenumber-csharp`
 - `Microsoft.Bcl.TimeProvider`
 - `MimeTypes`

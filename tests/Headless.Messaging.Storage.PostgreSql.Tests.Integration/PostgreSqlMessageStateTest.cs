@@ -20,7 +20,6 @@ namespace Tests;
 public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : TestBase
 {
     private PostgreSqlDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -31,14 +30,11 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
@@ -71,7 +67,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_store_published_message_with_scheduled_status()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
 
@@ -92,7 +88,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_transition_published_message_to_succeeded()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -114,7 +110,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_transition_published_message_to_failed()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -136,7 +132,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_store_received_message_with_scheduled_status()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -161,7 +157,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_transition_received_message_to_succeeded()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -187,7 +183,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_transition_received_message_to_failed()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -213,7 +209,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_update_retries_on_state_change()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -236,7 +232,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
     public async Task should_update_expires_at_on_state_change()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -263,7 +259,7 @@ public sealed class PostgreSqlMessageStateTest(PostgreSqlTestFixture fixture) : 
         var ids = new List<Guid>();
         for (var i = 0; i < 5; i++)
         {
-            var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+            var msgId = Guid.NewGuid().ToString("D");
             var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
             var message = new Message(header, new { Data = $"test{i}" });
             var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);

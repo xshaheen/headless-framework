@@ -21,7 +21,6 @@ namespace Tests;
 public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : TestBase
 {
     private SqlServerDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
     private FakeTimeProvider _timeProvider = null!;
 
     public override async ValueTask InitializeAsync()
@@ -43,13 +42,10 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         });
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
@@ -76,7 +72,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_store_and_retrieve_published_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -114,7 +110,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_delete_published_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
@@ -140,7 +136,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_delete_received_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
@@ -160,7 +156,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_change_publish_state_to_succeeded()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
@@ -178,7 +174,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_change_publish_state_to_failed()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
         var stored = await _storage.StoreMessageAsync("test.name", message, null, AbortToken);
@@ -203,7 +199,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_change_receive_state_to_succeeded()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
         var stored = await _storage.StoreReceivedMessageAsync("test.name", "test.group", message, AbortToken);
@@ -222,8 +218,8 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_change_publish_state_to_delayed()
     {
         // given
-        var msgId1 = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
-        var msgId2 = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId1 = Guid.NewGuid().ToString("D");
+        var msgId2 = Guid.NewGuid().ToString("D");
         var header1 = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId1 };
         var header2 = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId2 };
         var stored1 = await _storage.StoreMessageAsync("test.name", new Message(header1, null), null, AbortToken);
@@ -253,7 +249,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_get_published_messages_needing_retry()
     {
         // given - create messages in the past
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -282,7 +278,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_get_received_messages_needing_retry()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -313,7 +309,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
     public async Task should_delete_expired_succeeded_messages()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 

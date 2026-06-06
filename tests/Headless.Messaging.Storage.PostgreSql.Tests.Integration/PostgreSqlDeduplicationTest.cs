@@ -24,7 +24,6 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
 

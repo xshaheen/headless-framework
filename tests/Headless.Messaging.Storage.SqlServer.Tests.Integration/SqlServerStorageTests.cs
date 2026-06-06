@@ -24,7 +24,6 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
-    private ILongIdGenerator? _longIdGenerator;
 
     /// <inheritdoc />
     protected override DataStorageCapabilities Capabilities =>
@@ -120,15 +119,12 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             x.UseStorageLock = true;
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
 
         var sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new SqlServerStorageInitializer(

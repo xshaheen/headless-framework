@@ -6,7 +6,6 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.HighPerformance" />
     <PackageReference Include="Humanizer.Core" />
-    <PackageReference Include="IdGen" />
     <PackageReference Include="Microsoft.Bcl.TimeProvider" />
     <PackageReference Include="morelinq" />
     <!-- Exclude contentfiles to avoid parallel build race condition with .pp preprocessing.

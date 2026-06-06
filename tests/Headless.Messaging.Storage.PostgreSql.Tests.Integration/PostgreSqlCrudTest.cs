@@ -20,7 +20,6 @@ namespace Tests;
 public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 {
     private PostgreSqlDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -36,14 +35,11 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         });
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
@@ -76,7 +72,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_delete_published_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -117,7 +113,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_delete_received_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -213,7 +209,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_delete_non_expired_messages()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -282,7 +278,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
         var id = Guid.NewGuid();
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -347,7 +343,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_store_received_exception_message_with_failed_status()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
 
         // when

@@ -31,7 +31,6 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
 {
     private InMemoryStorageInitializer? _initializer;
     private InMemoryDataStorage? _storage;
-    private ILongIdGenerator? _longIdGenerator;
     private ISerializer? _serializer;
     private FakeTimeProvider? _fakeTimeProvider;
 
@@ -127,13 +126,11 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             x.FailedMessageExpiredAfter = 3600;
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton<TimeProvider>(_fakeTimeProvider);
 
         var provider = services.BuildServiceProvider();
 
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new InMemoryStorageInitializer();
