@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using System.Globalization;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -25,7 +24,7 @@ namespace Headless.DistributedLocks;
 /// <param name="storage">Backend storage seam performing the native acquire/release.</param>
 /// <param name="releaseSignal">Wake-up seam used between retry attempts; polling is the correctness fallback.</param>
 /// <param name="options">Shared lock options, including resource-name length and waiter caps.</param>
-/// <param name="longIdGenerator">Source of per-acquisition lock ids.</param>
+/// <param name="guidGenerator">Source of per-acquisition lock ids.</param>
 /// <param name="timeProvider">Clock used for deadlines and waits (deterministic under test).</param>
 /// <param name="logger">Logger for release-failure diagnostics.</param>
 /// <param name="fencingTokenSource">Optional source of monotonic fencing tokens for exclusive locks.</param>
@@ -35,7 +34,7 @@ public sealed class ConnectionScopedDistributedLock(
     IConnectionScopedLockStorage storage,
     IReleaseSignal releaseSignal,
     DistributedLockOptions options,
-    ILongIdGenerator longIdGenerator,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<ConnectionScopedDistributedLock> logger,
     IFencingTokenSource? fencingTokenSource = null,
@@ -111,7 +110,7 @@ public sealed class ConnectionScopedDistributedLock(
             acquireTimeout == Timeout.InfiniteTimeSpan
                 ? DateTimeOffset.MaxValue
                 : timeProvider.GetUtcNow().Add(acquireTimeout);
-        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = guidGenerator.Create().ToString("N");
         var isWaiting = false;
 
         using var activity = _StartLockActivity(resource);

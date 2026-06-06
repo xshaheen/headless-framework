@@ -44,7 +44,7 @@ public static class SetupPostgresDistributedLocks
         private IServiceCollection _AddPostgresDistributedLocksCore()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.TryAddSingleton<IGuidGenerator>(new Version7GuidGenerator());
 
             // Build the data source once and share it across all three consumers (storage, release
             // signal, fencing) so a connection-string configuration produces a single pool rather than
@@ -69,7 +69,7 @@ public static class SetupPostgresDistributedLocks
                 sp.GetRequiredService<IConnectionScopedLockStorage>(),
                 sp.GetRequiredService<IReleaseSignal>(),
                 sp.GetRequiredService<DistributedLockOptions>(),
-                sp.GetRequiredService<ILongIdGenerator>(),
+                sp.GetRequiredService<IGuidGenerator>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
                 sp.GetService<IFencingTokenSource>(),

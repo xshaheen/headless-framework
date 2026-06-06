@@ -10,6 +10,11 @@ public interface IGuidGenerator
     Guid Create();
 }
 
+public sealed class Version7GuidGenerator : IGuidGenerator
+{
+    public Guid Create() => Guid.CreateVersion7();
+}
+
 public sealed class SequentialAtEndGuidGenerator : IGuidGenerator
 {
     public Guid Create() => SequentialGuid.NextSequentialAtEnd();

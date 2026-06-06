@@ -14,9 +14,7 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly FakeConnectionScopedLockStorage _storage = new();
     private readonly FakeReleaseSignal _releaseSignal = new();
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-
-    private long _lockIdCounter = 1000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
     public async Task should_release_acquired_storage_handle_when_fencing_token_source_fails()
@@ -29,6 +27,19 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>();
         _storage.ReleaseCount.Should().Be(1);
         _releaseSignal.PublishCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_issue_guid_formatted_lease_id()
+    {
+        var provider = _CreateProvider();
+        var resource = Faker.Random.AlphaNumeric(12);
+        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        _guidGenerator.Create().Returns(guid);
+
+        await using var result = await provider.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        result.LeaseId.Should().Be("00112233445566778899aabbccddeeff");
     }
 
     [Fact]
@@ -333,13 +344,13 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         IReleaseSignal? releaseSignal = null
     )
     {
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new ConnectionScopedDistributedLock(
             storage ?? _storage,
             releaseSignal ?? _releaseSignal,
             options ?? new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<ConnectionScopedDistributedLock>(),
             fencingTokenSource,

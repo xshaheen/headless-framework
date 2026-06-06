@@ -89,5 +89,5 @@ options.EnableFencing = true;
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `IDistributedReaderWriterLockProvider` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `ILongIdGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
+- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

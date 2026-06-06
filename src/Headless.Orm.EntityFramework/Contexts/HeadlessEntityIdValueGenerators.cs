@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,26 +34,10 @@ internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
 
     public override Guid Next(EntityEntry entry)
     {
-        var applicationServices = HeadlessEntityIdValueGeneration.GetApplicationServices(entry.Context);
+        var applicationServices = entry.Context.GetApplicationServices();
 
         var generator = applicationServices is null ? _Default : _ByProvider.GetValue(applicationServices, _Resolve);
 
         return generator.Create();
-    }
-}
-
-internal static class HeadlessEntityIdValueGeneration
-{
-    /// <summary>
-    /// The application service provider EF Core was built with (set by the Headless registration via
-    /// <c>UseApplicationServiceProvider</c>), or <c>null</c> for a hand-constructed <c>DbContextOptions</c>
-    /// outside the DI pipeline — in which case the generators fall back to their framework default.
-    /// </summary>
-    internal static IServiceProvider? GetApplicationServices(DbContext context)
-    {
-        return context
-            .GetService<IDbContextOptions>()
-            .FindExtension<CoreOptionsExtension>()
-            ?.ApplicationServiceProvider;
     }
 }

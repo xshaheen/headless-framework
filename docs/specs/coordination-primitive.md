@@ -14,25 +14,29 @@ mode: design-spec (no implementation)
 
 ## 1. What we are solving
 
-Two problems are stacked. They have different urgency and must not be conflated.
+Two problems were originally stacked. They have different urgency and must not be
+conflated.
 
-1. **The acute trigger (worker-id collision).** `SnowflakeId` derives its 10-bit
-   worker-id (0–1023) from the host NIC MAC's low bits, falling back to
+1. **The acute trigger (Snowflake worker-id collision).** `SnowflakeId` derives its
+   10-bit worker-id (0–1023) from the host NIC MAC's low bits, falling back to
    `random(0,1024)`. Containers virtualize/randomize MACs → two instances silently
-   pick the same worker-id → **duplicate `long` primary keys in production**. ORM
-   (`IEntity<long>` at add-time), Messaging, and DistributedLocks all mint these.
-   This is the cheapest first slice, **not** the reason the primitive exists.
+   pick the same worker-id → duplicate `long` values in production. **Resolution:
+   remove Snowflake/`ILongIdGenerator` from the framework default path instead of
+   coordinating worker ids.** This is a breaking greenfield simplification:
+   `IEntity<long>` add-time generation is dropped, Messaging storage ids move to
+   `Guid`, and lock lease ids use `IGuidGenerator`.
 
 2. **The structural goal (de-silo coordination).** Membership/liveness logic already
    exists in the repo but is siloed in `Headless.Jobs.Caching.Redis` and Redis-only.
    Run Jobs on Postgres without Redis and dead-node recovery silently vanishes;
    Messaging has no node-level recovery at all. The goal is to extract the genuinely
    shared concern — **liveness + identity** — once, so Jobs, Messaging, dashboards,
-   and worker-id all consume it.
+   and future recovery features consume it.
 
 **Framing decision (agreed):** we are building the *correct shape* for a maybe-soon
 multi-service world, not merely patching the bug. The bug is the forcing function;
-the de-silo is the point.
+the de-silo is the point. Snowflake is treated as a removed implementation detail,
+not as a concern Coordination must make safe.
 
 ## 1.5 Non-goals & safety ceiling (Decision 7 — RESOLVED)
 
@@ -97,10 +101,10 @@ Load-bearing (resolve first): 1–3. Downstream (gated): 4–8.
 | 0 | DistributedLocks-first primitive shape (lock vs lease naming, owner token, fencing) | **RESOLVED** (§3a) |
 | 1 | Membership/liveness model (substrate shape, identity, clocks) | **RESOLVED** (§4) |
 | 1b | Substrate read contract (liveness-tracker vs ownership-ledger) | **RESOLVED** (§4b) |
-| 2 | Worker-id boundary — in or out of Coordination | **RESOLVED** (§5) |
+| 2 | Snowflake/long-id boundary — remove instead of coordinate | **RESOLVED** (§5) |
 | 3 | Mutual exclusion + package decomposition | **RESOLVED** (§6) |
-| 4 | Correctness invariants & where enforced (fail-stop, clock-safe reuse, graceful release) | **RESOLVED** (§7) |
-| 5 | Consumer integration contracts (Jobs / Messaging / ORM·Locks) | **RESOLVED** (§9, verified vs code) |
+| 4 | Correctness invariants & where enforced (fail-stop, graceful release, GUID uniqueness) | **RESOLVED** (§7) |
+| 5 | Consumer integration contracts (ID cleanup / Jobs / Messaging) | **RESOLVED** (§9, verified vs code) |
 | 6 | Provider model (backends, capability tiers, conformance harness) | OPEN |
 | 7 | Failure & partition semantics (fail-stop vs fail-closed; "fencing-safe, not consensus-safe") | **RESOLVED** (§1.5) |
 | 8 | Scope line for v1 (leadership election? HRW rebalance? Messaging hardening?) | OPEN |
@@ -261,7 +265,7 @@ a linearizable operation.
 
 Async replicas, read replicas, cache replicas, and eventually consistent reads may be
 used for dashboards or approximate read-only views, but they must not drive failover
-decisions, `NodeLeft` events, worker-id handover, slot takeover, or recovery triggers.
+decisions, `NodeLeft` events, slot takeover, or recovery triggers.
 
 If a provider cannot offer an authoritative clock plus strongly ordered read/write
 semantics for the liveness row, it is not eligible for correctness-sensitive
@@ -269,18 +273,12 @@ coordination decisions and must be marked as degraded or unsupported for failove
 
 **Invariant:** no failover decision may be made from stale reads.
 
-### Residual NOT closed by Fork 2 (→ Decision 4)
-Fork 2 makes **liveness/takeover** clock-safe. It does **not** make **snowflake
-worker-id reuse** clock-safe, because a snowflake's 41-bit timestamp is generated
-from the *app node's* wall clock — which the store never sees. When node B reclaims
-a slot after A dies, the store clock governs *when* handover happens, but B then
-stamps IDs from B's own clock; if B is behind A's last-emitted timestamp, B can mint
-an ID ≤ A's → collision. Worker-id reuse therefore needs **one extra invariant** in
-the worker-id provider: (a) TTL ≥ max app-clock-skew (wait out the window), (b)
-persist last-used-timestamp on the slot and spin until the new holder's clock exceeds
-it, or (c) carry the incarnation in the ID so old/new are distinguishable downstream.
-This is the reason worker-id stays a *separate* primitive (see §5). Resolved in
-Decision 4.
+### Removed residual: Snowflake worker-id reuse
+Fork 2 makes **liveness/takeover** clock-safe. It deliberately does **not** solve
+Snowflake worker-id reuse, because the framework no longer coordinates Snowflake
+worker ids. Snowflake/`ILongIdGenerator` is removed from the default architecture
+instead. This deletes the need for slot leases, durable timestamp reservations,
+IdGen time-source replacement, and mint-site Snowflake gates.
 
 ## 4b. Decision 1b — Substrate read contract — RESOLVED (option C)
 
@@ -316,173 +314,81 @@ not just the node id. Keying recovery on node-id alone would let a fast restart
 survivor reacting to the *previous* incarnation's death. Recovery predicates must
 match `owner = node@inc` exactly.
 
-## 5. Decision 2 — Worker-id boundary — RESOLVED (out of Coordination)
+## 5. Decision 2 — Snowflake/long-id boundary — RESOLVED (remove, do not coordinate)
 
-Worker-id is **not** part of the Coordination membership primitive. Expose a small
-`IWorkerIdProvider` with two implementations:
-- **static/ordinal** (default) — reads an orchestrator ordinal (K8s StatefulSet
-  ordinal, ECS task index) or config; **zero coordination, zero dependencies**.
-- **lease-backed** — claims a bounded slot via the DistributedLocks slot lease.
+Snowflake worker ids are **not** part of the Coordination membership primitive, and
+the framework does not introduce `IWorkerIdProvider`.
 
-ORM/Messaging/Locks depend only on the small `IWorkerIdProvider` contract; neither
-Coordination nor DistributedLocks is a hard dependency for the static default.
+**Resolution:**
+- Remove Snowflake/`IdGen` from the framework-owned ID-generation path.
+- Remove framework add-time generation for `IEntity<long>` rather than preserving
+  `ILongIdGenerator` as a compatibility layer.
+- Use `IGuidGenerator` as the framework-owned ID source.
+- Use `Guid` for Messaging storage ids.
+- Use GUID-derived opaque strings for DistributedLocks lease ids where the storage
+  contract already expects `string`.
 
-**Rationale:** worker-id carries a clock-safety obligation (reuse-after-crash, the
-§4 residual) that liveness does not, and it is consumed at the ID-generation layer —
-a distinct concern that must not be coupled to cluster membership. The static default
-must drag in nothing so a single-service app pays zero coordination tax.
+**Rationale:** coordinating worker ids is accidental complexity caused by preserving
+a 64-bit Snowflake contract. The project is greenfield, so the cleaner architecture
+is to break the `long` contract and standardize on the existing sequential GUID
+abstraction. Coordination should solve liveness and incarnation identity, not make a
+Snowflake generator safe across restarts and containers.
 
-**Default vs production-safe (important):** the static/ordinal provider is
-dependency-free and may be the **default provider shape**, but **production
-multi-instance use must either configure durable timestamp persistence** (the §7.3
-correctness standard) **or explicitly opt into the degraded bounded-skew mode**. The
-default is *not* automatically the recommended production-safe mode — a reader must
-not conclude otherwise.
-
-**Worker-id lease lifetime → RESOLVED (lean): fixed-for-process.** A lease-backed
-worker-id is acquired once at startup and **held for the process lifetime**. On lease
-loss the holder **fail-stops** (stops minting per §4.1) — it does **not** rebind to a
-different worker-id mid-process. Rationale: IdGen bakes the worker-id at construction
-(no setter — `SnowflakeId.cs:33`), so rebind would require reconstructing the generator
-behind a volatile swap; and rebinding mid-process complicates the `ReservedUntil`
-reservation and is the more dangerous design. Fixed-for-process keeps the generator
-immutable. (Flagged for override if a rebind use-case emerges.)
-
-**Resolved by Decision 4:** worker-id reuse-safety uses a durable per-worker-id
-timestamp upper bound (§7.3).
-`OPEN`: snowflake bit-layout configurability (issue open question).
+**Consequence:** there is no worker-id bridge package, no lease-backed worker-id
+provider, no durable per-worker-id timestamp bound, no IdGen time-source replacement,
+and no degraded bounded-skew production mode. Consumers that still want numeric
+database-generated IDs must own that provider-specific choice outside the framework
+default.
 
 ## 6. Decision 3 — Mutual exclusion + package decomposition — RESOLVED
 
 The issue's "Coordination vs Cluster vs fold into DistributedLocks" question
-**dissolves** by separating the three shapes; all three placements are true at once.
+**dissolves** by separating the two remaining shapes; both placements are true at
+once.
 
 | Shape | Home | Why |
 |---|---|---|
 | **Mutual exclusion** — bounded-slot lease, leadership (N=1) | **`Headless.DistributedLocks.*`** (existing) | The Redis ZSET semaphore (bounded-N lease) already lives here; leadership = N=1 lock; keeps all mutual-exclusion in one place with the fencing token |
 | **Membership / liveness / identity / events** | **new `Headless.Coordination.{Abstractions,EntityFramework,PostgreSql,Redis}`** | Genuinely new shared concern (the K8s-style substrate); *consumes* DistributedLocks, never reinvents it |
-| **Worker-id** — `IWorkerIdProvider` | abstraction in **`Headless.Extensions.Abstractions`** (next to `ILongIdGenerator`/`SnowflakeId`); static default in **`Headless.Extensions`**; lease-backed impl in a **separate `Headless.WorkerId.DistributedLocks` bridge package** | ORM/Messaging/Locks already depend on Extensions; static default depends on nothing; lease-backed needs only the slot lease, not membership |
-
-**Lease-backed worker-id placement (sub-fork) → RESOLVED (b):** the lease-backed
-impl lives in its **own bridge package**, not inside `Headless.DistributedLocks`.
-DistributedLocks must not know what a worker-id (snowflake semantics) is. Costs one
-extra package; keeps DistributedLocks domain-agnostic.
 
 **Dependency rules (explicit, to avoid accidental cycles):**
-- `Headless.Extensions.Abstractions` defines `IWorkerIdProvider`.
-- `Headless.Extensions` provides the static/default implementation (depends only on
-  its own Abstractions).
-- `Headless.DistributedLocks` does **not** depend on WorkerId semantics.
-- `Headless.WorkerId.DistributedLocks` depends on `Headless.Extensions.Abstractions`
-  + `Headless.DistributedLocks`.
+- `Headless.Extensions.Abstractions` defines `IGuidGenerator`.
+- `Headless.Extensions` provides sequential GUID implementations (depends only on
+  its own Abstractions and core helpers).
+- `Headless.DistributedLocks` depends on `IGuidGenerator` only to mint opaque lease
+  ids; it does not depend on Coordination.
 - `Headless.Coordination` depends on `Headless.DistributedLocks` **only if** it needs
-  lease helpers; it does **not** depend on Jobs, Messaging, ORM, or WorkerId.
+  lease helpers; it does **not** depend on Jobs, Messaging, or ORM.
 - Jobs / Messaging / ORM consume only the small abstractions they need.
 
-No arrow points back: no feature is a dependency of the primitives, and worker-id
-never depends on Coordination. This keeps the design acyclic.
-
-`OPEN` (deferred to Decision 7): leadership safety-ceiling contract — fencing-safe,
-NOT consensus-safe; must be explicit in API + docs.
+No arrow points back: no feature is a dependency of the primitives. This keeps the
+design acyclic.
 
 ## 7. Decision 4 — Correctness invariants — RESOLVED
 
-Coordination and worker-id providers must enforce three invariants.
+Coordination and GUID-backed consumers must enforce three invariants.
 
 ### 4.1 Fail-stop on lease loss
-A holder must stop minting IDs once its lease-loss token fires. ID generators
-**self-fence at the mint site** — check lease state *before* generating
-(`lease.ThrowIfLost()`), not via a background poll. Holder-side self-enforcement
-(K8s-style): infrastructure does not stop you; you stop yourself.
+Any holder performing lease-protected work must stop using the protected resource
+once its lease-loss token fires. Consumers self-fence at the work site by calling
+`lease.ThrowIfLost()` or observing `LostToken`; infrastructure exposes the signal,
+but the consumer owns the reaction.
 
 ### 4.2 Graceful release on shutdown
 Lease handles are `IAsyncDisposable`. During host shutdown the holder releases its
-worker-id lease so other nodes can reuse the slot without waiting for TTL expiry.
-(Does not bypass §4.3 — a reclaiming holder still waits out the persisted upper
-bound; graceful release speeds slot *handover*, not timestamp reuse-safety.)
+lease so other nodes can acquire the resource without waiting for TTL expiry.
+Graceful release speeds handover; correctness still depends on lease expiry,
+fencing tokens, and incarnation-qualified recovery predicates.
 
-### 4.3 Clock-safe worker-id reuse — durable timestamp upper bound (forward reservation)
-Reusing a worker id is safe only when the new holder can prove its **first emitted
-timestamp is greater than the previous holder's last *possible* emitted timestamp**
-for that same worker id.
+### 4.3 GUID uniqueness instead of clock-safe worker-id reuse
+Framework-owned ID generation uses `IGuidGenerator` and does not require a shared
+worker-id namespace. Sequential GUID implementations keep database inserts
+index-friendly while avoiding the Snowflake worker-id collision class.
 
-**Correctness standard:** a durable **per-worker-id timestamp upper bound** —
-modelled as a *forward reservation*, not a backward record. Field name:
-`ReservedUntilTimestamp` (a.k.a. `TimestampUpperBound`), **not** `LastUsedTimestamp`.
-
-**Clock domain (precise — this closes the proof):** `ReservedUntilTimestamp` is
-expressed in the **same timestamp domain used by Snowflake emission** — Unix epoch
-milliseconds. On renewal the holder computes it from its **local Snowflake clock**:
-
-```
-ReservedUntilTimestamp = localSnowflakeClockNow + reservationWindow + safetyMargin
-```
-
-The store only **durably persists** the value and **arbitrates lease ownership**; it
-does **not** translate or recompute this timestamp. Do **not** use PostgreSQL `now()`
-to compute `ReservedUntil` — the store clock decides slot *ownership* (Fork 2), not
-Snowflake timestamp *progression*; mixing domains weakens the proof because the mint
-gate compares `localSnowflakeClock > ReservedUntilTimestamp` and both sides must live
-in the emission domain.
-
-**Implementation note (verified against IdGen 3.0.7 — `SnowflakeId.cs:30,36`).**
-`SnowflakeId` delegates minting to the IdGen NuGet package, which reads its timestamp
-from a configured `ITimeSource` — by default `DefaultTimeSource`, a **`Stopwatch`
-anchored at construction**, *not* `DateTimeOffset.UtcNow`. Therefore the gate must read
-the **same `ITimeSource` IdGen mints from**, not a fresh `UtcNow` — otherwise the two
-clocks drift (NTP slew, Stopwatch vs wall-clock) and the "same domain as emission"
-guarantee silently fails. Required change: replace `DefaultTimeSource` with a custom
-`ITimeSource` whose `GetTicks()` is the authoritative emission-ms domain shared with
-`ReservedUntil`. The gate itself wraps `SnowflakeId.NewId()` as a pre-check before
-`IdGenerator.CreateId()` (the mint loop is third-party and cannot be modified inline;
-a pre-check wrapper is sufficient and does not disturb sequence/throughput logic).
-
-Mechanism:
-- On lease renewal the holder persists `ReservedUntilTimestamp` (the max timestamp it
-  may emit before the next renewal), computed as above.
-- The generator may mint only while `localSnowflakeClock <= ReservedUntilTimestamp`
-  **and** `lease_not_lost`. Both checked before every mint/batch.
-- A future holder must **wait until `localSnowflakeClock > persisted ReservedUntilTimestamp`**
-  before minting.
-
-**Fail-closed at the bound (spec rule, not implementation discipline):** if the local
-Snowflake clock reaches `ReservedUntilTimestamp` before the lease is renewed and a new
-reservation persisted, the provider **must fail closed and stop minting**. It may
-block, throw, or surface backpressure according to consumer policy, but it must **not**
-emit IDs past the reserved upper bound.
-
-Why forward-reservation beats exact-last-timestamp: the old holder may have emitted
-anything `<= ReservedUntil`, so the new holder waiting out the reserved window is safe
-**even if the old holder crashed immediately after renewing** — with no write-per-ID-batch.
-Write-on-renewal gives a bounded safety window (≤ one lease-duration) with low write
-amplification; continuous writes would turn every batch into coordination traffic.
-
-**Two gates, two clocks — both correct (record so no one "fixes" the apparent contradiction):**
-- *Can I take the slot?* → **store clock** (the lease expired), per Fork 2 (§4).
-- *When may I start emitting on it?* → **local clock vs `ReservedUntil`**, this invariant.
-
-The second gate compares a local clock to a value another node wrote, which *looks*
-like it violates Fork 2's "no cross-node wall-clock comparison." It does not: the
-comparison is conservative in the safe direction — waiting only ever **delays**, never
-prematurely permits. Fork 2 governs *takeover*; §4.3 governs *monotonicity*. Proof:
-old holder refuses to mint past `ReservedUntil` ⇒ `old.maxEmitted <= ReservedUntil`;
-new holder waits until `localClock > ReservedUntil` ⇒ `new.firstEmitted > ReservedUntil
->= old.maxEmitted`. Holds regardless of skew direction.
-
-### Degraded mode (static / ordinal without persistence)
-Static or orchestrator-ordinal worker-id providers **without** durable timestamp
-storage are a **degraded mode**. They depend on a bounded clock-skew assumption
-(`reclaim-gap > 2 × max-skew`) and must be **explicitly configured and documented as
-weaker** than the correctness standard, with explicit warnings that clock regressions
-across restarts can reintroduce duplicate snowflake IDs. (Note: the reuse hazard
-exists for static-ordinal too — a StatefulSet restarts pod-0 *as* pod-0, reusing
-worker-id 0; cross-restart safety requires the persisted bound, which a store-less
-provider lacks.)
-
-### Out of scope: incarnation-in-ID
-Carrying an incarnation *inside* the snowflake is rejected — the 64-bit layout
-(41 ts + 10 worker + 12 sequence) has no spare bits. Viable only for a 128-bit scheme,
-which we are not adopting.
+There is no app-clock monotonicity proof to maintain across restarts: the GUID
+generator is responsible for uniqueness, and Coordination is responsible only for
+liveness/identity. Consumers that need monotonic fencing still use
+`IDistributedLease.FencingToken`; they do not infer ordering from IDs.
 
 ## 8. Remaining open decisions (6, 8)
 
@@ -496,16 +402,17 @@ Decisions 5 (§9) and 7 (§1.5) are now **resolved**.
   optional** if Jobs ships in v1 — it must provide DB-heartbeat liveness for the
   no-Redis path, else pure-EF/Postgres Jobs loses dead-node recovery on migration.
 - **8. Scope line for v1** — leadership election in/out; partition/HRW rebalance
-  in/out; Messaging recovery in/out. Lean: **Foundational** — worker-id + membership
-  (**incl. EF/Postgres provider, now mandatory per Finding B**) + Jobs as the forcing
-  pair; Messaging fast-follow (3-store schema migration); leadership/HRW/dashboards
-  deferred.
+  in/out; Messaging recovery in/out. Lean: **Foundational** — GUID ID cleanup +
+  membership (**incl. EF/Postgres provider, now mandatory per Finding B**) + Jobs as
+  the forcing pair; Messaging storage-id migration fast-follow; leadership/HRW/
+  dashboards deferred.
 
 ## 9. Decision 5 — Consumer integration contracts — RESOLVED (verified against code)
 
-All three consumers were verified against actual source (file:line below). **Verdict:
-the abstraction fits all three — none blocked.** Effort ordering worker-id < Jobs <
-Messaging, matching the v1 lean.
+All consumer impacts were verified against actual source (file:line below).
+**Verdict: the GUID pivot simplifies the ID path, and the Coordination abstraction
+still fits Jobs and Messaging recovery.** Effort ordering becomes ID cleanup < Jobs <
+Messaging recovery, matching the v1 lean.
 
 ### Why consumers need Coordination instead of only DistributedLocks
 
@@ -529,18 +436,26 @@ death path: on NodeLeft(node@inc), consumer reclaims WHERE owner = node@inc AND 
 Coordination intentionally does not know what "not terminal" means. Jobs and
 Messaging each keep their own terminal-state predicate.
 
-### 5.1 Snowflake worker-id — fits-with-friction (no schema change)
-- **Current:** worker-id derived from MAC, eager at construction, **immutable after**
-  (`ILongIdGenerator.cs:24-51`, `SnowflakeId.cs:20-34`). Minted via third-party IdGen
-  3.0.7 (`SnowflakeId.cs:36`). 8 DI registration sites, all parameterless → MAC.
-  Consumer seam `ILongIdGenerator.Create()` returns `long` and need **not** change.
-- **Migration:** inject `IWorkerIdProvider` at `SnowflakeIdLongIdGenerator` ctor
-  (replace `GenerateWorkerId()`); add the §7.3 mint-gate as a pre-check wrapper at
-  `SnowflakeId.NewId()`; swap IdGen's `ITimeSource` (Finding A, §7.3 impl note).
-- **Risks:** (1) clock-domain — see §7.3 implementation note; (2) `SnowflakeId.Default`
-  (parameterless singleton, `SnowflakeId.cs:14`) can't carry a lease/reservation — keep
-  as an ungated convenience or remove; (3) public-API change on the generator ctor +
-  8 registration sites (add a default `IWorkerIdProvider` registration in shared wiring).
+### 5.1 ID generation — breaking GUID pivot
+- **Current:** `ILongIdGenerator.Create()` returns `long`; `SnowflakeIdLongIdGenerator`
+  derives a worker id from MAC or random fallback (`ILongIdGenerator.cs:24-51`) and
+  wraps IdGen (`SnowflakeId.cs:20-36`). EF long keys use this path
+  (`HeadlessEntityIdValueGenerators.cs:48-70`), Messaging `StorageId` is `long`
+  (`MediumMessage.cs:6-41`), and Messaging SQL schemas use `BIGINT`
+  (`PostgreSqlStorageInitializer.cs:204-256`; SqlServer equivalent).
+- **Resolution:** remove the framework-owned `long` generator path instead of making
+  it production-safe. `IEntity<long>` no longer receives framework add-time key
+  generation. Messaging `StorageId` becomes `Guid`. DistributedLocks lease ids are
+  generated from `IGuidGenerator` and formatted as opaque strings.
+- **Why `Guid`, not `string`, for Messaging:** `StorageId` is a framework-owned row
+  identifier, not a provider-opaque external id. A `Guid` keeps type safety in public
+  APIs, maps natively in SQL providers, and uses the existing sequential
+  `IGuidGenerator` implementations. `string` remains appropriate for lock `LeaseId`
+  because lease ids are already opaque storage tokens and some lock backends store
+  them as strings.
+- **Risks:** public API and schema-breaking change across Messaging monitoring,
+  dashboard routes, storage providers, and tests. This is acceptable because the
+  project is greenfield and no migration/deprecation path is required.
 
 ### 5.2 Jobs — fits-with-friction (schema-free; behavioral risk)
 - **Current:** node identity = `SchedulerOptionsBuilder.NodeIdentifier` (string =
@@ -574,21 +489,25 @@ membership logic inside Jobs.
 
 ### 5.3 Messaging — fits-with-friction (net-new; 3-store schema migration)
 - **Current:** CAP-derived outbox/inbox (`published`/`received`, `MediumMessage` row).
-  **No owner/node column anywhere** (`MediumMessage.cs:6-41`; PG DDL
-  `PostgreSqlStorageInitializer.cs:204-256`). Orphan recovery today = the per-row
-  `LockedUntil` visibility-lease + `NextRetryAt`: a dead node's row is re-pickable when
-  its lease expires via atomic `UPDATE … SET LockedUntil … FOR UPDATE SKIP LOCKED`
-  (`PostgreSqlDataStorage.cs:796-810`). **No sweeper, no node concept** — genuinely
-  net-new. Terminal-state scar predicate: `NOT (StatusName IN ('Succeeded','Failed')
-  AND NextRetryAt IS NULL)` (`PostgreSqlDataStorage.cs:43-52`) — a `Failed` row with
-  non-null `NextRetryAt` is retry-pending and must stay mutable.
-- **Migration:** add `owner` (`owner_node` + `owner_incarnation`) to `published` +
-  `received` across Postgres/SqlServer/InMemory; **stamp `owner = node@inc` at the same
-  atomic claim** that sets `LockedUntil` (not separately — else re-introduce the
-  SELECT-then-write double-dispatch race); add a `NodeLeft` reclaim UPDATE that ANDs
-  `owner = node@inc` onto the **exact** terminal-guard predicate; keep `LockedUntil`
-  as the safety floor (reclaim must not bypass it — guards against membership
-  false-positive double-processing).
+  `StorageId` is currently `long`/`BIGINT`, and there is **no owner/node column
+  anywhere** (`MediumMessage.cs:6-41`; PG DDL `PostgreSqlStorageInitializer.cs:204-256`).
+  Orphan recovery today = the per-row `LockedUntil` visibility-lease + `NextRetryAt`:
+  a dead node's row is re-pickable when its lease expires via atomic
+  `UPDATE … SET LockedUntil … FOR UPDATE SKIP LOCKED` (`PostgreSqlDataStorage.cs:796-810`).
+  **No sweeper, no node concept** — genuinely net-new. Terminal-state scar predicate:
+  `NOT (StatusName IN ('Succeeded','Failed') AND NextRetryAt IS NULL)`
+  (`PostgreSqlDataStorage.cs:43-52`) — a `Failed` row with non-null `NextRetryAt` is
+  retry-pending and must stay mutable.
+- **ID migration:** change `StorageId` to `Guid` across Core, Dashboard,
+  InMemory/PostgreSQL/SqlServer storage providers, monitoring APIs, route constraints,
+  and tests. SQL providers store the id in native UUID/`uniqueidentifier` columns.
+- **Recovery migration:** add `owner` (`owner_node` + `owner_incarnation`) to
+  `published` + `received` across Postgres/SqlServer/InMemory; **stamp
+  `owner = node@inc` at the same atomic claim** that sets `LockedUntil` (not separately
+  — else re-introduce the SELECT-then-write double-dispatch race); add a `NodeLeft`
+  reclaim UPDATE that ANDs `owner = node@inc` onto the **exact** terminal-guard
+  predicate; keep `LockedUntil` as the safety floor (reclaim must not bypass it —
+  guards against membership false-positive double-processing).
 - **Biggest risk:** hand-written **positional SQL** column lists across 3 providers ×
   many statements (`PostgreSqlDataStorage.cs:809,837-848`) — a missed ordinal silently
   corrupts reads; and the terminal predicate must be replicated byte-for-byte in a 4th

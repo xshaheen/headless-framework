@@ -14,7 +14,7 @@ public sealed class DistributedReadWriteLock(
     IDistributedReadWriteLockStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions lockOptions,
-    ILongIdGenerator longIdGenerator,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedReadWriteLock> logger
 ) : IDistributedReadWriteLock
@@ -269,7 +269,7 @@ public sealed class DistributedReadWriteLock(
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var acquireTimeout = acquireOptions.AcquireTimeout;
-        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = guidGenerator.Create().ToString("N");
         Ensure.False(leaseId.Contains(':', StringComparison.Ordinal), "Reader-writer lock ids cannot contain ':'.");
 
         using var activity = _StartLockActivity(mode, resource);

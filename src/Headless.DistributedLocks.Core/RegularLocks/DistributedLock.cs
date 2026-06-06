@@ -17,7 +17,7 @@ public sealed class DistributedLock(
     IDistributedLockStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions lockOptions,
-    ILongIdGenerator longIdGenerator,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedLock> logger
 ) : IDistributedLock, ICanReceiveLockReleased, IHaveLogger, IHaveTimeProvider
@@ -121,7 +121,7 @@ public sealed class DistributedLock(
         var monitorLease = monitoring != LockMonitoringMode.None;
         var autoExtend = monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
-        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = guidGenerator.Create().ToString("N");
 
         logger.LogAttemptingToAcquireLock(resource, leaseId);
 

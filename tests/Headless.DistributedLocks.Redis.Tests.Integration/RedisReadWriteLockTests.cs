@@ -24,7 +24,7 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
             fixture.ReaderWriterLockStorage,
             outboxBus: null,
             options ?? new DistributedLockOptions(),
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialAtEndGuidGenerator(),
             TimeProvider.System,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );

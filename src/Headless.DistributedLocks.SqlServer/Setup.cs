@@ -44,29 +44,29 @@ public static class SetupSqlServerDistributedLocks
         private IServiceCollection _AddSqlServerDistributedLocksCore()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.TryAddSingleton<IGuidGenerator>(new SequentialAtEndGuidGenerator());
             services.TryAddSingleton<SqlServerConnectionScopedLockStorage>();
             services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
                 sp.GetRequiredService<SqlServerConnectionScopedLockStorage>()
             );
             services.TryAddSingleton<IFencingTokenSource, SqlServerFencingTokenSource>();
             services.AddInitializerHostedService<SqlServerDistributedLocksStorageInitializer>();
-            services.TryAddSingleton<DistributedLockOptions>(sp =>
-                sp.GetRequiredService<IOptions<DistributedLockOptions>>().Value
-            );
-            services.TryAddSingleton<ConnectionScopedDistributedLock>(sp => new ConnectionScopedDistributedLock(
+            services.AddSingletonOptionValue<DistributedLockOptions>();
+
+            services.TryAddSingleton(sp => new ConnectionScopedDistributedLock(
                 sp.GetRequiredService<IConnectionScopedLockStorage>(),
                 // SQL Server blocks contended acquires server-side (BlocksServerSide), so the provider's wait loop and
                 // the release signal are unreachable; a no-op signal satisfies the constructor contract.
                 new NullReleaseSignal(),
                 sp.GetRequiredService<DistributedLockOptions>(),
-                sp.GetRequiredService<ILongIdGenerator>(),
+                sp.GetRequiredService<IGuidGenerator>(),
                 sp.GetRequiredService<TimeProvider>(),
                 sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
                 sp.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value.EnableFencing
                     ? sp.GetRequiredService<IFencingTokenSource>()
                     : null
             ));
+
             services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());
             services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();
 

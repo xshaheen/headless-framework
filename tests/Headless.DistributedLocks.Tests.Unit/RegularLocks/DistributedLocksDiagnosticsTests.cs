@@ -13,12 +13,11 @@ namespace Tests.RegularLocks;
 
 public sealed class DistributedLocksDiagnosticsTests : TestBase
 {
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-    private long _lockIdCounter = 1000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DistributedLocksDiagnosticsTests()
     {
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
     }
 
     private (DistributedLock Provider, InMemoryDistributedLockStorage Storage) _CreateProvider()
@@ -29,7 +28,7 @@ public sealed class DistributedLocksDiagnosticsTests : TestBase
             storage,
             outboxBus: null,
             new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             tp,
             LoggerFactory.CreateLogger<DistributedLock>()
         );

@@ -16,7 +16,7 @@ internal sealed class DistributedSemaphoreProvider(
     IDistributedSemaphoreStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions options,
-    ILongIdGenerator longIdGenerator,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     ILogger<DistributedSemaphoreProvider> logger
 ) : IDistributedSemaphoreProvider, ICanReceiveLockReleased
@@ -106,7 +106,7 @@ internal sealed class DistributedSemaphoreProvider(
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var acquireTimeout = acquireOptions.AcquireTimeout;
-        var leaseId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var leaseId = guidGenerator.Create().ToString("N");
         var timestamp = timeProvider.GetTimestamp();
 
         using var activity = _StartSemaphoreActivity(resource, maxCount);

@@ -95,5 +95,5 @@ await using var lease = await lockProvider.AcquireAsync(
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
-- Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
+- Registers `TimeProvider.System` and `IGuidGenerator` when absent.
 - Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.

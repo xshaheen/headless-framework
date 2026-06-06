@@ -49,13 +49,13 @@ public static class AddDistributedReadWriteLockExtensions
             services.TryAddSingleton<TStorage>();
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.TryAddSingleton<IGuidGenerator>(new Version7GuidGenerator());
 
             services.TryAddSingleton<DistributedReadWriteLock>(provider => new DistributedReadWriteLock(
                 provider.GetRequiredService<TStorage>(),
                 provider.GetService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
-                provider.GetRequiredService<ILongIdGenerator>(),
+                provider.GetRequiredService<IGuidGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<DistributedReadWriteLock>>()
             ));
