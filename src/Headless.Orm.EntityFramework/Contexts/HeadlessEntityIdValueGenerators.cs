@@ -43,35 +43,6 @@ internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
     }
 }
 
-/// <summary>
-/// EF Core value generator that produces an application-owned <see cref="long"/> key from the host's registered
-/// <see cref="ILongIdGenerator"/> (snowflake by default). See <see cref="HeadlessGuidIdValueGenerator"/> for the
-/// add-time / no-store-identity rationale.
-/// </summary>
-internal sealed class HeadlessLongIdValueGenerator : ValueGenerator<long>
-{
-    // Fallback only for a hand-constructed DbContextOptions with no application service provider (design-time /
-    // tests). Production DI always supplies ILongIdGenerator; this instance's auto-derived snowflake worker-id is
-    // not coordinated with the registered one, which is acceptable because the two never run in the same host.
-    private static readonly ILongIdGenerator _Default = new SnowflakeIdLongIdGenerator();
-
-    private static readonly ConditionalWeakTable<IServiceProvider, ILongIdGenerator> _ByProvider = [];
-
-    private static readonly ConditionalWeakTable<IServiceProvider, ILongIdGenerator>.CreateValueCallback _Resolve =
-        static provider => provider.GetService<ILongIdGenerator>() ?? _Default;
-
-    public override bool GeneratesTemporaryValues => false;
-
-    public override long Next(EntityEntry entry)
-    {
-        var applicationServices = HeadlessEntityIdValueGeneration.GetApplicationServices(entry.Context);
-
-        var generator = applicationServices is null ? _Default : _ByProvider.GetValue(applicationServices, _Resolve);
-
-        return generator.Create();
-    }
-}
-
 internal static class HeadlessEntityIdValueGeneration
 {
     /// <summary>
