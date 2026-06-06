@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
+using Headless.Testing.Tests;
 
 namespace Tests;
 
-public sealed class CacheValueTests
+public sealed class CacheValueTests : TestBase
 {
     [Fact]
     public void should_default_to_not_stale()

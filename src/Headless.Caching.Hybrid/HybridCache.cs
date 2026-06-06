@@ -196,23 +196,21 @@ public sealed class HybridCache(
         var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
         var distributedResults = await l2Cache.GetAllAsync<T>(missedKeys, cancellationToken).ConfigureAwait(false);
 
-        // Collect values to batch upsert to L1 (avoid N+1 pattern)
-        var valuesToCache = new Dictionary<string, T>(StringComparer.Ordinal);
+        var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
         foreach (var kvp in distributedResults)
         {
             result[kvp.Key] = kvp.Value;
             if (kvp.Value is { HasValue: true, Value: not null })
             {
-                valuesToCache[kvp.Key] = kvp.Value.Value;
+                var expiration = await l2Cache.GetExpirationAsync(kvp.Key, cancellationToken).ConfigureAwait(false);
+                valuesToCache[kvp.Key] = (kvp.Value.Value, _GetLocalExpiration(expiration));
             }
         }
 
-        // Batch upsert to L1 using DefaultLocalExpiration
-        if (valuesToCache.Count > 0)
+        foreach (var (key, (value, localExpiration)) in valuesToCache)
         {
-            var localExpiration = _GetLocalExpiration(null);
-            _logger.LogBatchSettingLocalCacheKeys(valuesToCache.Count, localExpiration);
-            await LocalCache.UpsertAllAsync(valuesToCache, localExpiration, cancellationToken).ConfigureAwait(false);
+            _logger.LogSettingLocalCacheKey(key, localExpiration);
+            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
 
         return result;

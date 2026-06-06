@@ -77,14 +77,6 @@ internal static partial class HybridCacheLoggerExtensions
     public static partial void LogFailedToReadFromL2Cache(this ILogger logger, Exception exception, string key);
 
     [LoggerMessage(
-        EventId = 9,
-        EventName = "BatchSettingLocalCacheKeys",
-        Level = LogLevel.Trace,
-        Message = "Batch setting {Count} local cache keys with expiration: {Expiration}"
-    )]
-    public static partial void LogBatchSettingLocalCacheKeys(this ILogger logger, int count, TimeSpan? expiration);
-
-    [LoggerMessage(
         EventId = 10,
         EventName = "SettingKey",
         Level = LogLevel.Trace,

@@ -362,6 +362,35 @@ public sealed class HybridCacheFailSafeTests : TestBase
             );
     }
 
+    [Fact]
+    public async Task should_cap_get_all_l1_promotion_by_l2_logical_expiration()
+    {
+        // given
+        var localCap = TimeSpan.FromHours(1);
+        var duration = TimeSpan.FromMinutes(5);
+        var (cache, l1, l2, _) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = localCap });
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int(1, 100);
+        var options = _FailSafeOptions(duration: duration, failSafeMaxDuration: TimeSpan.FromHours(2));
+
+        await l2.GetOrAddAsync(key, _ => ValueTask.FromResult<int?>(value), options, AbortToken);
+
+        // when — GetAllAsync reads the fresh L2 value and promotes it into L1.
+        var values = await cache.GetAllAsync<int>([key], AbortToken);
+        var l1Expiration = await l1.GetExpirationAsync(key, AbortToken);
+
+        _timeProvider.Advance(duration + TimeSpan.FromMilliseconds(1));
+        var afterLogicalExpiry = await cache.GetAsync<int>(key, AbortToken);
+
+        // then — the promoted L1 copy must expire at the L2 logical boundary, not the longer local cap.
+        values[key].Value.Should().Be(value);
+        l1Expiration.Should().NotBeNull();
+        l1Expiration.Should().BeLessThanOrEqualTo(duration, "batch promotion must not outlive L2 logical freshness");
+        afterLogicalExpiry.HasValue.Should().BeFalse("normal Hybrid reads must not serve fail-safe reserves after logical expiry");
+    }
+
     #endregion
 
     #region U7-6: read-path guard — logically-expired L2 entry must NOT be promoted into L1

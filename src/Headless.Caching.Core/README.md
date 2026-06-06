@@ -37,6 +37,7 @@ None.
 
 - `Headless.Caching.Abstractions`
 - `Headless.Extensions`
+- `Microsoft.Extensions.Logging.Abstractions`
 
 ## Side Effects
 
