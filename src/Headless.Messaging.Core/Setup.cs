@@ -271,6 +271,7 @@ public static class SetupMessaging
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
+        services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton

@@ -57,6 +57,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
+            new SequentialAtEndGuidGenerator(),
             _timeProvider
         );
         _monitoringApi = _storage.GetMonitoringApi();

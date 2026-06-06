@@ -24,6 +24,7 @@ public sealed class PostgreSqlDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
@@ -200,7 +201,7 @@ public sealed class PostgreSqlDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -321,7 +322,7 @@ public sealed class PostgreSqlDataStorage(
     {
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", Guid.NewGuid()),
+            new NpgsqlParameter("@Id", guidGenerator.Create()),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter(
@@ -355,7 +356,7 @@ public sealed class PostgreSqlDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,

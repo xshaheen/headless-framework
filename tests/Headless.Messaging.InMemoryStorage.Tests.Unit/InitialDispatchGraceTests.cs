@@ -113,6 +113,7 @@ public sealed class InitialDispatchGraceTests
         var storage = new InMemoryDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<ISerializer>(),
+            new SequentialAtEndGuidGenerator(),
             fakeClock
         );
 

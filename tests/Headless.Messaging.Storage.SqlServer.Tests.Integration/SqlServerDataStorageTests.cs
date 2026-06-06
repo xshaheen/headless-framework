@@ -55,6 +55,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
+            new SequentialAtEndGuidGenerator(),
             _timeProvider
         );
 

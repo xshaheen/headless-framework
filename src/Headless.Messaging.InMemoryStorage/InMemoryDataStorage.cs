@@ -15,6 +15,7 @@ namespace Headless.Messaging.InMemoryStorage;
 internal sealed class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     ISerializer serializer,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
@@ -180,7 +181,7 @@ internal sealed class InMemoryDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -329,7 +330,7 @@ internal sealed class InMemoryDataStorage(
                 return ValueTask.FromResult(true);
             }
 
-            var id = Guid.NewGuid();
+            var id = guidGenerator.Create();
             ReceivedMessages[id] = new MemoryMessage
             {
                 StorageId = id,
@@ -516,7 +517,7 @@ internal sealed class InMemoryDataStorage(
     {
         var mdMessage = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serialized,
             IntentType = message.IntentType,

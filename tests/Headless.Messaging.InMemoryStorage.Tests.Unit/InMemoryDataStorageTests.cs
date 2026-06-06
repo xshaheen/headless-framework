@@ -137,7 +137,12 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new InMemoryStorageInitializer();
-        _storage = new InMemoryDataStorage(messagingOptions, _serializer, _fakeTimeProvider);
+        _storage = new InMemoryDataStorage(
+            messagingOptions,
+            _serializer,
+            new SequentialAtEndGuidGenerator(),
+            _fakeTimeProvider
+        );
     }
 
     #region Data Storage Tests (DataStorageTestsBase parity matrix)

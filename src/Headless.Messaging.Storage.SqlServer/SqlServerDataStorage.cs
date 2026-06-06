@@ -24,6 +24,7 @@ public sealed class SqlServerDataStorage(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
@@ -197,7 +198,7 @@ public sealed class SqlServerDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -321,7 +322,7 @@ public sealed class SqlServerDataStorage(
     {
         object[] sqlParams =
         [
-            new SqlParameter("@Id", Guid.NewGuid()),
+            new SqlParameter("@Id", guidGenerator.Create()),
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter(
@@ -358,7 +359,7 @@ public sealed class SqlServerDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
-            StorageId = Guid.NewGuid(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
