@@ -20,7 +20,7 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -32,15 +32,14 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
     }
 
     [Fact]
-    public void should_be_idempotent_for_repeated_reader_writer_setup_calls()
+    public void should_register_reader_writer_provider_once_from_builder()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
 
         // when
-        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
-        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(_ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
 
         // then
         services.Count(x => x.ServiceType == typeof(IDistributedReadWriteLock)).Should().Be(1);
@@ -64,7 +63,11 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(configuration);
+        services.AddHeadlessDistributedLocks(setup =>
+        {
+            setup.ConfigureOptions(configuration);
+            setup.UseInMemory();
+        });
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -85,13 +88,17 @@ public sealed class DistributedReadWriteLockSetupTests : TestBase
         services.AddSingleton(new MarkerService { Prefix = "custom-prefix:" });
 
         // when - the Action<TOption, IServiceProvider> overload lets options pull values from DI.
-        services.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(
-            (opts, sp) =>
-            {
-                var marker = sp.GetRequiredService<MarkerService>();
-                opts.KeyPrefix = marker.Prefix;
-            }
-        );
+        services.AddHeadlessDistributedLocks(setup =>
+        {
+            setup.ConfigureOptions(
+                (opts, sp) =>
+                {
+                    var marker = sp.GetRequiredService<MarkerService>();
+                    opts.KeyPrefix = marker.Prefix;
+                }
+            );
+            setup.UseInMemory();
+        });
         using var provider = services.BuildServiceProvider();
 
         // then

@@ -38,7 +38,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add required dependencies
 builder.Services.AddCaching();
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );

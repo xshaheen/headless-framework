@@ -99,11 +99,11 @@ public sealed class PostgresConnectionDeathTests(PostgresDistributedLockFixture 
         var builder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { KeepAlive = 1 };
 
         services.AddLogging();
-        services.AddPostgresDistributedLocks(options =>
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
         {
             options.ConnectionString = builder.ConnectionString;
             options.KeyPrefix = _KeyPrefix;
-        });
+        }));
 
         return services.BuildServiceProvider();
     }

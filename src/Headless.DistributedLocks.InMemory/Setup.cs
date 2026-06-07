@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.DistributedLocks.InMemory;
@@ -17,103 +16,24 @@ namespace Headless.DistributedLocks.InMemory;
 [PublicAPI]
 public static class SetupInMemoryDistributedLock
 {
-    extension(IServiceCollection services)
+    extension(HeadlessDistributedLocksSetupBuilder setup)
     {
-        #region InMemory Distributed Lock
-
-        /// <summary>Adds an in-process resource lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedLock(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
+        /// <summary>Adds in-process distributed-lock primitives.</summary>
+        public HeadlessDistributedLocksSetupBuilder UseInMemory()
         {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedLock<InMemoryDistributedLockStorage>(optionSetupAction)
-            );
+            setup.RegisterExtension(new InMemoryDistributedLocksOptionsExtension());
+
+            return setup;
         }
+    }
 
-        /// <summary>Adds an in-process resource lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedLock(Action<DistributedLockOptions>? optionSetupAction = null)
+    private sealed class InMemoryDistributedLocksOptionsExtension : IDistributedLocksOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
         {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedLock<InMemoryDistributedLockStorage>(optionSetupAction ?? (static _ => { }))
-            );
-        }
-
-        /// <summary>Adds an in-process resource lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedLock(IConfiguration config)
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedLock<InMemoryDistributedLockStorage>(config)
-            );
-        }
-
-        #endregion
-
-        #region InMemory Distributed Semaphore
-
-        /// <summary>Adds an in-process semaphore provider.</summary>
-        public IServiceCollection AddInMemoryDistributedSemaphore(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(optionSetupAction)
-            );
-        }
-
-        /// <summary>Adds an in-process semaphore provider.</summary>
-        public IServiceCollection AddInMemoryDistributedSemaphore(Action<DistributedLockOptions> optionSetupAction)
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(optionSetupAction)
-            );
-        }
-
-        /// <summary>Adds an in-process semaphore provider.</summary>
-        public IServiceCollection AddInMemoryDistributedSemaphore(IConfiguration config)
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(config)
-            );
-        }
-
-        #endregion
-
-        #region InMemory Distributed Reader-Writer Lock
-
-        /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReadWriteLock(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(optionSetupAction)
-            );
-        }
-
-        /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReadWriteLock(Action<DistributedLockOptions> optionSetupAction)
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(optionSetupAction)
-            );
-        }
-
-        /// <summary>Adds an in-process reader-writer lock provider.</summary>
-        public IServiceCollection AddInMemoryDistributedReadWriteLock(IConfiguration config)
-        {
-            return services._AddInMemoryDistributedLockCore(s =>
-                s.AddDistributedReadWriteLock<InMemoryDistributedReadWriteLockStorage>(config)
-            );
-        }
-
-        #endregion
-
-        private IServiceCollection _AddInMemoryDistributedLockCore(
-            Func<IServiceCollection, IServiceCollection> registerStorage
-        )
-        {
-            return registerStorage(services);
+            services.AddDistributedLockCore<InMemoryDistributedLockStorage>();
+            services.AddDistributedReadWriteLockCore<InMemoryDistributedReadWriteLockStorage>();
+            services.AddDistributedSemaphoreCore<InMemoryDistributedSemaphoreStorage>();
         }
     }
 }
