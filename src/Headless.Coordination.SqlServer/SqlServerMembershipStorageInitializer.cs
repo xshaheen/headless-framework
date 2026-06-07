@@ -7,10 +7,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.Coordination.SqlServer;
 
 #pragma warning disable CA2100 // SQL text is built from validated schema plus internal table constants.
-internal sealed class SqlServerMembershipStorageInitializer(
-    IOptions<SqlServerCoordinationOptions> providerOptions,
-    IOptions<CoordinationOptions> coordinationOptions
-) : HostedInitializer, IMembershipStorageInitializer
+internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCoordinationOptions> providerOptions)
+    : HostedInitializer, IMembershipStorageInitializer
 {
     protected override bool RunOnStartup => providerOptions.Value.InitializeOnStartup;
 
@@ -23,10 +21,7 @@ internal sealed class SqlServerMembershipStorageInitializer(
         command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
         command.CommandText = _CreateScript(providerOptions.Value);
         command.Parameters.AddWithValue("LockTimeout", _GetLockTimeoutMilliseconds(providerOptions.Value.CommandTimeout));
-        command.Parameters.AddWithValue(
-            "LockResource",
-            $"headless_coordination_init:{providerOptions.Value.Schema}:{coordinationOptions.Value.ClusterName}"
-        );
+        command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{providerOptions.Value.Schema}");
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }

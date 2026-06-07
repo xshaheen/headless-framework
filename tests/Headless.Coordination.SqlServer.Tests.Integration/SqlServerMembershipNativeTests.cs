@@ -59,12 +59,11 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         // Start from a freshly dropped schema so all five initializers race the same first-time DDL (KTD-5).
         await _DropSchemaAsync();
 
-        var clusters = Enumerable.Range(0, 5).Select(_ => _Cluster()).ToArray();
+        var cluster = _Cluster();
+        var nodeIds = Enumerable.Range(0, 5).Select(index => $"node-{index}").ToArray();
 
         // All initializers must complete without surfacing a duplicate-creation error from the concurrent DDL.
-        var nodes = await Task.WhenAll(
-            clusters.Select(cluster => fixture.CreateNodeAsync(cluster, "node-a", AbortToken).AsTask())
-        );
+        var nodes = await Task.WhenAll(nodeIds.Select(nodeId => fixture.CreateNodeAsync(cluster, nodeId, AbortToken).AsTask()));
 
         try
         {
