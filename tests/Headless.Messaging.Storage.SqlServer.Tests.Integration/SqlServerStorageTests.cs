@@ -139,7 +139,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
             _initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System
+            TimeProvider.System,
+            NodeMembership
         );
     }
 
@@ -260,6 +261,14 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
+
+    [Fact]
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_published_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_received_retry_row_owned_by_dead_node();
 
     #endregion
 

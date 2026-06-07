@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
@@ -140,7 +139,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             _serializer,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _fakeTimeProvider,
-            new NullNodeMembership()
+            NodeMembership
         );
     }
 
@@ -331,6 +330,14 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
+
+    [Fact]
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_published_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_received_retry_row_owned_by_dead_node();
 
     #endregion
 }
