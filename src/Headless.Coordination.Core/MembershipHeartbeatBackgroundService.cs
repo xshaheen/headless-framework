@@ -26,7 +26,10 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
         if (membership.Identity is null)
         {
-            await _RegisterWithRetryAsync(stoppingToken).ConfigureAwait(false);
+            if (!await _TryRegisterWithRetryAsync(stoppingToken).ConfigureAwait(false))
+            {
+                return;
+            }
         }
 
         while (!loopToken.IsCancellationRequested)
@@ -65,7 +68,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
         }
     }
 
-    private async Task _RegisterWithRetryAsync(CancellationToken cancellationToken)
+    private async Task<bool> _TryRegisterWithRetryAsync(CancellationToken cancellationToken)
     {
         const int maxAttempts = 5;
         var delay = TimeSpan.FromMilliseconds(200);
@@ -76,7 +79,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
             {
                 await membership.RegisterAsync(cancellationToken).ConfigureAwait(false);
 
-                return;
+                return true;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -87,6 +90,12 @@ internal sealed class MembershipHeartbeatBackgroundService(
                 logger.MembershipRegistrationRetry(ex, attempt, maxAttempts);
                 await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
                 delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 5000));
+            }
+            catch (Exception ex) when (options.MembershipLostBehavior == MembershipLostBehavior.StopMembershipOnly)
+            {
+                logger.MembershipRegistrationFailed(ex, maxAttempts);
+
+                return false;
             }
         }
     }

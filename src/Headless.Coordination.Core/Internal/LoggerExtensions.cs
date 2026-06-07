@@ -75,4 +75,12 @@ internal static partial class LoggerExtensions
         Message = "Coordination graceful leave failed during host shutdown; the store will reclaim the membership after the dead threshold."
     )]
     public static partial void LeaveOnShutdownFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "MembershipRegistrationFailed",
+        Level = LogLevel.Error,
+        Message = "Coordination membership registration failed after {MaxAttempts} attempts; stopping the membership loop without stopping the host."
+    )]
+    public static partial void MembershipRegistrationFailed(this ILogger logger, Exception exception, int maxAttempts);
 }

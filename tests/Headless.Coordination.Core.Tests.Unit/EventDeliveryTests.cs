@@ -2,6 +2,9 @@
 
 using Headless.Coordination;
 using Headless.Testing.Tests;
+using System.Collections.Immutable;
+using System.Reflection;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -52,5 +55,24 @@ public sealed class EventDeliveryTests : TestBase
         first.Current.Should().BeOfType<NodeLeft>().Which.Identity.Should().Be(identity);
         (await second.MoveNextAsync()).Should().BeTrue();
         second.Current.Should().BeOfType<NodeLeft>().Which.Identity.Should().Be(identity);
+    }
+
+    [Fact]
+    public void should_prune_completed_subscribers_seen_during_publish()
+    {
+        // given
+        var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
+        var channel = Channel.CreateBounded<NodeMembershipEvent>(1);
+        channel.Writer.TryComplete();
+        var field = typeof(MembershipEventSource).GetField("_subscribers", BindingFlags.Instance | BindingFlags.NonPublic);
+        field.Should().NotBeNull();
+        field!.SetValue(source, ImmutableArray.Create(channel));
+        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
+
+        // when
+        source.Publish(new NodeJoined(identity));
+
+        // then
+        ((ImmutableArray<Channel<NodeMembershipEvent>>)field.GetValue(source)!).Should().BeEmpty();
     }
 }

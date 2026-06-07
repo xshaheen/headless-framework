@@ -12,7 +12,17 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool HeartbeatAccepted { get; set; } = true;
 
+    public bool ThrowOnRegister { get; set; }
+
     public bool ThrowOnRead { get; set; }
+
+    public bool ThrowOnLeave { get; set; }
+
+    public bool BlockOnLeave { get; set; }
+
+    public int AllocateIncarnationCalls { get; private set; }
+
+    public int ReadLivenessCalls { get; private set; }
 
     public List<NodeDescriptor> Descriptors { get; } = [];
 
@@ -23,6 +33,12 @@ internal sealed class FakeMembershipStore : IMembershipStore
     public ValueTask<NodeIncarnation> AllocateIncarnationAsync(NodeId nodeId, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        AllocateIncarnationCalls++;
+
+        if (ThrowOnRegister)
+        {
+            throw new InvalidOperationException("registration unavailable");
+        }
 
         return ValueTask.FromResult(NextIncarnation);
     }
@@ -43,12 +59,21 @@ internal sealed class FakeMembershipStore : IMembershipStore
         return ValueTask.FromResult(HeartbeatAccepted);
     }
 
-    public ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
+    public async ValueTask LeaveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        Leaves.Add(identity);
 
-        return ValueTask.CompletedTask;
+        if (ThrowOnLeave)
+        {
+            throw new InvalidOperationException("leave unavailable");
+        }
+
+        if (BlockOnLeave)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        }
+
+        Leaves.Add(identity);
     }
 
     public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> ReadLivenessAsync(
@@ -56,6 +81,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ReadLivenessCalls++;
 
         if (ThrowOnRead)
         {

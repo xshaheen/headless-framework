@@ -43,6 +43,26 @@ public sealed class NodeIdProviderTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_pod_name_without_namespace_when_namespace_is_absent()
+    {
+        // given
+        var provider = _CreateProvider(
+            env: name => name switch
+            {
+                "POD_NAME" => "orders-7d",
+                "POD_NAMESPACE" => null,
+                _ => null,
+            }
+        );
+
+        // when
+        var nodeId = await provider.GetNodeIdAsync(AbortToken);
+
+        // then
+        nodeId.Should().Be(new NodeId("orders-7d"));
+    }
+
+    [Fact]
     public async Task should_use_hostname_when_pod_name_is_absent()
     {
         // given

@@ -58,4 +58,21 @@ public sealed class CoordinationOptionsValidatorTests : TestBase
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(x => x.PropertyName == propertyName);
     }
+
+    [Theory]
+    [InlineData("cluster one")]
+    [InlineData("cluster/one")]
+    [InlineData("cluster{one}")]
+    public void should_reject_cluster_name_outside_safe_identifier_set(string clusterName)
+    {
+        // given
+        var options = new CoordinationOptions { ClusterName = clusterName };
+
+        // when
+        var result = _sut.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(CoordinationOptions.ClusterName));
+    }
 }

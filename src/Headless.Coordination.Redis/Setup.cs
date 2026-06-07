@@ -46,42 +46,27 @@ public static class SetupRedisCoordination
 
     private sealed class RedisCoordinationOptionsExtension : ICoordinationProviderOptionsExtension
     {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<RedisCoordinationOptions>? _configure;
-        private readonly Action<RedisCoordinationOptions, IServiceProvider>? _configureWithServices;
+        private readonly Action<IServiceCollection> _configure;
 
         public RedisCoordinationOptionsExtension(IConfiguration configuration)
         {
-            _configuration = configuration;
+            _configure = services =>
+                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configuration);
         }
 
         public RedisCoordinationOptionsExtension(Action<RedisCoordinationOptions> configure)
         {
-            _configure = configure;
+            _configure = services => services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
         }
 
         public RedisCoordinationOptionsExtension(Action<RedisCoordinationOptions, IServiceProvider> configure)
         {
-            _configureWithServices = configure;
+            _configure = services => services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
         }
 
         public void AddServices(IServiceCollection services)
         {
-            if (_configuration is not null)
-            {
-                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(
-                    _configureWithServices
-                );
-            }
-
+            _configure(services);
             services.AddCoordinationCore<RedisMembershipStore>();
             _AddRedisCoordinationProviderCore(services);
         }
