@@ -64,4 +64,12 @@ public interface IConsumerRegistry
     /// or belong to different consumer groups.
     /// </remarks>
     IReadOnlyList<ConsumerMetadata> FindByMessageType(Type messageType);
+
+    /// <summary>
+    /// Attempts to find the raw message-name mapping registered for a message type.
+    /// </summary>
+    /// <param name="messageType">The message type to search for.</param>
+    /// <param name="messageName">The raw message name, when a mapping exists.</param>
+    /// <returns><c>true</c> when a mapping exists; otherwise, <c>false</c>.</returns>
+    bool TryGetMessageName(Type messageType, [NotNullWhen(true)] out string? messageName);
 }

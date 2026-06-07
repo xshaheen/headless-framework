@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -297,6 +298,8 @@ internal sealed class Bootstrapper(
             );
         }
 
+        _DrainPendingMessageRegistrations();
+
         var messageQueueMarker = serviceProvider.GetService<MessageQueueMarkerService>();
         if (messageQueueMarker == null)
         {
@@ -326,7 +329,7 @@ internal sealed class Bootstrapper(
 
     private void _CheckMessageNameCollisions()
     {
-        var registry = serviceProvider.GetService<IConsumerRegistry>();
+        var registry = serviceProvider.GetService<ConsumerRegistry>();
         var consumers = registry?.GetAll() ?? [];
         var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
 
@@ -335,7 +338,9 @@ internal sealed class Bootstrapper(
             _TrackMessageName(nameToTypes, consumer.MessageName, consumer.MessageType);
         }
 
-        foreach (var mapping in options.Value.MessageNameMappings)
+        var mappings = registry?.GetMessageNameMappings() ?? new Dictionary<Type, string>();
+
+        foreach (var mapping in mappings)
         {
             _TrackMessageName(nameToTypes, options.Value.ApplyMessageNamePrefix(mapping.Value), mapping.Key);
         }
@@ -544,6 +549,20 @@ internal sealed class Bootstrapper(
         {
             throw new AggregateException("One or more messaging processors failed to stop cleanly.", failures);
         }
+    }
+
+    private void _DrainPendingMessageRegistrations()
+    {
+        var services = serviceProvider.GetService<IServiceCollection>();
+        var registry = serviceProvider.GetService<ConsumerRegistry>();
+        var circuitBreakerRegistry = serviceProvider.GetService<ConsumerCircuitBreakerRegistry>();
+
+        if (services is null || registry is null || circuitBreakerRegistry is null)
+        {
+            return;
+        }
+
+        SetupMessaging.DiscoverMessageRegistrations(services, options.Value, registry, circuitBreakerRegistry);
     }
 
     private void _StopProcessors()

@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.IntegrationTests;
@@ -163,7 +164,7 @@ public sealed class IConsumeIntegrationTests
         });
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();
 
         // when

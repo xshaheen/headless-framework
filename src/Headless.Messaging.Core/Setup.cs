@@ -118,10 +118,8 @@ public static class SetupMessaging
     /// is never added, the emitted descriptors are inert. Application code should prefer the
     /// <c>setup.ForMessage&lt;T&gt;(…)</c> callback.
     /// <para>
-    /// Ordering: the emitted registration is drained into the consumer registry by
-    /// <see cref="AddHeadlessMessaging"/>, so this MUST be called before <see cref="AddHeadlessMessaging"/>. Calling it
-    /// afterwards throws (the registry is already built and would silently ignore the late registration). A fully
-    /// order-independent path (runtime subscription) is tracked in #390.
+    /// Ordering: the emitted registration is drained into the consumer registry at messaging bootstrap, so this can
+    /// be called before or after <see cref="AddHeadlessMessaging"/> as long as both calls happen before host build.
     /// </para>
     /// </remarks>
     /// <typeparam name="TMessage">The message type to register.</typeparam>
@@ -129,9 +127,6 @@ public static class SetupMessaging
     /// <param name="configure">The message registration callback.</param>
     /// <returns>The same <see cref="IServiceCollection"/> instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="configure"/> is null.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when called after <see cref="AddHeadlessMessaging"/> has already run.
-    /// </exception>
     [PublicAPI]
     public static IServiceCollection ForMessage<TMessage>(
         this IServiceCollection services,
@@ -140,20 +135,6 @@ public static class SetupMessaging
         where TMessage : class
     {
         Argument.IsNotNull(configure);
-
-        // AddHeadlessMessaging drains MessageRegistration singletons into the consumer registry once,
-        // synchronously, during its call. A registration added after that point is never seen, so the
-        // consumer would silently never receive messages. Fail fast instead of degrading silently.
-        if (services.Any(static descriptor => descriptor.ServiceType == typeof(ConsumerRegistry)))
-        {
-            throw new InvalidOperationException(
-                "IServiceCollection.ForMessage<"
-                    + typeof(TMessage).Name
-                    + ">(...) must be called before AddHeadlessMessaging(...). The consumer registry is populated during "
-                    + "AddHeadlessMessaging and does not pick up registrations added afterwards. Move this registration "
-                    + "(or the Add... call that performs it) before AddHeadlessMessaging."
-            );
-        }
 
         var builder = new MessageBuilder<TMessage>(services);
         configure(builder);
@@ -210,8 +191,6 @@ public static class SetupMessaging
         var setup = new MessagingSetupBuilder(services, options, registry);
 
         configure(setup);
-
-        _DiscoverMessageRegistrations(services, setup, registry);
 
         return _RegisterCoreMessagingServices(services, setup);
     }
@@ -387,12 +366,18 @@ public static class SetupMessaging
         }
     }
 
-    private static void _DiscoverMessageRegistrations(
+    internal static void DiscoverMessageRegistrations(
         IServiceCollection services,
-        MessagingSetupBuilder setup,
-        ConsumerRegistry registry
+        MessagingOptions options,
+        ConsumerRegistry registry,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry
     )
     {
+        if (registry.HasCompletedMessageRegistrationDrain)
+        {
+            return;
+        }
+
         var registrations = services
             .Where(static d => d.ServiceType == typeof(MessageRegistration) && d.Lifetime == ServiceLifetime.Singleton)
             .Select(static d => d.ImplementationInstance)
@@ -401,6 +386,7 @@ public static class SetupMessaging
 
         if (registrations.Count == 0)
         {
+            registry.MarkMessageRegistrationDrainCompleted();
             return;
         }
 
@@ -436,7 +422,7 @@ public static class SetupMessaging
 
             if (explicitMessageName is not null)
             {
-                setup.Options.WithMessageNameMapping(group.Key, explicitMessageName);
+                registry.RegisterMessageName(group.Key, explicitMessageName);
             }
 
             foreach (var registration in group)
@@ -451,10 +437,13 @@ public static class SetupMessaging
                         continue;
                     }
 
-                    var resolved = setup.Options.CreateConsumerMetadata(
+                    var resolved = options.CreateConsumerMetadata(
                         consumer.ConsumerType,
                         registration.MessageType,
                         messageName: null,
+                        registry.TryGetMessageName(registration.MessageType, out var mappedMessageName)
+                            ? mappedMessageName
+                            : null,
                         consumer.Group,
                         consumer.Concurrency,
                         consumer.HandlerId,
@@ -495,14 +484,16 @@ public static class SetupMessaging
 
                     registeredKeys.Add(key, settings);
                     registry.Register(resolved);
-                    _ApplyCircuitBreakerOverride(setup, resolved, consumer);
+                    _ApplyCircuitBreakerOverride(circuitBreakerRegistry, resolved, consumer);
                 }
             }
         }
+
+        registry.MarkMessageRegistrationDrainCompleted();
     }
 
     private static void _ApplyCircuitBreakerOverride(
-        MessagingSetupBuilder setup,
+        ConsumerCircuitBreakerRegistry circuitBreakerRegistry,
         ConsumerMetadata resolved,
         MessageConsumerRegistration consumer
     )
@@ -512,7 +503,7 @@ public static class SetupMessaging
             return;
         }
 
-        setup.CircuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
+        circuitBreakerRegistry.Register(CircuitBreakerGroupKeys.For(resolved), consumer.CircuitBreakerOverride);
     }
 
     private readonly record struct ConsumerRegistrationKey(

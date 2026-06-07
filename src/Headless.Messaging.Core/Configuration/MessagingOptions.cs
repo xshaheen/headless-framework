@@ -29,7 +29,6 @@ public sealed class MessagingOptions
         "headless.queue." + Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture);
 #pragma warning restore IDE0032
 
-    internal Dictionary<Type, string> MessageNameMappings { get; } = [];
     internal MessagingConventions Conventions { get; set; } = new();
 
     /// <summary>
@@ -268,10 +267,6 @@ public sealed class MessagingOptions
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
 
-        foreach (var mapping in MessageNameMappings)
-        {
-            target.MessageNameMappings[mapping.Key] = mapping.Value;
-        }
     }
 
     /// <summary>
@@ -318,27 +313,6 @@ public sealed class MessagingOptions
         }
     }
 
-    /// <summary>
-    /// Registers a message-name mapping for a message type. Used by <see cref="MessagingSetupBuilder"/>.
-    /// </summary>
-    internal void WithMessageNameMapping(Type messageType, string messageName)
-    {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-        _ValidateMessageName(messageName);
-
-        if (
-            MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
-            && !string.Equals(existingMessageName, messageName, StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Message type {messageType.Name} is already mapped to messageName '{existingMessageName}'. Cannot map to '{messageName}'."
-            );
-        }
-
-        MessageNameMappings[messageType] = messageName;
-    }
-
     internal string ApplyMessageNamePrefix(string messageName)
     {
         Argument.IsNotNullOrWhiteSpace(messageName);
@@ -355,53 +329,11 @@ public sealed class MessagingOptions
         return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
     }
 
-    /// <summary>
-    /// Validates message-name format and constraints.
-    /// </summary>
-    private static void _ValidateMessageName(string messageName)
-    {
-        const int maxMessageNameLength = 255;
-
-        if (messageName.Length > maxMessageNameLength)
-        {
-            throw new ArgumentException(
-                $"Message name '{messageName}' exceeds maximum length of {maxMessageNameLength} characters.",
-                nameof(messageName)
-            );
-        }
-
-        if (messageName.StartsWith('.') || messageName.EndsWith('.'))
-        {
-            throw new ArgumentException(
-                $@"Message name '{messageName}' cannot start or end with a dot.",
-                nameof(messageName)
-            );
-        }
-
-        if (messageName.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                $@"Message name '{messageName}' cannot contain consecutive dots.",
-                nameof(messageName)
-            );
-        }
-
-        foreach (var c in messageName)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
-            {
-                throw new ArgumentException(
-                    $@"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
-                    nameof(messageName)
-                );
-            }
-        }
-    }
-
     internal ConsumerMetadata CreateConsumerMetadata(
         Type consumerType,
         Type messageType,
         string? messageName,
+        string? mappedMessageName,
         string? group,
         byte concurrency,
         string? handlerId = null,
@@ -413,10 +345,7 @@ public sealed class MessagingOptions
 
         var finalHandlerId = handlerId ?? MessagingConventions.GetDefaultHandlerId(consumerType, messageType);
         var resolvedMessageName =
-            messageName
-            ?? (MessageNameMappings.TryGetValue(messageType, out var mappedMessageName) ? mappedMessageName : null)
-            ?? conventions.GetMessageName(messageType)
-            ?? messageType.Name;
+            messageName ?? mappedMessageName ?? conventions.GetMessageName(messageType) ?? messageType.Name;
         var finalMessageName = ApplyMessageNamePrefix(resolvedMessageName);
         var finalGroup = ResolveGroupName(finalHandlerId, group);
 

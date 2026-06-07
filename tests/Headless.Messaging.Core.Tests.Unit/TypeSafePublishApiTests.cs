@@ -1,9 +1,9 @@
+using System.Reflection;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Transactions;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -34,11 +34,11 @@ public sealed class TypeSafePublishApiTests
 
         // when
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        registry.TryGetMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.created");
     }
 
     [Fact]
@@ -57,12 +57,13 @@ public sealed class TypeSafePublishApiTests
 
         // when
         using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        options.MessageNameMappings.Should().HaveCount(2);
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
-        options.MessageNameMappings[typeof(UserRegistered)].Should().Be("users.registered");
+        registry.TryGetMessageName(typeof(OrderCreated), out var orderMessageName).Should().BeTrue();
+        orderMessageName.Should().Be("orders.created");
+        registry.TryGetMessageName(typeof(UserRegistered), out var userMessageName).Should().BeTrue();
+        userMessageName.Should().Be("users.registered");
     }
 
     [Fact]
@@ -125,13 +126,22 @@ public sealed class TypeSafePublishApiTests
 
         // when
         await using var provider = services.BuildServiceProvider();
-        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var registry = provider.GetRequiredService<IConsumerRegistry>();
         var publisher = provider.GetRequiredService<IOutboxBus>();
 
         // then - Mapping is available for type-safe publishing
-        options.MessageNameMappings.Should().ContainKey(typeof(OrderCreated));
-        options.MessageNameMappings[typeof(OrderCreated)].Should().Be("orders.created");
+        registry.TryGetMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.created");
         publisher.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void messaging_options_should_not_expose_message_name_mappings()
+    {
+        typeof(MessagingOptions)
+            .GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            .Should()
+            .NotContain(property => property.Name == "MessageNameMappings");
     }
 
     [Fact]

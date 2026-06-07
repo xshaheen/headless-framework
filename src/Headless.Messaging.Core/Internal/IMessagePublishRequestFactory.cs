@@ -23,6 +23,7 @@ internal sealed class MessagePublishRequestFactory(
     IGuidGenerator idGenerator,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> optionsAccessor,
+    IConsumerRegistry consumerRegistry,
     ICurrentTenant currentTenant
 ) : IMessagePublishRequestFactory
 {
@@ -264,7 +265,7 @@ internal sealed class MessagePublishRequestFactory(
             return cachedName;
         }
 
-        if (_options.MessageNameMappings.TryGetValue(messageType, out var messageName))
+        if (consumerRegistry.TryGetMessageName(messageType, out var messageName))
         {
             messageName = _options.ApplyMessageNamePrefix(messageName);
             _messageNameCache.AddOrUpdate(messageType, messageName);

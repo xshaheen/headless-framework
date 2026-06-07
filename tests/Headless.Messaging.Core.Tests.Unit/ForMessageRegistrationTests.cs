@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -98,13 +99,10 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        var registry = provider.GetDrainedConsumerRegistry();
         registry.GetAll().Should().BeEmpty();
-        provider
-            .GetRequiredService<IOptions<MessagingOptions>>()
-            .Value.MessageNameMappings[typeof(OrderPlaced)]
-            .Should()
-            .Be("orders.placed");
+        registry.TryGetMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.placed");
     }
 
     [Fact]
@@ -130,12 +128,39 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
         metadata.MessageName.Should().Be("orders.placed");
         metadata.Group.Should().Be("orders");
         metadata.Concurrency.Should().Be(3);
         metadata.HandlerId.Should().Be("handler-1");
         metadata.IntentType.Should().Be(IntentType.Queue);
+    }
+
+    [Fact]
+    public void should_drain_service_collection_for_message_registered_after_add_headless_messaging()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        // when
+        var act = () =>
+            services.ForMessage<OrderPlaced>(message =>
+                message.MessageName("orders.placed").OnBus<OrderPlacedHandler>(consumer => consumer.Group("orders"))
+            );
+        act.Should().NotThrow();
+
+        using var provider = services.BuildServiceProvider();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+
+        // then
+        metadata.MessageName.Should().Be("orders.placed");
+        metadata.ConsumerType.Should().Be<OrderPlacedHandler>();
+        metadata.Group.Should().Be("orders");
     }
 
     [Fact]
@@ -239,7 +264,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().HaveCount(2);
         consumers.Should().OnlyContain(consumer => consumer.MessageName == "orders.placed");
     }
@@ -262,7 +287,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
+        provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle();
     }
 
     [Fact]
@@ -273,6 +298,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message =>
@@ -288,6 +314,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -315,6 +344,8 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
         };
 
         // then
@@ -333,6 +364,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message =>
@@ -346,6 +378,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -361,6 +396,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
@@ -368,6 +404,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().NotThrow();
@@ -381,6 +420,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
@@ -388,6 +428,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
@@ -492,7 +535,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().Contain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
         consumers.Should().OnlyContain(consumer => consumer.IntentType == IntentType.Bus);
     }
@@ -523,7 +566,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var metadata = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -554,7 +597,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().NotBeEmpty();
+        provider.GetDrainedConsumerRegistry().GetAll().Should().NotBeEmpty();
         callbackCounts
             .Should()
             .Contain(
@@ -612,7 +655,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers
             .Should()
             .Contain(consumer =>
@@ -654,7 +697,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
+        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
         consumers.Should().NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
         provider.GetServices<IConsume<OrderPlaced>>().Should().NotContain(consumer => consumer is OrderPlacedHandler);
@@ -692,7 +735,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Should()
             .NotContain(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
@@ -726,7 +769,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .HandlerId.Should()
@@ -759,11 +802,11 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var noArg = noArgProvider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
         var callback = callbackProvider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -791,7 +834,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var registrations = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .ToList();
@@ -827,7 +870,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         var metadata = provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Single(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler));
 
@@ -884,6 +927,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
+        provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
         circuitBreakers.TryGet($"{IntentType.Bus:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
@@ -914,6 +958,7 @@ public sealed class ForMessageRegistrationTests
         using var provider = services.BuildServiceProvider();
 
         // then
+        provider.GetDrainedConsumerRegistry();
         var circuitBreakers = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
         circuitBreakers.TryGet($"{IntentType.Queue:D}:orders", out var options).Should().BeTrue();
         options!.FailureThreshold.Should().Be(3);
@@ -927,6 +972,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
@@ -944,6 +990,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should()
@@ -986,7 +1035,7 @@ public sealed class ForMessageRegistrationTests
 
         // then
         provider
-            .GetRequiredService<ConsumerRegistry>()
+            .GetDrainedConsumerRegistry()
             .GetAll()
             .Where(consumer => consumer.ConsumerType == typeof(OrderPlacedHandler))
             .Should()
@@ -1001,6 +1050,7 @@ public sealed class ForMessageRegistrationTests
 
         // when
         var act = () =>
+        {
             services.AddHeadlessMessaging(static setup =>
             {
                 setup.ForMessagesFromAssemblyContaining<ForMessageRegistrationTests>(
@@ -1024,6 +1074,9 @@ public sealed class ForMessageRegistrationTests
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");

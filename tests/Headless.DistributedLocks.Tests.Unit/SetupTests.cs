@@ -4,6 +4,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -39,10 +40,11 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
-        // when — AddDistributedLock BEFORE AddHeadlessMessaging so the registration is drained.
+        // when — AddDistributedLock BEFORE AddHeadlessMessaging.
         services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then — the shared lock-release consumer is present in the consumer registry with the
         // expected name, intent, and concurrency, with no explicit opt-in call.
@@ -68,6 +70,7 @@ public sealed class SetupTests : TestBase
         services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
         services
@@ -78,18 +81,23 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public void should_throw_when_added_after_messaging()
+    public void should_register_lock_released_consumer_when_added_after_messaging()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(_ => { });
 
-        // when / then — the consumer registry was already drained, so a late auto-registration would
-        // be silently ignored. The seam fails fast instead. (Order-independent registration via
-        // runtime subscription is tracked in #390.)
+        // when
         var act = () => services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
-        act.Should().Throw<InvalidOperationException>();
+        act.Should().NotThrow();
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
+
+        // then
+        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle(metadata =>
+            metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
+        );
     }
 
     [Fact]
