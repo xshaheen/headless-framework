@@ -125,10 +125,9 @@ internal static class DistributedLockCoreServiceCollectionExtensions
             )
         );
 
-        // Auto-register the shared lock-released consumer. Order-independent: the registration
-        // is drained into the messaging consumer registry by AddHeadlessMessaging regardless of
-        // whether messaging was added before or after AddHeadlessDistributedLocks(...), so there
-        // is no registration-order footgun and no opt-in step. When messaging is never added,
+        // Auto-register the shared lock-released consumer. AddHeadlessMessaging drains the
+        // registration into its consumer registry once, so distributed-lock setup must run before
+        // AddHeadlessMessaging when release wake-ups are needed. When messaging is never added,
         // the emitted descriptors are inert.
         DistributedLockConsumerRegistration.TryAddLockReleasedConsumer(services);
 

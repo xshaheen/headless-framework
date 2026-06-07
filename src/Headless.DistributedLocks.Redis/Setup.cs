@@ -33,7 +33,8 @@ public static class SetupRedisDistributedLock
         /// Prerequisites:
         /// <list type="bullet">
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        ///   <item>Register messaging before this method when push-based lock release wake-ups are needed</item>
+        ///   <item>Call <c>AddHeadlessDistributedLocks(...)</c> before <c>AddHeadlessMessaging(...)</c>
+        ///   when push-based lock release wake-ups are needed</item>
         /// </list>
         /// </remarks>
         public HeadlessDistributedLocksSetupBuilder UseRedis()
