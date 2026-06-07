@@ -202,10 +202,10 @@ services.AddHeadlessMessaging(setup =>
 
 - Register consumers with `setup.ForMessage<TMessage>(...)`; do not use removed `AddBusConsumer`, `AddQueueConsumer`, or topic-based naming.
 - Use `MessageName(...)` for logical message names. Provider-native names such as Kafka topic, RabbitMQ routing key, NATS subject, and Azure Service Bus topic remain provider details.
-- Use `CorrelationFrom(...)` for payload-derived correlation. Precedence is explicit publish option, message selector, ambient consume context, then generated message id.
+- Use `CorrelationFrom(...)` for payload-derived correlation. Precedence is explicit publish option, message selector, ambient consume context, then generated message id. Some brokers cap correlation-id length (e.g. RabbitMQ and NATS at ~255 characters); the framework does not truncate or validate — caller's responsibility.
 - Never write framework metadata through provider hatches. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the legacy tenant-integrity path and should not be authored directly.
 - Treat provider hatches as physical broker routing/configuration. Producer-side hatches live on `IMessageBuilder<TMessage>`; consumer-side hatches live on `IBusConsumerBuilder<TConsumer>` or `IQueueConsumerBuilder<TConsumer>` only when that provider currently exposes consumer settings.
-- Kafka and RabbitMQ currently expose consumer-side hatches. AWS, Azure Service Bus, and NATS currently expose producer-side hatches only.
+- Kafka, RabbitMQ, and NATS currently expose consumer-side hatches. AWS and Azure Service Bus currently expose producer-side hatches only.
 - Keep `docs/llms/messaging.md` and package READMEs aligned when public messaging behavior changes.
 
 ## Core Concepts
@@ -220,6 +220,8 @@ services.AddHeadlessMessaging(setup =>
 - **Provider config bag**: provider packages attach opaque config objects keyed by config type. Consumer config overlays message config for the same provider type. Repeated message metadata registrations are deterministic: later metadata for the same message/config type overrides earlier metadata.
 - **Metadata resolution**: when a concrete payload resolves to interface/base message metadata, default publish `MessageName` and `Type` use the resolved metadata type. Explicit `PublishOptions.MessageName` and `MessageType` still win.
 - **Provider header contributions**: producer-side provider hatches compute typed payload values before the payload is erased to bytes. Core validates contributed header names and values, then transports map those headers to native broker fields.
+- **Azure Service Bus sessions**: when sessions are enabled and a publish config sets `PartitionKey` without a `SessionId`, the provider falls back to that partition key as the session id before it falls back to the framework message id.
+- **NATS shard coverage**: wildcard subject coverage is added only for consumers that declare `.UseNats(c => c.Sharded())`; unsharded consumers no longer subscribe to broad `messageName.>` subjects. Shard symmetry is enforced at startup: if a message uses `SubjectShard(...)` on the producer side, every registered consumer for that message must also declare `.Sharded()`. NATS delivers zero messages with no error when a FilterSubject does not match any shard subject, so the invariant prevents silent data loss.
 - **Ambient consume context**: `IConsumeContextAccessor` is AsyncLocal-backed and restored in a `finally` block after each consume pipeline execution.
 
 ## Choosing a Provider
@@ -243,7 +245,7 @@ services.AddHeadlessMessaging(setup =>
 | Azure Service Bus | Topic | Queue | `PartitionKey(...)` | None |
 | InMemory | Yes | Yes | None | None |
 | Kafka | No | Yes | `PartitionBy(...)` | `IsolationLevel(...)` |
-| NATS | Yes | Yes | `SubjectShard(...)` | None |
+| NATS | Yes | Yes | `SubjectShard(...)` | `Sharded()` |
 | Pulsar | Yes | Yes | None | None |
 | RabbitMQ | Exchange | Queue | None | `PrefetchCount(...)` |
 | Redis | Pub/Sub | Queue-like Redis transport | None | None |
@@ -762,10 +764,13 @@ Provides NATS and JetStream transport support with subject-based routing.
 - `setup.UseNats(...)`.
 - Stream auto-creation and durable consumers.
 - Producer hatch: `UseNats(nats => nats.SubjectShard(message => ...))`.
+- Consumer hatch: `consumer.UseNats(nats => nats.Sharded())`.
 
 ### Design Notes
 
 `SubjectShard(...)` appends one safe subject token to the logical message name. It rejects `.`, `*`, `>`, whitespace, and control characters so payload values cannot change the subject hierarchy or wildcard behavior.
+
+Shard symmetry is required: when a message uses `SubjectShard(...)` on the producer side, every consumer registered for that message must call `.UseNats(c => c.Sharded())` on its consumer registration. This is validated at startup and throws `InvalidOperationException` if violated. The reason: NATS delivers zero messages with no error when a FilterSubject does not match any shard subject — the asymmetry causes silent data loss that is otherwise very difficult to diagnose.
 
 ### Installation
 
@@ -780,7 +785,7 @@ setup.UseNats(options => options.Servers = "nats://localhost:4222");
 
 setup.ForMessage<OrderPlaced>(message => message
     .UseNats(nats => nats.SubjectShard(order => order.CustomerId.ToString()))
-    .OnBus<OrderProjection>());
+    .OnBus<OrderProjection>(consumer => consumer.UseNats(nats => nats.Sharded())));
 ```
 
 ### Configuration

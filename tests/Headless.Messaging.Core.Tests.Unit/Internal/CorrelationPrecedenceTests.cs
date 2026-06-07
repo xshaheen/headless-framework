@@ -58,6 +58,20 @@ public sealed class CorrelationPrecedenceTests
     }
 
     [Fact]
+    public void should_prefer_selector_correlation_over_ambient()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext("ambient-value") };
+        var factory = _CreateFactory(selector: static message => message.Correlation, accessor: accessor);
+
+        // when
+        var prepared = factory.Create(new TestMessage("selector-value"));
+
+        // then
+        prepared.Message.Headers[Headers.CorrelationId].Should().Be("selector-value");
+    }
+
+    [Fact]
     public void should_use_ambient_correlation_when_explicit_and_selector_are_absent()
     {
         // given

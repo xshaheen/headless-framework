@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
+using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Registration;
@@ -173,9 +174,44 @@ public sealed class ProviderConfigBagTests
         action.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
     }
 
+    [Fact]
+    public void should_allow_idempotent_re_registration_when_message_config_is_class_based()
+    {
+        // given — class-based IProviderHeaderContributions configs hold a Func and have no
+        // value equality; two distinct instances of the same type for the same consumer must
+        // not be treated as a conflict during idempotent re-registration.
+        var services = new ServiceCollection();
+
+        // when — register the same message-level hatch config twice (simulates idempotent bootstrap)
+        var action = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.ForMessage<TestMessage>(message =>
+                    ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(
+                        new ClassBasedProviderConfig(static _ => "shard-1")
+                    )
+                );
+                setup.ForMessage<TestMessage>(message =>
+                    ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(
+                        new ClassBasedProviderConfig(static _ => "shard-1")
+                    )
+                );
+            });
+
+        // then — no conflict raised
+        action.Should().NotThrow();
+    }
+
     private sealed record TestMessage;
 
     private sealed record FakeProviderConfig(string Value);
+
+    // Class-based (not a record) — simulates IProviderHeaderContributions configs like KafkaMessageConfig<T>.
+    private sealed class ClassBasedProviderConfig(Func<TestMessage, string?> selector) : IProviderHeaderContributions
+    {
+        public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+            [new ProviderHeaderContribution("x-shard", message => selector((TestMessage)message))];
+    }
 
     private sealed record OtherProviderConfig(string Value);
 

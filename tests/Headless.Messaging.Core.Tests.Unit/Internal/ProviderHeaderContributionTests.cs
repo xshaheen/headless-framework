@@ -83,6 +83,19 @@ public sealed class ProviderHeaderContributionTests
     }
 
     [Fact]
+    public void should_reject_traceparent_contribution_header()
+    {
+        // given
+        var factory = _CreateFactory(new FakeProviderConfig(Headers.TraceParent, static message => message.Key));
+
+        // when
+        var act = () => factory.Create(new TestMessage("tenant-1"));
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*reserved header*traceparent*");
+    }
+
+    [Fact]
     public void should_reject_contribution_value_with_control_characters()
     {
         // given

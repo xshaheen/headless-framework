@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -26,51 +27,19 @@ public sealed class KafkaConsumerClientFactory(
             );
         }
 
+        // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
+        // not as a BrokerConnectionException.
+        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(groupName, intentType);
+
         try
         {
             return Task.FromResult<IConsumerClient>(
-                new KafkaConsumerClient(
-                    groupName,
-                    groupConcurrent,
-                    kafkaOptions,
-                    serviceProvider,
-                    _ResolveConsumerConfig<KafkaConsumerConfig>(groupName, intentType)
-                )
+                new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider, config)
             );
         }
         catch (Exception e)
         {
             throw new BrokerConnectionException(e);
         }
-    }
-
-    private TConfig? _ResolveConsumerConfig<TConfig>(string groupName, IntentType intentType)
-        where TConfig : class
-    {
-        if (consumerRegistry is null)
-        {
-            return null;
-        }
-
-        var configs = consumerRegistry
-            .GetAll()
-            .Where(consumer =>
-                consumer.IntentType == intentType && string.Equals(consumer.Group, groupName, StringComparison.Ordinal)
-            )
-            .Select(consumer =>
-                consumer.ProviderConfigs.TryGetValue(typeof(TConfig), out var config) ? config as TConfig : null
-            )
-            .Where(static config => config is not null)
-            .Distinct()
-            .ToArray();
-
-        return configs.Length switch
-        {
-            0 => null,
-            1 => configs[0],
-            _ => throw new InvalidOperationException(
-                $"Consumer group '{groupName}' has conflicting {typeof(TConfig).Name} provider configs."
-            ),
-        };
     }
 }

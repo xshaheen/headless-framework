@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -20,6 +21,10 @@ internal sealed class RabbitMqConsumerClientFactory(
 
     public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
+        // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
+        // not as a BrokerConnectionException.
+        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, intentType);
+
         try
         {
             var client = new RabbitMqConsumerClient(
@@ -28,7 +33,7 @@ internal sealed class RabbitMqConsumerClientFactory(
                 channelPool,
                 rabbitMqOptions,
                 serviceProvider,
-                _ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, intentType),
+                config,
                 intentType
             );
 
@@ -40,35 +45,5 @@ internal sealed class RabbitMqConsumerClientFactory(
         {
             throw new BrokerConnectionException(e);
         }
-    }
-
-    private TConfig? _ResolveConsumerConfig<TConfig>(string groupName, IntentType intentType)
-        where TConfig : class
-    {
-        if (consumerRegistry is null)
-        {
-            return null;
-        }
-
-        var configs = consumerRegistry
-            .GetAll()
-            .Where(consumer =>
-                consumer.IntentType == intentType && string.Equals(consumer.Group, groupName, StringComparison.Ordinal)
-            )
-            .Select(consumer =>
-                consumer.ProviderConfigs.TryGetValue(typeof(TConfig), out var config) ? config as TConfig : null
-            )
-            .Where(static config => config is not null)
-            .Distinct()
-            .ToArray();
-
-        return configs.Length switch
-        {
-            0 => null,
-            1 => configs[0],
-            _ => throw new InvalidOperationException(
-                $"Consumer group '{groupName}' has conflicting {typeof(TConfig).Name} provider configs."
-            ),
-        };
     }
 }

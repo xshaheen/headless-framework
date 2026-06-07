@@ -42,7 +42,7 @@ internal sealed class MessagePublishRequestFactory(
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders =
-        new(_ReservedHeaders, StringComparer.Ordinal) { Headers.TenantId };
+        new(_ReservedHeaders, StringComparer.Ordinal) { Headers.TenantId, Headers.TraceParent };
 
     private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;
@@ -204,7 +204,7 @@ internal sealed class MessagePublishRequestFactory(
         Type messageType
     )
     {
-        if (metadata is null || contentObj is null)
+        if (metadata is null || contentObj is null || metadata.ProviderConfigs.Count == 0)
         {
             return;
         }
@@ -293,7 +293,7 @@ internal sealed class MessagePublishRequestFactory(
         }
     }
 
-    private static void _ValidateHeaderValues(IReadOnlyDictionary<string, string?> headers)
+    private static void _ValidateHeaderValues(Dictionary<string, string?> headers)
     {
         foreach (var (headerName, value) in headers)
         {
@@ -436,7 +436,7 @@ internal sealed class MessagePublishRequestFactory(
         _ValidateHeaderValue(Headers.TenantId, tenantId);
     }
 
-    private static void _ValidateCustomHeaderNames(IReadOnlyDictionary<string, string?> headers)
+    private static void _ValidateCustomHeaderNames(Dictionary<string, string?> headers)
     {
         foreach (var headerName in headers.Keys)
         {

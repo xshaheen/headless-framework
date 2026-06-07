@@ -23,7 +23,12 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
 
     public bool TryGet(Type messageType, [NotNullWhen(true)] out MessageMetadata? metadata)
     {
-        metadata = _resolvedMetadata.GetOrAdd(messageType, _Resolve);
+        if (_resolvedMetadata.TryGetValue(messageType, out metadata))
+        {
+            return metadata is not null;
+        }
+
+        metadata = _resolvedMetadata.GetOrAdd(messageType, static (type, registry) => registry._Resolve(type), this);
         return metadata is not null;
     }
 

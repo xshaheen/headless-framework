@@ -19,7 +19,17 @@ internal static class AzureServiceBusMessageBuilder
         if (enableSessions)
         {
             transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
-            message.SessionId = string.IsNullOrEmpty(sessionId) ? transportMessage.GetId() : sessionId;
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var fallbackPartitionKey);
+                message.SessionId = string.IsNullOrWhiteSpace(fallbackPartitionKey)
+                    ? transportMessage.GetId()
+                    : fallbackPartitionKey;
+            }
+            else
+            {
+                message.SessionId = sessionId;
+            }
         }
 
         if (

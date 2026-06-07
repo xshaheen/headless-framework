@@ -619,7 +619,20 @@ public static class SetupMessaging
 
             foreach (var (key, value) in left)
             {
-                if (!right.TryGetValue(key, out var otherValue) || !Equals(value, otherValue))
+                if (!right.TryGetValue(key, out var otherValue))
+                {
+                    return false;
+                }
+
+                // Class-based message-scope configs (e.g. KafkaMessageConfig<T>) implement
+                // IProviderHeaderContributions and hold a Func — they have no meaningful value
+                // equality. Two instances of the same type for the same key are idempotent.
+                if (value is IProviderHeaderContributions)
+                {
+                    continue;
+                }
+
+                if (!Equals(value, otherValue))
                 {
                     return false;
                 }

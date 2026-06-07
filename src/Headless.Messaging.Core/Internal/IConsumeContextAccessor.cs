@@ -9,25 +9,11 @@ internal interface IConsumeContextAccessor
 
 internal sealed class AsyncLocalConsumeContextAccessor : IConsumeContextAccessor
 {
-    private readonly AsyncLocal<ConsumeContextHolder> _holder = new();
+    private readonly AsyncLocal<ConsumeContext?> _current = new();
 
     public ConsumeContext? Current
     {
-        get => _holder.Value?.Context;
-        set
-        {
-            if (value is null && _holder.Value is null)
-            {
-                return;
-            }
-
-            _holder.Value ??= new ConsumeContextHolder();
-            _holder.Value.Context = value;
-        }
-    }
-
-    private sealed class ConsumeContextHolder
-    {
-        public ConsumeContext? Context { get; set; }
+        get => _current.Value;
+        set => _current.Value = value;
     }
 }

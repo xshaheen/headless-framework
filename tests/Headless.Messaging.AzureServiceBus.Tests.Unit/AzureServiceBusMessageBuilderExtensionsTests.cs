@@ -67,6 +67,22 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*PartitionKey*SessionId*");
     }
 
+    [Fact]
+    public void should_use_partition_key_as_session_id_when_sessions_are_enabled_and_session_id_is_absent()
+    {
+        var message = _TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [AzureServiceBusHeaders.PartitionKey] = "tenant-a",
+            }
+        );
+
+        var serviceBusMessage = AzureServiceBusMessageBuilder.Build(message, enableSessions: true);
+
+        serviceBusMessage.SessionId.Should().Be("tenant-a");
+        serviceBusMessage.PartitionKey.Should().Be("tenant-a");
+    }
+
     private static TransportMessage _TransportMessage(Dictionary<string, string?> extraHeaders)
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)

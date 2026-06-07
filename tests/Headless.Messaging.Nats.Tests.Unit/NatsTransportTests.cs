@@ -75,14 +75,12 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
-    public void ResolveSubject_should_reject_invalid_subject_shard()
+    public void ResolveSubject_should_ignore_invalid_subject_shard_and_fall_back_to_message_name()
     {
         var message = _CreateTransportMessage("msg-123", "orders.created");
         message.Headers[NatsMessagingHeaders.SubjectShard] = "tenant.a";
 
-        var act = () => NatsTransport.ResolveSubject(message);
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*SubjectShard*");
+        NatsTransport.ResolveSubject(message).Should().Be("orders.created");
     }
 
     [Fact]

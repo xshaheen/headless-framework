@@ -53,7 +53,7 @@ options.ForMessage<OrderEvent>(message =>
         .UseAzureServiceBus(asb => asb.PartitionKey(order => order.CustomerId.ToString())));
 ```
 
-`PartitionKey(...)` stamps `AzureServiceBusHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusHeaders.SessionId`. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+`PartitionKey(...)` stamps `AzureServiceBusHeaders.PartitionKey` (`headless-asb-partition-key`) during publish and is limited to 128 characters. When sessions are enabled, Azure Service Bus requires `PartitionKey` to match `AzureServiceBusHeaders.SessionId`. If you omit `SessionId`, the provider now falls back to `PartitionKey` before the framework message id so partitioned session publishes do not fail by default. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
 ## Message Ordering
 

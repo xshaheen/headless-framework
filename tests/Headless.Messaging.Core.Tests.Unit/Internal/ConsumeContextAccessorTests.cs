@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using System.Reflection;
 
 namespace Tests.Internal;
 
@@ -63,7 +62,7 @@ public sealed class ConsumeContextAccessorTests
         accessor.Current = null;
 
         // then
-        _GetHolderValue(accessor).Should().BeNull();
+        accessor.Current.Should().BeNull();
     }
 
     [Fact]
@@ -108,6 +107,72 @@ public sealed class ConsumeContextAccessorTests
         accessor.Current!.CorrelationId.Should().Be("second");
     }
 
+    [Fact]
+    public async Task should_preserve_child_task_context_when_parent_clears_current()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor();
+        var context = _Context("corr-1");
+        var childReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseChild = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        accessor.Current = context;
+
+        // when
+        var child = Task.Run(async () =>
+        {
+            accessor.Current.Should().BeSameAs(context);
+            childReady.TrySetResult();
+            await releaseChild.Task;
+            return accessor.Current;
+        });
+
+        await childReady.Task;
+        accessor.Current = null;
+        releaseChild.TrySetResult();
+        var childContext = await child;
+
+        // then
+        accessor.Current.Should().BeNull();
+        childContext.Should().BeSameAs(context);
+    }
+
+    [Fact]
+    public async Task should_isolate_context_between_concurrent_sibling_tasks()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor();
+        var aReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var bReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // Two independent Task.Run roots — each gets its own AsyncLocal flow.
+        var taskA = Task.Run(async () =>
+        {
+            accessor.Current = _Context("corr-a");
+            aReady.TrySetResult();
+            await release.Task;
+            return accessor.Current?.CorrelationId;
+        });
+
+        var taskB = Task.Run(async () =>
+        {
+            accessor.Current = _Context("corr-b");
+            bReady.TrySetResult();
+            await release.Task;
+            return accessor.Current?.CorrelationId;
+        });
+
+        // when
+        await Task.WhenAll(aReady.Task, bReady.Task);
+        release.TrySetResult();
+        var (corrA, corrB) = (await taskA, await taskB);
+
+        // then — each task sees only its own correlation id
+        corrA.Should().Be("corr-a");
+        corrB.Should().Be("corr-b");
+    }
+
     private static ConsumeContext<TestMessage> _Context(string correlationId) =>
         new()
         {
@@ -119,17 +184,6 @@ public sealed class ConsumeContextAccessorTests
             MessageName = "test",
             IntentType = IntentType.Bus,
         };
-
-    private static object? _GetHolderValue(AsyncLocalConsumeContextAccessor accessor)
-    {
-        var holderField = typeof(AsyncLocalConsumeContextAccessor).GetField(
-            "_holder",
-            BindingFlags.Instance | BindingFlags.NonPublic
-        )!;
-        var holder = holderField.GetValue(accessor)!;
-
-        return holder.GetType().GetProperty(nameof(AsyncLocal<object>.Value))!.GetValue(holder);
-    }
 
     private sealed record TestMessage;
 }

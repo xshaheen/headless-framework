@@ -303,7 +303,7 @@ public sealed class BusTests : TestBase
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("messageName");
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(messageName));
         testTransport.SentMessages.Should().BeEmpty();
     }
 

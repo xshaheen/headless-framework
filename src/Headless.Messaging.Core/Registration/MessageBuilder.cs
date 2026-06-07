@@ -17,7 +17,27 @@ public interface IMessageBuilder<TMessage>
     /// <summary>Overrides the convention-derived message name for publishing and consuming this message type.</summary>
     IMessageBuilder<TMessage> MessageName(string messageName);
 
-    /// <summary>Derives the correlation identifier from the outgoing message payload when no explicit correlation is supplied.</summary>
+    /// <summary>
+    /// Derives the correlation identifier from the outgoing message payload when no explicit correlation is supplied.
+    /// </summary>
+    /// <remarks>
+    /// Correlation resolution order (first non-empty value wins):
+    /// <list type="number">
+    ///   <item><description>Explicit value from <see cref="MessageOptions.CorrelationId"/>.</description></item>
+    ///   <item><description>Value returned by this <paramref name="selector"/>.</description></item>
+    ///   <item><description>Ambient correlation from the active <see cref="ConsumeContext{TMessage}"/> (propagation).</description></item>
+    ///   <item><description>The outgoing message identifier (fallback).</description></item>
+    /// </list>
+    /// Exceptions thrown by the selector are wrapped in <see cref="InvalidOperationException"/>
+    /// and include the message type name to aid diagnostics.
+    /// <para>
+    /// <strong>Broker length limits:</strong> some brokers cap the correlation-id field (for example,
+    /// RabbitMQ and NATS cap it at approximately 255 characters). The framework does <em>not</em>
+    /// truncate or validate the value returned by <paramref name="selector"/>; callers are responsible
+    /// for ensuring the value fits within their broker's limit.
+    /// </para>
+    /// </remarks>
+    /// <param name="selector">A delegate that extracts the correlation identifier from the message payload.</param>
     IMessageBuilder<TMessage> CorrelationFrom(Func<TMessage, string?> selector);
 
     /// <summary>Registers a broadcast bus consumer for this message type.</summary>

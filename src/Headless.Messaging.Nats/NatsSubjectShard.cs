@@ -11,15 +11,14 @@ internal static class NatsSubjectShard
             return null;
         }
 
-        if (
-            shard.Any(static character =>
-                char.IsWhiteSpace(character) || char.IsControl(character) || character is '.' or '*' or '>'
-            )
-        )
+        foreach (var character in shard.AsSpan())
         {
-            throw new InvalidOperationException(
-                "NATS SubjectShard must be a single safe subject token and cannot contain '.', '*', '>', whitespace, or control characters."
-            );
+            if (char.IsWhiteSpace(character) || char.IsControl(character) || character is '.' or '*' or '>')
+            {
+                throw new InvalidOperationException(
+                    "NATS SubjectShard must be a single safe subject token and cannot contain '.', '*', '>', whitespace, or control characters."
+                );
+            }
         }
 
         return shard;
