@@ -31,7 +31,8 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(120), AbortToken);
+        // Stay below the suspicion threshold so the node is unambiguously still alive when we beat.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.SuspicionThreshold * 0.8, AbortToken);
         var accepted = await node.Membership.HeartbeatAsync(AbortToken);
         var live = await node.Membership.GetLiveNodesAsync(AbortToken);
 
@@ -45,7 +46,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var identity = await node.Membership.RegisterAsync(AbortToken);
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         var live = await node.Membership.GetLiveNodesAsync(AbortToken);
         var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
@@ -104,7 +105,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
@@ -149,7 +150,7 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
         var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(750), AbortToken);
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
         await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);

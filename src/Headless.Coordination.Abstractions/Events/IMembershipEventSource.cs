@@ -18,6 +18,9 @@ public interface IMembershipEventSource
     /// Yields the following <see cref="NodeMembershipEvent"/> types: <see cref="NodeJoined"/>,
     /// <see cref="NodeSuspected"/>, <see cref="NodeRecovered"/>, <see cref="NodeLeft"/>, and the local-only
     /// <see cref="LocalMembershipLost"/>. The no-op implementation emits none and simply blocks until cancelled.
+    /// Consumers MUST dispose the returned async enumerator (or cancel <paramref name="cancellationToken"/>) to
+    /// release the subscription; abandoning it without disposal leaks the underlying buffer until the next publish
+    /// prunes it.
     /// </remarks>
     IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default);
 }

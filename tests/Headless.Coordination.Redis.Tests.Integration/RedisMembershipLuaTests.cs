@@ -25,7 +25,9 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
         (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(750), AbortToken);
+        // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
+        // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeFalse();

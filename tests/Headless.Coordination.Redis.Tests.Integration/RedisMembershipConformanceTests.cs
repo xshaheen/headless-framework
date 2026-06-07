@@ -88,10 +88,12 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
             {
                 options.ClusterName = cluster;
                 options.ConfiguredNodeId = "node-a";
-                options.HeartbeatInterval = TimeSpan.FromMilliseconds(50);
-                options.SuspicionThreshold = TimeSpan.FromMilliseconds(150);
-                options.DeadThreshold = TimeSpan.FromMilliseconds(300);
-                options.DeadRetentionWindow = TimeSpan.FromMilliseconds(300);
+                // Mirror the harness thresholds (scaled by TimeScale) so this Redis-only test shares the same
+                // explicit wall-clock margins as the shared conformance suite.
+                options.HeartbeatInterval = CoordinationFixtureExtensions.HeartbeatInterval;
+                options.SuspicionThreshold = CoordinationFixtureExtensions.SuspicionThreshold;
+                options.DeadThreshold = CoordinationFixtureExtensions.DeadThreshold;
+                options.DeadRetentionWindow = CoordinationFixtureExtensions.DeadRetentionWindow;
                 options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
             });
         });
@@ -106,7 +108,7 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         var membership = provider.GetRequiredService<INodeMembership>();
         var identity = await membership.RegisterAsync(AbortToken);
 
-        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.DeadButRetainedWait, AbortToken);
 
         var snapshot = await membership.GetLivenessSnapshotAsync(AbortToken);
 

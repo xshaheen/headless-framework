@@ -13,6 +13,12 @@ internal sealed class MembershipEventSource(ILogger<MembershipEventSource> logge
     private readonly Lock _gate = new();
     private ImmutableArray<Channel<NodeMembershipEvent>> _subscribers = [];
 
+    /// <summary>Streams best-effort membership observations until <paramref name="cancellationToken"/> is cancelled.</summary>
+    /// <remarks>
+    /// Consumers MUST dispose the returned async enumerator (or cancel <paramref name="cancellationToken"/>) to
+    /// release the underlying subscription. Abandoning the enumerator without disposal leaks its channel until the
+    /// next publish attempt observes the completed channel and prunes it.
+    /// </remarks>
     public IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default)
     {
         var channel = Channel.CreateBounded<NodeMembershipEvent>(
@@ -44,11 +50,38 @@ internal sealed class MembershipEventSource(ILogger<MembershipEventSource> logge
             subscribers = _subscribers;
         }
 
+        List<Channel<NodeMembershipEvent>>? dead = null;
+
         foreach (var subscriber in subscribers)
         {
-            if (!subscriber.Writer.TryWrite(@event))
+            if (subscriber.Writer.TryWrite(@event))
+            {
+                continue;
+            }
+
+            // TryWrite returns false for two distinct reasons under FullMode.Wait: the channel is full
+            // (legitimate lagging-subscriber drop — keep it and log) or the channel is completed because the
+            // reader's enumerator was disposed/cancelled (subscriber gone — prune it instead of log-spamming).
+            if (subscriber.Reader.Completion.IsCompleted)
+            {
+                (dead ??= []).Add(subscriber);
+            }
+            else
             {
                 logger.MembershipEventDropped(_Discriminator(@event), @event.Identity);
+            }
+        }
+
+        if (dead is null)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            foreach (var channel in dead)
+            {
+                _subscribers = _subscribers.Remove(channel);
             }
         }
     }

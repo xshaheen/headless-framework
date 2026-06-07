@@ -121,7 +121,16 @@ internal sealed class MembershipService(
             return;
         }
 
-        _localMembershipLost.Cancel();
+        try
+        {
+            _localMembershipLost.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Defensive: Dispose() can race this at-most-once path during shutdown. The Interlocked guard
+            // above still ensures we proceed once; a disposed CTS just means no token observers remain.
+        }
+
         eventSource.Publish(new LocalMembershipLost(identity));
         logger.LocalMembershipLost(identity);
 

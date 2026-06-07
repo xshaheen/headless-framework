@@ -55,6 +55,45 @@ public sealed class PostgresMembershipNativeTests(PostgresMembershipFixture fixt
     }
 
     [Fact]
+    public async Task should_succeed_when_multiple_hosts_initialize_concurrently_against_same_schema()
+    {
+        // Start from a freshly dropped schema so all five initializers race the same first-time DDL (KTD-5).
+        await _DropSchemaAsync();
+
+        var clusters = Enumerable.Range(0, 5).Select(_ => _Cluster()).ToArray();
+
+        // All initializers must complete without surfacing a duplicate-creation error from the concurrent DDL.
+        var nodes = await Task.WhenAll(
+            clusters.Select(cluster => fixture.CreateNodeAsync(cluster, "node-a", AbortToken).AsTask())
+        );
+
+        try
+        {
+            await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync(AbortToken);
+
+            var generationCount = await _CountTablesAsync(connection, "coordination_node_generation");
+            var descriptorCount = await _CountTablesAsync(connection, "coordination_descriptor");
+            var livenessCount = await _CountTablesAsync(connection, "coordination_liveness");
+            var livenessIndexCount = await _CountIndexesAsync(connection, "ix_coordination_liveness_cluster_lastbeat");
+
+            // Each table and the liveness index must exist exactly once — a swallowed CREATE that actually failed
+            // would leave a missing object, and a non-idempotent CREATE would have thrown above.
+            generationCount.Should().Be(1);
+            descriptorCount.Should().Be(1);
+            livenessCount.Should().Be(1);
+            livenessIndexCount.Should().Be(1);
+        }
+        finally
+        {
+            foreach (var node in nodes)
+            {
+                await node.DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task should_reject_stale_and_impossible_heartbeats_without_mutating_current_generation()
     {
         var cluster = _Cluster();
@@ -83,6 +122,48 @@ public sealed class PostgresMembershipNativeTests(PostgresMembershipFixture fixt
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");
+    }
+
+    private async Task _DropSchemaAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new NpgsqlCommand(
+            "DROP TABLE IF EXISTS coordination_liveness, coordination_descriptor, coordination_node_generation CASCADE;",
+            connection
+        );
+
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task<long> _CountTablesAsync(NpgsqlConnection connection, string tableName)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM information_schema.tables
+            WHERE table_schema = 'public'
+              AND table_name = @TableName;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("TableName", tableName);
+
+        return (long)(await command.ExecuteScalarAsync(AbortToken))!;
+    }
+
+    private async Task<long> _CountIndexesAsync(NpgsqlConnection connection, string indexName)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+              AND indexname = @IndexName;
+            """;
+
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("IndexName", indexName);
+
+        return (long)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task<IReadOnlyList<string>> _ReadStringsAsync(NpgsqlConnection connection, string sql)

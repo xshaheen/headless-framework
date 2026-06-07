@@ -13,13 +13,28 @@ public interface ICoordinationFixture
 
 public static class CoordinationFixtureExtensions
 {
-    private static TimeSpan HeartbeatInterval => TimeSpan.FromMilliseconds(50);
+    // All membership thresholds and the conformance tests' wall-clock sleeps are derived from this single scale.
+    // Raising it widens every absolute timing margin uniformly (relative ordering is preserved) so the prune-window
+    // assertions don't sit a few milliseconds from a boundary and flake under CI scheduling jitter.
+    public const int TimeScale = 4;
 
-    private static TimeSpan SuspicionThreshold => TimeSpan.FromMilliseconds(150);
+    public static TimeSpan HeartbeatInterval => TimeSpan.FromMilliseconds(50 * TimeScale);
 
-    private static TimeSpan DeadThreshold => TimeSpan.FromMilliseconds(300);
+    public static TimeSpan SuspicionThreshold => TimeSpan.FromMilliseconds(150 * TimeScale);
 
-    private static TimeSpan DeadRetentionWindow => TimeSpan.FromMilliseconds(300);
+    public static TimeSpan DeadThreshold => TimeSpan.FromMilliseconds(300 * TimeScale);
+
+    public static TimeSpan DeadRetentionWindow => TimeSpan.FromMilliseconds(300 * TimeScale);
+
+    // Time at which a dead node's retained state is fully pruned (DeadThreshold + DeadRetentionWindow).
+    public static TimeSpan PruneThreshold => DeadThreshold + DeadRetentionWindow;
+
+    // Comfortably inside the dead-but-retained window (between DeadThreshold and PruneThreshold) for "node is dead
+    // but its retained state still exists" assertions.
+    public static TimeSpan DeadButRetainedWait => (DeadThreshold + PruneThreshold) / 2;
+
+    // Comfortably past the prune threshold for "retained state has been fully pruned" assertions.
+    public static TimeSpan AfterPruneWait => PruneThreshold + (PruneThreshold / 2);
 
     public static async ValueTask<CoordinationNodeHandle> CreateNodeAsync(
         this ICoordinationFixture fixture,

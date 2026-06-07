@@ -54,6 +54,49 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
     }
 
     [Fact]
+    public async Task should_succeed_when_multiple_hosts_initialize_concurrently_against_same_schema()
+    {
+        // Start from a freshly dropped schema so all five initializers race the same first-time DDL (KTD-5).
+        await _DropSchemaAsync();
+
+        var clusters = Enumerable.Range(0, 5).Select(_ => _Cluster()).ToArray();
+
+        // All initializers must complete without surfacing a duplicate-creation error from the concurrent DDL.
+        var nodes = await Task.WhenAll(
+            clusters.Select(cluster => fixture.CreateNodeAsync(cluster, "node-a", AbortToken).AsTask())
+        );
+
+        try
+        {
+            await using var connection = new SqlConnection(fixture.ConnectionString);
+            await connection.OpenAsync(AbortToken);
+
+            var generationCount = await _CountTablesAsync(connection, "CoordinationNodeGeneration");
+            var descriptorCount = await _CountTablesAsync(connection, "CoordinationDescriptor");
+            var livenessCount = await _CountTablesAsync(connection, "CoordinationLiveness");
+            var livenessIndexCount = await _CountIndexesAsync(
+                connection,
+                "CoordinationLiveness",
+                "IX_CoordinationLiveness_ClusterName_LastBeat"
+            );
+
+            // Each table and the liveness index must exist exactly once — a swallowed CREATE that actually failed
+            // would leave a missing object, and a non-idempotent CREATE would have thrown above.
+            generationCount.Should().Be(1);
+            descriptorCount.Should().Be(1);
+            livenessCount.Should().Be(1);
+            livenessIndexCount.Should().Be(1);
+        }
+        finally
+        {
+            foreach (var node in nodes)
+            {
+                await node.DisposeAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task should_reject_stale_and_impossible_heartbeats_without_mutating_current_generation()
     {
         var cluster = _Cluster();
@@ -82,6 +125,57 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");
+    }
+
+    private async Task _DropSchemaAsync()
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        await using var command = new SqlCommand(
+            """
+            DROP TABLE IF EXISTS dbo.CoordinationLiveness;
+            DROP TABLE IF EXISTS dbo.CoordinationDescriptor;
+            DROP TABLE IF EXISTS dbo.CoordinationNodeGeneration;
+            """,
+            connection
+        );
+
+        await command.ExecuteNonQueryAsync(AbortToken);
+    }
+
+    private async Task<int> _CountTablesAsync(SqlConnection connection, string tableName)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM sys.tables t
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = N'dbo'
+              AND t.name = @TableName;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("TableName", tableName);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int> _CountIndexesAsync(SqlConnection connection, string tableName, string indexName)
+    {
+        const string sql = """
+            SELECT count(*)
+            FROM sys.indexes i
+            JOIN sys.tables t ON t.object_id = i.object_id
+            JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE s.name = N'dbo'
+              AND t.name = @TableName
+              AND i.name = @IndexName;
+            """;
+
+        await using var command = new SqlCommand(sql, connection);
+        command.Parameters.AddWithValue("TableName", tableName);
+        command.Parameters.AddWithValue("IndexName", indexName);
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture);
     }
 
     private async Task<IReadOnlyList<string>> _ReadStringsAsync(SqlConnection connection, string sql)

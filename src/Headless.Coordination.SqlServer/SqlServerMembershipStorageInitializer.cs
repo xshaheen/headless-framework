@@ -126,14 +126,19 @@ internal sealed class SqlServerMembershipStorageInitializer(
                     IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
                 END CATCH;
 
-                IF NOT EXISTS (
-                    SELECT 1
-                    FROM sys.indexes
-                    WHERE name = N'IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat'
-                      AND object_id = OBJECT_ID(N'{{livenessObject}}')
-                )
-                    CREATE NONCLUSTERED INDEX [IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat]
-                        ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
+                BEGIN TRY
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM sys.indexes
+                        WHERE name = N'IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat'
+                          AND object_id = OBJECT_ID(N'{{livenessObject}}')
+                    )
+                        CREATE NONCLUSTERED INDEX [IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat]
+                            ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
+                END TRY
+                BEGIN CATCH
+                    IF ERROR_NUMBER() NOT IN (2714, 1913, 2759) THROW;
+                END CATCH;
 
                 EXEC sys.sp_releaseapplock @Resource = @LockResource, @LockOwner = N'Session', @DbPrincipal = N'public';
             END TRY

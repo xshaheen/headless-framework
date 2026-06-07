@@ -19,6 +19,10 @@ Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies 
 
 **Dead/Left retention divergence (intentional, plan KTD-16).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so liveness snapshots keep surfacing them with `State = Dead` until that window elapses — consumers filter by `NodeLivenessState`. The relational providers prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). Lower `RedisKnownNodeRetention` to align Redis with relational pruning.
 
+**No per-call command timeout (configure on the multiplexer).** Coordination does not set a per-call command timeout on its Redis operations. A hung or unresponsive Redis will therefore block heartbeat and other membership calls until the socket-level timeout fires. Configure `SyncTimeout`/`AsyncTimeout` on the `IConnectionMultiplexer` you inject so these calls fail fast under that bound instead of stalling membership.
+
+**Generation counters are retained indefinitely (use stable node-ids).** Per-node generation (`INCR`) counters are never purged — they are required to reject stale incarnations after a node restarts. Prefer **stable** node-ids: ephemeral or randomly-generated node-ids cause generation keys to accumulate without bound, since each fresh id allocates a new permanent counter.
+
 ## Installation
 
 ```bash
