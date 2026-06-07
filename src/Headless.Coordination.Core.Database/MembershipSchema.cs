@@ -15,6 +15,7 @@ internal static class MembershipSchema
     {
         public const string Table = "coordination_descriptor";
         public const string HostName = "host_name";
+        public const string Endpoints = "endpoints";
         public const string Role = "role";
         public const string Metadata = "metadata";
     }
