@@ -39,6 +39,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 ## Dependencies
 
 - `Headless.Coordination.Abstractions`
+- `Headless.Core`
 - `Headless.Extensions`
 - `Headless.Hosting`
 - `Microsoft.Extensions.Configuration.Abstractions`
@@ -47,4 +48,4 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 
 ## Side Effects
 
-Registers `TimeProvider.System`, `IGuidGenerator`, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, `ProviderCapabilities`, and the heartbeat hosted service.
+Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, `ProviderCapabilities`, and the heartbeat hosted service.

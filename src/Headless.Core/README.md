@@ -27,6 +27,8 @@ Provides standardized interfaces for common cross-cutting concerns (clock, user,
 - **Utilities**:
   - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
   - `LogState` / `LoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
+  - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
+
 ## Installation
 
 ```bash
@@ -70,16 +72,18 @@ composition with timeouts and circuit breakers.
 
 ## Configuration
 
-No configuration required. Implementations are registered by `Headless.Api` or other host packages.
+No configuration required for the abstractions. Host/package setup can call `AddHeadlessGuidGenerator()` when it needs the framework GUID generator defaults.
 
 ## Dependencies
 
 - `Headless.Checks`
 - `Headless.Extensions`
 - `Headless.Serializer.Json`
+- `Microsoft.Extensions.DependencyInjection.Abstractions`
 - `Microsoft.Extensions.Logging.Abstractions`
 - `Snappier`
 
 ## Side Effects
 
-None.
+- `AddHeadlessGuidGenerator()` registers keyed singleton `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`
+- `AddHeadlessGuidGenerator()` also registers an unkeyed singleton `IGuidGenerator` using `Version7` unless a caller supplies another default strategy

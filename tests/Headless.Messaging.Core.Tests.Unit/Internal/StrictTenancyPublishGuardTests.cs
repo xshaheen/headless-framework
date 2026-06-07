@@ -182,7 +182,7 @@ public sealed class StrictTenancyPublishGuardTests : TestBase
         var resolvedTenant = currentTenant ?? new StubCurrentTenant(ambientTenantId);
 
         return new MessagePublishRequestFactory(
-            new SequentialAtEndGuidGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
             resolvedTenant

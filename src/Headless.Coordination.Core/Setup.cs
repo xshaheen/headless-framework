@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -51,7 +52,7 @@ public static class SetupCoordinationCore
         {
             services.AddSingletonOptionValue<CoordinationOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IGuidGenerator, Version7GuidGenerator>();
+            services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<INodeIdProvider, DefaultNodeIdProvider>();
             services.TryAddSingleton<MembershipEventSource>();
             services.TryAddSingleton<IMembershipEventSource>(static sp => sp.GetRequiredService<MembershipEventSource>());

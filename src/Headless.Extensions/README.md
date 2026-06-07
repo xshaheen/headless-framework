@@ -25,7 +25,7 @@ Eliminates repetitive utility code across projects by providing a comprehensive 
 
 - **Domain Value Objects**: `Currency`, `GeoCoordinate`, `FullGeoCoordinate`, `Range<T>`, `PreferredLocale`, `OrderBy`, `NameValue<T>`, `ExtraProperties`, `Locales`, `TimeUnit`
 
-- **ID Generation**: `IGuidGenerator` (sequential GUIDs for SQL Server/MySQL/Oracle)
+- **ID Generation**: `IGuidGenerator` (`SequentialGuidGenerator` supporting time-ordered `Version7` and SQL Server comb `SqlServer` strategies)
 
 - **Pagination**: `IndexPageRequest`/`IndexPage<T>` and `ContinuationPageRequest`/`ContinuationPage<T>`
 

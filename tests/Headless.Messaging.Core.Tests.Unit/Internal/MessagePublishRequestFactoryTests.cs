@@ -33,7 +33,7 @@ public sealed class MessagePublishRequestFactoryTests
         var options = new MessagingOptions();
 
         return new MessagePublishRequestFactory(
-            new SequentialAtEndGuidGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
             new NullCurrentTenant()

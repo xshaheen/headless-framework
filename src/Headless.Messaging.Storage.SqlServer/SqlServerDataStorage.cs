@@ -11,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
@@ -24,7 +25,7 @@ public sealed class SqlServerDataStorage(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
-    IGuidGenerator guidGenerator,
+    [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {

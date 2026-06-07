@@ -10,7 +10,7 @@ namespace Tests;
 
 public abstract class DistributedLockTestsBase : TestBase
 {
-    protected static readonly SequentialAtEndGuidGenerator GuidGenerator = new();
+    protected static readonly IGuidGenerator GuidGenerator = new SequentialGuidGenerator(SequentialGuidType.Version7);
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
     protected static readonly DistributedLockOptions Options = new() { KeyPrefix = "test:" };
 

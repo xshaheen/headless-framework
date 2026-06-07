@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.DistributedLocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,7 +45,7 @@ public static class SetupSqlServerDistributedLocks
         private IServiceCollection _AddSqlServerDistributedLocksCore()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IGuidGenerator>(new SequentialAtEndGuidGenerator());
+            services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<SqlServerConnectionScopedLockStorage>();
             services.TryAddSingleton<IConnectionScopedLockStorage>(sp =>
                 sp.GetRequiredService<SqlServerConnectionScopedLockStorage>()

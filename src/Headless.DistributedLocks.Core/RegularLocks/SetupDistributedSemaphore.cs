@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,7 +48,7 @@ public static class SetupDistributedSemaphore
             services.TryAddSingleton<TStorage>();
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<IGuidGenerator>(new Version7GuidGenerator());
+            services.AddHeadlessGuidGenerator();
 
             services.TryAddSingleton(provider => new DistributedSemaphoreProvider(
                 provider.GetRequiredService<TStorage>(),

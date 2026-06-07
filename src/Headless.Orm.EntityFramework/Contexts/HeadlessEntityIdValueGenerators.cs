@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -17,16 +16,16 @@ namespace Headless.EntityFramework.Contexts;
 /// </summary>
 internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
 {
-    // Used only for a hand-constructed DbContextOptions with no application service provider (see
-    // HeadlessEntityIdValueGeneration). Matches the framework default registration.
-    private static readonly IGuidGenerator _Default = new SequentialAtEndGuidGenerator();
+    private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
 
-    // Cache the resolved generator per application service provider so Next() doesn't re-resolve from DI on
-    // every inserted row. Keyed by provider (weak keys) to stay correct across independent hosts in one process.
-    private static readonly ConditionalWeakTable<IServiceProvider, IGuidGenerator> _ByProvider = [];
-
-    private static readonly ConditionalWeakTable<IServiceProvider, IGuidGenerator>.CreateValueCallback _Resolve =
-        static provider => provider.GetService<IGuidGenerator>() ?? _Default;
+    // Used when a context was built without an application service provider (see HeadlessEntityIdValueGeneration).
+    // The fallback still follows the EF provider's GUID sort order.
+    private static readonly IGuidGenerator _Version7Generator = new SequentialGuidGenerator(
+        SequentialGuidType.Version7
+    );
+    private static readonly IGuidGenerator _SqlServerGenerator = new SequentialGuidGenerator(
+        SequentialGuidType.SqlServer
+    );
 
     // The generated value is the framework's source of truth, emitted in the INSERT — never a placeholder the
     // store is expected to replace.
@@ -34,10 +33,26 @@ internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
 
     public override Guid Next(EntityEntry entry)
     {
+        var key = _GetKey(entry.Context.Database.ProviderName);
+        var fallback = _GetFallback(key);
         var applicationServices = entry.Context.GetApplicationServices();
 
-        var generator = applicationServices is null ? _Default : _ByProvider.GetValue(applicationServices, _Resolve);
+        if (applicationServices is null)
+        {
+            return fallback.Create();
+        }
+
+        var generator =
+            applicationServices.GetKeyedService<IGuidGenerator>(key)
+            ?? applicationServices.GetService<IGuidGenerator>()
+            ?? fallback;
 
         return generator.Create();
     }
+
+    private static SequentialGuidType _GetKey(string? providerName) =>
+        providerName == _SqlServerProviderName ? SequentialGuidType.SqlServer : SequentialGuidType.Version7;
+
+    private static IGuidGenerator _GetFallback(SequentialGuidType key) =>
+        key == SequentialGuidType.SqlServer ? _SqlServerGenerator : _Version7Generator;
 }

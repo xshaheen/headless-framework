@@ -137,7 +137,7 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
         _storage = new InMemoryDataStorage(
             messagingOptions,
             _serializer,
-            new SequentialAtEndGuidGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _fakeTimeProvider
         );
     }

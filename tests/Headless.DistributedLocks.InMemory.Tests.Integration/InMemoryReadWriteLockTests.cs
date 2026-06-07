@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class InMemoryReaderWriterLockProviderTests : DistributedReadWriteLockTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly SequentialAtEndGuidGenerator _guidGenerator = new();
+    private readonly IGuidGenerator _guidGenerator = new SequentialGuidGenerator(SequentialGuidType.Version7);
 
     protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {

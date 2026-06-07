@@ -45,7 +45,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
         services.AddLogging(x => x.AddProvider(TestHelpers.CreateXUnitLoggerFactory().Provider));
         services.AddSingleton<IClock>(Clock);
         services.AddSingleton<ICurrentUser>(CurrentUser);
-        services.AddSingleton<IGuidGenerator, SequentialAsStringGuidGenerator>();
+        services.AddSingleton<IGuidGenerator>(new SequentialGuidGenerator(SequentialGuidType.Version7));
 
         if (GuardEnabled)
         {

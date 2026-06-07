@@ -14,6 +14,7 @@ using Headless.Api.Security.Claims;
 using Headless.Api.Security.Jwt;
 using Headless.Checks;
 using Headless.Constants;
+using Headless.Core;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -223,7 +224,7 @@ public static class SetupApi
                 JsonConstants.ConfigureWebJsonOptions(jsonOptions.SerializerOptions)
             );
 
-            builder.Services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
+            builder.Services.AddHeadlessGuidGenerator();
             builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
             builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
             builder.Services.TryAddSingleton<IApplicationInformationAccessor, ApplicationInformationAccessor>();
