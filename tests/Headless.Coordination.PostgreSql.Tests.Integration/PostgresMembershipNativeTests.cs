@@ -44,9 +44,13 @@ public sealed class PostgresMembershipNativeTests(PostgresMembershipFixture fixt
         tables.Should().NotContain("CoordinationDescriptor");
         columns.Should().Contain("cluster_name");
         columns.Should().Contain("node_id");
+        columns.Should().Contain("date_created");
+        columns.Should().Contain("date_updated");
         columns.Should().Contain("current_incarnation");
         columns.Should().Contain("last_beat");
         columns.Should().Contain("left_at");
+        columns.Should().NotContain("created_at");
+        columns.Should().NotContain("updated_at");
         columns.Should().NotContain("ClusterName");
     }
 

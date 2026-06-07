@@ -28,7 +28,7 @@ internal sealed class SqlServerMembershipStore(
 
             UPDATE {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
             SET [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] + 1,
-                [{{SqlServerMembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
+                [{{SqlServerMembershipSchema.DateUpdated}}] = SYSUTCDATETIME()
             OUTPUT inserted.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
             WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
               AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
@@ -40,7 +40,7 @@ internal sealed class SqlServerMembershipStore(
                         [{{SqlServerMembershipSchema.ClusterName}}],
                         [{{SqlServerMembershipSchema.NodeId}}],
                         [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}],
-                        [{{SqlServerMembershipSchema.UpdatedAt}}]
+                        [{{SqlServerMembershipSchema.DateUpdated}}]
                     )
                     VALUES (@ClusterName, @NodeId, 1, SYSUTCDATETIME());
 
@@ -51,7 +51,7 @@ internal sealed class SqlServerMembershipStore(
 
                     UPDATE {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
                     SET [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] + 1,
-                        [{{SqlServerMembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
+                        [{{SqlServerMembershipSchema.DateUpdated}}] = SYSUTCDATETIME()
                     OUTPUT inserted.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
                     WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
                       AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
@@ -92,7 +92,7 @@ internal sealed class SqlServerMembershipStore(
                 [{{SqlServerMembershipSchema.Descriptor.Endpoints}}],
                 [{{SqlServerMembershipSchema.Descriptor.Role}}],
                 [{{SqlServerMembershipSchema.Descriptor.Metadata}}],
-                [{{SqlServerMembershipSchema.CreatedAt}}]
+                [{{SqlServerMembershipSchema.DateCreated}}]
             )
             SELECT
                 @ClusterName,
@@ -299,7 +299,7 @@ internal sealed class SqlServerMembershipStore(
             DELETE d
             FROM {{descriptorTable}} d
             WHERE d.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND DATEDIFF_BIG(millisecond, d.[{{SqlServerMembershipSchema.CreatedAt}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
+              AND DATEDIFF_BIG(millisecond, d.[{{SqlServerMembershipSchema.DateCreated}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
               AND NOT EXISTS (
                   SELECT 1
                   FROM {{livenessTable}} l

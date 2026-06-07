@@ -66,7 +66,7 @@ internal sealed class SqlServerMembershipStorageInitializer(
                             [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
                             [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
                             [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] bigint NOT NULL,
-                            [{{SqlServerMembershipSchema.UpdatedAt}}] datetime2(7) NOT NULL,
+                            [{{SqlServerMembershipSchema.DateUpdated}}] datetime2(7) NOT NULL,
                             CONSTRAINT [PK_{{SqlServerMembershipSchema.Generation.Table}}] PRIMARY KEY CLUSTERED (
                                 [{{SqlServerMembershipSchema.ClusterName}}] ASC,
                                 [{{SqlServerMembershipSchema.NodeId}}] ASC
@@ -89,7 +89,7 @@ internal sealed class SqlServerMembershipStorageInitializer(
                             [{{SqlServerMembershipSchema.Descriptor.Endpoints}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Endpoints] DEFAULT N'{}',
                             [{{SqlServerMembershipSchema.Descriptor.Role}}] nvarchar(200) NULL,
                             [{{SqlServerMembershipSchema.Descriptor.Metadata}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Metadata] DEFAULT N'{}',
-                            [{{SqlServerMembershipSchema.CreatedAt}}] datetime2(7) NOT NULL,
+                            [{{SqlServerMembershipSchema.DateCreated}}] datetime2(7) NOT NULL,
                             CONSTRAINT [PK_{{SqlServerMembershipSchema.Descriptor.Table}}] PRIMARY KEY CLUSTERED (
                                 [{{SqlServerMembershipSchema.ClusterName}}] ASC,
                                 [{{SqlServerMembershipSchema.NodeId}}] ASC,

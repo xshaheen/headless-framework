@@ -50,7 +50,7 @@ internal sealed partial class PostgresMembershipStorageInitializer(
                 {{PostgresMembershipSchema.ClusterName}} varchar(200) NOT NULL,
                 {{PostgresMembershipSchema.NodeId}} varchar(400) NOT NULL,
                 {{PostgresMembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
-                {{PostgresMembershipSchema.UpdatedAt}} timestamptz NOT NULL,
+                {{PostgresMembershipSchema.DateUpdated}} timestamptz NOT NULL,
                 CONSTRAINT pk_{{PostgresMembershipSchema.Generation.Table}} PRIMARY KEY (
                     {{PostgresMembershipSchema.ClusterName}},
                     {{PostgresMembershipSchema.NodeId}}
@@ -65,7 +65,7 @@ internal sealed partial class PostgresMembershipStorageInitializer(
                 {{PostgresMembershipSchema.Descriptor.Endpoints}} jsonb NOT NULL DEFAULT '{}'::jsonb,
                 {{PostgresMembershipSchema.Descriptor.Role}} varchar(200) NULL,
                 {{PostgresMembershipSchema.Descriptor.Metadata}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{PostgresMembershipSchema.CreatedAt}} timestamptz NOT NULL,
+                {{PostgresMembershipSchema.DateCreated}} timestamptz NOT NULL,
                 CONSTRAINT pk_{{PostgresMembershipSchema.Descriptor.Table}} PRIMARY KEY (
                     {{PostgresMembershipSchema.ClusterName}},
                     {{PostgresMembershipSchema.NodeId}},

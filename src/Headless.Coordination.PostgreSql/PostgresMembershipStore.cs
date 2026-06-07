@@ -27,14 +27,14 @@ internal sealed class PostgresMembershipStore(
                 {PostgresMembershipSchema.ClusterName},
                 {PostgresMembershipSchema.NodeId},
                 {PostgresMembershipSchema.Generation.CurrentIncarnation},
-                {PostgresMembershipSchema.UpdatedAt}
+                {PostgresMembershipSchema.DateUpdated}
             )
             VALUES (@ClusterName, @NodeId, 1, clock_timestamp())
             ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId})
             DO UPDATE SET
                 {PostgresMembershipSchema.Generation.CurrentIncarnation} =
                     {PostgresMembershipSchema.Generation.Table}.{PostgresMembershipSchema.Generation.CurrentIncarnation} + 1,
-                {PostgresMembershipSchema.UpdatedAt} = clock_timestamp()
+                {PostgresMembershipSchema.DateUpdated} = clock_timestamp()
             RETURNING {PostgresMembershipSchema.Generation.CurrentIncarnation};
             """;
 
@@ -64,7 +64,7 @@ internal sealed class PostgresMembershipStore(
                 {PostgresMembershipSchema.Descriptor.Endpoints},
                 {PostgresMembershipSchema.Descriptor.Role},
                 {PostgresMembershipSchema.Descriptor.Metadata},
-                {PostgresMembershipSchema.CreatedAt}
+                {PostgresMembershipSchema.DateCreated}
             )
             VALUES (
                 @ClusterName,
@@ -251,7 +251,7 @@ internal sealed class PostgresMembershipStore(
             )
             DELETE FROM {PostgresMembershipSchema.Descriptor.Table} d
             WHERE d.{PostgresMembershipSchema.ClusterName} = @ClusterName
-              AND d.{PostgresMembershipSchema.CreatedAt} <= clock_timestamp() - @RetentionThreshold
+              AND d.{PostgresMembershipSchema.DateCreated} <= clock_timestamp() - @RetentionThreshold
               AND NOT EXISTS (
                   SELECT 1
                   FROM {PostgresMembershipSchema.Liveness.Table} l

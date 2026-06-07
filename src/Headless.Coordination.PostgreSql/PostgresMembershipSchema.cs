@@ -8,8 +8,8 @@ internal static class PostgresMembershipSchema
     public const string ClusterName = "cluster_name";
     public const string NodeId = "node_id";
     public const string Incarnation = "incarnation";
-    public const string CreatedAt = "created_at";
-    public const string UpdatedAt = "updated_at";
+    public const string DateCreated = "date_created";
+    public const string DateUpdated = "date_updated";
 
     public static class Descriptor
     {

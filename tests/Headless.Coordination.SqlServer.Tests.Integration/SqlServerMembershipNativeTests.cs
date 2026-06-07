@@ -43,9 +43,13 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         tables.Should().NotContain("coordination_descriptor");
         columns.Should().Contain("ClusterName");
         columns.Should().Contain("NodeId");
+        columns.Should().Contain("DateCreated");
+        columns.Should().Contain("DateUpdated");
         columns.Should().Contain("CurrentIncarnation");
         columns.Should().Contain("LastBeat");
         columns.Should().Contain("LeftAt");
+        columns.Should().NotContain("CreatedAt");
+        columns.Should().NotContain("UpdatedAt");
         columns.Should().NotContain("cluster_name");
     }
 
