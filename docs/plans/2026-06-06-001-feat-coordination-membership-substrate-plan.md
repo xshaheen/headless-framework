@@ -1326,7 +1326,7 @@ incarnation is a new `NodeJoined`; recovery applies only to the *same* `node@inc
   not consensus — cite, don't relitigate);
   `docs/solutions/design-patterns/redis-zset-semaphore-prune-count-separation.md` (Redis liveness Lua);
   `docs/solutions/best-practices/storage-initializer-lifecycle-correctness.md` (race-safe DDL);
-  `docs/solutions/architecture-patterns/unified-storage-setup-pattern.md` (provider DI shape);
+  `docs/solutions/architecture-patterns/unified-provider-setup-builder-pattern.md` (provider DI shape);
   `docs/solutions/logic-errors/terminal-state-overwrite-on-redelivery-2026-05-16.md` (monotonic upsert
   guard — incarnation defense);
   `docs/solutions/architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md` (keyed-DI, only

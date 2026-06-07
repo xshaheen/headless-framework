@@ -33,7 +33,7 @@ applies_when:
 
 Each raw provider package in the framework ships a `*StorageInitializer` registered through `AddInitializerHostedService<T>` so the host blocks `Starting` until the schema is ready. These initializers run idempotent DDL and must survive: parallel hosts in a rolling deploy racing the same fresh schema, DB unreachable, auth failure, partial-failure schemas from prior crashed runs, repeat host starts in test rigs, and exceptions on the SaveChanges path that race with `DbContext` disposal.
 
-The contract was hardened iteratively during the storage unification work on branch `xshaheen/refactor-storage-initialization-unification` (PR #354). Two review iterations produced regressions that taught what the lifecycle needs to guarantee; commits `8626a2e78`, `657dfc884`, `3f7572895`, `c439be951`, `b74b602f6`, and `784b48eed` together lock in the patterns below. This doc captures the runtime rules an initializer must honor; see the sibling [Unified Storage Setup Pattern](../architecture-patterns/unified-storage-setup-pattern.md) for the registration shape that puts these in front of the host.
+The contract was hardened iteratively during the storage unification work on branch `xshaheen/refactor-storage-initialization-unification` (PR #354). Two review iterations produced regressions that taught what the lifecycle needs to guarantee; commits `8626a2e78`, `657dfc884`, `3f7572895`, `c439be951`, `b74b602f6`, and `784b48eed` together lock in the patterns below. This doc captures the runtime rules an initializer must honor; see the sibling [Unified Provider Setup Builder Pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md) for the registration shape that puts these in front of the host.
 
 ## Guidance
 
@@ -281,7 +281,7 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 
 ## Related
 
-- [Unified Storage Setup Pattern](../architecture-patterns/unified-storage-setup-pattern.md) — sibling doc covering the `Setup{Feature}` / `HeadlessXxxSetupBuilder` / `IStorageOptionsExtension` registration shape that puts these initializers in front of the host
+- [Unified Provider Setup Builder Pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md) — sibling doc covering the `Setup{Feature}` / `HeadlessXxxSetupBuilder` / `IStorageOptionsExtension` registration shape that puts these initializers in front of the host
 - [Startup pause gating and half-open recovery](../concurrency/startup-pause-gating-and-half-open-recovery.md) — `IHostedLifecycleService.StartingAsync` runs before `IHostedService.StartAsync`; same primitive the EF startup gate uses
 - [Messaging keyed-DI lock isolation](../architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md) — applies when multiple features share an initializer host
 - [Circuit-breaker transport thread-safety patterns](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — hosted-service dispose and timer-race prior art for the dispose discipline above
