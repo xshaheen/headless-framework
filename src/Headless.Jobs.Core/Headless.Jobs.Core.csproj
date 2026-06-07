@@ -8,6 +8,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
   </ItemGroup>
   <Target Name="CopyAnalyzer" AfterTargets="Build">
     <MakeDir Directories="$(OutputPath)analyzers/dotnet/cs" />

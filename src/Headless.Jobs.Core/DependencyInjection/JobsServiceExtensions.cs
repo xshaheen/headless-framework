@@ -1,4 +1,5 @@
 using Headless.Jobs.BackgroundServices;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Instrumentation;
@@ -48,6 +49,8 @@ public static class JobsServiceExtensions
         services.AddSingleton<ICronJobManager<TCronJob>, JobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<IInternalJobManager, InternalJobsManager<TTimeJob, TCronJob>>();
         services.AddSingleton<IJobsRedisContext, NoOpJobsRedisContext>();
+        // Default owner identity for the in-memory path + always-on instrumentation; the durable path overrides it.
+        services.TryAddSingleton<IJobsOwnerIdentity, DefaultJobsOwnerIdentity>();
         services.AddSingleton<
             IJobPersistenceProvider<TTimeJob, TCronJob>,
             JobsInMemoryPersistenceProvider<TTimeJob, TCronJob>
