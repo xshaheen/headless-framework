@@ -11,13 +11,13 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    IJobsRedisContext redisContext
+    IJobsCacheContext cacheContext
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
-        redisContext
+        cacheContext
     ),
         IJobPersistenceProvider<TTimeJob, TCronJob>
     where TDbContext : DbContext
@@ -200,9 +200,9 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
+        if (CacheContext.HasRedisConnection)
         {
-            await RedisContext
+            await CacheContext
                 .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -220,9 +220,9 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
+        if (CacheContext.HasRedisConnection)
         {
-            await RedisContext
+            await CacheContext
                 .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -241,9 +241,9 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (RedisContext.HasRedisConnection)
+        if (CacheContext.HasRedisConnection)
         {
-            await RedisContext
+            await CacheContext
                 .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
                 .ConfigureAwait(false);
         }

@@ -11,7 +11,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    IJobsRedisContext redisContext
+    IJobsCacheContext cacheContext
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -25,7 +25,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
-    protected IJobsRedisContext RedisContext { get; } = redisContext;
+    protected IJobsCacheContext CacheContext { get; } = cacheContext;
 
     #region Core_Time_Ticker_Methods
     public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
@@ -464,7 +464,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)
     {
-        var result = await RedisContext.GetOrSetArrayAsync(
+        // Finding 5.1: return the get-or-set result. The factory already reads the DB on a cache miss, so a
+        // cache hit must skip the DB entirely — the previous code populated the cache then ignored it and
+        // re-queried on every call, making the cache dead weight.
+        var result = await CacheContext.GetOrSetArrayAsync(
             cacheKey: "cron:expressions",
             factory: async (ct) =>
             {
@@ -480,16 +483,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             cancellationToken: cancellationToken
         );
 
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return result ?? [];
     }
     #endregion
 

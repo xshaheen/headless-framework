@@ -18,7 +18,7 @@ public sealed class MembershipRecoveryBridgeTests
             Identity(node, incarnation),
             NodeLivenessState.Dead,
             Role: null,
-            Metadata: new Dictionary<string, string>()
+            Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
         );
 
     private static (MembershipRecoveryBridge Bridge, FakeMembership Membership, IInternalJobManager Manager) Create()
