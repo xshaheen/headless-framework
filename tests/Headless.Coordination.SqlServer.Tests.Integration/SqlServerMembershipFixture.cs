@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Coordination.SqlServer;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,8 +12,8 @@ namespace Tests;
 public sealed class SqlServerMembershipFixture : HeadlessSqlServerFixture, ICollectionFixture<SqlServerMembershipFixture>
     , ICoordinationFixture
 {
-    public void ConfigureProvider(IServiceCollection services)
+    public void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup)
     {
-        services.AddSqlServerCoordination(options => options.ConnectionString = ConnectionString);
+        setup.UseSqlServer(options => options.ConnectionString = ConnectionString);
     }
 }

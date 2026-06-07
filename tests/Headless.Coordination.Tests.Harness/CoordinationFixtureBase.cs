@@ -9,7 +9,7 @@ namespace Tests;
 
 public interface ICoordinationFixture
 {
-    void ConfigureProvider(IServiceCollection services);
+    void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup);
 }
 
 public static class CoordinationFixtureExtensions
@@ -32,16 +32,19 @@ public static class CoordinationFixtureExtensions
         var services = new ServiceCollection();
         services.AddLogging();
 
-        fixture.ConfigureProvider(services);
-        services.Configure<CoordinationOptions>(options =>
+        services.AddHeadlessCoordination(setup =>
         {
-            options.ClusterName = clusterName;
-            options.ConfiguredNodeId = nodeId;
-            options.HeartbeatInterval = HeartbeatInterval;
-            options.SuspicionThreshold = SuspicionThreshold;
-            options.DeadThreshold = DeadThreshold;
-            options.DeadRetentionWindow = DeadRetentionWindow;
-            options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
+            fixture.ConfigureProvider(services, setup);
+            setup.Configure(options =>
+            {
+                options.ClusterName = clusterName;
+                options.ConfiguredNodeId = nodeId;
+                options.HeartbeatInterval = HeartbeatInterval;
+                options.SuspicionThreshold = SuspicionThreshold;
+                options.DeadThreshold = DeadThreshold;
+                options.DeadRetentionWindow = DeadRetentionWindow;
+                options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
+            });
         });
 
         var provider = services.BuildServiceProvider();

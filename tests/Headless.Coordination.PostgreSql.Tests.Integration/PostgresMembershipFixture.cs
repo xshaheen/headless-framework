@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Coordination.PostgreSql;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,8 +20,8 @@ public sealed class PostgresMembershipFixture : HeadlessPostgreSqlFixture, IColl
         return base.Configure().WithDatabase("coordination_test").WithUsername("postgres").WithPassword("postgres");
     }
 
-    public void ConfigureProvider(IServiceCollection services)
+    public void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup)
     {
-        services.AddPostgresCoordination(options => options.ConnectionString = ConnectionString);
+        setup.UsePostgreSql(options => options.ConnectionString = ConnectionString);
     }
 }

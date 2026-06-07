@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Coordination;
 using Headless.Coordination.Redis;
 using Headless.Redis;
 using Headless.Testing.Testcontainers;
@@ -32,9 +33,9 @@ public sealed class RedisMembershipFixture : HeadlessRedisFixture, ICollectionFi
         await base.DisposeAsyncCore();
     }
 
-    public void ConfigureProvider(IServiceCollection services)
+    public void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup)
     {
         services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer);
-        services.AddRedisCoordination(static _ => { });
+        setup.UseRedis(static _ => { });
     }
 }

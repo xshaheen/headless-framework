@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Checks;
 using Headless.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,16 @@ public static class SetupCoordinationCore
 {
     extension(IServiceCollection services)
     {
+        public HeadlessCoordinationBuilder AddHeadlessCoordination(Action<HeadlessCoordinationSetupBuilder> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            var setup = new HeadlessCoordinationSetupBuilder(services);
+            configure(setup);
+
+            return _AddCoordinationProviderCore(services, setup);
+        }
+
         public IServiceCollection AddCoordinationCore<TStore>(
             Action<CoordinationOptions, IServiceProvider> optionSetupAction
         )
@@ -76,4 +87,36 @@ public static class SetupCoordinationCore
             return services;
         }
     }
+
+    private static HeadlessCoordinationBuilder _AddCoordinationProviderCore(
+        IServiceCollection services,
+        HeadlessCoordinationSetupBuilder setup
+    )
+    {
+        if (setup.Extensions.Count != 1)
+        {
+            throw new InvalidOperationException(
+                setup.Extensions.Count == 0
+                    ? "Headless.Coordination requires exactly one provider. Call one of `UsePostgreSql`, `UseRedis`, or `UseSqlServer`."
+                    : "Headless.Coordination requires exactly one provider. Multiple providers were configured."
+            );
+        }
+
+        if (services.Any(static descriptor => descriptor.ServiceType == typeof(CoordinationProviderRegistration)))
+        {
+            throw new InvalidOperationException(
+                "Headless.Coordination requires exactly one provider. Multiple providers were configured."
+            );
+        }
+
+        var extension = setup.Extensions.Single();
+        var extensionTypeName = extension.GetType().FullName ?? "unknown";
+        services.AddSingleton(new CoordinationProviderRegistration(extensionTypeName));
+
+        extension.AddServices(services);
+
+        return new HeadlessCoordinationBuilder(services);
+    }
+
+    private sealed record CoordinationProviderRegistration(string Provider);
 }
