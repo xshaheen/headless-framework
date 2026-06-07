@@ -224,8 +224,6 @@ public static class SetupApi
                 JsonConstants.ConfigureWebJsonOptions(jsonOptions.SerializerOptions)
             );
 
-            // Backend-agnostic general default. Persisted clustered keys on a specific backend should resolve a
-            // strategy that matches that backend's sort order instead of relying on this default.
             builder.Services.AddHeadlessGuidGenerator();
             builder.Services.TryAddSingleton<IEnumLocaleAccessor, DefaultEnumLocaleAccessor>();
             builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
