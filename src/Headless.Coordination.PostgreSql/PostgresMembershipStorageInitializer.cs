@@ -46,48 +46,48 @@ internal sealed partial class PostgresMembershipStorageInitializer(
         return $$"""
             SELECT pg_advisory_xact_lock(hashtextextended(@LockResource, 0));
 
-            CREATE TABLE IF NOT EXISTS {{MembershipSchema.Generation.Table}} (
-                {{MembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{MembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{MembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
-                {{MembershipSchema.UpdatedAt}} timestamptz NOT NULL,
-                CONSTRAINT pk_{{MembershipSchema.Generation.Table}} PRIMARY KEY (
-                    {{MembershipSchema.ClusterName}},
-                    {{MembershipSchema.NodeId}}
+            CREATE TABLE IF NOT EXISTS {{PostgresMembershipSchema.Generation.Table}} (
+                {{PostgresMembershipSchema.ClusterName}} varchar(200) NOT NULL,
+                {{PostgresMembershipSchema.NodeId}} varchar(400) NOT NULL,
+                {{PostgresMembershipSchema.Generation.CurrentIncarnation}} bigint NOT NULL,
+                {{PostgresMembershipSchema.UpdatedAt}} timestamptz NOT NULL,
+                CONSTRAINT pk_{{PostgresMembershipSchema.Generation.Table}} PRIMARY KEY (
+                    {{PostgresMembershipSchema.ClusterName}},
+                    {{PostgresMembershipSchema.NodeId}}
                 )
             );
 
-            CREATE TABLE IF NOT EXISTS {{MembershipSchema.Descriptor.Table}} (
-                {{MembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{MembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{MembershipSchema.Incarnation}} bigint NOT NULL,
-                {{MembershipSchema.Descriptor.HostName}} text NULL,
-                {{MembershipSchema.Descriptor.Endpoints}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{MembershipSchema.Descriptor.Role}} varchar(200) NULL,
-                {{MembershipSchema.Descriptor.Metadata}} jsonb NOT NULL DEFAULT '{}'::jsonb,
-                {{MembershipSchema.CreatedAt}} timestamptz NOT NULL,
-                CONSTRAINT pk_{{MembershipSchema.Descriptor.Table}} PRIMARY KEY (
-                    {{MembershipSchema.ClusterName}},
-                    {{MembershipSchema.NodeId}},
-                    {{MembershipSchema.Incarnation}}
+            CREATE TABLE IF NOT EXISTS {{PostgresMembershipSchema.Descriptor.Table}} (
+                {{PostgresMembershipSchema.ClusterName}} varchar(200) NOT NULL,
+                {{PostgresMembershipSchema.NodeId}} varchar(400) NOT NULL,
+                {{PostgresMembershipSchema.Incarnation}} bigint NOT NULL,
+                {{PostgresMembershipSchema.Descriptor.HostName}} text NULL,
+                {{PostgresMembershipSchema.Descriptor.Endpoints}} jsonb NOT NULL DEFAULT '{}'::jsonb,
+                {{PostgresMembershipSchema.Descriptor.Role}} varchar(200) NULL,
+                {{PostgresMembershipSchema.Descriptor.Metadata}} jsonb NOT NULL DEFAULT '{}'::jsonb,
+                {{PostgresMembershipSchema.CreatedAt}} timestamptz NOT NULL,
+                CONSTRAINT pk_{{PostgresMembershipSchema.Descriptor.Table}} PRIMARY KEY (
+                    {{PostgresMembershipSchema.ClusterName}},
+                    {{PostgresMembershipSchema.NodeId}},
+                    {{PostgresMembershipSchema.Incarnation}}
                 )
             );
 
-            CREATE TABLE IF NOT EXISTS {{MembershipSchema.Liveness.Table}} (
-                {{MembershipSchema.ClusterName}} varchar(200) NOT NULL,
-                {{MembershipSchema.NodeId}} varchar(400) NOT NULL,
-                {{MembershipSchema.Incarnation}} bigint NOT NULL,
-                {{MembershipSchema.Liveness.LastBeat}} timestamptz NOT NULL,
-                {{MembershipSchema.Liveness.LeftAt}} timestamptz NULL,
-                CONSTRAINT pk_{{MembershipSchema.Liveness.Table}} PRIMARY KEY (
-                    {{MembershipSchema.ClusterName}},
-                    {{MembershipSchema.NodeId}},
-                    {{MembershipSchema.Incarnation}}
+            CREATE TABLE IF NOT EXISTS {{PostgresMembershipSchema.Liveness.Table}} (
+                {{PostgresMembershipSchema.ClusterName}} varchar(200) NOT NULL,
+                {{PostgresMembershipSchema.NodeId}} varchar(400) NOT NULL,
+                {{PostgresMembershipSchema.Incarnation}} bigint NOT NULL,
+                {{PostgresMembershipSchema.Liveness.LastBeat}} timestamptz NOT NULL,
+                {{PostgresMembershipSchema.Liveness.LeftAt}} timestamptz NULL,
+                CONSTRAINT pk_{{PostgresMembershipSchema.Liveness.Table}} PRIMARY KEY (
+                    {{PostgresMembershipSchema.ClusterName}},
+                    {{PostgresMembershipSchema.NodeId}},
+                    {{PostgresMembershipSchema.Incarnation}}
                 )
             );
 
-            CREATE INDEX IF NOT EXISTS ix_{{MembershipSchema.Liveness.Table}}_cluster_lastbeat
-                ON {{MembershipSchema.Liveness.Table}} ({{MembershipSchema.ClusterName}}, {{MembershipSchema.Liveness.LastBeat}});
+            CREATE INDEX IF NOT EXISTS ix_{{PostgresMembershipSchema.Liveness.Table}}_cluster_lastbeat
+                ON {{PostgresMembershipSchema.Liveness.Table}} ({{PostgresMembershipSchema.ClusterName}}, {{PostgresMembershipSchema.Liveness.LastBeat}});
             """;
     }
 

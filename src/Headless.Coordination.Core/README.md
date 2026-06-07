@@ -32,6 +32,8 @@ services.AddCoordinationCore<MyMembershipStore>(options =>
 });
 ```
 
+Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`; `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
+
 ## Configuration
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWindow` must be at least two heartbeat intervals.
@@ -39,6 +41,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 ## Dependencies
 
 - `Headless.Coordination.Abstractions`
+- `Headless.Checks`
 - `Headless.Core`
 - `Headless.Extensions`
 - `Headless.Hosting`

@@ -26,20 +26,24 @@ dotnet add package Headless.Coordination.PostgreSql
 ## Quick Start
 
 ```csharp
-services.AddPostgresCoordination(options =>
+services.AddHeadlessCoordination(setup =>
 {
-    options.ConnectionString = connectionString;
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString = connectionString;
+    });
 });
 ```
 
 ## Configuration
 
-Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
 
 ## Dependencies
 
@@ -49,4 +53,4 @@ Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource
 
 ## Side Effects
 
-Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.

@@ -81,7 +81,7 @@ The store is the temporal authority. PostgreSQL uses `clock_timestamp()`, SQL Se
 
 ## Agent Instructions
 
-- Depend on `Headless.Coordination.Abstractions` from application code and add exactly one provider package.
+- Depend on `Headless.Coordination.Abstractions` from application code and add exactly one provider package through `AddHeadlessCoordination(setup => setup.Use...)`.
 - Treat `NodeLeft` as an optimization trigger. Consumers must also periodically reconcile rows whose owner identity is not in `GetLiveNodesAsync()`.
 - Recovery updates must be idempotent and guarded by owner identity plus non-terminal state.
 - Do not use Coordination as Raft, Paxos, RedLock, leader election, or a generic ownership ledger.
@@ -204,6 +204,8 @@ services.AddCoordinationCore<MyMembershipStore>(options =>
 });
 ```
 
+Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`; `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
+
 ### Configuration
 
 Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWindow` must be at least two heartbeat intervals.
@@ -211,6 +213,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 ### Dependencies
 
 - `Headless.Coordination.Abstractions`
+- `Headless.Checks`
 - `Headless.Core`
 - `Headless.Extensions`
 - `Headless.Hosting`
@@ -232,13 +235,13 @@ Provides the shared relational substrate used by native SQL providers.
 
 ### Key Features
 
-- Central table and column names for descriptor, liveness, and generation tables.
 - Base store algorithm hooks for cluster-scoped relational providers.
+- Provider-owned physical identifiers: PostgreSQL uses snake_case; SQL Server uses PascalCase.
 - Initializer contract for provider-specific race-safe DDL.
 
 ### Design Notes
 
-Provider SQL remains in the native packages. This package centralizes the schema vocabulary and operation order without choosing a clock expression.
+Provider SQL and physical identifiers remain in the native packages. This package centralizes operation order without forcing PostgreSQL and SQL Server into one naming convention.
 
 ### Installation
 
@@ -291,20 +294,24 @@ dotnet add package Headless.Coordination.PostgreSql
 ### Quick Start
 
 ```csharp
-services.AddPostgresCoordination(options =>
+services.AddHeadlessCoordination(setup =>
 {
-    options.ConnectionString = connectionString;
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UsePostgreSql(options =>
+    {
+        options.ConnectionString = connectionString;
+    });
 });
 ```
 
 ### Configuration
 
-Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource`, `CommandTimeout`, and `InitializeOnStartup` with `setup.UsePostgreSql(...)`.
 
 ### Dependencies
 
@@ -314,7 +321,7 @@ Configure `PostgreSqlCoordinationOptions.ConnectionString`, optional `DataSource
 
 ### Side Effects
 
-Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
 
 ---
 
@@ -345,20 +352,25 @@ dotnet add package Headless.Coordination.Redis
 
 ```csharp
 services.AddSingleton<IConnectionMultiplexer>(multiplexer);
-services.AddRedisCoordination(options =>
+
+services.AddHeadlessCoordination(setup =>
 {
-    options.RedisCleanupInterval = TimeSpan.FromMinutes(5);
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UseRedis(options =>
+    {
+        options.RedisCleanupInterval = TimeSpan.FromMinutes(5);
+    });
 });
 ```
 
 ### Configuration
 
-Configure `RedisCleanupInterval` and `RedisKnownNodeRetention`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `RedisCleanupInterval` and `RedisKnownNodeRetention` with `setup.UseRedis(...)`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`.
 
 ### Dependencies
 
@@ -399,20 +411,24 @@ dotnet add package Headless.Coordination.SqlServer
 ### Quick Start
 
 ```csharp
-services.AddSqlServerCoordination(options =>
+services.AddHeadlessCoordination(setup =>
 {
-    options.ConnectionString = connectionString;
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UseSqlServer(options =>
+    {
+        options.ConnectionString = connectionString;
+    });
 });
 ```
 
 ### Configuration
 
-Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
 
 ### Dependencies
 
@@ -422,4 +438,4 @@ Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and
 
 ### Side Effects
 
-Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

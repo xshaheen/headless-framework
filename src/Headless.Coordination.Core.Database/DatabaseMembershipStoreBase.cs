@@ -63,10 +63,7 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options)
         return snapshots.OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal).ToArray();
     }
 
-    /// <summary>
-    /// Allocates the next durable incarnation for <paramref name="nodeId"/>. This is the only operation
-    /// that may advance <see cref="MembershipSchema.Generation.CurrentIncarnation"/>.
-    /// </summary>
+    /// <summary>Allocates the next durable incarnation for <paramref name="nodeId"/>.</summary>
     protected abstract ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
         NodeId nodeId,

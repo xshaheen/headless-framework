@@ -4,17 +4,17 @@ Provides the shared relational substrate used by native SQL coordination provide
 
 ## Problem Solved
 
-Centralizes relational membership schema names and provider hooks so PostgreSQL and SQL Server providers do not drift.
+Provides relational membership operation hooks so PostgreSQL and SQL Server providers share behavior without sharing physical table names.
 
 ## Key Features
 
-- Descriptor, liveness, and node-generation table vocabulary.
 - Base store operation order for relational providers.
+- Provider-owned physical identifiers: PostgreSQL uses snake_case; SQL Server uses PascalCase.
 - Initializer contract for race-safe DDL.
 
 ## Design Notes
 
-Provider SQL and clock expressions stay in native provider packages. This package does not choose `clock_timestamp()` or `SYSUTCDATETIME()`.
+Provider SQL, clock expressions, and physical identifiers stay in native provider packages. This package does not choose `clock_timestamp()`, `SYSUTCDATETIME()`, snake_case, or PascalCase.
 
 ## Installation
 

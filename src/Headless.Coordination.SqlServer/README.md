@@ -26,20 +26,24 @@ dotnet add package Headless.Coordination.SqlServer
 ## Quick Start
 
 ```csharp
-services.AddSqlServerCoordination(options =>
+services.AddHeadlessCoordination(setup =>
 {
-    options.ConnectionString = connectionString;
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UseSqlServer(options =>
+    {
+        options.ConnectionString = connectionString;
+    });
 });
 ```
 
 ## Configuration
 
-Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and `InitializeOnStartup` with `setup.UseSqlServer(...)`.
 
 ## Dependencies
 
@@ -49,4 +53,4 @@ Configure `ConnectionString`, `Schema` (`dbo` by default), `CommandTimeout`, and
 
 ## Side Effects
 
-Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

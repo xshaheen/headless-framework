@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Coordination;
+namespace Headless.Coordination.PostgreSql;
 
-/// <summary>Central table and column names for relational membership providers.</summary>
-internal static class MembershipSchema
+/// <summary>PostgreSQL physical identifiers for coordination membership.</summary>
+internal static class PostgresMembershipSchema
 {
     public const string ClusterName = "cluster_name";
     public const string NodeId = "node_id";

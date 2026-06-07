@@ -27,20 +27,25 @@ dotnet add package Headless.Coordination.Redis
 
 ```csharp
 services.AddSingleton<IConnectionMultiplexer>(multiplexer);
-services.AddRedisCoordination(options =>
+
+services.AddHeadlessCoordination(setup =>
 {
-    options.RedisCleanupInterval = TimeSpan.FromMinutes(5);
-});
-services.Configure<CoordinationOptions>(options =>
-{
-    options.ClusterName = "orders";
-    options.ConfiguredNodeId = "orders-worker-0";
+    setup.Configure(options =>
+    {
+        options.ClusterName = "orders";
+        options.ConfiguredNodeId = "orders-worker-0";
+    });
+
+    setup.UseRedis(options =>
+    {
+        options.RedisCleanupInterval = TimeSpan.FromMinutes(5);
+    });
 });
 ```
 
 ## Configuration
 
-Configure `RedisCleanupInterval` and `RedisKnownNodeRetention`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`. Configure shared `CoordinationOptions` for cluster name, node id, thresholds, role, metadata, and membership-loss behavior.
+Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `RedisCleanupInterval` and `RedisKnownNodeRetention` with `setup.UseRedis(...)`. `RedisKnownNodeRetention` is treated as at least `DeadThreshold + DeadRetentionWindow`.
 
 ## Dependencies
 

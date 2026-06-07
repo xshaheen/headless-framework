@@ -22,25 +22,25 @@ internal sealed class SqlServerMembershipStore(
     )
     {
         var options = providerOptions.Value;
-        var generationTable = _Qualified(MembershipSchema.Generation.Table);
+        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
         var sql = $$"""
             DECLARE @allocated table ([value] bigint NOT NULL);
 
             UPDATE {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
-            SET [{{MembershipSchema.Generation.CurrentIncarnation}}] = [{{MembershipSchema.Generation.CurrentIncarnation}}] + 1,
-                [{{MembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
-            OUTPUT inserted.[{{MembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
-            WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{MembershipSchema.NodeId}}] = @NodeId;
+            SET [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] + 1,
+                [{{SqlServerMembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
+            OUTPUT inserted.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
 
             IF NOT EXISTS (SELECT 1 FROM @allocated)
             BEGIN
                 BEGIN TRY
                     INSERT INTO {{generationTable}} (
-                        [{{MembershipSchema.ClusterName}}],
-                        [{{MembershipSchema.NodeId}}],
-                        [{{MembershipSchema.Generation.CurrentIncarnation}}],
-                        [{{MembershipSchema.UpdatedAt}}]
+                        [{{SqlServerMembershipSchema.ClusterName}}],
+                        [{{SqlServerMembershipSchema.NodeId}}],
+                        [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}],
+                        [{{SqlServerMembershipSchema.UpdatedAt}}]
                     )
                     VALUES (@ClusterName, @NodeId, 1, SYSUTCDATETIME());
 
@@ -50,11 +50,11 @@ internal sealed class SqlServerMembershipStore(
                     IF ERROR_NUMBER() NOT IN (2601, 2627) THROW;
 
                     UPDATE {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
-                    SET [{{MembershipSchema.Generation.CurrentIncarnation}}] = [{{MembershipSchema.Generation.CurrentIncarnation}}] + 1,
-                        [{{MembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
-                    OUTPUT inserted.[{{MembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
-                    WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-                      AND [{{MembershipSchema.NodeId}}] = @NodeId;
+                    SET [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] + 1,
+                        [{{SqlServerMembershipSchema.UpdatedAt}}] = SYSUTCDATETIME()
+                    OUTPUT inserted.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] INTO @allocated
+                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
                 END CATCH;
             END;
 
@@ -82,17 +82,17 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var descriptorTable = _Qualified(MembershipSchema.Descriptor.Table);
+        var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
         var sql = $$"""
             INSERT INTO {{descriptorTable}} (
-                [{{MembershipSchema.ClusterName}}],
-                [{{MembershipSchema.NodeId}}],
-                [{{MembershipSchema.Incarnation}}],
-                [{{MembershipSchema.Descriptor.HostName}}],
-                [{{MembershipSchema.Descriptor.Endpoints}}],
-                [{{MembershipSchema.Descriptor.Role}}],
-                [{{MembershipSchema.Descriptor.Metadata}}],
-                [{{MembershipSchema.CreatedAt}}]
+                [{{SqlServerMembershipSchema.ClusterName}}],
+                [{{SqlServerMembershipSchema.NodeId}}],
+                [{{SqlServerMembershipSchema.Incarnation}}],
+                [{{SqlServerMembershipSchema.Descriptor.HostName}}],
+                [{{SqlServerMembershipSchema.Descriptor.Endpoints}}],
+                [{{SqlServerMembershipSchema.Descriptor.Role}}],
+                [{{SqlServerMembershipSchema.Descriptor.Metadata}}],
+                [{{SqlServerMembershipSchema.CreatedAt}}]
             )
             SELECT
                 @ClusterName,
@@ -106,9 +106,9 @@ internal sealed class SqlServerMembershipStore(
             WHERE NOT EXISTS (
                 SELECT 1
                 FROM {{descriptorTable}} WITH (UPDLOCK, HOLDLOCK)
-                WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-                  AND [{{MembershipSchema.NodeId}}] = @NodeId
-                  AND [{{MembershipSchema.Incarnation}}] = @Incarnation
+                WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                  AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+                  AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
             );
             """;
 
@@ -132,15 +132,15 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var generationTable = _Qualified(MembershipSchema.Generation.Table);
-        var livenessTable = _Qualified(MembershipSchema.Liveness.Table);
+        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
         var sql = $$"""
             DECLARE @currentIncarnation bigint;
 
-            SELECT @currentIncarnation = [{{MembershipSchema.Generation.CurrentIncarnation}}]
+            SELECT @currentIncarnation = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}]
             FROM {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
-            WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{MembershipSchema.NodeId}}] = @NodeId;
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
 
             IF @currentIncarnation IS NULL OR @currentIncarnation <> @Incarnation
             BEGIN
@@ -149,28 +149,28 @@ internal sealed class SqlServerMembershipStore(
             END;
 
             UPDATE {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-            SET [{{MembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
-                [{{MembershipSchema.Liveness.LeftAt}}] = NULL
-            WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{MembershipSchema.NodeId}}] = @NodeId
-              AND [{{MembershipSchema.Incarnation}}] = @Incarnation;
+            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
+                [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = NULL
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
 
             IF @@ROWCOUNT = 0
             BEGIN
                 INSERT INTO {{livenessTable}} (
-                    [{{MembershipSchema.ClusterName}}],
-                    [{{MembershipSchema.NodeId}}],
-                    [{{MembershipSchema.Incarnation}}],
-                    [{{MembershipSchema.Liveness.LastBeat}}],
-                    [{{MembershipSchema.Liveness.LeftAt}}]
+                    [{{SqlServerMembershipSchema.ClusterName}}],
+                    [{{SqlServerMembershipSchema.NodeId}}],
+                    [{{SqlServerMembershipSchema.Incarnation}}],
+                    [{{SqlServerMembershipSchema.Liveness.LastBeat}}],
+                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}]
                 )
                 SELECT @ClusterName, @NodeId, @Incarnation, SYSUTCDATETIME(), NULL
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
-                    WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-                      AND [{{MembershipSchema.NodeId}}] = @NodeId
-                      AND [{{MembershipSchema.Incarnation}}] = @Incarnation
+                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+                      AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
                 );
             END;
 
@@ -200,13 +200,13 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var livenessTable = _Qualified(MembershipSchema.Liveness.Table);
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
         var sql = $$"""
             UPDATE {{livenessTable}}
-            SET [{{MembershipSchema.Liveness.LeftAt}}] = SYSUTCDATETIME()
-            WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{MembershipSchema.NodeId}}] = @NodeId
-              AND [{{MembershipSchema.Incarnation}}] = @Incarnation;
+            SET [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = SYSUTCDATETIME()
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -224,32 +224,32 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var generationTable = _Qualified(MembershipSchema.Generation.Table);
-        var descriptorTable = _Qualified(MembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(MembershipSchema.Liveness.Table);
+        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
+        var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
         var sql = $$"""
             SELECT
-                l.[{{MembershipSchema.NodeId}}],
-                l.[{{MembershipSchema.Incarnation}}],
-                d.[{{MembershipSchema.Descriptor.Role}}],
-                d.[{{MembershipSchema.Descriptor.Metadata}}],
+                l.[{{SqlServerMembershipSchema.NodeId}}],
+                l.[{{SqlServerMembershipSchema.Incarnation}}],
+                d.[{{SqlServerMembershipSchema.Descriptor.Role}}],
+                d.[{{SqlServerMembershipSchema.Descriptor.Metadata}}],
                 CASE
-                    WHEN l.[{{MembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{MembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
-                    WHEN DATEDIFF_BIG(millisecond, l.[{{MembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
+                    WHEN l.[{{SqlServerMembershipSchema.Liveness.LeftAt}}] IS NOT NULL THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @DeadThresholdMs THEN @DeadState
+                    WHEN DATEDIFF_BIG(millisecond, l.[{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @SuspicionThresholdMs THEN @SuspectedState
                     ELSE @AliveState
                 END AS [state]
             FROM {{livenessTable}} l
             JOIN {{generationTable}} g
-              ON g.[{{MembershipSchema.ClusterName}}] = l.[{{MembershipSchema.ClusterName}}]
-             AND g.[{{MembershipSchema.NodeId}}] = l.[{{MembershipSchema.NodeId}}]
-             AND g.[{{MembershipSchema.Generation.CurrentIncarnation}}] = l.[{{MembershipSchema.Incarnation}}]
+              ON g.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND g.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND g.[{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
             LEFT JOIN {{descriptorTable}} d
-              ON d.[{{MembershipSchema.ClusterName}}] = l.[{{MembershipSchema.ClusterName}}]
-             AND d.[{{MembershipSchema.NodeId}}] = l.[{{MembershipSchema.NodeId}}]
-             AND d.[{{MembershipSchema.Incarnation}}] = l.[{{MembershipSchema.Incarnation}}]
-            WHERE l.[{{MembershipSchema.ClusterName}}] = @ClusterName
-            ORDER BY l.[{{MembershipSchema.NodeId}}], l.[{{MembershipSchema.Incarnation}}];
+              ON d.[{{SqlServerMembershipSchema.ClusterName}}] = l.[{{SqlServerMembershipSchema.ClusterName}}]
+             AND d.[{{SqlServerMembershipSchema.NodeId}}] = l.[{{SqlServerMembershipSchema.NodeId}}]
+             AND d.[{{SqlServerMembershipSchema.Incarnation}}] = l.[{{SqlServerMembershipSchema.Incarnation}}]
+            WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+            ORDER BY l.[{{SqlServerMembershipSchema.NodeId}}], l.[{{SqlServerMembershipSchema.Incarnation}}];
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -289,23 +289,23 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
-        var descriptorTable = _Qualified(MembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(MembershipSchema.Liveness.Table);
+        var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
         var sql = $$"""
             DELETE FROM {{livenessTable}}
-            WHERE [{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND DATEDIFF_BIG(millisecond, [{{MembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @RetentionThresholdMs;
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND DATEDIFF_BIG(millisecond, [{{SqlServerMembershipSchema.Liveness.LastBeat}}], SYSUTCDATETIME()) >= @RetentionThresholdMs;
 
             DELETE d
             FROM {{descriptorTable}} d
-            WHERE d.[{{MembershipSchema.ClusterName}}] = @ClusterName
-              AND DATEDIFF_BIG(millisecond, d.[{{MembershipSchema.CreatedAt}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
+            WHERE d.[{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND DATEDIFF_BIG(millisecond, d.[{{SqlServerMembershipSchema.CreatedAt}}], SYSUTCDATETIME()) >= @RetentionThresholdMs
               AND NOT EXISTS (
                   SELECT 1
                   FROM {{livenessTable}} l
-                  WHERE l.[{{MembershipSchema.ClusterName}}] = d.[{{MembershipSchema.ClusterName}}]
-                    AND l.[{{MembershipSchema.NodeId}}] = d.[{{MembershipSchema.NodeId}}]
-                    AND l.[{{MembershipSchema.Incarnation}}] = d.[{{MembershipSchema.Incarnation}}]
+                  WHERE l.[{{SqlServerMembershipSchema.ClusterName}}] = d.[{{SqlServerMembershipSchema.ClusterName}}]
+                    AND l.[{{SqlServerMembershipSchema.NodeId}}] = d.[{{SqlServerMembershipSchema.NodeId}}]
+                    AND l.[{{SqlServerMembershipSchema.Incarnation}}] = d.[{{SqlServerMembershipSchema.Incarnation}}]
               );
             """;
 

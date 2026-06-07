@@ -30,12 +30,12 @@ internal sealed class SqlServerMembershipStorageInitializer(
     private static string _CreateScript(SqlServerCoordinationOptions provider, CoordinationOptions coordination)
     {
         var schema = provider.Schema;
-        var generationTable = _Qualified(schema, MembershipSchema.Generation.Table);
-        var descriptorTable = _Qualified(schema, MembershipSchema.Descriptor.Table);
-        var livenessTable = _Qualified(schema, MembershipSchema.Liveness.Table);
-        var generationObject = SqlServerCoordinationIdentifier.ObjectName(schema, MembershipSchema.Generation.Table);
-        var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(schema, MembershipSchema.Descriptor.Table);
-        var livenessObject = SqlServerCoordinationIdentifier.ObjectName(schema, MembershipSchema.Liveness.Table);
+        var generationTable = _Qualified(schema, SqlServerMembershipSchema.Generation.Table);
+        var descriptorTable = _Qualified(schema, SqlServerMembershipSchema.Descriptor.Table);
+        var livenessTable = _Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
+        var generationObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Generation.Table);
+        var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Descriptor.Table);
+        var livenessObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Liveness.Table);
         var lockResource = $"headless_coordination_init:{schema}:{coordination.ClusterName}";
 
         return $$"""
@@ -63,13 +63,13 @@ internal sealed class SqlServerMembershipStorageInitializer(
                     IF OBJECT_ID(N'{{generationObject}}', N'U') IS NULL
                     BEGIN
                         CREATE TABLE {{generationTable}} (
-                            [{{MembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                            [{{MembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                            [{{MembershipSchema.Generation.CurrentIncarnation}}] bigint NOT NULL,
-                            [{{MembershipSchema.UpdatedAt}}] datetime2(7) NOT NULL,
-                            CONSTRAINT [pk_{{MembershipSchema.Generation.Table}}] PRIMARY KEY CLUSTERED (
-                                [{{MembershipSchema.ClusterName}}] ASC,
-                                [{{MembershipSchema.NodeId}}] ASC
+                            [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
+                            [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
+                            [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}] bigint NOT NULL,
+                            [{{SqlServerMembershipSchema.UpdatedAt}}] datetime2(7) NOT NULL,
+                            CONSTRAINT [PK_{{SqlServerMembershipSchema.Generation.Table}}] PRIMARY KEY CLUSTERED (
+                                [{{SqlServerMembershipSchema.ClusterName}}] ASC,
+                                [{{SqlServerMembershipSchema.NodeId}}] ASC
                             )
                         );
                     END;
@@ -82,18 +82,18 @@ internal sealed class SqlServerMembershipStorageInitializer(
                     IF OBJECT_ID(N'{{descriptorObject}}', N'U') IS NULL
                     BEGIN
                         CREATE TABLE {{descriptorTable}} (
-                            [{{MembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                            [{{MembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                            [{{MembershipSchema.Incarnation}}] bigint NOT NULL,
-                            [{{MembershipSchema.Descriptor.HostName}}] nvarchar(max) NULL,
-                            [{{MembershipSchema.Descriptor.Endpoints}}] nvarchar(max) NOT NULL CONSTRAINT [df_{{MembershipSchema.Descriptor.Table}}_endpoints] DEFAULT N'{}',
-                            [{{MembershipSchema.Descriptor.Role}}] nvarchar(200) NULL,
-                            [{{MembershipSchema.Descriptor.Metadata}}] nvarchar(max) NOT NULL CONSTRAINT [df_{{MembershipSchema.Descriptor.Table}}_metadata] DEFAULT N'{}',
-                            [{{MembershipSchema.CreatedAt}}] datetime2(7) NOT NULL,
-                            CONSTRAINT [pk_{{MembershipSchema.Descriptor.Table}}] PRIMARY KEY CLUSTERED (
-                                [{{MembershipSchema.ClusterName}}] ASC,
-                                [{{MembershipSchema.NodeId}}] ASC,
-                                [{{MembershipSchema.Incarnation}}] ASC
+                            [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
+                            [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
+                            [{{SqlServerMembershipSchema.Incarnation}}] bigint NOT NULL,
+                            [{{SqlServerMembershipSchema.Descriptor.HostName}}] nvarchar(max) NULL,
+                            [{{SqlServerMembershipSchema.Descriptor.Endpoints}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Endpoints] DEFAULT N'{}',
+                            [{{SqlServerMembershipSchema.Descriptor.Role}}] nvarchar(200) NULL,
+                            [{{SqlServerMembershipSchema.Descriptor.Metadata}}] nvarchar(max) NOT NULL CONSTRAINT [DF_{{SqlServerMembershipSchema.Descriptor.Table}}_Metadata] DEFAULT N'{}',
+                            [{{SqlServerMembershipSchema.CreatedAt}}] datetime2(7) NOT NULL,
+                            CONSTRAINT [PK_{{SqlServerMembershipSchema.Descriptor.Table}}] PRIMARY KEY CLUSTERED (
+                                [{{SqlServerMembershipSchema.ClusterName}}] ASC,
+                                [{{SqlServerMembershipSchema.NodeId}}] ASC,
+                                [{{SqlServerMembershipSchema.Incarnation}}] ASC
                             )
                         );
                     END;
@@ -106,15 +106,15 @@ internal sealed class SqlServerMembershipStorageInitializer(
                     IF OBJECT_ID(N'{{livenessObject}}', N'U') IS NULL
                     BEGIN
                         CREATE TABLE {{livenessTable}} (
-                            [{{MembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
-                            [{{MembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
-                            [{{MembershipSchema.Incarnation}}] bigint NOT NULL,
-                            [{{MembershipSchema.Liveness.LastBeat}}] datetime2(7) NOT NULL,
-                            [{{MembershipSchema.Liveness.LeftAt}}] datetime2(7) NULL,
-                            CONSTRAINT [pk_{{MembershipSchema.Liveness.Table}}] PRIMARY KEY CLUSTERED (
-                                [{{MembershipSchema.ClusterName}}] ASC,
-                                [{{MembershipSchema.NodeId}}] ASC,
-                                [{{MembershipSchema.Incarnation}}] ASC
+                            [{{SqlServerMembershipSchema.ClusterName}}] nvarchar(200) NOT NULL,
+                            [{{SqlServerMembershipSchema.NodeId}}] nvarchar(400) NOT NULL,
+                            [{{SqlServerMembershipSchema.Incarnation}}] bigint NOT NULL,
+                            [{{SqlServerMembershipSchema.Liveness.LastBeat}}] datetime2(7) NOT NULL,
+                            [{{SqlServerMembershipSchema.Liveness.LeftAt}}] datetime2(7) NULL,
+                            CONSTRAINT [PK_{{SqlServerMembershipSchema.Liveness.Table}}] PRIMARY KEY CLUSTERED (
+                                [{{SqlServerMembershipSchema.ClusterName}}] ASC,
+                                [{{SqlServerMembershipSchema.NodeId}}] ASC,
+                                [{{SqlServerMembershipSchema.Incarnation}}] ASC
                             )
                         );
                     END;
@@ -126,11 +126,11 @@ internal sealed class SqlServerMembershipStorageInitializer(
                 IF NOT EXISTS (
                     SELECT 1
                     FROM sys.indexes
-                    WHERE name = N'ix_{{MembershipSchema.Liveness.Table}}_cluster_lastbeat'
+                    WHERE name = N'IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat'
                       AND object_id = OBJECT_ID(N'{{livenessObject}}')
                 )
-                    CREATE NONCLUSTERED INDEX [ix_{{MembershipSchema.Liveness.Table}}_cluster_lastbeat]
-                        ON {{livenessTable}} ([{{MembershipSchema.ClusterName}}] ASC, [{{MembershipSchema.Liveness.LastBeat}}] ASC);
+                    CREATE NONCLUSTERED INDEX [IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat]
+                        ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
 
                 EXEC sys.sp_releaseapplock @Resource = N'{{lockResource}}', @LockOwner = N'Session', @DbPrincipal = N'public';
             END TRY
