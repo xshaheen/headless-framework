@@ -728,7 +728,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
         var constructors = classDeclaration.Members.OfType<ConstructorDeclarationSyntax>().ToList();
 
         // First, look for a constructor with JobsConstructor attribute using semantic analysis
-        var tickerQConstructor = constructors.FirstOrDefault(c =>
+        var jobConstructor = constructors.FirstOrDefault(c =>
         {
             var constructorSymbol = semanticModel.GetDeclaredSymbol(c);
             if (constructorSymbol == null)
@@ -758,7 +758,7 @@ public sealed class JobsIncrementalSourceGenerator : IIncrementalGenerator
 
         // If no JobsConstructor attribute found, use first public constructor
         var publicConstructor =
-            tickerQConstructor
+            jobConstructor
             ?? constructors.FirstOrDefault(c => c.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword)));
 
         var isPrimaryConstructor = classDeclaration.ParameterList?.Parameters.Count > 0;

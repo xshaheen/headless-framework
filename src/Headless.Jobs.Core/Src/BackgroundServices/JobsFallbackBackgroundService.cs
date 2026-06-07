@@ -9,7 +9,7 @@ internal class JobsFallbackBackgroundService(
     IInternalJobManager internalJobsManager,
     SchedulerOptionsBuilder schedulerOptions,
     JobsExecutionTaskHandler tickerExecutionTaskHandler,
-    JobsTaskScheduler tickerQTaskScheduler,
+    JobsTaskScheduler jobsTaskScheduler,
     IJobFunctionConcurrencyGate concurrencyGate,
     TimeProvider timeProvider
 ) : BackgroundService
@@ -30,7 +30,7 @@ internal class JobsFallbackBackgroundService(
             {
                 // If the scheduler is frozen or disposed (e.g., manual start mode or shutdown),
                 // skip queuing fallback work to avoid throwing and stopping the host.
-                if (tickerQTaskScheduler.IsFrozen || tickerQTaskScheduler.IsDisposed)
+                if (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
                 {
                     await timeProvider.Delay(_fallbackJobPeriod, stoppingToken);
                     continue;
@@ -81,7 +81,7 @@ internal class JobsFallbackBackgroundService(
 
                         try
                         {
-                            await tickerQTaskScheduler.QueueAsync(
+                            await jobsTaskScheduler.QueueAsync(
                                 async ct =>
                                 {
                                     if (semaphore != null)
@@ -103,7 +103,7 @@ internal class JobsFallbackBackgroundService(
                             );
                         }
                         catch (InvalidOperationException)
-                            when (tickerQTaskScheduler.IsFrozen || tickerQTaskScheduler.IsDisposed)
+                            when (jobsTaskScheduler.IsFrozen || jobsTaskScheduler.IsDisposed)
                         {
                             // Scheduler is frozen/disposed – ignore and let loop delay
                             break;

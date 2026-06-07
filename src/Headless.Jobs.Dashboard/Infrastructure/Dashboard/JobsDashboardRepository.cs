@@ -10,7 +10,7 @@ namespace Headless.Jobs.Infrastructure.Dashboard;
 internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     JobsExecutionContext executionContext,
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-    IJobsHostScheduler tickerQHostScheduler,
+    IJobsHostScheduler jobsHostScheduler,
     IJobsNotificationHubSender notificationHubSender,
     DashboardOptionsBuilder dashboardOptions,
     IJobsDispatcher dispatcher,
@@ -22,7 +22,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider = Argument.IsNotNull(
         persistenceProvider
     );
-    private readonly IJobsHostScheduler _tickerQHostScheduler = Argument.IsNotNull(tickerQHostScheduler);
+    private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly IJobsNotificationHubSender _notificationHubSender = Argument.IsNotNull(notificationHubSender);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
@@ -505,7 +505,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 
         if (_executionContext.Functions.Any(x => x.JobId == id))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
     }
 
