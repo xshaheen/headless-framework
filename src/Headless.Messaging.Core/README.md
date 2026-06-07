@@ -353,6 +353,8 @@ Top-level messaging timeouts that influence retry behavior:
 
 Persisted retries use two independent timestamps: `NextRetryAt` controls when a row is due, and `LockedUntil` controls whether an active attempt still owns the row. Retry pickup filters on both. Retry state writes clear `LockedUntil`; counter advances use an optimistic `Retries == originalRetries` predicate so concurrent replicas cannot overwrite each other's retry budget.
 
+When a Coordination provider is registered, storage rows also stamp nullable `Owner` as `node@incarnation` when `LockedUntil` is written. The retry processor reconciles live Coordination nodes on each locked pickup tick and accelerates rows owned by dead incarnations by moving `LockedUntil` back to now. `LockedUntil` remains the correctness floor; Coordination only reduces orphan recovery latency. Without Coordination, `Owner` stays `null` and behavior is unchanged.
+
 ### Exhausted vs Stop
 
 `OnExhausted` fires **only on `RetryDecision.Exhausted`** — the retry budget was fully consumed and the failure was transient.
@@ -499,6 +501,8 @@ builder.Services.AddHeadlessMessaging(setup => { ... })
 Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLock` registered at the application level for other purposes.
 
 Without a real provider, only `NoOpDistributedLock` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
+
+If `UseStorageLock = true` but only the default `NullNodeMembership` is registered, the bootstrapper logs **EventId 85 Information**. Retry recovery still works through `LockedUntil`; registering a Coordination provider enables faster dead-incarnation owner reclaim.
 
 > **NoOp introspection contract:** when `NoOpDistributedLock` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
 
