@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
+using Headless.Serializer;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Coordination.SqlServer;
@@ -9,8 +11,9 @@ namespace Headless.Coordination.SqlServer;
 #pragma warning disable CA2100 // SQL text is built from validated schema plus internal table constants.
 internal sealed class SqlServerMembershipStore(
     IOptions<SqlServerCoordinationOptions> providerOptions,
-    IOptions<CoordinationOptions> coordinationOptions
-) : DatabaseMembershipStoreBase(coordinationOptions.Value)
+    IOptions<CoordinationOptions> coordinationOptions,
+    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer
+) : DatabaseMembershipStoreBase(coordinationOptions.Value, serializer)
 {
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
@@ -314,7 +317,7 @@ internal sealed class SqlServerMembershipStore(
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            snapshots.Add(ReadSnapshot(reader));
+            snapshots.Add(await ReadSnapshotAsync(reader, cancellationToken).ConfigureAwait(false));
         }
 
         return snapshots;

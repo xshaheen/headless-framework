@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Text.Json;
+using Headless.Serializer;
 
 namespace Headless.Coordination;
 
@@ -9,10 +9,9 @@ namespace Headless.Coordination;
 /// Shared relational membership-store algorithm. Native providers own the SQL and clock expressions;
 /// this base owns the cluster scoping and operation order.
 /// </summary>
-internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options) : IMembershipStore
+internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options, IJsonSerializer serializer)
+    : IMembershipStore
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     protected string ClusterName => options.ClusterName;
 
     protected TimeSpan SuspicionThreshold => options.SuspicionThreshold;
@@ -113,24 +112,37 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options)
     /// Reads a single liveness snapshot from the canonical projection column layout shared by the relational
     /// providers: 0 = node id, 1 = incarnation, 2 = role (nullable), 3 = metadata json (nullable), 4 = state.
     /// </summary>
-    protected static NodeLivenessSnapshot ReadSnapshot(DbDataReader reader)
+    protected async ValueTask<NodeLivenessSnapshot> ReadSnapshotAsync(
+        DbDataReader reader,
+        CancellationToken cancellationToken
+    )
     {
-        var identity = new NodeIdentity(new NodeId(reader.GetString(0)), new NodeIncarnation(reader.GetInt64(1)));
-        var role = reader.IsDBNull(2) ? null : reader.GetString(2);
-        var metadataJson = reader.IsDBNull(3) ? "{}" : reader.GetString(3);
-        var state = Enum.Parse<NodeLivenessState>(reader.GetString(4));
+        var nodeId = await reader.GetFieldValueAsync<string>(0, cancellationToken).ConfigureAwait(false);
+        var incarnation = await reader.GetFieldValueAsync<long>(1, cancellationToken).ConfigureAwait(false);
+        var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
+
+        var role = await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false)
+            ? null
+            : await reader.GetFieldValueAsync<string>(2, cancellationToken).ConfigureAwait(false);
+
+        var metadataJson = await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
+            ? "{}"
+            : await reader.GetFieldValueAsync<string>(3, cancellationToken).ConfigureAwait(false);
+
+        var stateText = await reader.GetFieldValueAsync<string>(4, cancellationToken).ConfigureAwait(false);
+        var state = Enum.Parse<NodeLivenessState>(stateText);
 
         return new NodeLivenessSnapshot(identity, state, role, DeserializeDictionary(metadataJson));
     }
 
-    protected static string SerializeDictionary(IReadOnlyDictionary<string, string> value)
+    protected string SerializeDictionary(IReadOnlyDictionary<string, string> value)
     {
-        return JsonSerializer.Serialize(value, _JsonOptions);
+        return serializer.SerializeToString(value) ?? "{}";
     }
 
-    protected static Dictionary<string, string> DeserializeDictionary(string value)
+    protected Dictionary<string, string> DeserializeDictionary(string value)
     {
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
+        return serializer.Deserialize<Dictionary<string, string>>(value)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
 }

@@ -125,11 +125,10 @@ public sealed class HeadlessRedisScriptsLoaderTests
         // given
         RedisScriptDefinition[] scripts =
         [
-            IncrementWithExpireScriptDefinition.Instance,
             RemoveIfEqualScriptDefinition.Instance,
             ReplaceIfEqualScriptDefinition.Instance,
-            SetIfHigherScriptDefinition.Instance,
-            SetIfLowerScriptDefinition.Instance,
+            CustomReturnOneScriptDefinition.Instance,
+            CustomReturnTwoScriptDefinition.Instance,
         ];
         var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);

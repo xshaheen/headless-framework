@@ -15,11 +15,8 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         RedisScriptDefinition[] scripts =
         [
-            IncrementWithExpireScriptDefinition.Instance,
             RemoveIfEqualScriptDefinition.Instance,
             ReplaceIfEqualScriptDefinition.Instance,
-            SetIfHigherScriptDefinition.Instance,
-            SetIfLowerScriptDefinition.Instance,
         ];
 
         // when
@@ -36,11 +33,8 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         RedisScriptDefinition[] scripts =
         [
-            IncrementWithExpireScriptDefinition.Instance,
             RemoveIfEqualScriptDefinition.Instance,
             ReplaceIfEqualScriptDefinition.Instance,
-            SetIfHigherScriptDefinition.Instance,
-            SetIfLowerScriptDefinition.Instance,
         ];
 
         // when
@@ -59,22 +53,24 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var key = (RedisKey)"loader-evaluate-preloaded";
         await db.KeyDeleteAsync(key);
-        await loader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+        await db.StringSetAsync(key, "1");
+        await loader.LoadAsync([ReplaceIfEqualScriptDefinition.Instance]);
 
         // when
         var result = await loader.EvaluateAsync(
             db,
-            IncrementWithExpireScriptDefinition.Instance,
+            ReplaceIfEqualScriptDefinition.Instance,
             new
             {
                 key,
-                value = (RedisValue)1,
+                expected = "1",
+                value = "2",
                 expires = 60_000,
             }
         );
 
         // then
-        ((long)result)
+        ((int)result)
             .Should()
             .Be(1);
     }
@@ -87,16 +83,18 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         var db = fixture.ConnectionMultiplexer.GetDatabase();
         var key = (RedisKey)"loader-eval-after-flush";
         await db.KeyDeleteAsync(key);
-        await loader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+        await db.StringSetAsync(key, "1");
+        await loader.LoadAsync([ReplaceIfEqualScriptDefinition.Instance]);
 
         var parameters = new
         {
             key,
-            value = (RedisValue)1,
+            expected = "1",
+            value = "1",
             expires = 60_000,
         };
 
-        ((long)await loader.EvaluateAsync(db, IncrementWithExpireScriptDefinition.Instance, parameters)).Should().Be(1);
+        ((int)await loader.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, parameters)).Should().Be(1);
 
         // when — the serving node loses the script from its cache (simulates a promoted replica or a
         // cold/flushed cache). The loader still holds the stale SHA, so the next EVALSHA gets NOSCRIPT.
@@ -105,9 +103,9 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
             await fixture.ConnectionMultiplexer.GetServer(endpoint).ScriptFlushAsync();
         }
 
-        // then — recovery falls back to a full-body EVAL, so the script still runs and increments again
-        var result = await loader.EvaluateAsync(db, IncrementWithExpireScriptDefinition.Instance, parameters);
+        // then — recovery falls back to a full-body EVAL, so the script still runs and the CAS still matches
+        var result = await loader.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, parameters);
 
-        ((long)result).Should().Be(2);
+        ((int)result).Should().Be(1);
     }
 }

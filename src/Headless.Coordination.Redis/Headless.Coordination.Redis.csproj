@@ -7,6 +7,9 @@
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Coordination.Redis.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Redis\Headless.Redis.csproj" />

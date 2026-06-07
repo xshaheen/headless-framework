@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.InteropServices;
 using System.Text;
 using Headless.Checks;
 using Headless.Redis;
@@ -414,23 +413,4 @@ public sealed class RedisDistributedLockStorage(
             }
         }
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct AcquireLockParams(
-        RedisKey key,
-        RedisKey fenceKey,
-        string leaseId,
-        RedisValue expires
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReplaceIfEqualParams(
-        RedisKey key,
-        string? value,
-        string expected,
-        RedisValue expires
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
 }

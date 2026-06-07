@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using System.Runtime.InteropServices;
-using System.Text.Json;
 using Headless.Redis;
+using Headless.Serializer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -14,10 +13,10 @@ internal sealed class RedisMembershipStore(
     IConnectionMultiplexer multiplexer,
     [FromKeyedServices(RedisCoordinationServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     IOptions<CoordinationOptions> coordinationOptions,
-    IOptions<RedisCoordinationOptions> redisOptions
+    IOptions<RedisCoordinationOptions> redisOptions,
+    [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer
 ) : IMembershipStore
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentDictionary<NodeIdentity, NodeDescriptor> _descriptors = new();
 
     // Metadata serialized once at descriptor upsert and reused on the hot heartbeat path.
@@ -166,7 +165,7 @@ internal sealed class RedisMembershipStore(
             .ConfigureAwait(false);
     }
 
-    private static NodeLivenessSnapshot[] _ParseSnapshots(RedisResult[]? result)
+    private NodeLivenessSnapshot[] _ParseSnapshots(RedisResult[]? result)
     {
         if (result is null || result.Length == 0)
         {
@@ -252,52 +251,14 @@ internal sealed class RedisMembershipStore(
         return (long)Math.Ceiling(value.TotalMilliseconds);
     }
 
-    private static string _SerializeDictionary(IReadOnlyDictionary<string, string>? value)
+    private string _SerializeDictionary(IReadOnlyDictionary<string, string>? value)
     {
-        return JsonSerializer.Serialize(value ?? new Dictionary<string, string>(StringComparer.Ordinal), _JsonOptions);
+        return serializer.SerializeToString(value ?? new Dictionary<string, string>(StringComparer.Ordinal)) ?? "{}";
     }
 
-    private static Dictionary<string, string> _DeserializeDictionary(string value)
+    private Dictionary<string, string> _DeserializeDictionary(string value)
     {
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
+        return serializer.Deserialize<Dictionary<string, string>>(value)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct HeartbeatParams(
-        RedisKey liveKey,
-        RedisKey knownKey,
-        RedisKey genKey,
-        string member,
-        long incarnation,
-        long hardMs,
-        string role,
-        string metadata
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct LeaveParams(
-        RedisKey knownKey,
-        RedisKey liveKey,
-        string member,
-        long hardMs,
-        string role,
-        string metadata
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReadParams(
-        RedisKey knownKey,
-        RedisKey liveKey,
-        string genKeyPrefix,
-        long softMs,
-        long hardMs,
-        long pruneMs,
-        string aliveState,
-        string suspectedState,
-        string deadState
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct CleanupParams(RedisKey knownKey, RedisKey liveKey, long pruneMs);
 }

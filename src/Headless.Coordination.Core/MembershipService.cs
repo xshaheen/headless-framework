@@ -59,7 +59,7 @@ internal sealed class MembershipService(
         {
             // Clear the local identity so the heartbeat guard stops re-issuing beats for a lost membership.
             Identity = null;
-            _SignalLocalMembershipLost(identity);
+            await _SignalLocalMembershipLostAsync(identity).ConfigureAwait(false);
         }
 
         return accepted;
@@ -114,7 +114,7 @@ internal sealed class MembershipService(
         return eventSource.WatchAsync(cancellationToken);
     }
 
-    private void _SignalLocalMembershipLost(NodeIdentity identity)
+    private async ValueTask _SignalLocalMembershipLostAsync(NodeIdentity identity)
     {
         if (Interlocked.Exchange(ref _membershipLost, 1) != 0)
         {
@@ -123,7 +123,7 @@ internal sealed class MembershipService(
 
         try
         {
-            _localMembershipLost.Cancel();
+            await _localMembershipLost.CancelAsync().ConfigureAwait(false);
         }
         catch (ObjectDisposedException)
         {

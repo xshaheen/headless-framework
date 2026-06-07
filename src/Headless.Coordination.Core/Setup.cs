@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Core;
+using Headless.Serializer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -70,6 +71,15 @@ public static class SetupCoordinationCore
         private IServiceCollection _AddCoordinationCore(Func<IServiceProvider, IMembershipStore> storeFactory)
         {
             services.AddSingletonOptionValue<CoordinationOptions>();
+
+            // Keyed so consumers can override coordination metadata/endpoint serialization independently of the
+            // global IJsonSerializer by pre-registering their own keyed serializer under the same key. Defaults to
+            // web JSON (SystemJsonSerializer + DefaultJsonOptionsProvider).
+            services.TryAddKeyedSingleton<IJsonSerializer>(
+                CoordinationOptions.JsonSerializerServiceKey,
+                static (_, _) => new SystemJsonSerializer(new DefaultJsonOptionsProvider())
+            );
+
             services.TryAddSingleton(TimeProvider.System);
             services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<INodeIdProvider, DefaultNodeIdProvider>();

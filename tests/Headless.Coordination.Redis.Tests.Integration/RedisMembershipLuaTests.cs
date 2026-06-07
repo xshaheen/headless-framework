@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Coordination.Redis;
 using Headless.Redis;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -60,18 +61,12 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
                 RedisMembershipReadScriptDefinition.Instance,
                 RedisMembershipLeaveScriptDefinition.Instance,
                 RedisMembershipCleanupScriptDefinition.Instance,
-                IncrementWithExpireScriptDefinition.Instance,
                 ReplaceIfEqualScriptDefinition.Instance,
             ],
             AbortToken
         );
 
-        var incremented = await loader.EvaluateAsync(
-            db,
-            IncrementWithExpireScriptDefinition.Instance,
-            new { key, value = 1L, expires = 30_000L },
-            AbortToken
-        );
+        await db.StringSetAsync(key, "1");
         var replaced = await loader.EvaluateAsync(
             db,
             ReplaceIfEqualScriptDefinition.Instance,
@@ -79,7 +74,6 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
             AbortToken
         );
 
-        incremented.ToString().Should().Be("1");
         ((int)replaced).Should().Be(1);
         (await db.StringGetAsync(key)).ToString().Should().Be("2");
 
