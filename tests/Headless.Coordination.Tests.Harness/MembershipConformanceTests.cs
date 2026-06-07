@@ -1,0 +1,139 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Testing.Tests;
+using Headless.Coordination;
+
+namespace Tests;
+
+#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
+public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : TestBase
+    where TFixture : ICoordinationFixture
+{
+    public virtual async Task should_register_and_appear_in_live_set()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var live = await node.Membership.GetLiveNodesAsync(AbortToken);
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        identity.NodeId.Value.Should().Be("node-a");
+        node.Membership.Identity.Should().Be(identity);
+        live.Should().Equal([identity]);
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
+    }
+
+    public virtual async Task should_keep_node_alive_after_heartbeat()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(120), AbortToken);
+        var accepted = await node.Membership.HeartbeatAsync(AbortToken);
+        var live = await node.Membership.GetLiveNodesAsync(AbortToken);
+
+        accepted.Should().BeTrue();
+        live.Should().Equal([identity]);
+    }
+
+    public virtual async Task should_return_dead_snapshot_before_retention_prune()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
+
+        var live = await node.Membership.GetLiveNodesAsync(AbortToken);
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        live.Should().NotContain(identity);
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Dead);
+    }
+
+    public virtual async Task should_remove_from_live_set_on_graceful_leave()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+
+        await node.Membership.LeaveAsync(AbortToken);
+
+        var live = await node.Membership.GetLiveNodesAsync(AbortToken);
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        live.Should().NotContain(identity);
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Dead);
+    }
+
+    public virtual async Task should_allocate_unique_increasing_incarnations_for_same_node_id()
+    {
+        var cluster = _Cluster();
+        var nodes = new List<CoordinationNodeHandle>();
+
+        try
+        {
+            for (var i = 0; i < 6; i++)
+            {
+                nodes.Add(await fixture.CreateNodeAsync(cluster, "node-a", AbortToken));
+            }
+
+            var identities = await Task.WhenAll(
+                nodes.Select(node => node.Membership.RegisterAsync(AbortToken).AsTask())
+            );
+
+            identities.Select(x => x.NodeId.Value).Should().OnlyContain(x => x == "node-a");
+            identities.Select(x => x.Incarnation.Value).Should().OnlyHaveUniqueItems();
+            identities.Select(x => x.Incarnation.Value).Should().BeEquivalentTo([1L, 2L, 3L, 4L, 5L, 6L]);
+        }
+        finally
+        {
+            foreach (var node in nodes)
+            {
+                await node.DisposeAsync();
+            }
+        }
+    }
+
+    public virtual async Task should_filter_operational_reads_to_current_generation()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(450), AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        var live = await second.Membership.GetLiveNodesAsync(AbortToken);
+        var snapshot = await second.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        live.Should().Equal([secondIdentity]);
+        snapshot.Should().ContainSingle(x => x.Identity == secondIdentity && x.State == NodeLivenessState.Alive);
+        snapshot.Should().NotContain(x => x.Identity == firstIdentity);
+    }
+
+    public virtual async Task should_return_ordered_live_nodes()
+    {
+        var cluster = _Cluster();
+        await using var nodeB = await fixture.CreateNodeAsync(cluster, "node-b", AbortToken);
+        await using var nodeA = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+
+        var identityB = await nodeB.Membership.RegisterAsync(AbortToken);
+        var identityA = await nodeA.Membership.RegisterAsync(AbortToken);
+
+        var live = await nodeB.Membership.GetLiveNodesAsync(AbortToken);
+
+        live.Should().Equal([identityA, identityB]);
+    }
+
+    private static string _Cluster()
+    {
+        return "conformance-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+    }
+}
+#pragma warning restore CA1707
