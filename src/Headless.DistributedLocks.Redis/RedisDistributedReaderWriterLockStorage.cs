@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
@@ -288,33 +287,4 @@ public sealed class RedisDistributedReadWriteLockStorage(
             "Reader-writer lock ids cannot contain ':' because it conflicts with the writer-waiting suffix delimiter."
         );
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReaderWriterReadParams(
-        RedisKey writerKey,
-        RedisKey readerKey,
-        string leaseId,
-        RedisValue expires
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReaderWriterReaderOnlyParams(RedisKey readerKey, string leaseId, RedisValue expires);
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReaderWriterWriteParams(
-        RedisKey writerKey,
-        RedisKey readerKey,
-        string leaseId,
-        string waitingId,
-        RedisValue expires,
-        RedisValue markerExpires
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct ReaderWriterWriterOnlyParams(
-        RedisKey writerKey,
-        string leaseId,
-        string waitingId,
-        RedisValue expires
-    );
 }

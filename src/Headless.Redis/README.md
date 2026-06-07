@@ -14,7 +14,7 @@ Provides Redis helper extensions plus definition-first Lua script loading/execut
 
 ## Design Notes
 
-`Headless.Redis` owns script definitions and generic loading only. Provider packages own script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need.
+`Headless.Redis` owns only the generic loader and the `RedisScriptDefinition` base type — it ships no concrete script definitions. Each provider package owns its own script definitions, script grouping, hosted warmup, typed parameters, and result decoding so consumers load only the script definitions they need. Scripts live in the package that uses them (for example, the cache CAS and counter scripts in `Headless.Caching.Redis`, the lock/semaphore and compare-and-swap scripts in `Headless.DistributedLocks.Redis`, and the membership scripts in `Headless.Coordination.Redis`).
 
 Each concrete `RedisScriptDefinition` type is a singleton contract. Reuse the exposed `Instance` member; the loader rejects multiple instances of the same concrete type because it caches loaded scripts by definition type.
 
@@ -26,13 +26,21 @@ dotnet add package Headless.Redis
 
 ## Quick Start
 
+Define a script as a singleton `RedisScriptDefinition`, then load it through the loader. Each concrete type is a singleton contract — expose and reuse a single `Instance`.
+
 ```csharp
-var builder = WebApplication.CreateBuilder(args);
+internal sealed class IncrementScriptDefinition : RedisScriptDefinition
+{
+    public static IncrementScriptDefinition Instance { get; } = new();
+
+    private IncrementScriptDefinition()
+        : base("return redis.call('incrby', @key, @by)") { }
+}
 
 var redis = await ConnectionMultiplexer.ConnectAsync("localhost");
 var scriptsLoader = new HeadlessRedisScriptsLoader(redis);
 
-await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
+await scriptsLoader.LoadAsync([IncrementScriptDefinition.Instance]);
 ```
 
 ## Usage
@@ -43,13 +51,8 @@ await scriptsLoader.LoadAsync([IncrementWithExpireScriptDefinition.Instance]);
 var db = redis.GetDatabase();
 var result = await scriptsLoader.EvaluateAsync(
     db,
-    IncrementWithExpireScriptDefinition.Instance,
-    new
-    {
-        key = (RedisKey)"counter",
-        value = (RedisValue)1,
-        expires = 60_000,
-    }
+    IncrementScriptDefinition.Instance,
+    new { key = (RedisKey)"counter", by = 1 }
 );
 ```
 

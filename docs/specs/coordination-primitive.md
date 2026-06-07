@@ -104,9 +104,9 @@ Load-bearing (resolve first): 1–3. Downstream (gated): 4–8.
 | 3 | Mutual exclusion + package decomposition | **RESOLVED** (§6) |
 | 4 | Correctness invariants & where enforced (fail-stop, graceful release, GUID uniqueness) | **RESOLVED** (§7) |
 | 5 | Consumer integration contracts (ID cleanup / Jobs / Messaging) | **RESOLVED** (§9, verified vs code) |
-| 6 | Provider model (backends, capability tiers, conformance harness) | OPEN |
+| 6 | Provider model (backends, capability tiers, conformance harness) | **RESOLVED** (see `docs/plans/2026-06-06-001-feat-coordination-membership-substrate-plan.md`) |
 | 7 | Failure & partition semantics (fail-stop vs fail-closed; "fencing-safe, not consensus-safe") | **RESOLVED** (§1.5) |
-| 8 | Scope line for v1 (leadership election? HRW rebalance? Messaging hardening?) | OPEN |
+| 8 | Scope line for v1 (leadership election? HRW rebalance? Messaging hardening?) | **RESOLVED** (see `docs/plans/2026-06-06-001-feat-coordination-membership-substrate-plan.md`) |
 
 ## 3a. Decision 0 — Enhance DistributedLocks first — RESOLVED
 
@@ -389,22 +389,12 @@ generator is responsible for uniqueness, and Coordination is responsible only fo
 liveness/identity. Consumers that need monotonic fencing still use
 `IDistributedLease.FencingToken`; they do not infer ordering from IDs.
 
-## 8. Remaining open decisions (6, 8)
+## 8. Provider model and v1 scope -- RESOLVED
 
-Decisions 5 (§9) and 7 (§1.5) are now **resolved**.
+Decisions 5 (§9), 6, 7 (§1.5), and 8 are now **resolved**.
 
-- **6. Provider model** — InMemory / EF / Postgres / Redis; provider eligibility is a
-  **correctness gate** (§4 authoritative-store rule), not just a capability list — a
-  provider without linearizable liveness-row read/write is degraded/unsupported for
-  failover; `Headless.Coordination.Tests.Harness` conformance suite (per repo rule).
-  **Constraint from §9.2 (Finding B):** the **EF/Postgres membership provider is not
-  optional** if Jobs ships in v1 — it must provide DB-heartbeat liveness for the
-  no-Redis path, else pure-EF/Postgres Jobs loses dead-node recovery on migration.
-- **8. Scope line for v1** — leadership election in/out; partition/HRW rebalance
-  in/out; Messaging recovery in/out. Lean: **Foundational** — GUID ID cleanup +
-  membership (**incl. EF/Postgres provider, now mandatory per Finding B**) + Jobs as
-  the forcing pair; Messaging storage-id migration fast-follow; leadership/HRW/
-  dashboards deferred.
+- **6. Provider model** — v1 ships `Headless.Coordination.{Abstractions,Core,Core.Database,PostgreSql,SqlServer,Redis}` plus `Headless.Coordination.Tests.Harness`. PostgreSQL and SQL Server are native ADO providers over the shared `Core.Database` substrate. Redis is a Lua-backed authoritative provider. There is no generic EntityFramework provider and no shipped InMemory provider in v1. Provider eligibility remains a correctness gate: failover-driving reads require an authoritative store clock plus linearizable liveness read/write.
+- **8. Scope line for v1** — v1 is the membership/liveness substrate only: `node@incarnation` identity, register/heartbeat/leave, ordered live/snapshot reads, lifecycle events, fail-stop self-loss, and provider conformance. Jobs and Messaging consumer wiring, leadership election, HRW rebalance, dashboards, and consensus semantics are deferred to follow-up plans.
 
 ## 9. Decision 5 — Consumer integration contracts — RESOLVED (verified against code)
 

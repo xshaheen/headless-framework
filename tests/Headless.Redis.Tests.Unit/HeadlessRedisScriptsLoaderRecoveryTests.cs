@@ -52,7 +52,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
         // when
         var result = await sut.EvaluateAsync(
             db,
-            ReplaceIfEqualScriptDefinition.Instance,
+            SampleScriptDefinition.Instance,
             _SampleParameters,
             AbortToken
         );
@@ -94,7 +94,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns<Task<RedisResult>>(_ => throw new RedisServerException("LOADING Redis is loading the dataset."));
 
         // when
-        var act = () => sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
 
         // then
         await act.Should().ThrowAsync<RedisServerException>();
@@ -123,10 +123,20 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns<Task<RedisResult>>(_ => throw new RedisServerException("WRONGTYPE Operation against a key."));
 
         // when
-        var act = () => sut.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, _SampleParameters, AbortToken);
+        var act = () => sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
 
         // then — a non-NOSCRIPT error propagates immediately; the EVAL recovery path is never entered.
         await act.Should().ThrowAsync<RedisServerException>().WithMessage("WRONGTYPE*");
         await db.DidNotReceive().ScriptEvaluateAsync(Arg.Any<LuaScript>(), Arg.Any<object>(), Arg.Any<CommandFlags>());
+    }
+
+    // Arbitrary definition for driving the loader against a mocked database; the script body never
+    // runs because ScriptEvaluateAsync is substituted, so any valid Lua source suffices.
+    private sealed class SampleScriptDefinition : RedisScriptDefinition
+    {
+        public static SampleScriptDefinition Instance { get; } = new();
+
+        private SampleScriptDefinition()
+            : base("return 1") { }
     }
 }
