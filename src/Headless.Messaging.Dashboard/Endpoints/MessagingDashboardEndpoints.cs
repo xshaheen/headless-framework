@@ -103,19 +103,19 @@ public static class MessagingDashboardEndpoints
 
         // Published messages
         apiGroup
-            .MapGet("/published/message/{id:long}", _PublishedMessageDetails)
+            .MapGet("/published/message/{id:guid}", _PublishedMessageDetails)
             .WithName("Messaging_PublishedMessageDetails")
             .WithSummary("Get published message details by ID");
         apiGroup
             .MapPost("/published/requeue", _PublishedRequeue)
             .WithName("Messaging_PublishedRequeue")
             .WithSummary("Requeue published messages for redelivery")
-            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
         apiGroup
             .MapPost("/published/delete", _PublishedDelete)
             .WithName("Messaging_PublishedDelete")
             .WithSummary("Delete published messages")
-            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
         apiGroup
             .MapGet("/published/{status}", _PublishedList)
             .WithName("Messaging_PublishedList")
@@ -124,19 +124,19 @@ public static class MessagingDashboardEndpoints
 
         // Received messages
         apiGroup
-            .MapGet("/received/message/{id:long}", _ReceivedMessageDetails)
+            .MapGet("/received/message/{id:guid}", _ReceivedMessageDetails)
             .WithName("Messaging_ReceivedMessageDetails")
             .WithSummary("Get received message details by ID");
         apiGroup
             .MapPost("/received/reexecute", _ReceivedRequeue)
             .WithName("Messaging_ReceivedRequeue")
             .WithSummary("Re-execute received messages")
-            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
         apiGroup
             .MapPost("/received/delete", _ReceivedDelete)
             .WithName("Messaging_ReceivedDelete")
             .WithSummary("Delete received messages")
-            .WithDescription("Accepts a JSON array of message IDs (long[]) in the request body.");
+            .WithDescription("Accepts a JSON array of message IDs (Guid[]) in the request body.");
         apiGroup
             .MapGet("/received/{status}", _ReceivedList)
             .WithName("Messaging_ReceivedList")
@@ -292,7 +292,7 @@ public static class MessagingDashboardEndpoints
         return Results.Json(result);
     }
 
-    private static async Task<IResult> _PublishedMessageDetails(long id, IServiceProvider sp)
+    private static async Task<IResult> _PublishedMessageDetails(Guid id, IServiceProvider sp)
     {
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -306,7 +306,7 @@ public static class MessagingDashboardEndpoints
         return Results.Json(
             new
             {
-                StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+                StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 message.IntentType,
@@ -318,7 +318,7 @@ public static class MessagingDashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _ReceivedMessageDetails(long id, IServiceProvider sp)
+    private static async Task<IResult> _ReceivedMessageDetails(Guid id, IServiceProvider sp)
     {
         var dataStorage = sp.GetRequiredService<IDataStorage>();
         var monitoringApi = dataStorage.GetMonitoringApi();
@@ -332,7 +332,7 @@ public static class MessagingDashboardEndpoints
         return Results.Json(
             new
             {
-                StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+                StorageId = message.StorageId.ToString("D"),
                 MessageId = message.Origin.GetId(),
                 Name = message.Origin.GetName(),
                 Group = message.Origin.GetGroup(),
@@ -367,8 +367,8 @@ public static class MessagingDashboardEndpoints
 
         var messages = await monitoringApi.GetPublishedMessagesAsync(storageIds, httpContext.RequestAborted);
 
-        var rejected = new List<long>();
-        var requeued = new List<long>();
+        var rejected = new List<Guid>();
+        var requeued = new List<Guid>();
 
         foreach (var message in messages)
         {
@@ -436,8 +436,8 @@ public static class MessagingDashboardEndpoints
 
         var messages = await monitoringApi.GetReceivedMessagesAsync(storageIds, httpContext.RequestAborted);
 
-        var rejected = new List<long>();
-        var requeued = new List<long>();
+        var rejected = new List<Guid>();
+        var requeued = new List<Guid>();
 
         foreach (var message in messages)
         {
@@ -585,7 +585,7 @@ public static class MessagingDashboardEndpoints
     {
         return new
         {
-            StorageId = message.StorageId.ToString(CultureInfo.InvariantCulture),
+            StorageId = message.StorageId.ToString("D"),
             message.MessageId,
             message.Group,
             message.Name,
@@ -627,7 +627,7 @@ public static class MessagingDashboardEndpoints
         );
     }
 
-    private static async ValueTask<long[]?> _ReadStorageIdsAsync(HttpContext httpContext)
+    private static async ValueTask<Guid[]?> _ReadStorageIdsAsync(HttpContext httpContext)
     {
         try
         {
@@ -637,24 +637,10 @@ public static class MessagingDashboardEndpoints
                 return null;
             }
 
-            var storageIds = new List<long>();
+            var storageIds = new List<Guid>();
             foreach (var item in payload.EnumerateArray())
             {
-                if (item.ValueKind == JsonValueKind.Number && item.TryGetInt64(out var numericStorageId))
-                {
-                    storageIds.Add(numericStorageId);
-                    continue;
-                }
-
-                if (
-                    item.ValueKind == JsonValueKind.String
-                    && long.TryParse(
-                        item.GetString(),
-                        NumberStyles.Integer,
-                        CultureInfo.InvariantCulture,
-                        out var stringStorageId
-                    )
-                )
+                if (item.ValueKind == JsonValueKind.String && Guid.TryParse(item.GetString(), out var stringStorageId))
                 {
                     storageIds.Add(stringStorageId);
                     continue;
@@ -752,7 +738,7 @@ public static class MessagingDashboardEndpoints
 
             if (response == "OK")
             {
-                return Results.Text(sw.ElapsedMilliseconds.ToString(CultureInfo.InvariantCulture));
+                return Results.Text(sw.ElapsedMilliseconds.ToString("D", CultureInfo.InvariantCulture));
             }
 
             return Results.StatusCode(501);

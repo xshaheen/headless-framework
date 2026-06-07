@@ -42,7 +42,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, null),
             Content = "{}",
             IntentType = IntentType.Bus,

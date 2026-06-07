@@ -10,7 +10,7 @@ namespace Tests;
 
 public abstract class DistributedLockTestsBase : TestBase
 {
-    protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
+    protected static readonly IGuidGenerator GuidGenerator = new SequentialGuidGenerator(SequentialGuidType.Version7);
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
     protected static readonly DistributedLockOptions Options = new() { KeyPrefix = "test:" };
 

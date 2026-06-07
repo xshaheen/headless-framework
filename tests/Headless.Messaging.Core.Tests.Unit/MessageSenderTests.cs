@@ -35,7 +35,7 @@ public sealed class MessageSenderTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = intentType,

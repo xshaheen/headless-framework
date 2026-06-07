@@ -27,7 +27,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     public async Task PublishedMessageDetails_should_return_message_content()
     {
         // given
-        const long messageId = 123;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111123");
         var message = new MediumMessage
         {
             StorageId = messageId,
@@ -68,7 +68,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     public async Task PublishedMessageDetails_should_return_404_for_missing_message()
     {
         // given
-        const long messageId = 999;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111999");
         _monitoringApi
             .GetPublishedMessageAsync(messageId, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<MediumMessage?>(null));
@@ -93,7 +93,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
             [
                 new MessageView
                 {
-                    StorageId = 123,
+                    StorageId = Guid.Parse("11111111-1111-1111-1111-111111111123"),
                     MessageId = "logical-pub-123",
                     Version = "v1",
                     Name = "orders.created",
@@ -141,7 +141,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
         payload["totals"].GetInt32().Should().Be(35);
 
         var item = payload["items"].EnumerateArray().Should().ContainSingle().Subject;
-        item.GetProperty("storageId").GetString().Should().Be("123");
+        item.GetProperty("storageId").GetString().Should().Be("11111111-1111-1111-1111-111111111123");
         item.GetProperty("messageId").GetString().Should().Be("logical-pub-123");
         item.GetProperty("intentType").GetInt32().Should().Be((int)IntentType.Queue);
 
@@ -233,7 +233,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
     public async Task PublishedDelete_should_return_204_on_success()
     {
         // given
-        const long messageId = 123;
+        var messageId = Guid.Parse("11111111-1111-1111-1111-111111111123");
         _dataStorage.GetMonitoringApi().Returns(_monitoringApi);
         _dataStorage
             .DeletePublishedMessageAsync(messageId, Arg.Any<CancellationToken>())

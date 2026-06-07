@@ -168,7 +168,7 @@ public sealed class ConsumeMiddlewarePipelineTests : TestBase
             descriptor,
             new MediumMessage
             {
-                StorageId = 1,
+                StorageId = Guid.NewGuid(),
                 Origin = origin,
                 Content = "{}",
                 IntentType = IntentType.Bus,

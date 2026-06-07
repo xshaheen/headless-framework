@@ -14,7 +14,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly IDistributedSemaphoreStorage _storage = Substitute.For<IDistributedSemaphoreStorage>();
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DisposableSemaphoreSlotTests()
     {
@@ -389,14 +389,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         Action<string, string>? deregisterMonitor = null
     )
     {
-        var counter = 1000L;
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref counter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         var provider = new DistributedSemaphoreProvider(
             _storage,
             Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );

@@ -40,7 +40,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
         var publishRequestFactory = new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()
@@ -139,7 +139,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
         var optionsAccessor = Options.Create(options);
         var publishRequestFactory = new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()
@@ -154,7 +154,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                 return ValueTask.FromResult(
                     new MediumMessage
                     {
-                        StorageId = 1L,
+                        StorageId = Guid.NewGuid(),
                         Origin = content,
                         Content = "{}",
                         IntentType = IntentType.Bus,

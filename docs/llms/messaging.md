@@ -355,6 +355,7 @@ How to read each column:
 
 - **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
 - **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
+- **Storage row IDs** — `MediumMessage.StorageId`, monitoring APIs, dashboard routes, and bulk storage actions use `Guid`. Storage providers generate row IDs through provider-keyed `IGuidGenerator` strategies, not database defaults. PostgreSQL creates `UUID` `Id` columns and resolves the `Version7` strategy; SQL Server creates `uniqueidentifier` `Id` columns, resolves the `SqlServer` comb strategy, and creates a `uniqueidentifier` table-valued ID-list type.
 
 Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
@@ -2251,6 +2252,7 @@ Provides durable, transactional message storage using PostgreSQL with schema ini
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
 - **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for high throughput
@@ -2299,6 +2301,7 @@ options.UsePostgreSql(config =>
 - Creates database tables in configured schema:
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
+- Uses PostgreSQL `UUID` primary keys for message row IDs.
 - Creates indexes for message queries
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages
@@ -2317,6 +2320,7 @@ Provides durable, transactional message storage using SQL Server with schema ini
 
 - **Transactional Outbox**: ACID-compliant message publishing with database changes
 - **Schema Initialization**: Tables created via `CREATE TABLE IF NOT EXISTS` on startup, with idempotent updates for durable bus/queue intent columns and received-message identity indexes.
+- **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 - **Intent-Aware Identity**: Received-message de-duplication includes version, message ID, group, and bus/queue intent.
 - **Archival**: Automatic cleanup of old messages
 - **Performance**: Optimized indexes and queries for SQL Server
@@ -2365,6 +2369,7 @@ options.UseSqlServer(config =>
 - Creates database tables in configured schema:
     - `{prefix}_published` - Published messages
     - `{prefix}_received` - Received messages
+- Uses SQL Server `uniqueidentifier` primary keys and a `uniqueidentifier` ID-list table type for message row IDs.
 - Creates indexes for message queries
 - Stores `IntentType` on published and received rows without a database default; runtime writes must provide the intent explicitly
 - Periodically cleans up expired messages

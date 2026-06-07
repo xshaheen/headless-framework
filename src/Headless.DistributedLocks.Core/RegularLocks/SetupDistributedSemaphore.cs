@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,13 +48,13 @@ public static class SetupDistributedSemaphore
             services.TryAddSingleton<TStorage>();
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.AddHeadlessGuidGenerator();
 
-            services.TryAddSingleton<DistributedSemaphoreProvider>(provider => new DistributedSemaphoreProvider(
+            services.TryAddSingleton(provider => new DistributedSemaphoreProvider(
                 provider.GetRequiredService<TStorage>(),
                 provider.GetService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
-                provider.GetRequiredService<ILongIdGenerator>(),
+                provider.GetRequiredService<IGuidGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<DistributedSemaphoreProvider>>()
             ));

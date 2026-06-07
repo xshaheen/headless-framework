@@ -60,7 +60,7 @@ public sealed class FailedInfo
     /// Gets the storage row identifier of the failed message. Use this together with
     /// <c>Message.GetId()</c> to correlate dead-letter writes back to the original persisted row.
     /// </summary>
-    public required long StorageId { get; init; }
+    public required Guid StorageId { get; init; }
 
     /// <summary>
     /// Gets the final persisted-retry count at the moment <see cref="RetryPolicyOptions.OnExhausted"/>

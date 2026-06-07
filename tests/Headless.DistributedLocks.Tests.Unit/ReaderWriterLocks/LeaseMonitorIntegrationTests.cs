@@ -13,8 +13,7 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedReadWriteLockStorage _storage;
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-    private long _lockIdCounter = 7000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public LeaseMonitorIntegrationTests()
     {
@@ -372,13 +371,13 @@ public sealed class LeaseMonitorIntegrationTests : TestBase
 
     private DistributedReadWriteLock _CreateProvider(IDistributedReadWriteLockStorage? storage = null)
     {
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedReadWriteLock(
             storage ?? _storage,
             outboxBus: null,
             new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );

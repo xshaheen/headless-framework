@@ -9,7 +9,7 @@ namespace Headless.Messaging.InMemoryStorage;
 
 internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimeProvider timeProvider) : IMonitoringApi
 {
-    public ValueTask<MediumMessage?> GetPublishedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public ValueTask<MediumMessage?> GetPublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
@@ -18,7 +18,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     }
 
     public ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -36,7 +36,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
         return ValueTask.FromResult<IReadOnlyList<MediumMessage>>(result);
     }
 
-    public ValueTask<MediumMessage?> GetReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public ValueTask<MediumMessage?> GetReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(
@@ -45,7 +45,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
     }
 
     public ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     )
     {

@@ -319,6 +319,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+`MediumMessage.StorageId` and `FailedInfo.StorageId` are `Guid` row identifiers. Storage providers generate them through provider-keyed `IGuidGenerator` strategies, persist them as provider-native GUID columns (`UUID` on PostgreSQL through `Version7`, `uniqueidentifier` on SQL Server through the `SqlServer` comb), and dashboard message routes use GUID route values.
+
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |

@@ -164,7 +164,7 @@ internal static class RetryHelper
         Func<FailedInfo, CancellationToken, Task> callback,
         FailedInfo failedInfo,
         TimeSpan timeout,
-        long storageId,
+        Guid storageId,
         ILogger logger,
         CancellationToken cancellationToken
     )

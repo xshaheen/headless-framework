@@ -88,4 +88,4 @@ options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-buil
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers Postgres storage, release signal, fencing-token source, `TimeProvider.System`, and `ILongIdGenerator` when absent.
+- Registers Postgres storage, release signal, fencing-token source, `TimeProvider.System`, and `IGuidGenerator` when absent.

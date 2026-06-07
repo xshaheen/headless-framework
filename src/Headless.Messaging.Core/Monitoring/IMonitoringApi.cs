@@ -8,17 +8,17 @@ namespace Headless.Messaging.Monitoring;
 [PublicAPI]
 public interface IMonitoringApi
 {
-    ValueTask<MediumMessage?> GetPublishedMessageAsync(long storageId, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetPublishedMessageAsync(Guid storageId, CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     );
 
-    ValueTask<MediumMessage?> GetReceivedMessageAsync(long storageId, CancellationToken cancellationToken = default);
+    ValueTask<MediumMessage?> GetReceivedMessageAsync(Guid storageId, CancellationToken cancellationToken = default);
 
     ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     );
 

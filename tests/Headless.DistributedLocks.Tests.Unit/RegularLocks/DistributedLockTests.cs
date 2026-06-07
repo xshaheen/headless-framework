@@ -16,9 +16,7 @@ public sealed class DistributedLockTests : TestBase
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedLockStorage _storage;
     private readonly IOutboxBus _outboxBus = Substitute.For<IOutboxBus>();
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-
-    private long _lockIdCounter = 1000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DistributedLockTests()
     {
@@ -34,13 +32,13 @@ public sealed class DistributedLockTests : TestBase
     )
     {
         options ??= new DistributedLockOptions();
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedLock(
             storage ?? _storage,
             useNullOutboxBus ? null : outboxBus ?? _outboxBus,
             options,
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             logger ?? LoggerFactory.CreateLogger<DistributedLock>()
         );
@@ -157,6 +155,8 @@ public sealed class DistributedLockTests : TestBase
         // given
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(10);
+        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        _guidGenerator.Create().Returns(guid);
 
         // when
         var result = await provider.TryAcquireAsync(resource, cancellationToken: AbortToken);
@@ -164,7 +164,7 @@ public sealed class DistributedLockTests : TestBase
         // then
         result.Should().NotBeNull();
         result!.Resource.Should().Be(resource);
-        result.LeaseId.Should().NotBeNullOrEmpty();
+        result.LeaseId.Should().Be("00112233445566778899aabbccddeeff");
         result.FencingToken.Should().Be(1);
     }
 
@@ -997,7 +997,7 @@ public sealed class DistributedLockTests : TestBase
             storage,
             _outboxBus,
             new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedLock>()
         );

@@ -12,7 +12,7 @@ public sealed class MediumMessageTests : TestBase
     public void should_create_medium_message_with_required_properties()
     {
         // given
-        const long storageId = 42L;
+        var storageId = Guid.NewGuid();
         var message = new Message(
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
@@ -43,7 +43,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -62,7 +62,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -79,7 +79,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -98,7 +98,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -115,7 +115,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -131,7 +131,7 @@ public sealed class MediumMessageTests : TestBase
         // when
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -148,7 +148,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -168,7 +168,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -188,7 +188,7 @@ public sealed class MediumMessageTests : TestBase
         // given
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(),
             Content = "{}",
             IntentType = IntentType.Bus,

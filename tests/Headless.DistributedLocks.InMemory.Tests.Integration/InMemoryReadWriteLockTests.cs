@@ -11,7 +11,7 @@ namespace Tests;
 public sealed class InMemoryReaderWriterLockProviderTests : DistributedReadWriteLockTestsBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly SnowflakeIdLongIdGenerator _idGenerator = new(1);
+    private readonly IGuidGenerator _guidGenerator = new SequentialGuidGenerator(SequentialGuidType.Version7);
 
     protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {
@@ -19,7 +19,7 @@ public sealed class InMemoryReaderWriterLockProviderTests : DistributedReadWrite
             new InMemoryDistributedReadWriteLockStorage(_timeProvider),
             outboxBus: null,
             options ?? new DistributedLockOptions(),
-            _idGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );

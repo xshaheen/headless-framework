@@ -110,7 +110,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     }
 
     [Fact]
-    public async Task add_should_stamp_long_id_from_snowflake_generator_at_track_time()
+    public async Task add_should_not_stamp_long_id_at_track_time()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -119,17 +119,19 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         var a = new LongKeyedEntity { Name = "a" };
         var b = new LongKeyedEntity { Name = "b" };
 
-        // when - long keys are application-generated (snowflake) by EF Core's value generator as each entity
-        // transitions to Added, so EF never asks the database for an identity value and the adds do not collide.
+        // when - numeric keys are not owned by Headless; EF/database/provider configuration decides generation.
         db.LongKeyed.Add(a);
         db.LongKeyed.Add(b);
 
-        // then
-        a.Id.Should().NotBe(0);
-        b.Id.Should().NotBe(0);
-        a.Id.Should().NotBe(b.Id);
+        // then - no framework value generator stamps long IDs at tracking time.
+        a.Id.Should().Be(0);
+        b.Id.Should().Be(0);
 
         await db.SaveChangesAsync(AbortToken);
+
+        a.Id.Should().BeGreaterThan(0);
+        b.Id.Should().BeGreaterThan(0);
+        a.Id.Should().NotBe(b.Id);
 
         var persisted = await db.LongKeyed.CountAsync(AbortToken);
         persisted.Should().Be(2);

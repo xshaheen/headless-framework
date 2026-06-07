@@ -20,7 +20,7 @@ internal interface IMessagePublishRequestFactory
 }
 
 internal sealed class MessagePublishRequestFactory(
-    ILongIdGenerator idGenerator,
+    IGuidGenerator idGenerator,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> optionsAccessor,
     ICurrentTenant currentTenant
@@ -91,7 +91,7 @@ internal sealed class MessagePublishRequestFactory(
         _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
-            ? idGenerator.Create().ToString(CultureInfo.InvariantCulture)
+            ? idGenerator.Create().ToString("D")
             : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;

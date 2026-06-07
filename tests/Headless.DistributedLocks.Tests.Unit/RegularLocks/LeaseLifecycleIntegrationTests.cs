@@ -20,8 +20,7 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
         _storage = new InMemoryDistributedLockStorage(_timeProvider);
     }
 
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-    private long _lockIdCounter = 2000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     [Fact]
     public async Task should_not_create_monitor_by_default()
@@ -444,13 +443,13 @@ public sealed class LeaseLifecycleIntegrationTests : TestBase
 
     private DistributedLock _CreateProvider(DistributedLockOptions? options, IOutboxBus? outboxBus)
     {
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedLock(
             _storage,
             outboxBus,
             options ?? new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedLock>()
         );

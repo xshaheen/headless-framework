@@ -22,8 +22,8 @@ public sealed class HeadlessEntitySaveEntryProcessor(
         switch (entry.State)
         {
             case EntityState.Added:
-                // Keys are produced by the EF Core value generators (ConfigureHeadlessValueGenerated) when the
-                // entity transitions to Added, so by the time it reaches the save pipeline its id is already set.
+                // Guid keys are produced by the EF Core value generator (ConfigureHeadlessValueGenerated) when the
+                // entity transitions to Added, so by the time it reaches the save pipeline the id is already set.
                 _TrySetMultiTenantId(entry, context.TenantId);
                 _TrySetConcurrencyStamp(entry);
                 break;

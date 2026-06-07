@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -18,9 +17,9 @@ public static class DbContextOptionsBuilderExtensions
     /// <summary>
     /// Replaces EF Core's default string primary-key value generation (a hyphenated <c>Guid.ToString()</c>) with a
     /// compact, no-hyphen guid (<c>ToString("N")</c>) produced by the application's registered
-    /// <see cref="IGuidGenerator"/>. The framework default is <see cref="SequentialAtEndGuidGenerator"/>, so keys
-    /// are sequential-at-end out of the box, but the generation strategy follows whichever
-    /// <see cref="IGuidGenerator"/> the host registers. The compact <c>"N"</c> format is always guaranteed.
+    /// <see cref="IGuidGenerator"/>. SQL Server contexts use the <see cref="SequentialGuidType.SqlServer"/> comb;
+    /// other providers use <see cref="SequentialGuidType.Version7"/>. The compact <c>"N"</c> format is always
+    /// guaranteed.
     /// </summary>
     public static DbContextOptionsBuilder GenerateCompactGuidForStringPrimaryKeys(this DbContextOptionsBuilder builder)
     {
@@ -60,12 +59,14 @@ public static class DbContextOptionsBuilderExtensions
 
     private sealed class StringCompactGuidValueGenerator(bool value) : ValueGenerator<string>
     {
-        private static readonly IGuidGenerator _DefaultGuidGenerator = new SequentialAtEndGuidGenerator();
+        private const string _SqlServerProviderName = "Microsoft.EntityFrameworkCore.SqlServer";
 
-        // Cache the resolved generator per application service provider so Next() doesn't re-resolve from DI
-        // on every inserted row. Keyed by provider (not a single field) to stay correct when independent hosts
-        // in one process use different providers; weak keys avoid pinning providers alive.
-        private static readonly ConditionalWeakTable<IServiceProvider, IGuidGenerator> _GuidGeneratorByProvider = [];
+        private static readonly IGuidGenerator _Version7GuidGenerator = new SequentialGuidGenerator(
+            SequentialGuidType.Version7
+        );
+        private static readonly IGuidGenerator _SqlServerGuidGenerator = new SequentialGuidGenerator(
+            SequentialGuidType.SqlServer
+        );
 
         public override bool GeneratesTemporaryValues { get; } = value;
 
@@ -80,6 +81,8 @@ public static class DbContextOptionsBuilderExtensions
         // DbContextOptions).
         private static IGuidGenerator _ResolveGuidGenerator(DbContext context)
         {
+            var key = _GetKey(context.Database.ProviderName);
+            var fallback = _GetFallback(key);
             var applicationServiceProvider = context
                 .GetService<IDbContextOptions>()
                 .FindExtension<CoreOptionsExtension>()
@@ -87,14 +90,19 @@ public static class DbContextOptionsBuilderExtensions
 
             if (applicationServiceProvider is null)
             {
-                return _DefaultGuidGenerator;
+                return fallback;
             }
 
-            return _GuidGeneratorByProvider.GetValue(
-                applicationServiceProvider,
-                static provider => provider.GetService<IGuidGenerator>() ?? _DefaultGuidGenerator
-            );
+            return applicationServiceProvider.GetKeyedService<IGuidGenerator>(key)
+                ?? applicationServiceProvider.GetService<IGuidGenerator>()
+                ?? fallback;
         }
+
+        private static SequentialGuidType _GetKey(string? providerName) =>
+            providerName == _SqlServerProviderName ? SequentialGuidType.SqlServer : SequentialGuidType.Version7;
+
+        private static IGuidGenerator _GetFallback(SequentialGuidType key) =>
+            key == SequentialGuidType.SqlServer ? _SqlServerGuidGenerator : _Version7GuidGenerator;
     }
 
     #endregion

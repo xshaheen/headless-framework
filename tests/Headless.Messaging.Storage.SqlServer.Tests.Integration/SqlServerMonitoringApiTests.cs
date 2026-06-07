@@ -22,7 +22,6 @@ namespace Tests;
 public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : TestBase
 {
     private SqlServerDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
     private FakeTimeProvider _timeProvider = null!;
     private IMonitoringApi _monitoringApi = null!;
 
@@ -45,19 +44,16 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
         });
         services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new SqlServerDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider
         );
         _monitoringApi = _storage.GetMonitoringApi();
@@ -194,7 +190,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
     public async Task should_return_null_for_nonexistent_published_message()
     {
         // when
-        var retrieved = await _monitoringApi.GetPublishedMessageAsync(999999999L, AbortToken);
+        var retrieved = await _monitoringApi.GetPublishedMessageAsync(Guid.NewGuid(), AbortToken);
 
         // then
         retrieved.Should().BeNull();
@@ -359,7 +355,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
     private async Task<MediumMessage> _CreatePublishedMessageWithName(string name, StatusName status)
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 
@@ -372,7 +368,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
 
     private async Task<MediumMessage> _CreateReceivedMessage(StatusName status)
     {
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, null);
 

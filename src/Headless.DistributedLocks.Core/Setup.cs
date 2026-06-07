@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,7 +94,7 @@ public static class AddDistributedLockExtensions
         {
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.AddHeadlessGuidGenerator();
 
             // TryAddSingleton on the concrete + the public interface keeps repeated
             // AddDistributedLock(...) calls idempotent (matching the ICanReceiveLockReleased
@@ -103,7 +104,7 @@ public static class AddDistributedLockExtensions
                 storageFactory(provider),
                 provider.GetService<IOutboxBus>(),
                 provider.GetRequiredService<DistributedLockOptions>(),
-                provider.GetRequiredService<ILongIdGenerator>(),
+                provider.GetRequiredService<IGuidGenerator>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<ILogger<DistributedLock>>()
             ));

@@ -11,6 +11,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Storage.SqlServer;
@@ -24,7 +25,7 @@ public sealed class SqlServerDataStorage(
     IOptions<SqlServerOptions> options,
     IStorageInitializer initializer,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator,
+    [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
@@ -66,7 +67,7 @@ public sealed class SqlServerDataStorage(
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
     public async ValueTask ChangePublishStateToDelayedAsync(
-        long[] storageIds,
+        Guid[] storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -79,7 +80,7 @@ public sealed class SqlServerDataStorage(
         var tvpTypeName = $"[{schema}].[HeadlessMessagingIdList]";
 
         var idsTable = new DataTable();
-        idsTable.Columns.Add("Id", typeof(long));
+        idsTable.Columns.Add("Id", typeof(Guid));
         foreach (var id in storageIds)
         {
             idsTable.Rows.Add(id);
@@ -198,7 +199,7 @@ public sealed class SqlServerDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -278,7 +279,7 @@ public sealed class SqlServerDataStorage(
             name,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -301,7 +302,7 @@ public sealed class SqlServerDataStorage(
                 group,
                 new MediumMessage
                 {
-                    StorageId = 0,
+                    StorageId = Guid.Empty,
                     Origin = origin,
                     Content = content,
                     IntentType = IntentType.Bus,
@@ -322,7 +323,7 @@ public sealed class SqlServerDataStorage(
     {
         object[] sqlParams =
         [
-            new SqlParameter("@Id", longIdGenerator.Create()),
+            new SqlParameter("@Id", guidGenerator.Create()),
             new SqlParameter("@Name", name),
             new SqlParameter("@Group", SqlDbType.NVarChar, 200) { Value = (object?)group ?? DBNull.Value },
             new SqlParameter(
@@ -359,7 +360,7 @@ public sealed class SqlServerDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -413,7 +414,7 @@ public sealed class SqlServerDataStorage(
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -464,7 +465,7 @@ public sealed class SqlServerDataStorage(
         return _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken);
     }
 
-    public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_receivedTable} WHERE Id=@Id";
 
@@ -482,7 +483,7 @@ public sealed class SqlServerDataStorage(
         return affectedRowCount;
     }
 
-    public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public async ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"DELETE FROM {_publishedTable} WHERE Id=@Id";
 
@@ -501,7 +502,7 @@ public sealed class SqlServerDataStorage(
     }
 
     public async ValueTask<int> DeleteReceivedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -532,7 +533,7 @@ public sealed class SqlServerDataStorage(
     }
 
     public async ValueTask<int> DeletePublishedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -599,7 +600,7 @@ public sealed class SqlServerDataStorage(
                         messages.Add(
                             new MediumMessage
                             {
-                                StorageId = reader.GetInt64(0),
+                                StorageId = reader.GetGuid(0),
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),
@@ -852,7 +853,7 @@ public sealed class SqlServerDataStorage(
                         messages.Add(
                             new MediumMessage
                             {
-                                StorageId = reader.GetInt64(0),
+                                StorageId = reader.GetGuid(0),
                                 Origin = serializer.Deserialize(content)!,
                                 Content = content,
                                 IntentType = (IntentType)reader.GetInt16(2),

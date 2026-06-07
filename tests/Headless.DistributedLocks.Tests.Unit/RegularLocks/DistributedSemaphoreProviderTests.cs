@@ -14,7 +14,7 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly InMemoryDistributedSemaphoreStorage _storage;
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DistributedSemaphoreProviderTests()
     {
@@ -51,6 +51,22 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
         first.Should().NotBeNull();
         second.Should().NotBeNull();
         third.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_issue_guid_formatted_lease_id()
+    {
+        // given
+        var provider = _CreateProvider();
+        var semaphore = provider.CreateSemaphore(Faker.Random.AlphaNumeric(10), maxCount: 1);
+        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        _guidGenerator.Create().Returns(guid);
+
+        // when
+        await using var result = await semaphore.AcquireAsync(cancellationToken: AbortToken);
+
+        // then
+        result.LeaseId.Should().Be("00112233445566778899aabbccddeeff");
     }
 
     [Fact]
@@ -255,14 +271,13 @@ public sealed class DistributedSemaphoreProviderTests : TestBase
 
     private DistributedSemaphoreProvider _CreateProvider(DistributedLockOptions? options = null)
     {
-        var counter = 1000L;
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref counter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedSemaphoreProvider(
             _storage,
             Substitute.For<IOutboxBus>(),
             options ?? new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );

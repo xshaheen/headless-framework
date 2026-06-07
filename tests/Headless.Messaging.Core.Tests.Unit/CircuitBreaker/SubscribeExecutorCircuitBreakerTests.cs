@@ -41,7 +41,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, "{}"),
             Content = "{}",
             IntentType = IntentType.Bus,

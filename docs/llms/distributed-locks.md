@@ -420,7 +420,7 @@ await using var lease = await lockProvider.AcquireAsync(
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
-- Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
+- Registers `TimeProvider.System` and `IGuidGenerator` when absent.
 - Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.
 
 ---
@@ -635,7 +635,7 @@ options.KeepAlive = TimeSpan.FromSeconds(30); // applied only to a provider-buil
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers Postgres storage, release signal, fencing-token source, `TimeProvider.System`, and `ILongIdGenerator` when absent.
+- Registers Postgres storage, release signal, fencing-token source, `TimeProvider.System`, and `IGuidGenerator` when absent.
 
 ---
 
@@ -806,5 +806,5 @@ options.EnableFencing = true;
 
 - Registers `IDistributedLockProvider` as singleton.
 - Registers `IDistributedReaderWriterLockProvider` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `ILongIdGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
+- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

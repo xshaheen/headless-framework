@@ -13,8 +13,7 @@ namespace Tests.ReaderWriterLocks;
 public sealed class DistributedReadWriteLockTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
-    private long _lockIdCounter = 1000;
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     private DistributedReadWriteLock _CreateProvider(
         IDistributedReadWriteLockStorage? storage = null,
@@ -22,13 +21,13 @@ public sealed class DistributedReadWriteLockTests : TestBase
         DistributedLockOptions? options = null
     )
     {
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref _lockIdCounter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         return new DistributedReadWriteLock(
             storage ?? new InMemoryDistributedReadWriteLockStorage(_timeProvider),
             outboxBus,
             options ?? new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
@@ -41,6 +40,8 @@ public sealed class DistributedReadWriteLockTests : TestBase
         var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var provider = _CreateProvider(storage);
         var resource = Faker.Random.AlphaNumeric(10);
+        var guid = new Guid("00112233-4455-6677-8899-aabbccddeeff");
+        _guidGenerator.Create().Returns(guid, Guid.NewGuid());
 
         // when
         await using var first = await provider.AcquireReadLockAsync(resource, cancellationToken: AbortToken);
@@ -48,6 +49,7 @@ public sealed class DistributedReadWriteLockTests : TestBase
 
         // then
         first.Resource.Should().Be(resource);
+        first.LeaseId.Should().Be("00112233445566778899aabbccddeeff");
         second.Resource.Should().Be(resource);
         (await provider.GetReaderCountAsync(resource, AbortToken)).Should().Be(2);
     }
