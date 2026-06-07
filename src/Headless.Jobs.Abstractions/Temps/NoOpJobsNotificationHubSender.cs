@@ -49,7 +49,7 @@ internal class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
 
     public void UpdateHostException(object exceptionMessage) { }
 
-    public Task UpdateNodeHeartBeatAsync(object nodeHeartBeat)
+    public Task UpdateNodesAsync(object nodes)
     {
         return Task.CompletedTask;
     }

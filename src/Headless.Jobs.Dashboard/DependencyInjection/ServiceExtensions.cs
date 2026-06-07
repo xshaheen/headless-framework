@@ -1,4 +1,6 @@
+using Headless.Coordination;
 using Headless.Dashboard.Authentication;
+using Headless.Jobs.Coordination;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Hubs;
 using Headless.Jobs.Infrastructure.Dashboard;
@@ -7,6 +9,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.DependencyInjection;
 
@@ -63,6 +66,15 @@ public static class ServiceExtensions
 
             services.AddDashboardService<TTimeJob, TCronJob>(dashboardConfig);
             services.AddSingleton<DashboardOptionsBuilder>(_ => dashboardConfig);
+
+            // Live-nodes bridge: pushes membership deltas to the hub. Resolved lazily so the in-memory /
+            // no-coordination dashboard path (no INodeMembership registered) still builds — the bridge falls
+            // back to NullNodeMembership and stays inert.
+            services.AddHostedService(sp => new MembershipDashboardBridge(
+                sp.GetService<INodeMembership>() ?? new NullNodeMembership(),
+                sp.GetRequiredService<IJobsNotificationHubSender>(),
+                sp.GetRequiredService<ILogger<MembershipDashboardBridge>>()
+            ));
 
             // Auto-inject dashboard middleware pipeline via IStartupFilter
             services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter<TTimeJob, TCronJob>(

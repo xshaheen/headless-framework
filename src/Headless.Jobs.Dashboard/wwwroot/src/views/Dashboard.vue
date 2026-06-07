@@ -7,6 +7,7 @@ import { useFunctionNameStore } from '@/stores/functionNames'
 import { useDashboardStore } from '@/stores/dashboardStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
+import LiveNodesPanel from '@/components/LiveNodesPanel.vue'
 
 const getNextPlannedJob = jobsService.getNextPlannedJob()
 const getOptions = jobsService.getOptions()
@@ -574,6 +575,9 @@ const getVisiblePageNumbers = () => {
             </template>
           </div>
         </div>
+
+        <!-- Live Nodes (coordination membership) -->
+        <LiveNodesPanel />
 
         <!-- System Alerts -->
         <div class="content-card alerts-card">

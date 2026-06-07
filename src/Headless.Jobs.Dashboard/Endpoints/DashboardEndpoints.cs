@@ -226,6 +226,12 @@ internal static class DashboardEndpoints
             .WithName("GetMachineJobs")
             .WithSummary("Get machine jobs");
 
+        // Live nodes (coordination membership liveness snapshot)
+        apiGroup
+            .MapGet("/nodes", _GetLiveNodes<TTimeJob, TCronJob>)
+            .WithName("GetLiveNodes")
+            .WithSummary("Get live cluster nodes from the coordination membership substrate");
+
         // SignalR Hub - authentication handled in hub OnConnectedAsync
         endpoints.MapHub<JobsNotificationHub>($"/job-notification-hub").AllowAnonymous();
     }
@@ -833,6 +839,18 @@ internal static class DashboardEndpoints
             machineJobs.Select(x => new { item1 = x.Item1, item2 = x.Item2 }).ToArray(),
             dashboardOptions.DashboardJsonOptions
         );
+    }
+
+    private static async Task<IResult> _GetLiveNodes<TTimeJob, TCronJob>(
+        IJobsDashboardRepository<TTimeJob, TCronJob> repository,
+        DashboardOptionsBuilder dashboardOptions,
+        CancellationToken cancellationToken
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
+    {
+        var nodes = await repository.GetLiveNodesAsync(cancellationToken);
+        return Results.Json(nodes, dashboardOptions.DashboardJsonOptions);
     }
 
     #endregion
