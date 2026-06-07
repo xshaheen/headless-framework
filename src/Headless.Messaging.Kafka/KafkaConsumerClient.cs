@@ -19,6 +19,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim? _semaphore;
     private readonly IServiceProvider _serviceProvider;
+    private readonly KafkaConsumerConfig? _consumerConfig;
     private readonly Func<ConsumerConfig, IConsumer<string, byte[]>> _consumerFactory;
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
 
@@ -33,6 +34,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         byte groupConcurrent,
         IOptions<MessagingKafkaOptions> options,
         IServiceProvider serviceProvider,
+        KafkaConsumerConfig? consumerConfig = null,
         Func<ConsumerConfig, IConsumer<string, byte[]>>? consumerFactory = null,
         Func<AdminClientConfig, IAdminClient>? adminClientFactory = null
     )
@@ -41,6 +43,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         _kafkaOptions = Argument.IsNotNull(options.Value);
         _semaphore = groupConcurrent > 1 ? new SemaphoreSlim(groupConcurrent, groupConcurrent) : null;
         _serviceProvider = serviceProvider;
+        _consumerConfig = consumerConfig;
         _consumerFactory = consumerFactory ?? _BuildConsumer;
         _adminClientFactory = adminClientFactory ?? _BuildAdminClient;
     }
@@ -334,6 +337,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 config.BootstrapServers ??= _kafkaOptions.Servers;
                 config.GroupId ??= _groupId;
                 config.AutoOffsetReset ??= AutoOffsetReset.Earliest;
+                config.IsolationLevel ??= _consumerConfig?.IsolationLevel;
                 config.AllowAutoCreateTopics ??= true;
                 config.EnableAutoCommit ??= false;
                 config.LogConnectionClose ??= false;

@@ -26,7 +26,8 @@ internal sealed class ConsumeMiddlewarePipeline(
     IServiceProvider serviceProvider,
     IRuntimeConsumerRegistry runtimeRegistry,
     IMiddlewareDescriptorRegistry? descriptorRegistry = null,
-    ILogger<ConsumeMiddlewarePipeline>? logger = null
+    ILogger<ConsumeMiddlewarePipeline>? logger = null,
+    IConsumeContextAccessor? consumeContextAccessor = null
 ) : IConsumeMiddlewarePipeline
 {
     private static readonly ConcurrentDictionary<MiddlewareDispatchKey, ConsumeMiddlewareInvoker> _TypedInvokers =
@@ -64,54 +65,70 @@ internal sealed class ConsumeMiddlewarePipeline(
             descriptor.IntentType,
             cancellationToken
         );
+        var previousConsumeContext = consumeContextAccessor?.Current;
 
-        await using var scope = serviceProvider.CreateAsyncScope();
-        var provider = scope.ServiceProvider;
-        var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
-        var innerRingCompleted = false;
-
-        Func<ValueTask> next = async () =>
+        try
         {
-            if (
-                descriptor.HandlerId is { Length: > 0 } handlerId
-                && runtimeRegistry.TryGetInvoker(
-                    descriptor.MessageName,
-                    descriptor.GroupName,
-                    handlerId,
-                    out var runtimeInvoker
-                )
-            )
+            if (consumeContextAccessor is not null)
             {
-                await runtimeInvoker
-                    .InvokeAsync(consumeContext, provider, consumeContext.CancellationToken)
-                    .ConfigureAwait(false);
+                consumeContextAccessor.Current = consumeContext;
             }
-            else
+
+            await using var scope = serviceProvider.CreateAsyncScope();
+            var provider = scope.ServiceProvider;
+            var middleware = _ResolveMiddleware(provider, consumeContext, descriptor.GroupName);
+            var innerRingCompleted = false;
+
+            Func<ValueTask> next = async () =>
             {
-                var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
-                await _DispatchAsync(
-                        dispatcher,
-                        provider,
-                        descriptor,
-                        consumeContext,
-                        messageType,
-                        consumeContext.CancellationToken
+                if (
+                    descriptor.HandlerId is { Length: > 0 } handlerId
+                    && runtimeRegistry.TryGetInvoker(
+                        descriptor.MessageName,
+                        descriptor.GroupName,
+                        handlerId,
+                        out var runtimeInvoker
                     )
-                    .ConfigureAwait(false);
+                )
+                {
+                    await runtimeInvoker
+                        .InvokeAsync(consumeContext, provider, consumeContext.CancellationToken)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    var dispatcher = provider.GetRequiredService<IMessageDispatcher>();
+                    await _DispatchAsync(
+                            dispatcher,
+                            provider,
+                            descriptor,
+                            consumeContext,
+                            messageType,
+                            consumeContext.CancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+
+                innerRingCompleted = true;
+                consumeContext.MarkCompleted();
+            };
+
+            for (var i = middleware.Length - 1; i >= 0; i--)
+            {
+                var current = middleware[i];
+                var innerNext = next;
+                next = () => _InvokeAsync(current, consumeContext, innerNext, () => innerRingCompleted);
             }
 
-            innerRingCompleted = true;
-            consumeContext.MarkCompleted();
-        };
-
-        for (var i = middleware.Length - 1; i >= 0; i--)
-        {
-            var current = middleware[i];
-            var innerNext = next;
-            next = () => _InvokeAsync(current, consumeContext, innerNext, () => innerRingCompleted);
+            await next().ConfigureAwait(false);
         }
-
-        await next().ConfigureAwait(false);
+        finally
+        {
+            if (consumeContextAccessor is not null)
+            {
+                consumeContextAccessor.Current = previousConsumeContext;
+            }
+        }
 
         consumeHeaders.TryGetValue(Headers.CallbackName, out var callbackName);
         var callbackHeaders = consumeHeaders.ResponseHeader;

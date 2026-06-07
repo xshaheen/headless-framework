@@ -20,6 +20,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TimeProvider _timeProvider;
     private readonly string _exchangeName;
     private readonly RabbitMqOptions _rabbitMqOptions;
+    private readonly RabbitMqConsumerConfig? _consumerConfig;
     private readonly IntentType _intentType;
     private readonly List<string> _queueNames = [];
     private readonly List<string> _consumerTags = [];
@@ -35,6 +36,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         IConnectionChannelPool connectionChannelPool,
         IOptions<RabbitMqOptions> options,
         IServiceProvider serviceProvider,
+        RabbitMqConsumerConfig? consumerConfig = null,
         IntentType intentType = IntentType.Bus
     )
     {
@@ -47,6 +49,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
         _exchangeName = connectionChannelPool.Exchange;
         _rabbitMqOptions = options.Value;
+        _consumerConfig = consumerConfig;
         _intentType = intentType;
     }
 
@@ -80,7 +83,11 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     {
         await ConnectAsync();
 
-        if (_rabbitMqOptions.BasicQosOptions != null)
+        if (_consumerConfig?.PrefetchCount is { } configuredPrefetch)
+        {
+            await _channel!.BasicQosAsync(0, configuredPrefetch, global: false, cancellationToken);
+        }
+        else if (_rabbitMqOptions.BasicQosOptions != null)
         {
             await _channel!.BasicQosAsync(
                 0,

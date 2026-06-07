@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -8,7 +9,8 @@ namespace Headless.Messaging.Kafka;
 
 public sealed class KafkaConsumerClientFactory(
     IOptions<MessagingKafkaOptions> kafkaOptions,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    IConsumerRegistry? consumerRegistry = null
 ) : IIntentAwareConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
@@ -25,10 +27,14 @@ public sealed class KafkaConsumerClientFactory(
             );
         }
 
+        // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
+        // not as a BrokerConnectionException.
+        var config = consumerRegistry?.ResolveConsumerConfig<KafkaConsumerConfig>(groupName, intentType);
+
         try
         {
             return Task.FromResult<IConsumerClient>(
-                new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider)
+                new KafkaConsumerClient(groupName, groupConcurrent, kafkaOptions, serviceProvider, config)
             );
         }
         catch (Exception e)

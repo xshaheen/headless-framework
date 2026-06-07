@@ -71,7 +71,7 @@ internal sealed class NatsConsumerClient(
             var config = new StreamConfig
             {
                 Name = streamGroup.Key,
-                Subjects = [.. BuildStreamSubjects(streamGroup.Key, streamGroup)],
+                Subjects = [.. BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))],
                 NoAck = false,
                 // File storage is the production default. Override via StreamOptions
                 // for dev/testing: config.Storage = StreamConfigStorage.Memory;
@@ -87,14 +87,16 @@ internal sealed class NatsConsumerClient(
         return messageNames.ToList();
     }
 
-    internal static IReadOnlyList<string> BuildStreamSubjects(string streamName, IEnumerable<string> messageNames)
+    internal static IReadOnlyList<string> BuildStreamSubjects(
+        IEnumerable<string> messageNames,
+        ISet<string> shardedMessageNames
+    )
     {
         Argument.IsNotNull(messageNames);
+        Argument.IsNotNull(shardedMessageNames);
 
         var subjects = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var hierarchicalPrefix = streamName + ".";
-        var hasHierarchicalSubjects = false;
 
         foreach (var topicName in messageNames)
         {
@@ -103,18 +105,16 @@ internal sealed class NatsConsumerClient(
                 continue;
             }
 
-            if (topicName.StartsWith(hierarchicalPrefix, StringComparison.Ordinal))
-            {
-                hasHierarchicalSubjects = true;
-                continue;
-            }
-
             subjects.Add(topicName);
-        }
 
-        if (hasHierarchicalSubjects)
-        {
-            subjects.Add($"{streamName}.>");
+            if (shardedMessageNames.Contains(topicName))
+            {
+                var shardedSubject = $"{topicName}.>";
+                if (seen.Add(shardedSubject))
+                {
+                    subjects.Add(shardedSubject);
+                }
+            }
         }
 
         return subjects;
@@ -125,6 +125,37 @@ internal sealed class NatsConsumerClient(
         return intentType == IntentType.Queue
             ? Helper.Normalized("queue-" + subject)
             : Helper.Normalized(groupName + "-" + subject);
+    }
+
+    internal static IReadOnlyList<string> BuildConsumerSubjects(
+        IEnumerable<string> messageNames,
+        ISet<string> shardedMessageNames
+    )
+    {
+        Argument.IsNotNull(messageNames);
+        Argument.IsNotNull(shardedMessageNames);
+
+        var subjects = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var messageName in messageNames)
+        {
+            if (seen.Add(messageName))
+            {
+                subjects.Add(messageName);
+            }
+
+            if (shardedMessageNames.Contains(messageName))
+            {
+                var shardedSubject = $"{messageName}.>";
+                if (seen.Add(shardedSubject))
+                {
+                    subjects.Add(shardedSubject);
+                }
+            }
+        }
+
+        return subjects;
     }
 
     public ValueTask SubscribeAsync(IEnumerable<string> messageNames)
@@ -148,8 +179,9 @@ internal sealed class NatsConsumerClient(
         foreach (var streamGroup in streamGroups)
         {
             var groupName = Helper.Normalized(name);
+            var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
 
-            foreach (var subject in streamGroup)
+            foreach (var subject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
                 var durableName = BuildDurableName(groupName, subject, intentType);
 
@@ -181,6 +213,23 @@ internal sealed class NatsConsumerClient(
         }
 
         await Task.WhenAll(tasks).ConfigureAwait(false);
+    }
+
+    private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
+    {
+        var consumerRegistry = serviceProvider.GetService<IConsumerRegistry>();
+        if (consumerRegistry is null)
+        {
+            return [];
+        }
+
+        var config = consumerRegistry.ResolveConsumerConfig<NatsConsumerConfig>(name, intentType);
+        if (config?.IsSharded != true)
+        {
+            return [];
+        }
+
+        return messageNames.ToHashSet(StringComparer.Ordinal);
     }
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)

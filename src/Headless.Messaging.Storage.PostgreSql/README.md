@@ -34,7 +34,7 @@ builder.Services.AddHeadlessMessaging(options =>
         config.Schema = "messaging";
     });
 
-    options.UseRabbitMQ(rmq => { /* ... */ });
+    options.UseRabbitMq(rmq => { /* ... */ });
 });
 ```
 

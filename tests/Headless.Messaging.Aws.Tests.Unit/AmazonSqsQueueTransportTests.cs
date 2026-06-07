@@ -177,6 +177,47 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_prefer_explicit_message_group_id_header_for_fifo_queue()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsQueueTransport>>();
+        await using var transport = new AmazonSqsQueueTransport(logger, _CreateOptions());
+
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        sqsClient
+            .CreateQueueAsync(Arg.Any<CreateQueueRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new CreateQueueResponse { QueueUrl = "https://sqs.local/order-created.fifo" });
+        sqsClient
+            .SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SendMessageResponse { MessageId = "msg-123" });
+
+        _SetSqsClient(transport, sqsClient);
+
+        var message = new TransportMessage(
+            headers: new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageName] = "order.created.fifo",
+                [Headers.MessageId] = "message-1",
+                [Headers.Group] = "tenant-a",
+                [AwsMessagingHeaders.MessageGroupId] = "tenant-b",
+            },
+            body: "test"u8.ToArray()
+        );
+
+        // when
+        var result = await transport.SendAsync(message, AbortToken);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        await sqsClient
+            .Received(1)
+            .SendMessageAsync(
+                Arg.Is<SendMessageRequest>(r => r.MessageGroupId == "tenant-b"),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task should_return_failed_when_headers_exceed_sqs_attribute_limit()
     {
         // given
