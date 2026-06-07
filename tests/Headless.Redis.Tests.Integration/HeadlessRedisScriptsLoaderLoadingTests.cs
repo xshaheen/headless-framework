@@ -15,8 +15,8 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         RedisScriptDefinition[] scripts =
         [
-            RemoveIfEqualScriptDefinition.Instance,
-            ReplaceIfEqualScriptDefinition.Instance,
+            TestReturnOneScriptDefinition.Instance,
+            TestReturnTwoScriptDefinition.Instance,
         ];
 
         // when
@@ -33,8 +33,8 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         RedisScriptDefinition[] scripts =
         [
-            RemoveIfEqualScriptDefinition.Instance,
-            ReplaceIfEqualScriptDefinition.Instance,
+            TestReturnOneScriptDefinition.Instance,
+            TestReturnTwoScriptDefinition.Instance,
         ];
 
         // when
@@ -51,28 +51,17 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         // given
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var key = (RedisKey)"loader-evaluate-preloaded";
-        await db.KeyDeleteAsync(key);
-        await db.StringSetAsync(key, "1");
-        await loader.LoadAsync([ReplaceIfEqualScriptDefinition.Instance]);
+        var key = (RedisKey)("loader-evaluate-preloaded:" + Guid.NewGuid().ToString("N"));
+        await loader.LoadAsync([TestSetScriptDefinition.Instance]);
 
         // when
-        var result = await loader.EvaluateAsync(
-            db,
-            ReplaceIfEqualScriptDefinition.Instance,
-            new
-            {
-                key,
-                expected = "1",
-                value = "2",
-                expires = 60_000,
-            }
-        );
+        var result = await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, new { key, value = "2" });
 
         // then
         ((int)result)
             .Should()
             .Be(1);
+        (await db.StringGetAsync(key)).ToString().Should().Be("2");
     }
 
     [Fact]
@@ -81,20 +70,12 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
         // given — preload + a first eval so the script is cached on the server (EVALSHA path)
         using var loader = new HeadlessRedisScriptsLoader(fixture.ConnectionMultiplexer);
         var db = fixture.ConnectionMultiplexer.GetDatabase();
-        var key = (RedisKey)"loader-eval-after-flush";
-        await db.KeyDeleteAsync(key);
-        await db.StringSetAsync(key, "1");
-        await loader.LoadAsync([ReplaceIfEqualScriptDefinition.Instance]);
+        var key = (RedisKey)("loader-eval-after-flush:" + Guid.NewGuid().ToString("N"));
+        await loader.LoadAsync([TestSetScriptDefinition.Instance]);
 
-        var parameters = new
-        {
-            key,
-            expected = "1",
-            value = "1",
-            expires = 60_000,
-        };
+        var parameters = new { key, value = "1" };
 
-        ((int)await loader.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, parameters)).Should().Be(1);
+        ((int)await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, parameters)).Should().Be(1);
 
         // when — the serving node loses the script from its cache (simulates a promoted replica or a
         // cold/flushed cache). The loader still holds the stale SHA, so the next EVALSHA gets NOSCRIPT.
@@ -103,9 +84,33 @@ public sealed class HeadlessRedisScriptsLoaderLoadingTests(RedisTestFixture fixt
             await fixture.ConnectionMultiplexer.GetServer(endpoint).ScriptFlushAsync();
         }
 
-        // then — recovery falls back to a full-body EVAL, so the script still runs and the CAS still matches
-        var result = await loader.EvaluateAsync(db, ReplaceIfEqualScriptDefinition.Instance, parameters);
+        // then — recovery falls back to a full-body EVAL, so the script still runs
+        var result = await loader.EvaluateAsync(db, TestSetScriptDefinition.Instance, parameters);
 
         ((int)result).Should().Be(1);
+    }
+
+    private sealed class TestReturnOneScriptDefinition : RedisScriptDefinition
+    {
+        public static TestReturnOneScriptDefinition Instance { get; } = new();
+
+        private TestReturnOneScriptDefinition()
+            : base("return 1") { }
+    }
+
+    private sealed class TestReturnTwoScriptDefinition : RedisScriptDefinition
+    {
+        public static TestReturnTwoScriptDefinition Instance { get; } = new();
+
+        private TestReturnTwoScriptDefinition()
+            : base("return 2") { }
+    }
+
+    private sealed class TestSetScriptDefinition : RedisScriptDefinition
+    {
+        public static TestSetScriptDefinition Instance { get; } = new();
+
+        private TestSetScriptDefinition()
+            : base("return redis.call('set', @key, @value) and 1 or 0") { }
     }
 }

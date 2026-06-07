@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
+using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Redis;
+namespace Headless.DistributedLocks.Redis;
 
 /// <summary>Atomically replaces a value only if it matches the expected value.</summary>
-public sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
+internal sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
 {
     public static ReplaceIfEqualScriptDefinition Instance { get; } = new();
 
@@ -32,5 +33,5 @@ public sealed class ReplaceIfEqualScriptDefinition : RedisScriptDefinition
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="ReplaceIfEqualScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct ReplaceIfEqualParams(RedisKey key, string? value, string expected, RedisValue expires);
+internal readonly record struct ReplaceIfEqualParams(RedisKey key, string? value, string expected, RedisValue expires);
 #pragma warning restore IDE1006

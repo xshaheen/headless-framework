@@ -1,24 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.Redis;
 using Headless.Redis;
 using StackExchange.Redis;
 
 namespace Tests;
 
-[Collection(nameof(RedisTestFixture))]
+[Collection<RedisTestFixture>]
 public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
 {
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    // Unique per-test keys keep these tests isolated within the shared (parallel) Redis collection
+    // without a global FLUSHALL that would clobber concurrent storage tests.
+    private static RedisKey _NewKey() => (RedisKey)("replace-if-equal:" + Guid.NewGuid().ToString("N"));
 
     [Fact]
     public async Task should_replace_when_expected_value_matches()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "old-value");
 
         // when
@@ -34,8 +36,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_replace_when_key_not_exists()
     {
         // given
-        await _FlushAsync();
-        const string key = "non-existent-key";
+        var key = _NewKey();
 
         // when
         var result = await Loader.ReplaceIfEqualAsync(Db, key, expectedValue: null, newValue: "new-value");
@@ -50,8 +51,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_replace_when_expected_value_differs()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "old-value");
 
         // when
@@ -67,8 +67,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_set_ttl_when_provided()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key-with-ttl";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "old-value");
         var ttl = TimeSpan.FromMinutes(5);
 
@@ -92,8 +91,7 @@ public sealed class ReplaceIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_set_ttl_when_null()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key-no-ttl";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "old-value");
 
         // when

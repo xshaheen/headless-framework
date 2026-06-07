@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.Redis;
 using Headless.Redis;
 using StackExchange.Redis;
 

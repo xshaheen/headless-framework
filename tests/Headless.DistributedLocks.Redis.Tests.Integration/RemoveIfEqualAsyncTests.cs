@@ -1,24 +1,26 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks.Redis;
 using Headless.Redis;
 using StackExchange.Redis;
 
 namespace Tests;
 
-[Collection(nameof(RedisTestFixture))]
+[Collection<RedisTestFixture>]
 public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
 {
     private IDatabase Db => fixture.ConnectionMultiplexer.GetDatabase();
     private HeadlessRedisScriptsLoader Loader => fixture.ScriptsLoader;
 
-    private async Task _FlushAsync() => await fixture.ConnectionMultiplexer.FlushAllAsync();
+    // Unique per-test keys keep these tests isolated within the shared (parallel) Redis collection
+    // without a global FLUSHALL that would clobber concurrent storage tests.
+    private static RedisKey _NewKey() => (RedisKey)("remove-if-equal:" + Guid.NewGuid().ToString("N"));
 
     [Fact]
     public async Task should_remove_when_expected_value_matches()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "value");
 
         // when
@@ -34,8 +36,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_remove_when_expected_value_differs()
     {
         // given
-        await _FlushAsync();
-        const string key = "test-key";
+        var key = _NewKey();
         await Db.StringSetAsync(key, "value");
 
         // when
@@ -53,8 +54,7 @@ public sealed class RemoveIfEqualAsyncTests(RedisTestFixture fixture)
     public async Task should_not_remove_when_key_not_exists()
     {
         // given
-        await _FlushAsync();
-        const string key = "nonexistent-key";
+        var key = _NewKey();
 
         // when
         var result = await Loader.RemoveIfEqualAsync(Db, key, expectedValue: "any-value");

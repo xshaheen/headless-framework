@@ -14,6 +14,8 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
 
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 
+    public HeadlessRedisScriptsLoader ScriptsLoader => _scriptLoader!;
+
     public RedisDistributedLockStorage LockStorage { get; private set; } = null!;
 
     public RedisDistributedReadWriteLockStorage ReaderWriterLockStorage { get; private set; } = null!;

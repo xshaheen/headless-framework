@@ -61,20 +61,19 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
                 RedisMembershipReadScriptDefinition.Instance,
                 RedisMembershipLeaveScriptDefinition.Instance,
                 RedisMembershipCleanupScriptDefinition.Instance,
-                ReplaceIfEqualScriptDefinition.Instance,
+                ExistingRedisScriptDefinition.Instance,
             ],
             AbortToken
         );
 
-        await db.StringSetAsync(key, "1");
-        var replaced = await loader.EvaluateAsync(
+        var executed = await loader.EvaluateAsync(
             db,
-            ReplaceIfEqualScriptDefinition.Instance,
-            new { key, expected = "1", value = "2", expires = 30_000L },
+            ExistingRedisScriptDefinition.Instance,
+            new { key, value = "2" },
             AbortToken
         );
 
-        ((int)replaced).Should().Be(1);
+        ((int)executed).Should().Be(1);
         (await db.StringGetAsync(key)).ToString().Should().Be("2");
 
         await using var node = await fixture.CreateNodeAsync(_Cluster(), "node-a", AbortToken);
@@ -101,5 +100,15 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
     private static RedisKey _GenKey(string cluster, NodeId nodeId)
     {
         return $"coordination:{{{cluster}}}:gen:{nodeId.Value}";
+    }
+
+    // Stands in for an arbitrary non-coordination Redis script to prove the loader warms coordination
+    // scripts additively alongside scripts owned by other packages.
+    private sealed class ExistingRedisScriptDefinition : RedisScriptDefinition
+    {
+        public static ExistingRedisScriptDefinition Instance { get; } = new();
+
+        private ExistingRedisScriptDefinition()
+            : base("return redis.call('set', @key, @value) and 1 or 0") { }
     }
 }

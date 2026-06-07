@@ -1,12 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
+using Headless.Redis;
 using StackExchange.Redis;
 
-namespace Headless.Redis;
+namespace Headless.DistributedLocks.Redis;
 
 /// <summary>Atomically removes a key only if its value matches the expected value.</summary>
-public sealed class RemoveIfEqualScriptDefinition : RedisScriptDefinition
+internal sealed class RemoveIfEqualScriptDefinition : RedisScriptDefinition
 {
     public static RemoveIfEqualScriptDefinition Instance { get; } = new();
 
@@ -25,5 +26,5 @@ public sealed class RemoveIfEqualScriptDefinition : RedisScriptDefinition
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="RemoveIfEqualScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-public readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
+internal readonly record struct RemoveIfEqualParams(RedisKey key, string? expected);
 #pragma warning restore IDE1006
