@@ -1,6 +1,7 @@
 ---
 title: Storage Initializer Lifecycle & Concurrent-Startup Safety
 date: 2026-05-25
+last_updated: 2026-06-07
 category: best-practices
 module: headless-storage
 problem_type: best_practice
@@ -111,6 +112,15 @@ END CATCH;
 ```
 
 Without the outer `TRY/CATCH` (the bug fixed in `3f7572895`), an uncaught DDL error during `CREATE INDEX` would leave the Session-scoped applock leaked until the connection physically closed, starving the next replica's `sp_getapplock` call.
+
+> **Second instance (2026-06-07, `Headless.Coordination`, PR #416).** The coordination SqlServer
+> membership initializer wrapped `CREATE TABLE` in the defensive `BEGIN TRY/CATCH ... NOT IN (2714, 1913, 2759)`
+> but left `CREATE NONCLUSTERED INDEX` *outside* it. Two concurrent initializers both passed the index's
+> `IF NOT EXISTS` check and the loser threw error `1913` ("index already exists"). The rule is therefore
+> sharper than "guard the table": **every DDL block — table *and* every index — must sit inside the
+> swallow-already-exists envelope**, because the `IF NOT EXISTS`/create pair is not atomic for either object
+> type. The bug was caught only because a concurrent-startup conformance test was added (see §4); without
+> it the race is invisible in single-host CI.
 
 ### 3. DB-unreachable and auth-failure handling
 
@@ -285,3 +295,4 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 - [Startup pause gating and half-open recovery](../concurrency/startup-pause-gating-and-half-open-recovery.md) — `IHostedLifecycleService.StartingAsync` runs before `IHostedService.StartAsync`; same primitive the EF startup gate uses
 - [Messaging keyed-DI lock isolation](../architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md) — applies when multiple features share an initializer host
 - [Circuit-breaker transport thread-safety patterns](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — hosted-service dispose and timer-race prior art for the dispose discipline above
+- [Registration must durably establish liveness](../architecture-patterns/coordination-register-establishes-durable-liveness.md) — `Headless.Coordination` membership initializers follow this lifecycle; its concurrent-startup conformance test (boot N initializers via `Task.WhenAll`, assert table/index counts) is the cross-provider template referenced in §4, and it caught the `CREATE INDEX` 1913 second instance noted in §2
