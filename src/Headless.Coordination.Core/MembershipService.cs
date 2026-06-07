@@ -123,6 +123,7 @@ public sealed class MembershipService(
         }
 
         _localMembershipLost.Cancel();
+        eventSource.Publish(new LocalMembershipLost(identity));
         logger.LocalMembershipLost(identity);
 
         if (options.MembershipLostBehavior != MembershipLostBehavior.StopApplication)

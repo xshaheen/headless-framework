@@ -36,6 +36,10 @@ public sealed class RedisMembershipFixture : HeadlessRedisFixture, ICollectionFi
     public void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup)
     {
         services.AddSingleton<IConnectionMultiplexer>(ConnectionMultiplexer);
-        setup.UseRedis(static _ => { });
+        setup.UseRedis(static options =>
+        {
+            options.RedisCleanupInterval = TimeSpan.FromMilliseconds(100);
+            options.RedisKnownNodeRetention = TimeSpan.FromMilliseconds(600);
+        });
     }
 }

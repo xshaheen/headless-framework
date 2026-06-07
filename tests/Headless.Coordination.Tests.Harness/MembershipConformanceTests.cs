@@ -118,6 +118,90 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         snapshot.Should().NotContain(x => x.Identity == firstIdentity);
     }
 
+    public virtual async Task should_reject_stale_and_impossible_heartbeats_with_generation_guard()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var store = second.Services.GetRequiredService<IMembershipStore>();
+        var impossibleIdentity = new NodeIdentity(
+            secondIdentity.NodeId,
+            new NodeIncarnation(secondIdentity.Incarnation.Value + 1)
+        );
+
+        var staleAccepted = await store.HeartbeatAsync(firstIdentity, AbortToken);
+        var impossibleAccepted = await store.HeartbeatAsync(impossibleIdentity, AbortToken);
+        var currentAccepted = await store.HeartbeatAsync(secondIdentity, AbortToken);
+        var live = await second.Membership.GetLiveNodesAsync(AbortToken);
+
+        staleAccepted.Should().BeFalse();
+        impossibleAccepted.Should().BeFalse();
+        currentAccepted.Should().BeTrue();
+        live.Should().Equal([secondIdentity]);
+    }
+
+    public virtual async Task should_reject_stale_heartbeat_after_retained_state_is_pruned()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(750), AbortToken);
+        (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var store = second.Services.GetRequiredService<IMembershipStore>();
+
+        var staleAccepted = await store.HeartbeatAsync(firstIdentity, AbortToken);
+        var live = await second.Membership.GetLiveNodesAsync(AbortToken);
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        staleAccepted.Should().BeFalse();
+        live.Should().Equal([secondIdentity]);
+    }
+
+    public virtual async Task should_isolate_generation_and_reads_by_cluster()
+    {
+        var firstCluster = _Cluster();
+        var secondCluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(firstCluster, "node-a", AbortToken);
+        await using var second = await fixture.CreateNodeAsync(secondCluster, "node-a", AbortToken);
+
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+        var firstLive = await first.Membership.GetLiveNodesAsync(AbortToken);
+        var secondLive = await second.Membership.GetLiveNodesAsync(AbortToken);
+
+        firstIdentity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
+        secondIdentity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1)));
+        firstLive.Should().Equal([firstIdentity]);
+        secondLive.Should().Equal([secondIdentity]);
+    }
+
+    public virtual async Task should_publish_local_lost_event_when_incarnation_is_superseded()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        watcherCts.CancelAfter(TimeSpan.FromSeconds(2));
+        await using var watcher = first.Membership.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        _ = await second.Membership.RegisterAsync(AbortToken);
+
+        var accepted = await first.Membership.HeartbeatAsync(AbortToken);
+        var hasEvent = await watcher.MoveNextAsync();
+
+        accepted.Should().BeFalse();
+        hasEvent.Should().BeTrue();
+        watcher.Current.Should().BeOfType<LocalMembershipLost>().Which.Identity.Should().Be(firstIdentity);
+    }
+
     public virtual async Task should_return_ordered_live_nodes()
     {
         var cluster = _Cluster();

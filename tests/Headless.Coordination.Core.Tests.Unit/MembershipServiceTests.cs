@@ -66,17 +66,24 @@ public sealed class MembershipServiceTests : TestBase
     public async Task should_fire_local_loss_token_and_stop_application_when_self_heartbeat_is_rejected()
     {
         // given
-        var store = new FakeMembershipStore { HeartbeatAccepted = false };
+        var store = new FakeMembershipStore();
         var lifetime = new FakeHostApplicationLifetime();
         var sut = _CreateService(store, lifetime: lifetime);
         await sut.RegisterAsync(AbortToken);
+        store.HeartbeatAccepted = false;
+        using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        watcherCts.CancelAfter(TimeSpan.FromSeconds(2));
+        await using var watcher = sut.WatchAsync(watcherCts.Token).GetAsyncEnumerator(watcherCts.Token);
 
         // when
         var accepted = await sut.HeartbeatAsync(AbortToken);
+        var hasEvent = await watcher.MoveNextAsync();
 
         // then
         accepted.Should().BeFalse();
         sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+        hasEvent.Should().BeTrue();
+        watcher.Current.Should().BeOfType<LocalMembershipLost>().Which.Identity.Should().Be(sut.Identity);
         lifetime.StopApplicationCalled.Should().BeTrue();
     }
 
@@ -85,10 +92,11 @@ public sealed class MembershipServiceTests : TestBase
     {
         // given
         var options = new CoordinationOptions { MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly };
-        var store = new FakeMembershipStore { HeartbeatAccepted = false };
+        var store = new FakeMembershipStore();
         var lifetime = new FakeHostApplicationLifetime();
         var sut = _CreateService(store, options, lifetime);
         await sut.RegisterAsync(AbortToken);
+        store.HeartbeatAccepted = false;
 
         // when
         var accepted = await sut.HeartbeatAsync(AbortToken);

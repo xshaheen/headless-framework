@@ -53,6 +53,7 @@ public sealed class NodeMembershipContractTests : TestBase
             new NodeSuspected(identity),
             new NodeRecovered(identity),
             new NodeLeft(identity),
+            new LocalMembershipLost(identity),
         ];
 
         // then

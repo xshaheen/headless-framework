@@ -29,6 +29,22 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
         base.should_filter_operational_reads_to_current_generation();
 
     [Fact]
+    public override Task should_reject_stale_and_impossible_heartbeats_with_generation_guard() =>
+        base.should_reject_stale_and_impossible_heartbeats_with_generation_guard();
+
+    [Fact]
+    public override Task should_reject_stale_heartbeat_after_retained_state_is_pruned() =>
+        base.should_reject_stale_heartbeat_after_retained_state_is_pruned();
+
+    [Fact]
+    public override Task should_isolate_generation_and_reads_by_cluster() =>
+        base.should_isolate_generation_and_reads_by_cluster();
+
+    [Fact]
+    public override Task should_publish_local_lost_event_when_incarnation_is_superseded() =>
+        base.should_publish_local_lost_event_when_incarnation_is_superseded();
+
+    [Fact]
     public override Task should_return_ordered_live_nodes() => base.should_return_ordered_live_nodes();
 
     [Fact]
