@@ -22,7 +22,12 @@ public class SampleScheduler(ITimeJobManager<TimeJobEntity> timeJobManager) : IH
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var result = await timeJobManager.AddAsync(
-            new TimeJobEntity { Function = "ConsoleSample_HelloWorld", ExecutionTime = DateTime.UtcNow.AddSeconds(5) },
+            new TimeJobEntity
+            {
+                Function = "ConsoleSample_HelloWorld",
+                Description = "Sample console demo job",
+                ExecutionTime = DateTime.UtcNow.AddSeconds(5),
+            },
             cancellationToken
         );
 
