@@ -288,7 +288,7 @@ Core provides the transactional outbox pattern (automatic retries, delayed deliv
 
 ## Agent Instructions
 
-- **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Core brings shared/bus/queue abstractions transitively for applications.
+- **App install pattern**: install `Messaging.Core` + exactly one transport + exactly one storage. Bootstrap fails when zero or multiple storage providers are configured. Core brings shared/bus/queue abstractions transitively for applications.
 - **Library contract pattern**: install `Messaging.Abstractions`, `Messaging.Bus.Abstractions`, or `Messaging.Queue.Abstractions` directly only when a library exposes consumers/envelopes or publisher interfaces without bootstrapping Core.
 - **Use `InMemory` + `InMemoryStorage` only for dev/testing**, never in production. Data is lost on restart.
 - **Add `Messaging.OpenTelemetry`** for tracing in any production deployment.

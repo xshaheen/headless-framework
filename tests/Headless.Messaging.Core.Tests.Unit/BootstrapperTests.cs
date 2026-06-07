@@ -200,6 +200,20 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_fail_bootstrap_when_multiple_storage_providers_are_registered()
+    {
+        await using var provider = _CreateProvider(
+            extraSetup: static services => services.AddSingleton(new MessageStorageMarkerService("OtherStorage"))
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        var act = async () => await bootstrapper.BootstrapAsync(AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*exactly one storage provider*");
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task should_isolate_messaging_lock_provider_from_unkeyed_app_level_provider()
     {
         // given — an app-level un-keyed provider AND a messaging-keyed provider

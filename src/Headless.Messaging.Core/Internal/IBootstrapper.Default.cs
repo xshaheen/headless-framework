@@ -308,15 +308,22 @@ internal sealed class Bootstrapper(
             );
         }
 
-        var databaseMarker = serviceProvider.GetService<MessageStorageMarkerService>();
+        var databaseMarkers = serviceProvider.GetServices<MessageStorageMarkerService>().ToArray();
 
-        if (databaseMarker == null)
+        if (databaseMarkers.Length == 0)
         {
             throw new InvalidOperationException(
                 "Messaging requires a storage provider. Register one (e.g., UseSqlServer, UsePostgreSql, "
                     + "UseInMemoryStorage) so persisted publishes and the inbox/outbox can be backed."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseSqlServer(...); });"
+            );
+        }
+
+        if (databaseMarkers.Length > 1)
+        {
+            throw new InvalidOperationException(
+                "Messaging requires exactly one storage provider. Multiple storage providers were configured."
             );
         }
 
