@@ -27,7 +27,7 @@ the required services first — `TimeProvider`, caching, distributed lock, and
 
 ```csharp
 builder.Services.AddCaching();
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );

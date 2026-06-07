@@ -352,9 +352,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddInMemoryDistributedLock(static _ => { });
-        services.AddInMemoryDistributedSemaphore(static _ => { });
-        services.AddInMemoryDistributedReadWriteLock(static _ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
 
         using var provider = services.BuildServiceProvider();
 

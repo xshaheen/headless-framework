@@ -109,7 +109,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - Default lock expiration is 20 minutes and default acquire timeout is 30 seconds. Override them per call via `DistributedLockAcquireOptions`; `DistributedLockOptions` configures key prefix and waiter/resource limits.
 - If `Headless.Messaging` is registered, lock release wake-ups are push-based. If no `IOutboxBus` is registered, the provider still works and falls back to polling backoff with a one-time warning.
 - `Headless.Messaging.Core` uses a keyed `IDistributedLock` registration under `"headless.messaging"`; an un-keyed app lock provider is not automatically used by message retry processors.
-- Use `IDistributedReadWriteLock` for reader-writer semantics and register it explicitly with `AddRedisDistributedReadWriteLock(...)`; regular Redis lock setup does not auto-register it.
+- Use `AddHeadlessDistributedLocks(setup => setup.UseRedis())` for Redis-backed mutex, reader-writer, and semaphore primitives. PostgreSQL and SQL Server providers intentionally register mutex + reader-writer only.
 
 ## Core Concepts
 
@@ -143,7 +143,7 @@ Combining `LockMonitoringMode.Monitor` or `LockMonitoringMode.AutoExtend` with `
 
 ### Connection-Scoped Locks (Database Engine)
 
-Database-backed providers (`Headless.DistributedLocks.Postgres` over PostgreSQL advisory locks, and any provider built on `Headless.DistributedLocks.Core.Database`) do not store a lease record with a TTL. The lock exists for exactly as long as the holding database session does: the engine acquires the native primitive (for example `pg_try_advisory_lock`) on a live connection and releases it by unlocking — or by closing the connection, which drops every advisory lock the session held. Three engine behaviors follow from this and are visible to consumers as semantics, not as new API. The public surface (`AddPostgresDistributedLocks(...)`, `IDistributedLock.TryAcquireAsync(...)`, the returned `IDistributedLease`) is unchanged.
+Database-backed providers (`Headless.DistributedLocks.Postgres` over PostgreSQL advisory locks, and any provider built on `Headless.DistributedLocks.Core.Database`) do not store a lease record with a TTL. The lock exists for exactly as long as the holding database session does: the engine acquires the native primitive (for example `pg_try_advisory_lock`) on a live connection and releases it by unlocking — or by closing the connection, which drops every advisory lock the session held. Three engine behaviors follow from this and are visible to consumers as semantics, not as new API. The public surface (`AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(...))`, `IDistributedLock.TryAcquireAsync(...)`, the returned `IDistributedLease`) is unchanged.
 
 **Disposal contract — there is no TTL and no finalizer reclaim.** A connection-scoped lock is released only when its handle is disposed (or `ReleaseAsync()` is called). There is no lease timeout that eventually frees it and no GC finalizer that reclaims it: the provider holds a strong reference to the backing engine handle for its lifetime, so a handle abandoned without disposal leaks its connection and its advisory lock until the provider itself is disposed. This is the deliberate contract — it mirrors `lock`/`using` discipline, and the reference engine's finalizer queue was intentionally dropped in favor of requiring explicit disposal. Always dispose the handle; `await using` is the intended usage. (`RenewAsync(...)` is a no-op success and `GetExpirationAsync(...)` returns `null`, because there is nothing to renew or expire.)
 
@@ -187,9 +187,14 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     _ => ConnectionMultiplexer.Connect("localhost:6379")
 );
 
-builder.Services.AddRedisDistributedReadWriteLock(options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
 {
-    options.KeyPrefix = "distributed-lock:";
+    setup.ConfigureOptions(options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+    });
+
+    setup.UseRedis();
 });
 
 await using var read = await readerWriterLocks.AcquireReadLockAsync(
@@ -330,10 +335,9 @@ Implements lock acquisition, renewal, release, inspection, timeout handling, and
 - `IDistributedReadWriteLockStorage` defines atomic read/write acquire, extend, release, and validation operations for storage providers.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations for storage providers.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddDistributedLock(...)` overloads wire storage, options, time provider, and ID generator.
+- `AddHeadlessDistributedLocks(...)` is the root builder entry point; provider packages contribute `Use...` methods.
 - `setup.UseDistributedLockReleaseWakeups()` registers the optional `DistributedLockReleased` consumer from `AddHeadlessMessaging(...)`.
-- `AddDistributedReadWriteLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
-- `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
+- `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
 ### Design Notes
 
@@ -351,14 +355,16 @@ dotnet add package Headless.DistributedLocks.Core
 ### Quick Start
 
 ```csharp
-builder.Services.AddDistributedLock(
-    sp => sp.GetRequiredService<IDistributedLockStorage>(),
-    options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureOptions(options =>
     {
         options.KeyPrefix = "distributed-lock:";
         options.MaxResourceNameLength = 512;
-    }
-);
+    });
+
+    setup.UseRedis(); // from Headless.DistributedLocks.Redis
+});
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
@@ -417,9 +423,9 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ### Side Effects
 
-- Registers `IDistributedLock` as singleton.
-- Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
+- Registers exactly one provider selected by the `AddHeadlessDistributedLocks(...)` builder.
+- Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
+- PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
 - Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.
 
@@ -488,9 +494,7 @@ Provides a no-infrastructure backend for code that depends on `IDistributedLock`
 - `InMemoryDistributedLockStorage` implements `IDistributedLockStorage`.
 - `InMemoryDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
 - `InMemoryDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
-- `AddInMemoryDistributedLock(...)` registers an in-process mutex provider.
-- `AddInMemoryDistributedReadWriteLock(...)` registers an in-process reader-writer lock provider.
-- `AddInMemoryDistributedSemaphore(...)` registers an in-process semaphore provider.
+- `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
 
 ### Design Notes
@@ -508,19 +512,14 @@ dotnet add package Headless.DistributedLocks.InMemory
 ### Quick Start
 
 ```csharp
-builder.Services.AddInMemoryDistributedLock(options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
 {
-    options.KeyPrefix = "distributed-lock:";
-});
+    setup.ConfigureOptions(options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+    });
 
-builder.Services.AddInMemoryDistributedReadWriteLock(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
-});
-
-builder.Services.AddInMemoryDistributedSemaphore(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
+    setup.UseInMemory();
 });
 ```
 
@@ -536,10 +535,8 @@ Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tes
 
 ### Side Effects
 
-- Registers `IDistributedLock` through `Headless.DistributedLocks.Core`.
-- Registers `IDistributedReadWriteLock` through `Headless.DistributedLocks.Core` when `AddInMemoryDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddInMemoryDistributedSemaphore(...)` is called.
-- Registers process-local singleton storage instances for the selected lock primitive.
+- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core`.
+- Registers process-local singleton storage instances for all three primitives.
 
 ---
 
@@ -553,7 +550,7 @@ Coordinates work across nodes using PostgreSQL advisory locks, with no Redis dep
 
 ### Key Features
 
-- `AddPostgresDistributedLocks(...)` registers `IDistributedLock` and `IDistributedReadWriteLock`.
+- `UsePostgreSql(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - `PostgresAdvisoryLockKey` maps strings, `long`, and `(int, int)` keys onto PostgreSQL advisory key spaces.
 - Session-scoped mutex locks use `pg_try_advisory_lock` and release with `pg_advisory_unlock`.
 - Reader-writer locks use PostgreSQL shared and exclusive advisory locks.
@@ -580,11 +577,11 @@ dotnet add package Headless.DistributedLocks.Postgres
 ### Quick Start
 
 ```csharp
-builder.Services.AddPostgresDistributedLocks(options =>
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
 {
     options.ConnectionString = builder.Configuration.GetConnectionString("Postgres");
     options.KeyPrefix = "distributed-lock:";
-});
+}));
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -652,9 +649,7 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
 - `RedisDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
 - `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
-- `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
-- `AddRedisDistributedReadWriteLock(...)` registers a Redis-backed reader-writer lock provider.
-- `AddRedisDistributedSemaphore(...)` registers a Redis-backed semaphore provider.
+- `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
 ### Installation
@@ -670,20 +665,15 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     _ => ConnectionMultiplexer.Connect("localhost:6379")
 );
 
-builder.Services.AddRedisDistributedLock(options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
 {
-    options.KeyPrefix = "distributed-lock:";
-    options.MaxResourceNameLength = 512;
-});
+    setup.ConfigureOptions(options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+        options.MaxResourceNameLength = 512;
+    });
 
-builder.Services.AddRedisDistributedReadWriteLock(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
-});
-
-builder.Services.AddRedisDistributedSemaphore(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
+    setup.UseRedis();
 });
 ```
 
@@ -706,11 +696,8 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 ### Side Effects
 
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
-- Registers hosted `IInitializer` warmup for only the Redis lock feature scripts that were registered:
-  mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReadWriteLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
-- Registers `IDistributedLock` through `Headless.DistributedLocks.Core`.
-- Registers `IDistributedReadWriteLock` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedSemaphore(...)` is called.
+- Registers hosted `IInitializer` warmup for Redis mutex, reader-writer, and semaphore scripts.
+- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core`.
 
 ---
 
@@ -724,7 +711,7 @@ Coordinates work across nodes using SQL Server application locks, with native se
 
 ### Key Features
 
-- `AddSqlServerDistributedLocks(...)` registers `IDistributedLockProvider` and `IDistributedReaderWriterLockProvider`.
+- `UseSqlServer(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`.
 - Reader-writer locks use SQL Server `Shared` and `Exclusive` application-lock modes.
 - Mutex handles receive durable SQL `SEQUENCE`-backed `FencingToken` values when fencing is enabled.
@@ -751,11 +738,11 @@ dotnet add package Headless.DistributedLocks.SqlServer
 ### Quick Start
 
 ```csharp
-builder.Services.AddSqlServerDistributedLocks(options =>
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
 {
     options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
     options.KeyPrefix = "distributed-lock:";
-});
+}));
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -804,7 +791,7 @@ options.EnableFencing = true;
 
 ### Side Effects
 
-- Registers `IDistributedLockProvider` as singleton.
-- Registers `IDistributedReaderWriterLockProvider` as singleton.
+- Registers `IDistributedLock` as singleton.
+- Registers `IDistributedReadWriteLock` as singleton.
 - Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

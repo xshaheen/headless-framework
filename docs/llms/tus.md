@@ -59,7 +59,7 @@ app.MapTus("/files", async _ => new DefaultTusConfiguration
 
 For multi-instance deployments, add distributed locking:
 ```csharp
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddDistributedLockRedisStorage();
 builder.Services.AddDistributedLockTusLockProvider();
 ```
@@ -70,7 +70,7 @@ builder.Services.AddDistributedLockTusLockProvider();
 - `TusAzureStore` implements `ITusStore` and supports all major TUS extensions (creation, concatenation, expiration, checksum, termination).
 - Configure `TusAzureStoreOptions` with `ContainerName`, `BlobPrefix`, and `CreateContainerIfNotExists`.
 - For multi-instance deployments, always add `Headless.Tus.DistributedLocks` and register `AddDistributedLockTusLockProvider()`. Without it, concurrent uploads to the same file from different instances can corrupt data.
-- The distributed lock provider requires `Headless.DistributedLocks.Abstractions` to be registered first (e.g., via `AddDistributedLock()` + a storage backend like Redis).
+- The distributed lock provider requires a Headless distributed-lock provider to be registered first (for example, `AddHeadlessDistributedLocks(setup => setup.UseRedis())`).
 - Set `FileLockProvider` on `DefaultTusConfiguration` when using distributed locks -- resolve `ITusFileLockProvider` from DI.
 - All packages depend on `tusdotnet`. Use `app.MapTus()` to expose TUS endpoints.
 
@@ -213,7 +213,7 @@ dotnet add package Headless.Tus.DistributedLocks
 var builder = WebApplication.CreateBuilder(args);
 
 // Add resource lock provider first
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider
