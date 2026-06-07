@@ -32,7 +32,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         CancellationToken cancellationToken = default
     );
     Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken);
-    Task ReleaseDeadNodeTimeJobResources(string instanceIdentifier, CancellationToken cancellationToken = default);
+    Task<int> ReleaseDeadNodeTimeJobResources(string instanceIdentifier, CancellationToken cancellationToken = default);
     #endregion
 
     #region Cron_TickerOccurrence_Core_Methods
@@ -58,7 +58,10 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         InternalFunctionContext functionContext,
         CancellationToken cancellationToken = default
     );
-    Task ReleaseDeadNodeOccurrenceResources(string instanceIdentifier, CancellationToken cancellationToken = default);
+    Task<int> ReleaseDeadNodeOccurrenceResources(
+        string instanceIdentifier,
+        CancellationToken cancellationToken = default
+    );
     #endregion
 
     #region Time_Ticker_Shared_Methods

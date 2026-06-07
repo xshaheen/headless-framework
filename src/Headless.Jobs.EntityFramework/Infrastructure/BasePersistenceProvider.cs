@@ -269,7 +269,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
-    public async Task ReleaseDeadNodeTimeJobResources(
+    public async Task<int> ReleaseDeadNodeTimeJobResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -279,9 +279,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
+        // so they run under CancellationToken.None. The two statements are wrapped in one transaction
+        // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
+        // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // Release the dead node's Idle/Queued rows back to Idle so a live node re-acquires them.
+        var released = await dbContext
             .Set<TTimeJob>()
-            .WhereCanAcquire(instanceIdentifier)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -289,13 +299,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await dbContext
+        // Mark rows the dead node was mid-execution on as Skipped (cannot safely resume).
+        var skipped = await dbContext
             .Set<TTimeJob>()
-            .Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -303,9 +315,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return released + skipped;
     }
     #endregion
 
@@ -547,7 +563,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task ReleaseDeadNodeOccurrenceResources(
+    public async Task<int> ReleaseDeadNodeOccurrenceResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -557,9 +573,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        // See ReleaseDeadNodeTimeJobResources: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
+        // CancellationToken.None for the reclaim writes (KTD6).
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        var released = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereCanAcquire(instanceIdentifier)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -567,13 +590,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await dbContext
+        var skipped = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -581,9 +605,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return released + skipped;
     }
 
     public async Task ReleaseAcquiredCronJobOccurrences(

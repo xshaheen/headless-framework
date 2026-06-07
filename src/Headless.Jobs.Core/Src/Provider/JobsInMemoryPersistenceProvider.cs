@@ -494,18 +494,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.FromResult(count);
     }
 
-    public Task ReleaseDeadNodeTimeJobResources(
+    public Task<int> ReleaseDeadNodeTimeJobResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var affected = 0;
 
-        // Phase 1: release acquirable jobs for the dead node (match EF WhereCanAcquire(instanceIdentifier))
+        // Phase 1: release the dead node's Idle/Queued rows (strict owner match — mirrors EF WhereOwnedBy; R4).
         var releasable = _TimeJobs
             .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-                && (x.LockHolder == instanceIdentifier || x.LockedAt == null)
+                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.LockHolder == instanceIdentifier
             )
             .ToArray();
 
@@ -522,7 +522,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updatedTicker.Status = JobStatus.Idle;
             updatedTicker.UpdatedAt = now;
 
-            _TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker);
+            if (_TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker))
+            {
+                affected++;
+            }
         }
 
         // Phase 2: mark in-progress jobs for that node as skipped
@@ -543,10 +546,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updatedTicker.ExecutedAt = now;
             updatedTicker.UpdatedAt = now;
 
-            _TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker);
+            if (_TimeJobs.TryUpdate(job.Id, updatedTicker, currentTicker))
+            {
+                affected++;
+            }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(affected);
     }
 
     #endregion
@@ -890,18 +896,18 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
         return Task.CompletedTask;
     }
 
-    public Task ReleaseDeadNodeOccurrenceResources(
+    public Task<int> ReleaseDeadNodeOccurrenceResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
     {
         var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var affected = 0;
 
-        // Phase 1: release acquirable occurrences for the dead node (match EF WhereCanAcquire(instanceIdentifier))
+        // Phase 1: release the dead node's Idle/Queued occurrences (strict owner match — mirrors EF WhereOwnedBy; R4).
         var releasable = _CronOccurrences
             .Values.Where(x =>
-                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-                && (x.LockHolder == instanceIdentifier || x.LockedAt == null)
+                (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued) && x.LockHolder == instanceIdentifier
             )
             .ToArray();
 
@@ -918,7 +924,10 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updatedOccurrence.Status = JobStatus.Idle;
             updatedOccurrence.UpdatedAt = now;
 
-            _CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence);
+            if (_CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence))
+            {
+                affected++;
+            }
         }
 
         // Phase 2: mark in-progress occurrences for that node as skipped
@@ -939,10 +948,13 @@ internal sealed class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob> : IJob
             updatedOccurrence.ExecutedAt = now;
             updatedOccurrence.UpdatedAt = now;
 
-            _CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence);
+            if (_CronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, currentOccurrence))
+            {
+                affected++;
+            }
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult(affected);
     }
 
     public Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrences(
