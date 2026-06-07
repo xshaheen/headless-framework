@@ -1,3 +1,4 @@
+using Headless.Coordination;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
 using Headless.Jobs.Dispatcher;
@@ -100,6 +101,13 @@ public static class JobsServiceExtensions
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services);
 
+        // The durable operational store opts into coordinated membership; wire it after the provider's own
+        // services are registered so the require-provider check sees the coordination registration.
+        if (optionInstance.RequiresCoordinatedMembership)
+        {
+            _AddCoordinatedDurablePath(services);
+        }
+
         if (optionInstance.JobExceptionHandlerType != null)
         {
             services.AddSingleton(typeof(IJobExceptionHandler), optionInstance.JobExceptionHandlerType);
@@ -109,5 +117,30 @@ public static class JobsServiceExtensions
         services.AddSingleton(_ => tickerExecutionContext);
         services.AddSingleton(_ => schedulerOptionsBuilder);
         return services;
+    }
+
+    private static void _AddCoordinatedDurablePath(IServiceCollection services)
+    {
+        // Fail-fast (R5): the durable path requires a real coordination provider. INodeMembership is only ever
+        // registered by AddHeadlessCoordination(...), so an absent descriptor means no provider was registered
+        // (call it before AddHeadlessJobs). NullNodeMembership is checked defensively in case one was added by hand.
+        var membershipDescriptor = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(INodeMembership)
+        );
+
+        if (membershipDescriptor is null || membershipDescriptor.ImplementationType == typeof(NullNodeMembership))
+        {
+            throw new InvalidOperationException(
+                "The durable Jobs operational store requires a coordination provider. Register one with "
+                    + "AddHeadlessCoordination(...) before AddHeadlessJobs(... AddOperationalStore(...))."
+            );
+        }
+
+        // Override the default owner identity (U1) with the node@incarnation adapter over INodeMembership.
+        services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
+
+        // Event-driven dead-node recovery (U2) and the registration startup gate (R6).
+        services.AddHostedService<MembershipRecoveryBridge>();
+        services.AddHostedService<JobsCoordinationStartupGate>();
     }
 }
