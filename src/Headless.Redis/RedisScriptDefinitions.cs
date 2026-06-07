@@ -448,3 +448,143 @@ public sealed class ReleaseWriteLockScriptDefinition : RedisScriptDefinition
             """
         ) { }
 }
+
+/// <summary>Stores a guarded coordination heartbeat using Redis server time.</summary>
+public sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefinition
+{
+    public static RedisMembershipHeartbeatScriptDefinition Instance { get; } = new();
+
+    private RedisMembershipHeartbeatScriptDefinition()
+        : base(
+            """
+            local current = redis.call('get', @genKey)
+            if current == false or tonumber(current) ~= tonumber(@incarnation) then
+              return 0
+            end
+
+            local nowSecMicro = redis.call('TIME')
+            local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+            local hardExpiryMs = nowMs + tonumber(@hardMs)
+            local payload = cjson.encode({
+              last_beat_ms = nowMs,
+              role = @role,
+              metadata = @metadata
+            })
+
+            redis.call('zadd', @liveKey, hardExpiryMs, @member)
+            redis.call('hset', @knownKey, @member, payload)
+
+            return 1
+            """
+        ) { }
+}
+
+/// <summary>Classifies known coordination members with Redis server time.</summary>
+public sealed class RedisMembershipReadScriptDefinition : RedisScriptDefinition
+{
+    public static RedisMembershipReadScriptDefinition Instance { get; } = new();
+
+    private RedisMembershipReadScriptDefinition()
+        : base(
+            """
+            local nowSecMicro = redis.call('TIME')
+            local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+            local entries = redis.call('hgetall', @knownKey)
+            local result = {}
+
+            for i = 1, #entries, 2 do
+              local member = entries[i]
+              local payloadText = entries[i + 1]
+              local payload = cjson.decode(payloadText)
+              local lastBeatMs = tonumber(payload['last_beat_ms'])
+              local ageMs = nowMs - lastBeatMs
+
+              if ageMs >= tonumber(@pruneMs) then
+                redis.call('hdel', @knownKey, member)
+                redis.call('zrem', @liveKey, member)
+              else
+                local nodeId, incarnation = string.match(member, '^(.+)@([0-9]+)$')
+                if nodeId ~= nil then
+                  local current = redis.call('get', @genKeyPrefix .. nodeId)
+                  if current ~= false and tonumber(current) == tonumber(incarnation) then
+                    local state = @aliveState
+                    if ageMs >= tonumber(@hardMs) then
+                      state = @deadState
+                    elseif ageMs >= tonumber(@softMs) then
+                      state = @suspectedState
+                    end
+
+                    table.insert(result, { member, state, payload['role'] or '', payload['metadata'] or '{}' })
+                  end
+                end
+              end
+            end
+
+            table.sort(result, function(left, right) return left[1] < right[1] end)
+            return result
+            """
+        ) { }
+}
+
+/// <summary>Marks a coordination member as left using Redis server time.</summary>
+public sealed class RedisMembershipLeaveScriptDefinition : RedisScriptDefinition
+{
+    public static RedisMembershipLeaveScriptDefinition Instance { get; } = new();
+
+    private RedisMembershipLeaveScriptDefinition()
+        : base(
+            """
+            local nowSecMicro = redis.call('TIME')
+            local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+            local lastBeatMs = nowMs - tonumber(@hardMs)
+            local role = @role
+            local metadata = @metadata
+
+            local existing = redis.call('hget', @knownKey, @member)
+            if existing ~= false then
+              local payload = cjson.decode(existing)
+              role = payload['role'] or role
+              metadata = payload['metadata'] or metadata
+            end
+
+            redis.call('hset', @knownKey, @member, cjson.encode({
+              last_beat_ms = lastBeatMs,
+              role = role,
+              metadata = metadata
+            }))
+            redis.call('zrem', @liveKey, @member)
+            return 1
+            """
+        ) { }
+}
+
+/// <summary>Prunes expired coordination liveness entries without deleting generation counters.</summary>
+public sealed class RedisMembershipCleanupScriptDefinition : RedisScriptDefinition
+{
+    public static RedisMembershipCleanupScriptDefinition Instance { get; } = new();
+
+    private RedisMembershipCleanupScriptDefinition()
+        : base(
+            """
+            local nowSecMicro = redis.call('TIME')
+            local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
+            local entries = redis.call('hgetall', @knownKey)
+            local removed = 0
+
+            redis.call('zremrangebyscore', @liveKey, '-inf', nowMs)
+
+            for i = 1, #entries, 2 do
+              local member = entries[i]
+              local payload = cjson.decode(entries[i + 1])
+              local ageMs = nowMs - tonumber(payload['last_beat_ms'])
+              if ageMs >= tonumber(@pruneMs) then
+                redis.call('hdel', @knownKey, member)
+                redis.call('zrem', @liveKey, member)
+                removed = removed + 1
+              end
+            end
+
+            return removed
+            """
+        ) { }
+}
