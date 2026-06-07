@@ -186,6 +186,13 @@ public sealed class SchedulerOptionsBuilder
     public TimeZoneInfo SchedulerTimeZone { get; set; } = TimeZoneInfo.Local;
 
     /// <summary>
+    /// How often the durable path reconciles dead nodes from the membership liveness snapshot to reclaim
+    /// any <c>NodeLeft</c> signal missed while not subscribed. Membership events accelerate recovery; this
+    /// periodic reconcile is the backstop (origin §4b invariant). Defaults to one minute.
+    /// </summary>
+    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
     /// Controls how job processing starts. Defaults to <see cref="JobsStartMode.Immediate"/>.
     /// </summary>
     public JobsStartMode StartMode { get; set; } = JobsStartMode.Immediate;
