@@ -34,13 +34,23 @@ public sealed class MembershipServiceTests : TestBase
         var nodeB = new NodeIdentity(new NodeId("node-b"), new NodeIncarnation(1));
         var nodeA = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(2));
         store.EnqueueSnapshot(
-            new NodeLivenessSnapshot(nodeB, NodeLivenessState.Alive, null, new Dictionary<string, string>()),
-            new NodeLivenessSnapshot(nodeA, NodeLivenessState.Alive, null, new Dictionary<string, string>()),
+            new NodeLivenessSnapshot(
+                nodeB,
+                NodeLivenessState.Alive,
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            ),
+            new NodeLivenessSnapshot(
+                nodeA,
+                NodeLivenessState.Alive,
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            ),
             new NodeLivenessSnapshot(
                 new NodeIdentity(new NodeId("node-c"), new NodeIncarnation(1)),
                 NodeLivenessState.Suspected,
                 null,
-                new Dictionary<string, string>()
+                new Dictionary<string, string>(StringComparer.Ordinal)
             )
         );
         var sut = _CreateService(store);

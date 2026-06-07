@@ -144,7 +144,7 @@ public sealed class EventDerivationTests : TestBase
 
     private static NodeLivenessSnapshot _Snapshot(NodeIdentity identity, NodeLivenessState state)
     {
-        return new NodeLivenessSnapshot(identity, state, null, new Dictionary<string, string>());
+        return new NodeLivenessSnapshot(identity, state, null, new Dictionary<string, string>(StringComparer.Ordinal));
     }
 
     private static async Task<NodeMembershipEvent> _ReadNextAsync(IAsyncEnumerator<NodeMembershipEvent> watcher)

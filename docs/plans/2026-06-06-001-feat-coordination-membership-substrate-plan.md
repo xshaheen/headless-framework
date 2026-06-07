@@ -1,6 +1,6 @@
 ---
 title: "feat: Headless.Coordination membership/liveness substrate + providers + harness"
-status: active
+status: completed
 type: feat
 date: 2026-06-06
 origin: docs/specs/coordination-primitive.md

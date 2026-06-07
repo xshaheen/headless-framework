@@ -59,6 +59,8 @@ public sealed class CoordinationNodeHandle(ServiceProvider services, INodeMember
 {
     public INodeMembership Membership { get; } = membership;
 
+    public IServiceProvider Services { get; } = services;
+
     public async ValueTask DisposeAsync()
     {
         await services.DisposeAsync().ConfigureAwait(false);

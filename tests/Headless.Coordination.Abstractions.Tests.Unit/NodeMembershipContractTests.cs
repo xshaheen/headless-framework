@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Reflection;
 using Headless.Coordination;
 using Headless.Testing.Tests;
 
@@ -88,11 +89,19 @@ public sealed class NodeMembershipContractTests : TestBase
         snapshot.Role.Should().Be("worker");
         snapshot.Metadata.Should().ContainKey("zone").WhoseValue.Should().Be("a");
         typeof(INodeMembership)
-            .GetMethod(nameof(INodeMembership.GetLiveNodesAsync))!
+            .GetMethod(
+                nameof(INodeMembership.GetLiveNodesAsync),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                [typeof(CancellationToken)]
+            )!
             .ReturnType.Should()
             .Be(typeof(ValueTask<IReadOnlyList<NodeIdentity>>));
         typeof(INodeMembership)
-            .GetMethod(nameof(INodeMembership.GetLivenessSnapshotAsync))!
+            .GetMethod(
+                nameof(INodeMembership.GetLivenessSnapshotAsync),
+                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+                [typeof(CancellationToken)]
+            )!
             .ReturnType.Should()
             .Be(typeof(ValueTask<IReadOnlyList<NodeLivenessSnapshot>>));
     }

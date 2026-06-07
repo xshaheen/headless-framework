@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Headless.Coordination;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -129,6 +130,34 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         var live = await nodeB.Membership.GetLiveNodesAsync(AbortToken);
 
         live.Should().Equal([identityA, identityB]);
+    }
+
+    public virtual async Task should_report_failover_eligible_provider()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+
+        var capabilities = node.Services.GetRequiredService<ProviderCapabilities>();
+
+        capabilities.FailoverEligible.Should().BeTrue();
+    }
+
+    public virtual async Task should_fail_stop_when_local_incarnation_is_superseded()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        var accepted = await first.Membership.HeartbeatAsync(AbortToken);
+        var live = await second.Membership.GetLiveNodesAsync(AbortToken);
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        accepted.Should().BeFalse();
+        first.Membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+        live.Should().Equal([secondIdentity]);
     }
 
     private static string _Cluster()
