@@ -2,9 +2,9 @@
 
 namespace Tests;
 
-[Collection<PostgresMembershipFixture>]
-public sealed class PostgresMembershipConformanceTests(PostgresMembershipFixture fixture)
-    : MembershipConformanceTests<PostgresMembershipFixture>(fixture)
+[Collection<PostgreSqlMembershipFixture>]
+public sealed class PostgreSqlMembershipConformanceTests(PostgreSqlMembershipFixture fixture)
+    : MembershipConformanceTests<PostgreSqlMembershipFixture>(fixture)
 {
     [Fact]
     public override Task should_register_and_appear_in_live_set() => base.should_register_and_appear_in_live_set();

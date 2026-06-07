@@ -11,7 +11,7 @@ namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class PostgresMembershipFixture : HeadlessPostgreSqlFixture, ICollectionFixture<PostgresMembershipFixture>
+public sealed class PostgreSqlMembershipFixture : HeadlessPostgreSqlFixture, ICollectionFixture<PostgreSqlMembershipFixture>
     , ICoordinationFixture
 {
     public string ConnectionString => Container.GetConnectionString();

@@ -1,14 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
+using Headless.Coordination.PostgreSql;
+using Headless.Hosting.Initialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Tests;
 
-[Collection<PostgresMembershipFixture>]
-public sealed class PostgresMembershipNativeTests(PostgresMembershipFixture fixture) : TestBase
+[Collection<PostgreSqlMembershipFixture>]
+public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture fixture) : TestBase
 {
     [Fact]
     public async Task should_create_snake_case_membership_schema_identifiers()
@@ -119,9 +121,81 @@ public sealed class PostgresMembershipNativeTests(PostgresMembershipFixture fixt
         currentIncarnation.Should().Be(secondIdentity.Incarnation.Value);
     }
 
+    [Fact]
+    public async Task should_prune_both_descriptor_and_liveness_rows_after_retention_window()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        await node.Membership.RegisterAsync(AbortToken);
+
+        // Age past the prune window, then trigger exactly one liveness read so the read-path prune runs a single pass.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(AbortToken);
+        var livenessRows = await _CountClusterRowsAsync(
+            connection,
+            "SELECT count(*) FROM coordination_liveness WHERE cluster_name = @ClusterName;",
+            cluster
+        );
+        var descriptorRows = await _CountClusterRowsAsync(
+            connection,
+            "SELECT count(*) FROM coordination_descriptor WHERE cluster_name = @ClusterName;",
+            cluster
+        );
+
+        // A single prune pass must physically remove BOTH the expired liveness row and its now-orphaned descriptor.
+        // The descriptor leak is invisible to snapshot/live-set assertions (reads ignore descriptor-only rows), so a
+        // direct row count is the only check that catches it — and it guards the two-statement prune from regressing
+        // back into a single data-modifying CTE, which would leave the descriptor for one extra cycle.
+        livenessRows.Should().Be(0);
+        descriptorRows.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_wrap_initialization_failure_in_InvalidOperationException()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessCoordination(setup =>
+        {
+            setup.UsePostgreSql(options =>
+            {
+                // Unreachable endpoint with a short timeout: the connection open fails fast inside the initializer's
+                // try, exercising the non-race failure branch that wraps the raw error for operator diagnosis.
+                options.ConnectionString =
+                    "Host=127.0.0.1;Port=1;Username=postgres;Password=postgres;Database=postgres;Timeout=2;";
+            });
+            setup.Configure(options =>
+            {
+                options.ClusterName = _Cluster();
+                options.ConfiguredNodeId = "node-a";
+            });
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var initializer = provider.GetServices<IInitializer>().OfType<HostedInitializer>().Single();
+
+        var act = async () => await initializer.InitializeAsync(AbortToken);
+
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.WithMessage("*failed to initialize the membership schema*");
+        // The original transport error must be preserved as the inner exception so the cause is not lost.
+        thrown.Which.InnerException.Should().NotBeNull();
+    }
+
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");
+    }
+
+    private async Task<long> _CountClusterRowsAsync(NpgsqlConnection connection, string sql, string cluster)
+    {
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("ClusterName", cluster);
+
+        return (long)(await command.ExecuteScalarAsync(AbortToken))!;
     }
 
     private async Task _DropSchemaAsync()

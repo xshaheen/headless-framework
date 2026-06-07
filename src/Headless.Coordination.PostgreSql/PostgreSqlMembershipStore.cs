@@ -10,7 +10,7 @@ using NpgsqlTypes;
 namespace Headless.Coordination.PostgreSql;
 
 #pragma warning disable CA2100 // SQL text is built from internal schema constants only.
-internal sealed class PostgresMembershipStore(
+internal sealed class PostgreSqlMembershipStore(
     IOptions<PostgreSqlCoordinationOptions> providerOptions,
     IOptions<CoordinationOptions> coordinationOptions,
     [FromKeyedServices(CoordinationOptions.JsonSerializerServiceKey)] IJsonSerializer serializer
@@ -23,19 +23,19 @@ internal sealed class PostgresMembershipStore(
     )
     {
         const string sql = $"""
-            INSERT INTO {PostgresMembershipSchema.Generation.Table} (
-                {PostgresMembershipSchema.ClusterName},
-                {PostgresMembershipSchema.NodeId},
-                {PostgresMembershipSchema.Generation.CurrentIncarnation},
-                {PostgresMembershipSchema.DateUpdated}
+            INSERT INTO {PostgreSqlMembershipSchema.Generation.Table} (
+                {PostgreSqlMembershipSchema.ClusterName},
+                {PostgreSqlMembershipSchema.NodeId},
+                {PostgreSqlMembershipSchema.Generation.CurrentIncarnation},
+                {PostgreSqlMembershipSchema.DateUpdated}
             )
             VALUES (@ClusterName, @NodeId, 1, clock_timestamp())
-            ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId})
+            ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId})
             DO UPDATE SET
-                {PostgresMembershipSchema.Generation.CurrentIncarnation} =
-                    {PostgresMembershipSchema.Generation.Table}.{PostgresMembershipSchema.Generation.CurrentIncarnation} + 1,
-                {PostgresMembershipSchema.DateUpdated} = clock_timestamp()
-            RETURNING {PostgresMembershipSchema.Generation.CurrentIncarnation};
+                {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} =
+                    {PostgreSqlMembershipSchema.Generation.Table}.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} + 1,
+                {PostgreSqlMembershipSchema.DateUpdated} = clock_timestamp()
+            RETURNING {PostgreSqlMembershipSchema.Generation.CurrentIncarnation};
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -60,22 +60,22 @@ internal sealed class PostgresMembershipStore(
         // incarnation still being current, so a stale/impossible incarnation establishes neither.
         const string sql = $"""
             WITH generation AS (
-                SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation}
-                FROM {PostgresMembershipSchema.Generation.Table}
-                WHERE {PostgresMembershipSchema.ClusterName} = @ClusterName
-                  AND {PostgresMembershipSchema.NodeId} = @NodeId
+                SELECT {PostgreSqlMembershipSchema.Generation.CurrentIncarnation}
+                FROM {PostgreSqlMembershipSchema.Generation.Table}
+                WHERE {PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+                  AND {PostgreSqlMembershipSchema.NodeId} = @NodeId
                 FOR UPDATE
             ),
             descriptor AS (
-                INSERT INTO {PostgresMembershipSchema.Descriptor.Table} (
-                    {PostgresMembershipSchema.ClusterName},
-                    {PostgresMembershipSchema.NodeId},
-                    {PostgresMembershipSchema.Incarnation},
-                    {PostgresMembershipSchema.Descriptor.HostName},
-                    {PostgresMembershipSchema.Descriptor.Endpoints},
-                    {PostgresMembershipSchema.Descriptor.Role},
-                    {PostgresMembershipSchema.Descriptor.Metadata},
-                    {PostgresMembershipSchema.DateCreated}
+                INSERT INTO {PostgreSqlMembershipSchema.Descriptor.Table} (
+                    {PostgreSqlMembershipSchema.ClusterName},
+                    {PostgreSqlMembershipSchema.NodeId},
+                    {PostgreSqlMembershipSchema.Incarnation},
+                    {PostgreSqlMembershipSchema.Descriptor.HostName},
+                    {PostgreSqlMembershipSchema.Descriptor.Endpoints},
+                    {PostgreSqlMembershipSchema.Descriptor.Role},
+                    {PostgreSqlMembershipSchema.Descriptor.Metadata},
+                    {PostgreSqlMembershipSchema.DateCreated}
                 )
                 SELECT
                     @ClusterName,
@@ -87,25 +87,25 @@ internal sealed class PostgresMembershipStore(
                     @Metadata,
                     clock_timestamp()
                 FROM generation
-                WHERE {PostgresMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
-                ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation})
+                WHERE {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
+                ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId}, {PostgreSqlMembershipSchema.Incarnation})
                 DO NOTHING
             )
-            INSERT INTO {PostgresMembershipSchema.Liveness.Table} (
-                {PostgresMembershipSchema.ClusterName},
-                {PostgresMembershipSchema.NodeId},
-                {PostgresMembershipSchema.Incarnation},
-                {PostgresMembershipSchema.Liveness.LastBeat},
-                {PostgresMembershipSchema.Liveness.LeftAt}
+            INSERT INTO {PostgreSqlMembershipSchema.Liveness.Table} (
+                {PostgreSqlMembershipSchema.ClusterName},
+                {PostgreSqlMembershipSchema.NodeId},
+                {PostgreSqlMembershipSchema.Incarnation},
+                {PostgreSqlMembershipSchema.Liveness.LastBeat},
+                {PostgreSqlMembershipSchema.Liveness.LeftAt}
             )
             SELECT @ClusterName, @NodeId, @Incarnation, clock_timestamp(), NULL
             FROM generation
-            WHERE {PostgresMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
-            ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation})
+            WHERE {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
+            ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId}, {PostgreSqlMembershipSchema.Incarnation})
             DO UPDATE SET
-                {PostgresMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
-                {PostgresMembershipSchema.Liveness.LeftAt} = NULL
-            WHERE @Incarnation = (SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation} FROM generation);
+                {PostgreSqlMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
+                {PostgreSqlMembershipSchema.Liveness.LeftAt} = NULL
+            WHERE @Incarnation = (SELECT {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} FROM generation);
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -140,29 +140,29 @@ internal sealed class PostgresMembershipStore(
     {
         const string sql = $"""
             WITH generation AS (
-                SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation}
-                FROM {PostgresMembershipSchema.Generation.Table}
-                WHERE {PostgresMembershipSchema.ClusterName} = @ClusterName
-                  AND {PostgresMembershipSchema.NodeId} = @NodeId
+                SELECT {PostgreSqlMembershipSchema.Generation.CurrentIncarnation}
+                FROM {PostgreSqlMembershipSchema.Generation.Table}
+                WHERE {PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+                  AND {PostgreSqlMembershipSchema.NodeId} = @NodeId
                 FOR UPDATE
             ),
             heartbeat AS (
-                INSERT INTO {PostgresMembershipSchema.Liveness.Table} (
-                    {PostgresMembershipSchema.ClusterName},
-                    {PostgresMembershipSchema.NodeId},
-                    {PostgresMembershipSchema.Incarnation},
-                    {PostgresMembershipSchema.Liveness.LastBeat},
-                    {PostgresMembershipSchema.Liveness.LeftAt}
+                INSERT INTO {PostgreSqlMembershipSchema.Liveness.Table} (
+                    {PostgreSqlMembershipSchema.ClusterName},
+                    {PostgreSqlMembershipSchema.NodeId},
+                    {PostgreSqlMembershipSchema.Incarnation},
+                    {PostgreSqlMembershipSchema.Liveness.LastBeat},
+                    {PostgreSqlMembershipSchema.Liveness.LeftAt}
                 )
                 SELECT @ClusterName, @NodeId, @Incarnation, clock_timestamp(), NULL
                 FROM generation
-                WHERE {PostgresMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
-                ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation})
+                WHERE {PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
+                ON CONFLICT ({PostgreSqlMembershipSchema.ClusterName}, {PostgreSqlMembershipSchema.NodeId}, {PostgreSqlMembershipSchema.Incarnation})
                 DO UPDATE SET
-                    {PostgresMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
-                    {PostgresMembershipSchema.Liveness.LeftAt} = NULL
+                    {PostgreSqlMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
+                    {PostgreSqlMembershipSchema.Liveness.LeftAt} = NULL
                 WHERE @Incarnation = (
-                    SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation}
+                    SELECT {PostgreSqlMembershipSchema.Generation.CurrentIncarnation}
                     FROM generation
                 )
                 RETURNING 1
@@ -190,11 +190,11 @@ internal sealed class PostgresMembershipStore(
     )
     {
         const string sql = $"""
-            UPDATE {PostgresMembershipSchema.Liveness.Table}
-            SET {PostgresMembershipSchema.Liveness.LeftAt} = clock_timestamp()
-            WHERE {PostgresMembershipSchema.ClusterName} = @ClusterName
-              AND {PostgresMembershipSchema.NodeId} = @NodeId
-              AND {PostgresMembershipSchema.Incarnation} = @Incarnation;
+            UPDATE {PostgreSqlMembershipSchema.Liveness.Table}
+            SET {PostgreSqlMembershipSchema.Liveness.LeftAt} = clock_timestamp()
+            WHERE {PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+              AND {PostgreSqlMembershipSchema.NodeId} = @NodeId
+              AND {PostgreSqlMembershipSchema.Incarnation} = @Incarnation;
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -214,27 +214,27 @@ internal sealed class PostgresMembershipStore(
     {
         const string sql = $"""
             SELECT
-                l.{PostgresMembershipSchema.NodeId},
-                l.{PostgresMembershipSchema.Incarnation},
-                d.{PostgresMembershipSchema.Descriptor.Role},
-                d.{PostgresMembershipSchema.Descriptor.Metadata}::text,
+                l.{PostgreSqlMembershipSchema.NodeId},
+                l.{PostgreSqlMembershipSchema.Incarnation},
+                d.{PostgreSqlMembershipSchema.Descriptor.Role},
+                d.{PostgreSqlMembershipSchema.Descriptor.Metadata}::text,
                 CASE
-                    WHEN l.{PostgresMembershipSchema.Liveness.LeftAt} IS NOT NULL THEN @DeadState
-                    WHEN l.{PostgresMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @DeadThreshold THEN @DeadState
-                    WHEN l.{PostgresMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @SuspicionThreshold THEN @SuspectedState
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LeftAt} IS NOT NULL THEN @DeadState
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @DeadThreshold THEN @DeadState
+                    WHEN l.{PostgreSqlMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @SuspicionThreshold THEN @SuspectedState
                     ELSE @AliveState
                 END AS state
-            FROM {PostgresMembershipSchema.Liveness.Table} l
-            JOIN {PostgresMembershipSchema.Generation.Table} g
-              ON g.{PostgresMembershipSchema.ClusterName} = l.{PostgresMembershipSchema.ClusterName}
-             AND g.{PostgresMembershipSchema.NodeId} = l.{PostgresMembershipSchema.NodeId}
-             AND g.{PostgresMembershipSchema.Generation.CurrentIncarnation} = l.{PostgresMembershipSchema.Incarnation}
-            LEFT JOIN {PostgresMembershipSchema.Descriptor.Table} d
-              ON d.{PostgresMembershipSchema.ClusterName} = l.{PostgresMembershipSchema.ClusterName}
-             AND d.{PostgresMembershipSchema.NodeId} = l.{PostgresMembershipSchema.NodeId}
-             AND d.{PostgresMembershipSchema.Incarnation} = l.{PostgresMembershipSchema.Incarnation}
-            WHERE l.{PostgresMembershipSchema.ClusterName} = @ClusterName
-            ORDER BY l.{PostgresMembershipSchema.NodeId}, l.{PostgresMembershipSchema.Incarnation};
+            FROM {PostgreSqlMembershipSchema.Liveness.Table} l
+            JOIN {PostgreSqlMembershipSchema.Generation.Table} g
+              ON g.{PostgreSqlMembershipSchema.ClusterName} = l.{PostgreSqlMembershipSchema.ClusterName}
+             AND g.{PostgreSqlMembershipSchema.NodeId} = l.{PostgreSqlMembershipSchema.NodeId}
+             AND g.{PostgreSqlMembershipSchema.Generation.CurrentIncarnation} = l.{PostgreSqlMembershipSchema.Incarnation}
+            LEFT JOIN {PostgreSqlMembershipSchema.Descriptor.Table} d
+              ON d.{PostgreSqlMembershipSchema.ClusterName} = l.{PostgreSqlMembershipSchema.ClusterName}
+             AND d.{PostgreSqlMembershipSchema.NodeId} = l.{PostgreSqlMembershipSchema.NodeId}
+             AND d.{PostgreSqlMembershipSchema.Incarnation} = l.{PostgreSqlMembershipSchema.Incarnation}
+            WHERE l.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+            ORDER BY l.{PostgreSqlMembershipSchema.NodeId}, l.{PostgreSqlMembershipSchema.Incarnation};
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -266,22 +266,25 @@ internal sealed class PostgresMembershipStore(
         CancellationToken cancellationToken
     )
     {
+        // Two separate statements, NOT a single data-modifying CTE: PostgreSQL runs all sub-statements of a WITH
+        // under one snapshot, so a descriptor DELETE inside the same statement cannot see rows the liveness DELETE
+        // just removed and would leave orphaned descriptors for one extra prune cycle. Sequential statements in one
+        // command run as an implicit transaction where the second sees the first's deletes, matching the SqlServer
+        // provider's single-pass cleanup.
         const string sql = $"""
-            WITH deleted_liveness AS (
-                DELETE FROM {PostgresMembershipSchema.Liveness.Table}
-                WHERE {PostgresMembershipSchema.ClusterName} = @ClusterName
-                  AND {PostgresMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @RetentionThreshold
-                RETURNING {PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation}
-            )
-            DELETE FROM {PostgresMembershipSchema.Descriptor.Table} d
-            WHERE d.{PostgresMembershipSchema.ClusterName} = @ClusterName
-              AND d.{PostgresMembershipSchema.DateCreated} <= clock_timestamp() - @RetentionThreshold
+            DELETE FROM {PostgreSqlMembershipSchema.Liveness.Table}
+            WHERE {PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+              AND {PostgreSqlMembershipSchema.Liveness.LastBeat} <= clock_timestamp() - @RetentionThreshold;
+
+            DELETE FROM {PostgreSqlMembershipSchema.Descriptor.Table} d
+            WHERE d.{PostgreSqlMembershipSchema.ClusterName} = @ClusterName
+              AND d.{PostgreSqlMembershipSchema.DateCreated} <= clock_timestamp() - @RetentionThreshold
               AND NOT EXISTS (
                   SELECT 1
-                  FROM {PostgresMembershipSchema.Liveness.Table} l
-                  WHERE l.{PostgresMembershipSchema.ClusterName} = d.{PostgresMembershipSchema.ClusterName}
-                    AND l.{PostgresMembershipSchema.NodeId} = d.{PostgresMembershipSchema.NodeId}
-                    AND l.{PostgresMembershipSchema.Incarnation} = d.{PostgresMembershipSchema.Incarnation}
+                  FROM {PostgreSqlMembershipSchema.Liveness.Table} l
+                  WHERE l.{PostgreSqlMembershipSchema.ClusterName} = d.{PostgreSqlMembershipSchema.ClusterName}
+                    AND l.{PostgreSqlMembershipSchema.NodeId} = d.{PostgreSqlMembershipSchema.NodeId}
+                    AND l.{PostgreSqlMembershipSchema.Incarnation} = d.{PostgreSqlMembershipSchema.Incarnation}
               );
             """;
 

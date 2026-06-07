@@ -3,7 +3,7 @@
 namespace Headless.Coordination.PostgreSql;
 
 /// <summary>PostgreSQL physical identifiers for coordination membership.</summary>
-internal static class PostgresMembershipSchema
+internal static class PostgreSqlMembershipSchema
 {
     public const string ClusterName = "cluster_name";
     public const string NodeId = "node_id";

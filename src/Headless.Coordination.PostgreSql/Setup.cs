@@ -9,7 +9,7 @@ using Microsoft.Extensions.Hosting;
 namespace Headless.Coordination.PostgreSql;
 
 [PublicAPI]
-public static class SetupPostgresCoordination
+public static class SetupCoordinationPostgreSql
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {
@@ -67,17 +67,17 @@ public static class SetupPostgresCoordination
 
         protected override void AddProviderServices(IServiceCollection services)
         {
-            services.AddCoordinationCore<PostgresMembershipStore>();
-            _AddPostgresCoordinationProviderCore(services);
+            services.AddCoordinationCore<PostgreSqlMembershipStore>();
+            _AddPostgreSqlCoordinationProviderCore(services);
         }
     }
 
-    private static void _AddPostgresCoordinationProviderCore(IServiceCollection services)
+    private static void _AddPostgreSqlCoordinationProviderCore(IServiceCollection services)
     {
-        services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgresMembershipStore>());
+        services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgreSqlMembershipStore>());
         services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
-            sp.GetRequiredService<PostgresMembershipStorageInitializer>()
+            sp.GetRequiredService<PostgreSqlMembershipStorageInitializer>()
         );
-        services.AddInitializerHostedService<PostgresMembershipStorageInitializer>();
+        services.AddInitializerHostedService<PostgreSqlMembershipStorageInitializer>();
     }
 }
