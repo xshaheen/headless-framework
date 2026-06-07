@@ -339,5 +339,22 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
         base.should_reclaim_received_retry_row_owned_by_dead_node();
 
+    [Fact]
+    public override Task should_stamp_owner_on_claim() => base.should_stamp_owner_on_claim();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation() =>
+        base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+
+    [Fact]
+    public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
+
+    [Fact]
+    public override Task should_be_inert_when_owner_is_null() => base.should_be_inert_when_owner_is_null();
+
+    [Fact]
+    public override Task should_reclaim_dead_owner_rows_idempotently() =>
+        base.should_reclaim_dead_owner_rows_idempotently();
+
     #endregion
 }

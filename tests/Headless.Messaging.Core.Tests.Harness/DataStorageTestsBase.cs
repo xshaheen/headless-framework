@@ -826,6 +826,145 @@ public abstract class DataStorageTestsBase : TestBase
         deadOwner.ToString().Should().NotBe(liveOwner.ToString());
     }
 
+    public virtual async Task should_stamp_owner_on_claim()
+    {
+        var storage = GetStorage();
+        var owner = NodeMembership.SetIdentity("claim-owner", incarnation: 7);
+        var expectedOwner = owner.ToString();
+
+        var published = await _StoreFailedPublishedMessageAsync("claim-owner-published");
+        var claimedPublished = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == published.StorageId)
+            .Subject;
+
+        claimedPublished.Owner.Should().Be(expectedOwner);
+        claimedPublished.LockedUntil.Should().NotBeNull();
+
+        var received = await _StoreFailedReceivedMessageAsync("claim-owner-received", "claim-group");
+        var claimedReceived = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .ContainSingle(m => m.StorageId == received.StorageId)
+            .Subject;
+
+        claimedReceived.Owner.Should().Be(expectedOwner);
+        claimedReceived.LockedUntil.Should().NotBeNull();
+    }
+
+    public virtual async Task should_not_reclaim_rows_of_live_or_restarted_incarnation()
+    {
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("restart-node", incarnation: 7);
+        var oldPublished = await _StoreFailedPublishedMessageAsync("old-incarnation-published");
+        (await storage.LeasePublishAsync(oldPublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        var oldReceived = await _StoreFailedReceivedMessageAsync("old-incarnation-received", "old-incarnation-group");
+        (await storage.LeaseReceiveAsync(oldReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+
+        var liveOwner = NodeMembership.SetIdentity("restart-node", incarnation: 8);
+        var livePublished = await _StoreFailedPublishedMessageAsync("live-incarnation-published");
+        (await storage.LeasePublishAsync(livePublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        var liveReceived = await _StoreFailedReceivedMessageAsync("live-incarnation-received", "live-incarnation-group");
+        (await storage.LeaseReceiveAsync(liveReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+
+        var liveOwners = new[] { liveOwner.ToString() };
+
+        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        var publishedRetriable = (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        publishedRetriable.Should().Contain(m => m.StorageId == oldPublished.StorageId);
+        publishedRetriable.Should().NotContain(m => m.StorageId == livePublished.StorageId);
+
+        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        var receivedRetriable = (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken)).ToList();
+        receivedRetriable.Should().Contain(m => m.StorageId == oldReceived.StorageId);
+        receivedRetriable.Should().NotContain(m => m.StorageId == liveReceived.StorageId);
+    }
+
+    public virtual async Task should_not_reclaim_terminal_rows()
+    {
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("terminal-dead-owner");
+        var published = await _StoreFailedPublishedMessageAsync("terminal-published");
+        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (
+            await storage.ChangePublishStateAsync(
+                published,
+                StatusName.Failed,
+                nextRetryAt: null,
+                lockedUntil: _FutureLeaseUntil(),
+                cancellationToken: AbortToken
+            )
+        ).Should().BeTrue();
+
+        var received = await _StoreFailedReceivedMessageAsync("terminal-received", "terminal-group");
+        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        (
+            await storage.ChangeReceiveStateAsync(
+                received,
+                StatusName.Failed,
+                nextRetryAt: null,
+                lockedUntil: _FutureLeaseUntil(),
+                cancellationToken: AbortToken
+            )
+        ).Should().BeTrue();
+
+        var liveOwner = NodeMembership.SetIdentity("terminal-live-owner");
+        var liveOwners = new[] { liveOwner.ToString() };
+
+        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == published.StorageId);
+
+        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == received.StorageId);
+    }
+
+    public virtual async Task should_be_inert_when_owner_is_null()
+    {
+        var storage = GetStorage();
+        var published = await _StoreFailedPublishedMessageAsync("owner-null-published");
+        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        var received = await _StoreFailedReceivedMessageAsync("owner-null-received", "owner-null-group");
+        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+
+        (await storage.ReclaimDeadPublishedOwnersAsync([], AbortToken)).Should().Be(0);
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == published.StorageId);
+
+        (await storage.ReclaimDeadReceivedOwnersAsync([], AbortToken)).Should().Be(0);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == received.StorageId);
+    }
+
+    public virtual async Task should_reclaim_dead_owner_rows_idempotently()
+    {
+        var storage = GetStorage();
+        NodeMembership.SetIdentity("idempotent-dead-owner");
+        var published = await _StoreFailedPublishedMessageAsync("idempotent-published");
+        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        var received = await _StoreFailedReceivedMessageAsync("idempotent-received", "idempotent-group");
+        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+
+        var liveOwner = NodeMembership.SetIdentity("idempotent-live-owner");
+        var liveOwners = new[] { liveOwner.ToString() };
+
+        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadPublishedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == published.StorageId);
+
+        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(1);
+        (await storage.ReclaimDeadReceivedOwnersAsync(liveOwners, AbortToken)).Should().Be(0);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .Contain(m => m.StorageId == received.StorageId);
+    }
+
     public virtual async Task should_handle_concurrent_state_updates_to_same_row()
     {
         // Concurrent CAS / optimistic-concurrency contract: exactly one of N parallel
@@ -1327,7 +1466,7 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
@@ -1342,12 +1481,16 @@ public abstract class DataStorageTestsBase : TestBase
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: DateTime.UtcNow.AddSeconds(-1),
+            nextRetryAt: _Now().AddSeconds(-1),
             cancellationToken: AbortToken
         );
 
         return stored;
     }
+
+    private DateTime _Now() => TimeProvider.GetUtcNow().UtcDateTime;
+
+    private DateTime _FutureLeaseUntil() => _Now().AddHours(1);
 
     [PublicAPI]
     protected sealed class MutableNodeMembership : INodeMembership
