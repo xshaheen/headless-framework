@@ -4,6 +4,7 @@
     <RootNamespace>Headless.Coordination</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Coordination.Core" />
     <InternalsVisibleTo Include="Headless.Coordination.Abstractions.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
