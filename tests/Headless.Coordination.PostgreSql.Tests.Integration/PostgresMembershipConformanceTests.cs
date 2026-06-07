@@ -48,9 +48,14 @@ public sealed class PostgresMembershipConformanceTests(PostgresMembershipFixture
     public override Task should_return_ordered_live_nodes() => base.should_return_ordered_live_nodes();
 
     [Fact]
-    public override Task should_report_failover_eligible_provider() => base.should_report_failover_eligible_provider();
-
-    [Fact]
     public override Task should_fail_stop_when_local_incarnation_is_superseded() =>
         base.should_fail_stop_when_local_incarnation_is_superseded();
+
+    [Fact]
+    public override Task should_stop_application_when_self_heartbeat_is_rejected() =>
+        base.should_stop_application_when_self_heartbeat_is_rejected();
+
+    [Fact]
+    public override Task should_not_evict_current_incarnation_when_prior_incarnation_leaves() =>
+        base.should_not_evict_current_incarnation_when_prior_incarnation_leaves();
 }

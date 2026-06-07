@@ -53,55 +53,27 @@ public static class SetupPostgresCoordination
         }
     }
 
-    private sealed class PostgreSqlCoordinationOptionsExtension : ICoordinationProviderOptionsExtension
+    private sealed class PostgreSqlCoordinationOptionsExtension
+        : CoordinationProviderOptionsExtensionBase<PostgreSqlCoordinationOptions, PostgreSqlCoordinationOptionsValidator>
     {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<PostgreSqlCoordinationOptions>? _configure;
-        private readonly Action<PostgreSqlCoordinationOptions, IServiceProvider>? _configureWithServices;
-
         public PostgreSqlCoordinationOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
+            : base(configuration) { }
 
         public PostgreSqlCoordinationOptionsExtension(Action<PostgreSqlCoordinationOptions> configure)
-        {
-            _configure = configure;
-        }
+            : base(configure) { }
 
-        public PostgreSqlCoordinationOptionsExtension(
-            Action<PostgreSqlCoordinationOptions, IServiceProvider> configure
-        )
-        {
-            _configureWithServices = configure;
-        }
+        public PostgreSqlCoordinationOptionsExtension(Action<PostgreSqlCoordinationOptions, IServiceProvider> configure)
+            : base(configure) { }
 
-        public void AddServices(IServiceCollection services)
+        protected override void AddProviderServices(IServiceCollection services)
         {
-            if (_configuration is not null)
-            {
-                services.Configure<PostgreSqlCoordinationOptions, PostgreSqlCoordinationOptionsValidator>(_configuration);
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<PostgreSqlCoordinationOptions, PostgreSqlCoordinationOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<PostgreSqlCoordinationOptions, PostgreSqlCoordinationOptionsValidator>(
-                    _configureWithServices
-                );
-            }
-
-            services.TryAddSingleton<ProviderCapabilities>(new ProviderCapabilities(FailoverEligible: true));
-            services.AddCoordinationCore<PostgresMembershipStore>(static _ => { });
+            services.AddCoordinationCore<PostgresMembershipStore>();
             _AddPostgresCoordinationProviderCore(services);
         }
     }
 
     private static void _AddPostgresCoordinationProviderCore(IServiceCollection services)
     {
-        services.TryAddSingleton<PostgresMembershipStore>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgresMembershipStore>());
         services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
             sp.GetRequiredService<PostgresMembershipStorageInitializer>()

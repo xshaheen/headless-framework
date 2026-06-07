@@ -15,7 +15,7 @@ public static class SetupCoordinationCore
 {
     extension(IServiceCollection services)
     {
-        public HeadlessCoordinationBuilder AddHeadlessCoordination(Action<HeadlessCoordinationSetupBuilder> configure)
+        public IServiceCollection AddHeadlessCoordination(Action<HeadlessCoordinationSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
 
@@ -23,6 +23,14 @@ public static class SetupCoordinationCore
             configure(setup);
 
             return _AddCoordinationProviderCore(services, setup);
+        }
+
+        internal IServiceCollection AddCoordinationCore<TStore>()
+            where TStore : class, IMembershipStore
+        {
+            services.AddOptions<CoordinationOptions, CoordinationOptionsValidator>();
+
+            return services._AddCoordinationCore<TStore>();
         }
 
         public IServiceCollection AddCoordinationCore<TStore>(
@@ -78,7 +86,6 @@ public static class SetupCoordinationCore
             ));
 
             services.TryAddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
-            services.TryAddSingleton(new ProviderCapabilities(FailoverEligible: true));
             services.TryAddSingleton<MembershipHeartbeatBackgroundService>();
 
             services.TryAddEnumerable(
@@ -91,7 +98,7 @@ public static class SetupCoordinationCore
         }
     }
 
-    private static HeadlessCoordinationBuilder _AddCoordinationProviderCore(
+    private static IServiceCollection _AddCoordinationProviderCore(
         IServiceCollection services,
         HeadlessCoordinationSetupBuilder setup
     )
@@ -118,7 +125,7 @@ public static class SetupCoordinationCore
 
         extension.AddServices(services);
 
-        return new HeadlessCoordinationBuilder(services);
+        return services;
     }
 
     private sealed record CoordinationProviderRegistration(string Provider);

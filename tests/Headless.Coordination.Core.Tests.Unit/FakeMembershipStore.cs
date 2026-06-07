@@ -62,9 +62,16 @@ internal sealed class FakeMembershipStore : IMembershipStore
             throw new InvalidOperationException("store unavailable");
         }
 
-        return ValueTask.FromResult(
-            _snapshots.Count == 0 ? Array.Empty<NodeLivenessSnapshot>() : _snapshots.Dequeue()
-        );
+        // Mirror the real store SPI contract: snapshots are returned sorted by identity.
+        IReadOnlyList<NodeLivenessSnapshot> snapshots =
+            _snapshots.Count == 0
+                ? Array.Empty<NodeLivenessSnapshot>()
+                : _snapshots
+                    .Dequeue()
+                    .OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal)
+                    .ToArray();
+
+        return ValueTask.FromResult(snapshots);
     }
 
     public void EnqueueSnapshot(params NodeLivenessSnapshot[] snapshots)

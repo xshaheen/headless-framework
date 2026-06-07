@@ -82,8 +82,7 @@ public static class SetupRedisCoordination
                 );
             }
 
-            services.TryAddSingleton<ProviderCapabilities>(new ProviderCapabilities(FailoverEligible: true));
-            services.AddCoordinationCore<RedisMembershipStore>(static _ => { });
+            services.AddCoordinationCore<RedisMembershipStore>();
             _AddRedisCoordinationProviderCore(services);
         }
     }
@@ -100,7 +99,6 @@ public static class SetupRedisCoordination
                 )
         );
 
-        services.TryAddSingleton<RedisMembershipStore>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<RedisMembershipStore>());
         services.AddInitializerHostedService<CoordinationRedisScriptsInitializer>();
         services.TryAddEnumerable(

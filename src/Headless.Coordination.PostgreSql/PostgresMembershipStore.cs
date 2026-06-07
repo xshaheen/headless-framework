@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -14,8 +13,6 @@ internal sealed class PostgresMembershipStore(
     IOptions<CoordinationOptions> coordinationOptions
 ) : DatabaseMembershipStoreBase(coordinationOptions.Value)
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
         NodeId nodeId,
@@ -55,49 +52,81 @@ internal sealed class PostgresMembershipStore(
         CancellationToken cancellationToken
     )
     {
+        // Register writes both rows under one generation lock: the write-once cold descriptor and an
+        // initial Alive liveness row stamped with the store clock. Both are gated on the freshly-allocated
+        // incarnation still being current, so a stale/impossible incarnation establishes neither.
         const string sql = $"""
-            INSERT INTO {PostgresMembershipSchema.Descriptor.Table} (
+            WITH generation AS (
+                SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation}
+                FROM {PostgresMembershipSchema.Generation.Table}
+                WHERE {PostgresMembershipSchema.ClusterName} = @ClusterName
+                  AND {PostgresMembershipSchema.NodeId} = @NodeId
+                FOR UPDATE
+            ),
+            descriptor AS (
+                INSERT INTO {PostgresMembershipSchema.Descriptor.Table} (
+                    {PostgresMembershipSchema.ClusterName},
+                    {PostgresMembershipSchema.NodeId},
+                    {PostgresMembershipSchema.Incarnation},
+                    {PostgresMembershipSchema.Descriptor.HostName},
+                    {PostgresMembershipSchema.Descriptor.Endpoints},
+                    {PostgresMembershipSchema.Descriptor.Role},
+                    {PostgresMembershipSchema.Descriptor.Metadata},
+                    {PostgresMembershipSchema.DateCreated}
+                )
+                SELECT
+                    @ClusterName,
+                    @NodeId,
+                    @Incarnation,
+                    @HostName,
+                    @Endpoints,
+                    @Role,
+                    @Metadata,
+                    clock_timestamp()
+                FROM generation
+                WHERE {PostgresMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
+                ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation})
+                DO NOTHING
+            )
+            INSERT INTO {PostgresMembershipSchema.Liveness.Table} (
                 {PostgresMembershipSchema.ClusterName},
                 {PostgresMembershipSchema.NodeId},
                 {PostgresMembershipSchema.Incarnation},
-                {PostgresMembershipSchema.Descriptor.HostName},
-                {PostgresMembershipSchema.Descriptor.Endpoints},
-                {PostgresMembershipSchema.Descriptor.Role},
-                {PostgresMembershipSchema.Descriptor.Metadata},
-                {PostgresMembershipSchema.DateCreated}
+                {PostgresMembershipSchema.Liveness.LastBeat},
+                {PostgresMembershipSchema.Liveness.LeftAt}
             )
-            VALUES (
-                @ClusterName,
-                @NodeId,
-                @Incarnation,
-                @HostName,
-                @Endpoints,
-                @Role,
-                @Metadata,
-                clock_timestamp()
-            )
+            SELECT @ClusterName, @NodeId, @Incarnation, clock_timestamp(), NULL
+            FROM generation
+            WHERE {PostgresMembershipSchema.Generation.CurrentIncarnation} = @Incarnation
             ON CONFLICT ({PostgresMembershipSchema.ClusterName}, {PostgresMembershipSchema.NodeId}, {PostgresMembershipSchema.Incarnation})
-            DO NOTHING;
+            DO UPDATE SET
+                {PostgresMembershipSchema.Liveness.LastBeat} = clock_timestamp(),
+                {PostgresMembershipSchema.Liveness.LeftAt} = NULL
+            WHERE @Incarnation = (SELECT {PostgresMembershipSchema.Generation.CurrentIncarnation} FROM generation);
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql);
+        await using var transaction = await connection
+            .BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, sql, (NpgsqlTransaction)transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);
         command.Parameters.AddWithValue("HostName", (object?)descriptor.HostName ?? DBNull.Value);
         command.Parameters.Add(new NpgsqlParameter("Endpoints", NpgsqlDbType.Jsonb)
         {
-            Value = _SerializeDictionary(descriptor.Endpoints),
+            Value = SerializeDictionary(descriptor.Endpoints),
         });
         command.Parameters.AddWithValue("Role", (object?)descriptor.Role ?? DBNull.Value);
         command.Parameters.Add(new NpgsqlParameter("Metadata", NpgsqlDbType.Jsonb)
         {
-            Value = _SerializeDictionary(descriptor.Metadata),
+            Value = SerializeDictionary(descriptor.Metadata),
         });
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     protected override async ValueTask<bool> HeartbeatCoreAsync(
@@ -146,8 +175,8 @@ internal sealed class PostgresMembershipStore(
         command.Parameters.AddWithValue("Incarnation", identity.Incarnation.Value);
 
         var accepted = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
-        await _PruneExpiredRowsAsync(connection, clusterName, cancellationToken).ConfigureAwait(false);
 
+        // Retention pruning runs once per tick on the read path; the heartbeat path no longer prunes.
         return accepted;
     }
 
@@ -207,7 +236,8 @@ internal sealed class PostgresMembershipStore(
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await _PruneExpiredRowsAsync(connection, clusterName, cancellationToken).ConfigureAwait(false);
+        // Pruning is best-effort cleanup; do not abort it on the caller's read cancellation.
+        await _PruneExpiredRowsAsync(connection, clusterName, CancellationToken.None).ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThreshold", DeadThreshold);
@@ -221,16 +251,7 @@ internal sealed class PostgresMembershipStore(
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var nodeId = new NodeId(reader.GetString(0));
-            var incarnation = new NodeIncarnation(reader.GetInt64(1));
-            var identity = new NodeIdentity(nodeId, incarnation);
-            var role = await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(2);
-            var metadataJson = await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
-                ? "{}"
-                : reader.GetString(3);
-            var state = Enum.Parse<NodeLivenessState>(reader.GetString(4));
-
-            snapshots.Add(new NodeLivenessSnapshot(identity, state, role, _DeserializeDictionary(metadataJson)));
+            snapshots.Add(ReadSnapshot(reader));
         }
 
         return snapshots;
@@ -268,29 +289,17 @@ internal sealed class PostgresMembershipStore(
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private NpgsqlCommand _CreateCommand(NpgsqlConnection connection, string commandText)
+    private NpgsqlCommand _CreateCommand(
+        NpgsqlConnection connection,
+        string commandText,
+        NpgsqlTransaction? transaction = null
+    )
     {
-        return new NpgsqlCommand(commandText, connection)
+        return new NpgsqlCommand(commandText, connection, transaction)
         {
             CommandType = CommandType.Text,
-            CommandTimeout = _GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout),
+            CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout),
         };
-    }
-
-    private static string _SerializeDictionary(IReadOnlyDictionary<string, string> value)
-    {
-        return JsonSerializer.Serialize(value, _JsonOptions);
-    }
-
-    private static Dictionary<string, string> _DeserializeDictionary(string value)
-    {
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
-            ?? new Dictionary<string, string>(StringComparer.Ordinal);
-    }
-
-    private static int _GetCommandTimeoutSeconds(TimeSpan timeout)
-    {
-        return timeout.TotalSeconds >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
     }
 }
 #pragma warning restore CA2100

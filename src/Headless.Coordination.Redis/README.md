@@ -17,6 +17,8 @@ Provides a Redis-backed membership provider for deployments where Redis is the a
 
 Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies that can delete generation counters when stale-heartbeat rejection matters.
 
+**Dead/Left retention divergence (intentional, plan KTD-16).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so liveness snapshots keep surfacing them with `State = Dead` until that window elapses — consumers filter by `NodeLivenessState`. The relational providers prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). Lower `RedisKnownNodeRetention` to align Redis with relational pruning.
+
 ## Installation
 
 ```bash
@@ -56,4 +58,4 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `R
 
 ## Side Effects
 
-Registers the core membership services, Redis membership store, `ProviderCapabilities`, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.
+Registers the core membership services, Redis membership store, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.

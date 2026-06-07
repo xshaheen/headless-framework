@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
-[PublicAPI]
-public sealed class DefaultNodeIdProvider : INodeIdProvider
+internal sealed class DefaultNodeIdProvider : INodeIdProvider
 {
     private readonly CoordinationOptions _options;
     private readonly IGuidGenerator _guidGenerator;

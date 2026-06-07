@@ -159,10 +159,10 @@ public sealed class EventDerivationTests : TestBase
         CancellationTokenSource watcherCts
     )
     {
-        var moveNext = watcher.MoveNextAsync().AsTask();
-        var completed = await Task.WhenAny(moveNext, Task.Delay(TimeSpan.FromMilliseconds(50))) == moveNext;
-
-        completed.Should().BeFalse();
+        // Publish is synchronous, so by now any emitted event is already buffered. If one were buffered,
+        // MoveNextAsync would complete with the value before cancellation; otherwise it stays pending and the
+        // cancellation surfaces deterministically as OperationCanceledException (no wall-clock delay needed).
+        var moveNext = watcher.MoveNextAsync();
 
         await watcherCts.CancelAsync();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await moveNext);

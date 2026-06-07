@@ -216,16 +216,6 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         live.Should().Equal([identityA, identityB]);
     }
 
-    public virtual async Task should_report_failover_eligible_provider()
-    {
-        var cluster = _Cluster();
-        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
-
-        var capabilities = node.Services.GetRequiredService<ProviderCapabilities>();
-
-        capabilities.FailoverEligible.Should().BeTrue();
-    }
-
     public virtual async Task should_fail_stop_when_local_incarnation_is_superseded()
     {
         var cluster = _Cluster();
@@ -242,6 +232,48 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         accepted.Should().BeFalse();
         first.Membership.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
         live.Should().Equal([secondIdentity]);
+    }
+
+    public virtual async Task should_stop_application_when_self_heartbeat_is_rejected()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(
+            cluster,
+            "node-a",
+            MembershipLostBehavior.StopApplication,
+            AbortToken
+        );
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        var accepted = await first.Membership.HeartbeatAsync(AbortToken);
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        accepted.Should().BeFalse();
+        first.Lifetime.StopApplicationCalled.Should().BeTrue();
+    }
+
+    public virtual async Task should_not_evict_current_incarnation_when_prior_incarnation_leaves()
+    {
+        var cluster = _Cluster();
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        // Leaving the superseded (prior) incarnation must not remove the current generation from the live set.
+        var firstStore = first.Services.GetRequiredService<IMembershipStore>();
+        await firstStore.LeaveAsync(firstIdentity, AbortToken);
+
+        var live = await second.Membership.GetLiveNodesAsync(AbortToken);
+        var snapshot = await second.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        secondIdentity.Incarnation.Value.Should().BeGreaterThan(firstIdentity.Incarnation.Value);
+        live.Should().Equal([secondIdentity]);
+        snapshot.Should().ContainSingle(x => x.Identity == secondIdentity && x.State == NodeLivenessState.Alive);
     }
 
     private static string _Cluster()

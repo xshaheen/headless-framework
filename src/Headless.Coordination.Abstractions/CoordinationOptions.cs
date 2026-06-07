@@ -34,10 +34,17 @@ public sealed class CoordinationOptions
 
 internal sealed class CoordinationOptionsValidator : AbstractValidator<CoordinationOptions>
 {
+    // Cluster names flow into Redis hash-tag keys and relational lock/identifier strings; restrict them to a
+    // safe identifier set so quotes and control characters can never reach those surfaces.
+    private const string _ClusterNamePattern = "^[A-Za-z0-9._:-]+$";
+
     public CoordinationOptionsValidator()
     {
         RuleFor(x => x.KeyPrefix).NotEmpty();
-        RuleFor(x => x.ClusterName).NotEmpty();
+        RuleFor(x => x.ClusterName)
+            .NotEmpty()
+            .Matches(_ClusterNamePattern)
+            .WithMessage("ClusterName may only contain letters, digits, '.', '_', ':', or '-'.");
         RuleFor(x => x.ConfiguredNodeId).Must(x => x is null || !string.IsNullOrWhiteSpace(x));
         RuleFor(x => x.HeartbeatInterval).GreaterThan(TimeSpan.Zero).LessThan(x => x.SuspicionThreshold);
         RuleFor(x => x.SuspicionThreshold).LessThan(x => x.DeadThreshold);

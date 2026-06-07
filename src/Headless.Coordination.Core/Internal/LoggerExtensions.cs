@@ -46,4 +46,33 @@ internal static partial class LoggerExtensions
         Message = "Coordination heartbeat tick failed while reading authoritative liveness; no stale membership events were emitted."
     )]
     public static partial void LivenessReadFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "MembershipRegistrationRetry",
+        Level = LogLevel.Warning,
+        Message = "Coordination membership registration attempt {Attempt}/{MaxAttempts} failed; retrying with backoff."
+    )]
+    public static partial void MembershipRegistrationRetry(
+        this ILogger logger,
+        Exception exception,
+        int attempt,
+        int maxAttempts
+    );
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "LeaveOnShutdownTimedOut",
+        Level = LogLevel.Warning,
+        Message = "Coordination graceful leave timed out during host shutdown; the store will reclaim the membership after the dead threshold."
+    )]
+    public static partial void LeaveOnShutdownTimedOut(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "LeaveOnShutdownFailed",
+        Level = LogLevel.Error,
+        Message = "Coordination graceful leave failed during host shutdown; the store will reclaim the membership after the dead threshold."
+    )]
+    public static partial void LeaveOnShutdownFailed(this ILogger logger, Exception exception);
 }

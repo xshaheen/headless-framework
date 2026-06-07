@@ -10,7 +10,7 @@ namespace Tests;
 public sealed class MembershipServiceTests : TestBase
 {
     [Fact]
-    public async Task should_register_by_allocating_incarnation_writing_descriptor_and_heartbeating()
+    public async Task should_register_by_allocating_incarnation_and_writing_descriptor_without_heartbeating()
     {
         // given
         var store = new FakeMembershipStore { NextIncarnation = new NodeIncarnation(3) };
@@ -22,8 +22,9 @@ public sealed class MembershipServiceTests : TestBase
         // then
         identity.Should().Be(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(3)));
         sut.Identity.Should().Be(identity);
+        // UpsertDescriptorAsync now durably establishes both descriptor and liveness; register no longer beats.
         store.Descriptors.Should().ContainSingle().Which.Identity.Should().Be(identity);
-        store.Heartbeats.Should().ContainSingle().Which.Should().Be(identity);
+        store.Heartbeats.Should().BeEmpty();
     }
 
     [Fact]
@@ -69,7 +70,7 @@ public sealed class MembershipServiceTests : TestBase
         var store = new FakeMembershipStore();
         var lifetime = new FakeHostApplicationLifetime();
         var sut = _CreateService(store, lifetime: lifetime);
-        await sut.RegisterAsync(AbortToken);
+        var identity = await sut.RegisterAsync(AbortToken);
         store.HeartbeatAccepted = false;
         using var watcherCts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         watcherCts.CancelAfter(TimeSpan.FromSeconds(2));
@@ -82,8 +83,9 @@ public sealed class MembershipServiceTests : TestBase
         // then
         accepted.Should().BeFalse();
         sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
+        sut.Identity.Should().BeNull();
         hasEvent.Should().BeTrue();
-        watcher.Current.Should().BeOfType<LocalMembershipLost>().Which.Identity.Should().Be(sut.Identity);
+        watcher.Current.Should().BeOfType<LocalMembershipLost>().Which.Identity.Should().Be(identity);
         lifetime.StopApplicationCalled.Should().BeTrue();
     }
 
@@ -105,6 +107,41 @@ public sealed class MembershipServiceTests : TestBase
         accepted.Should().BeFalse();
         sut.LocalMembershipLostToken.IsCancellationRequested.Should().BeTrue();
         lifetime.StopApplicationCalled.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_return_false_and_not_touch_store_when_heartbeat_called_before_register()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var sut = _CreateService(store);
+
+        // when
+        var accepted = await sut.HeartbeatAsync(AbortToken);
+
+        // then
+        accepted.Should().BeFalse();
+        sut.Identity.Should().BeNull();
+        store.Heartbeats.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_return_false_and_not_touch_store_when_heartbeat_called_after_leave()
+    {
+        // given
+        var store = new FakeMembershipStore();
+        var sut = _CreateService(store);
+        await sut.RegisterAsync(AbortToken);
+        await sut.LeaveAsync(AbortToken);
+        store.Heartbeats.Clear();
+
+        // when
+        var accepted = await sut.HeartbeatAsync(AbortToken);
+
+        // then
+        accepted.Should().BeFalse();
+        sut.Identity.Should().BeNull();
+        store.Heartbeats.Should().BeEmpty();
     }
 
     private static MembershipService _CreateService(

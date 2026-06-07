@@ -17,15 +17,77 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        // Stop issuing heartbeats once local membership is lost (StopMembershipOnly) as well as on host stop.
+        using var loopCts = CancellationTokenSource.CreateLinkedTokenSource(
+            stoppingToken,
+            membership.LocalMembershipLostToken
+        );
+        var loopToken = loopCts.Token;
+
         if (membership.Identity is null)
         {
-            await membership.RegisterAsync(stoppingToken).ConfigureAwait(false);
+            await _RegisterWithRetryAsync(stoppingToken).ConfigureAwait(false);
         }
 
-        while (!stoppingToken.IsCancellationRequested)
+        while (!loopToken.IsCancellationRequested)
         {
-            await RunOnceAsync(stoppingToken).ConfigureAwait(false);
-            await timeProvider.Delay(options.HeartbeatInterval, stoppingToken).ConfigureAwait(false);
+            try
+            {
+                await RunOnceAsync(loopToken).ConfigureAwait(false);
+                await timeProvider.Delay(options.HeartbeatInterval, loopToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        await base.StopAsync(cancellationToken).ConfigureAwait(false);
+
+        // Best-effort graceful leave under a bounded budget so a store outage can't hang host shutdown.
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5), timeProvider);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+        try
+        {
+            await membership.LeaveAsync(linkedCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LeaveOnShutdownTimedOut();
+        }
+        catch (Exception ex)
+        {
+            logger.LeaveOnShutdownFailed(ex);
+        }
+    }
+
+    private async Task _RegisterWithRetryAsync(CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 5;
+        var delay = TimeSpan.FromMilliseconds(200);
+
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await membership.RegisterAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex) when (attempt < maxAttempts)
+            {
+                logger.MembershipRegistrationRetry(ex, attempt, maxAttempts);
+                await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
+                delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 5000));
+            }
         }
     }
 

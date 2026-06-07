@@ -28,8 +28,24 @@ public static class CoordinationFixtureExtensions
         CancellationToken cancellationToken = default
     )
     {
+        return await fixture
+            .CreateNodeAsync(clusterName, nodeId, MembershipLostBehavior.StopMembershipOnly, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async ValueTask<CoordinationNodeHandle> CreateNodeAsync(
+        this ICoordinationFixture fixture,
+        string clusterName,
+        string nodeId,
+        MembershipLostBehavior lostBehavior,
+        CancellationToken cancellationToken = default
+    )
+    {
         var services = new ServiceCollection();
         services.AddLogging();
+
+        var lifetime = new FakeHostApplicationLifetime();
+        services.AddSingleton<IHostApplicationLifetime>(lifetime);
 
         services.AddHeadlessCoordination(setup =>
         {
@@ -42,7 +58,7 @@ public static class CoordinationFixtureExtensions
                 options.SuspicionThreshold = SuspicionThreshold;
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
-                options.MembershipLostBehavior = MembershipLostBehavior.StopMembershipOnly;
+                options.MembershipLostBehavior = lostBehavior;
             });
         });
 
@@ -53,15 +69,21 @@ public static class CoordinationFixtureExtensions
             await initializer.StartingAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        return new CoordinationNodeHandle(provider, provider.GetRequiredService<INodeMembership>());
+        return new CoordinationNodeHandle(provider, provider.GetRequiredService<INodeMembership>(), lifetime);
     }
 }
 
-public sealed class CoordinationNodeHandle(ServiceProvider services, INodeMembership membership) : IAsyncDisposable
+public sealed class CoordinationNodeHandle(
+    ServiceProvider services,
+    INodeMembership membership,
+    FakeHostApplicationLifetime lifetime
+) : IAsyncDisposable
 {
     public INodeMembership Membership { get; } = membership;
 
     public IServiceProvider Services { get; } = services;
+
+    public FakeHostApplicationLifetime Lifetime { get; } = lifetime;
 
     public async ValueTask DisposeAsync()
     {

@@ -27,7 +27,7 @@ internal sealed partial class PostgresMembershipStorageInitializer(
         {
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
-            command.CommandTimeout = _GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
+            command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
             command.CommandText = _CreateSchemaScript();
             command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{coordinationOptions.Value.ClusterName}");
 
@@ -38,6 +38,15 @@ internal sealed partial class PostgresMembershipStorageInitializer(
         {
             await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
             LogSchemaRaceObserved(logger, ex.SqlState, ex.MessageText);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+
+            throw new InvalidOperationException(
+                "Headless.Coordination.PostgreSql: failed to initialize the membership schema.",
+                ex
+            );
         }
     }
 
@@ -89,11 +98,6 @@ internal sealed partial class PostgresMembershipStorageInitializer(
             CREATE INDEX IF NOT EXISTS ix_{{PostgresMembershipSchema.Liveness.Table}}_cluster_lastbeat
                 ON {{PostgresMembershipSchema.Liveness.Table}} ({{PostgresMembershipSchema.ClusterName}}, {{PostgresMembershipSchema.Liveness.LastBeat}});
             """;
-    }
-
-    private static int _GetCommandTimeoutSeconds(TimeSpan timeout)
-    {
-        return timeout.TotalSeconds >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
     }
 
     [LoggerMessage(

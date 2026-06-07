@@ -17,14 +17,22 @@ public sealed class EventDeliveryTests : TestBase
         await using var fast = source.WatchAsync(AbortToken).GetAsyncEnumerator(AbortToken);
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
 
-        // when
+        // when: fill the slow subscriber's single-slot channel, then publish past its capacity.
         source.Publish(new NodeJoined(identity));
+        (await fast.MoveNextAsync()).Should().BeTrue();
+        fast.Current.Should().BeOfType<NodeJoined>();
+
+        // The slow subscriber never reads, so its channel is now full and the next event overflows it.
         source.Publish(new NodeSuspected(identity));
 
-        // then
+        // then: the fast subscriber still receives the new event despite the slow subscriber being full
+        // (proving Publish is non-blocking and drops for the lagging subscriber only).
         (await fast.MoveNextAsync()).Should().BeTrue();
-        fast.Current.Identity.Should().Be(identity);
-        slow.Should().NotBeNull();
+        fast.Current.Should().BeOfType<NodeSuspected>().Which.Identity.Should().Be(identity);
+
+        // The slow subscriber only ever observed the first event; the overflow was dropped, not blocked.
+        (await slow.MoveNextAsync()).Should().BeTrue();
+        slow.Current.Should().BeOfType<NodeJoined>();
     }
 
     [Fact]

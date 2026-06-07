@@ -64,7 +64,8 @@ public sealed class NullNodeMembership : INodeMembership
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+        // The null provider never emits events; block until cancellation without allocating a timer.
+        await new TaskCompletionSource().Task.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         yield break;
     }

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using System.Text.Json;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -13,8 +12,6 @@ internal sealed class SqlServerMembershipStore(
     IOptions<CoordinationOptions> coordinationOptions
 ) : DatabaseMembershipStoreBase(coordinationOptions.Value)
 {
-    private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
-
     protected override async ValueTask<NodeIncarnation> AllocateIncarnationCoreAsync(
         string clusterName,
         NodeId nodeId,
@@ -82,17 +79,35 @@ internal sealed class SqlServerMembershipStore(
         CancellationToken cancellationToken
     )
     {
+        var generationTable = _Qualified(SqlServerMembershipSchema.Generation.Table);
         var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
-        var sql = $"""
-            INSERT INTO {descriptorTable} (
-                [{SqlServerMembershipSchema.ClusterName}],
-                [{SqlServerMembershipSchema.NodeId}],
-                [{SqlServerMembershipSchema.Incarnation}],
-                [{SqlServerMembershipSchema.Descriptor.HostName}],
-                [{SqlServerMembershipSchema.Descriptor.Endpoints}],
-                [{SqlServerMembershipSchema.Descriptor.Role}],
-                [{SqlServerMembershipSchema.Descriptor.Metadata}],
-                [{SqlServerMembershipSchema.DateCreated}]
+        var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
+
+        // Register writes both rows under one generation lock: the write-once cold descriptor and an
+        // initial Alive liveness row stamped with the store clock. Both are gated on the freshly-allocated
+        // incarnation still being current, so a stale/impossible incarnation establishes neither.
+        var sql = $$"""
+            DECLARE @currentIncarnation bigint;
+
+            SELECT @currentIncarnation = [{{SqlServerMembershipSchema.Generation.CurrentIncarnation}}]
+            FROM {{generationTable}} WITH (UPDLOCK, HOLDLOCK)
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId;
+
+            IF @currentIncarnation IS NULL OR @currentIncarnation <> @Incarnation
+            BEGIN
+                RETURN;
+            END;
+
+            INSERT INTO {{descriptorTable}} (
+                [{{SqlServerMembershipSchema.ClusterName}}],
+                [{{SqlServerMembershipSchema.NodeId}}],
+                [{{SqlServerMembershipSchema.Incarnation}}],
+                [{{SqlServerMembershipSchema.Descriptor.HostName}}],
+                [{{SqlServerMembershipSchema.Descriptor.Endpoints}}],
+                [{{SqlServerMembershipSchema.Descriptor.Role}}],
+                [{{SqlServerMembershipSchema.Descriptor.Metadata}}],
+                [{{SqlServerMembershipSchema.DateCreated}}]
             )
             SELECT
                 @ClusterName,
@@ -105,25 +120,55 @@ internal sealed class SqlServerMembershipStore(
                 SYSUTCDATETIME()
             WHERE NOT EXISTS (
                 SELECT 1
-                FROM {descriptorTable} WITH (UPDLOCK, HOLDLOCK)
-                WHERE [{SqlServerMembershipSchema.ClusterName}] = @ClusterName
-                  AND [{SqlServerMembershipSchema.NodeId}] = @NodeId
-                  AND [{SqlServerMembershipSchema.Incarnation}] = @Incarnation
+                FROM {{descriptorTable}} WITH (UPDLOCK, HOLDLOCK)
+                WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                  AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+                  AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
             );
+
+            UPDATE {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
+            SET [{{SqlServerMembershipSchema.Liveness.LastBeat}}] = SYSUTCDATETIME(),
+                [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = NULL
+            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
+
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO {{livenessTable}} (
+                    [{{SqlServerMembershipSchema.ClusterName}}],
+                    [{{SqlServerMembershipSchema.NodeId}}],
+                    [{{SqlServerMembershipSchema.Incarnation}}],
+                    [{{SqlServerMembershipSchema.Liveness.LastBeat}}],
+                    [{{SqlServerMembershipSchema.Liveness.LeftAt}}]
+                )
+                SELECT @ClusterName, @NodeId, @Incarnation, SYSUTCDATETIME(), NULL
+                WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM {{livenessTable}} WITH (UPDLOCK, HOLDLOCK)
+                    WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
+                      AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
+                      AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+                );
+            END;
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = _CreateCommand(connection, sql);
+        await using var transaction = (SqlTransaction)await connection
+            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+            .ConfigureAwait(false);
+        await using var command = _CreateCommand(connection, sql, transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
         command.Parameters.AddWithValue("Incarnation", descriptor.Identity.Incarnation.Value);
         command.Parameters.AddWithValue("HostName", (object?)descriptor.HostName ?? DBNull.Value);
-        command.Parameters.AddWithValue("Endpoints", _SerializeDictionary(descriptor.Endpoints));
+        command.Parameters.AddWithValue("Endpoints", SerializeDictionary(descriptor.Endpoints));
         command.Parameters.AddWithValue("Role", (object?)descriptor.Role ?? DBNull.Value);
-        command.Parameters.AddWithValue("Metadata", _SerializeDictionary(descriptor.Metadata));
+        command.Parameters.AddWithValue("Metadata", SerializeDictionary(descriptor.Metadata));
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     protected override async ValueTask<bool> HeartbeatCoreAsync(
@@ -189,8 +234,8 @@ internal sealed class SqlServerMembershipStore(
 
         var accepted = (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        await _PruneExpiredRowsAsync(connection, clusterName, cancellationToken).ConfigureAwait(false);
 
+        // Retention pruning runs once per tick on the read path; the heartbeat path no longer prunes.
         return accepted;
     }
 
@@ -254,7 +299,8 @@ internal sealed class SqlServerMembershipStore(
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await _PruneExpiredRowsAsync(connection, clusterName, cancellationToken).ConfigureAwait(false);
+        // Pruning is best-effort cleanup; do not abort it on the caller's read cancellation.
+        await _PruneExpiredRowsAsync(connection, clusterName, CancellationToken.None).ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
@@ -268,16 +314,7 @@ internal sealed class SqlServerMembershipStore(
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var nodeId = new NodeId(reader.GetString(0));
-            var incarnation = new NodeIncarnation(reader.GetInt64(1));
-            var identity = new NodeIdentity(nodeId, incarnation);
-            var role = await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(2);
-            var metadataJson = await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false)
-                ? "{}"
-                : reader.GetString(3);
-            var state = Enum.Parse<NodeLivenessState>(reader.GetString(4));
-
-            snapshots.Add(new NodeLivenessSnapshot(identity, state, role, _DeserializeDictionary(metadataJson)));
+            snapshots.Add(ReadSnapshot(reader));
         }
 
         return snapshots;
@@ -321,7 +358,7 @@ internal sealed class SqlServerMembershipStore(
         return new SqlCommand(commandText, connection, transaction)
         {
             CommandType = CommandType.Text,
-            CommandTimeout = _GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout),
+            CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout),
         };
     }
 
@@ -330,25 +367,9 @@ internal sealed class SqlServerMembershipStore(
         return SqlServerCoordinationIdentifier.Qualified(providerOptions.Value.Schema, table);
     }
 
-    private static string _SerializeDictionary(IReadOnlyDictionary<string, string> value)
-    {
-        return JsonSerializer.Serialize(value, _JsonOptions);
-    }
-
-    private static Dictionary<string, string> _DeserializeDictionary(string value)
-    {
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
-            ?? new Dictionary<string, string>(StringComparer.Ordinal);
-    }
-
     private static long _ToMilliseconds(TimeSpan value)
     {
         return (long)Math.Ceiling(value.TotalMilliseconds);
-    }
-
-    private static int _GetCommandTimeoutSeconds(TimeSpan timeout)
-    {
-        return timeout.TotalSeconds >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
     }
 }
 #pragma warning restore CA2100

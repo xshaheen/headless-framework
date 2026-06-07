@@ -118,8 +118,6 @@ Coordination is fencing-safe, fail-stop, and fail-closed when backed by an autho
 | `Headless.Coordination.SqlServer` | Membership should follow SQL Server and `SYSUTCDATETIME()`. | The app cannot grant DDL/init permissions or use primary reads. | Guarded update/insert, no `MERGE`. |
 | `Headless.Coordination.Redis` | Redis is the authoritative coordination store. | Redis eviction can delete generation counters or failover reads may hit stale replicas. | Lua scripts use `TIME`; generation counters are not purged by default. |
 
-All v1 providers report `ProviderCapabilities.FailoverEligible = true`.
-
 ## Headless.Coordination.Abstractions
 
 ### Problem Solved
@@ -180,12 +178,14 @@ Implements the provider-agnostic membership engine over an `IMembershipStore`.
 
 ### Key Features
 
-- `MembershipService` implements `INodeMembership`.
-- Background heartbeat service derives lifecycle events from authoritative snapshots.
+- An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
+- Background heartbeat service derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
 - Bounded per-subscriber event channels isolate slow consumers from heartbeats.
 - Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
 
 ### Design Notes
+
+`RegisterAsync` durably establishes both the cold descriptor and an initial store-clock liveness entry in one guarded write, so a node is `Alive` (and its role/metadata are visible) immediately after register — without waiting for the first heartbeat. The background loop owns every subsequent beat. Registration is incarnation-guarded: a stale or superseded incarnation establishes no liveness.
 
 Self-heartbeat rejection is a local fencing failure. The default `MembershipLostBehavior.StopApplication` asks the host to stop; `StopMembershipOnly` is for hosts that explicitly quiesce every worker.
 
@@ -204,7 +204,7 @@ services.AddCoordinationCore<MyMembershipStore>(options =>
 });
 ```
 
-Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)`; `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
+Applications normally use a provider package and call `AddHeadlessCoordination(setup => setup.Use...)` (which returns the `IServiceCollection`); `AddCoordinationCore<TStore>` is the lower-level hook for provider authors and custom stores.
 
 ### Configuration
 
@@ -223,7 +223,7 @@ Set `HeartbeatInterval < SuspicionThreshold < DeadThreshold`; `DeadRetentionWind
 
 ### Side Effects
 
-Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, `ProviderCapabilities`, and the heartbeat hosted service.
+Registers `TimeProvider.System`, framework GUID generator defaults, `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service.
 
 ---
 
@@ -321,7 +321,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `P
 
 ### Side Effects
 
-Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, PostgreSQL membership store, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
 
 ---
 
@@ -341,6 +341,8 @@ Stores membership in Redis using Lua scripts and Redis server time.
 ### Design Notes
 
 Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies that can delete generation counters if stale-heartbeat rejection matters.
+
+**Dead/Left retention divergence (intentional, plan KTD-16).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so `GetLivenessSnapshotAsync` keeps surfacing them with `State = Dead` until that window elapses — consumers must filter by `NodeLivenessState`. The relational providers instead prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). This is a documented behavioral difference, not a defaulting bug: lower `RedisKnownNodeRetention` to align Redis with relational pruning.
 
 ### Installation
 
@@ -381,7 +383,7 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `R
 
 ### Side Effects
 
-Registers the core membership services, Redis membership store, `ProviderCapabilities`, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.
+Registers the core membership services, Redis membership store, keyed Lua script loader, script initializer hosted service, and cleanup hosted service. Requires an `IConnectionMultiplexer` registration.
 
 ---
 
@@ -438,4 +440,4 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `C
 
 ### Side Effects
 
-Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, SQL Server membership store, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

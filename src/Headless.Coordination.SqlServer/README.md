@@ -53,4 +53,4 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `C
 
 ## Side Effects
 
-Registers the core membership services, SQL Server membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.
+Registers the core membership services, SQL Server membership store, storage initializer, and initializer hosted service. Creates PascalCase tables and columns. Requires SQL Server DDL permission when initialization runs on startup.

@@ -52,57 +52,27 @@ public static class SetupSqlServerCoordination
         }
     }
 
-    private sealed class SqlServerCoordinationOptionsExtension : ICoordinationProviderOptionsExtension
+    private sealed class SqlServerCoordinationOptionsExtension
+        : CoordinationProviderOptionsExtensionBase<SqlServerCoordinationOptions, SqlServerCoordinationOptionsValidator>
     {
-        private readonly IConfiguration? _configuration;
-        private readonly Action<SqlServerCoordinationOptions>? _configure;
-        private readonly Action<SqlServerCoordinationOptions, IServiceProvider>? _configureWithServices;
-
         public SqlServerCoordinationOptionsExtension(IConfiguration configuration)
-        {
-            _configuration = configuration;
-        }
+            : base(configuration) { }
 
         public SqlServerCoordinationOptionsExtension(Action<SqlServerCoordinationOptions> configure)
-        {
-            _configure = configure;
-        }
+            : base(configure) { }
 
-        public SqlServerCoordinationOptionsExtension(
-            Action<SqlServerCoordinationOptions, IServiceProvider> configure
-        )
-        {
-            _configureWithServices = configure;
-        }
+        public SqlServerCoordinationOptionsExtension(Action<SqlServerCoordinationOptions, IServiceProvider> configure)
+            : base(configure) { }
 
-        public void AddServices(IServiceCollection services)
+        protected override void AddProviderServices(IServiceCollection services)
         {
-            if (_configuration is not null)
-            {
-                services.Configure<SqlServerCoordinationOptions, SqlServerCoordinationOptionsValidator>(
-                    _configuration
-                );
-            }
-            else if (_configure is not null)
-            {
-                services.Configure<SqlServerCoordinationOptions, SqlServerCoordinationOptionsValidator>(_configure);
-            }
-            else
-            {
-                services.Configure<SqlServerCoordinationOptions, SqlServerCoordinationOptionsValidator>(
-                    _configureWithServices
-                );
-            }
-
-            services.TryAddSingleton<ProviderCapabilities>(new ProviderCapabilities(FailoverEligible: true));
-            services.AddCoordinationCore<SqlServerMembershipStore>(static _ => { });
+            services.AddCoordinationCore<SqlServerMembershipStore>();
             _AddSqlServerCoordinationProviderCore(services);
         }
     }
 
     private static void _AddSqlServerCoordinationProviderCore(IServiceCollection services)
     {
-        services.TryAddSingleton<SqlServerMembershipStore>();
         services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<SqlServerMembershipStore>());
         services.TryAddSingleton<IMembershipStorageInitializer>(static sp =>
             sp.GetRequiredService<SqlServerMembershipStorageInitializer>()

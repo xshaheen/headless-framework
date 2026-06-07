@@ -20,6 +20,9 @@ internal sealed class RedisMembershipStore(
     private static readonly JsonSerializerOptions _JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentDictionary<NodeIdentity, NodeDescriptor> _descriptors = new();
 
+    // Metadata serialized once at descriptor upsert and reused on the hot heartbeat path.
+    private readonly ConcurrentDictionary<NodeIdentity, string> _metadataJson = new();
+
     private CoordinationOptions Options => coordinationOptions.Value;
 
     private RedisCoordinationOptions RedisOptions => redisOptions.Value;
@@ -38,12 +41,37 @@ internal sealed class RedisMembershipStore(
         return new NodeIncarnation(value);
     }
 
-    public ValueTask UpsertDescriptorAsync(NodeDescriptor descriptor, CancellationToken cancellationToken = default)
+    public async ValueTask UpsertDescriptorAsync(
+        NodeDescriptor descriptor,
+        CancellationToken cancellationToken = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        _descriptors[descriptor.Identity] = descriptor;
 
-        return ValueTask.CompletedTask;
+        // Write-through cache: keep role/metadata local for the hot heartbeat path...
+        _descriptors[descriptor.Identity] = descriptor;
+        _metadataJson[descriptor.Identity] = _SerializeDictionary(descriptor.Metadata);
+
+        // ...and durably establish liveness at register by running the same guarded write the first
+        // heartbeat would have done (HSET role/metadata into :known, ZADD member into :live with server
+        // TIME, gated on the freshly-allocated incarnation). A stale/impossible incarnation is rejected.
+        await scriptsLoader
+            .EvaluateAsync(
+                Db,
+                RedisMembershipHeartbeatScriptDefinition.Instance,
+                new HeartbeatParams(
+                    _LiveKey(),
+                    _KnownKey(),
+                    _GenKey(descriptor.Identity.NodeId),
+                    descriptor.Identity.ToString(),
+                    descriptor.Identity.Incarnation.Value,
+                    _ToMilliseconds(Options.DeadThreshold),
+                    descriptor.Role ?? string.Empty,
+                    _MetadataJson(descriptor.Identity, descriptor)
+                ),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
     }
 
     public async ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
@@ -52,6 +80,7 @@ internal sealed class RedisMembershipStore(
 
         _descriptors.TryGetValue(identity, out var descriptor);
 
+        // Cleanup is owned by RedisMembershipCleanupService (5-min interval); the heartbeat path no longer prunes.
         var result = await scriptsLoader
             .EvaluateAsync(
                 Db,
@@ -64,13 +93,11 @@ internal sealed class RedisMembershipStore(
                     identity.Incarnation.Value,
                     _ToMilliseconds(Options.DeadThreshold),
                     descriptor?.Role ?? string.Empty,
-                    _SerializeDictionary(descriptor?.Metadata)
+                    _MetadataJson(identity, descriptor)
                 ),
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        await CleanupAsync(cancellationToken).ConfigureAwait(false);
 
         return (int)result > 0;
     }
@@ -90,7 +117,7 @@ internal sealed class RedisMembershipStore(
                     identity.ToString(),
                     _ToMilliseconds(Options.DeadThreshold),
                     descriptor?.Role ?? string.Empty,
-                    _SerializeDictionary(descriptor?.Metadata)
+                    _MetadataJson(identity, descriptor)
                 ),
                 cancellationToken
             )
@@ -172,7 +199,13 @@ internal sealed class RedisMembershipStore(
             );
         }
 
-        return snapshots.OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal).ToArray();
+        // The read Lua already returns members sorted (table.sort); no C# re-sort is needed.
+        return snapshots.ToArray();
+    }
+
+    private string _MetadataJson(NodeIdentity identity, NodeDescriptor? descriptor)
+    {
+        return _metadataJson.TryGetValue(identity, out var cached) ? cached : _SerializeDictionary(descriptor?.Metadata);
     }
 
     private RedisKey _LiveKey()

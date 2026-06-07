@@ -5,8 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
-[PublicAPI]
-public sealed class MembershipService(
+internal sealed class MembershipService(
     IMembershipStore store,
     INodeIdProvider nodeIdProvider,
     CoordinationOptions options,
@@ -37,10 +36,10 @@ public sealed class MembershipService(
             Metadata = options.Metadata,
         };
 
+        // UpsertDescriptorAsync durably establishes both the cold descriptor and the initial guarded
+        // liveness row, so registration writes once. The heartbeat loop owns every subsequent beat.
         await store.UpsertDescriptorAsync(descriptor, cancellationToken).ConfigureAwait(false);
         Identity = identity;
-
-        await HeartbeatAsync(cancellationToken).ConfigureAwait(false);
 
         return identity;
     }
@@ -58,6 +57,8 @@ public sealed class MembershipService(
 
         if (!accepted)
         {
+            // Clear the local identity so the heartbeat guard stops re-issuing beats for a lost membership.
+            Identity = null;
             _SignalLocalMembershipLost(identity);
         }
 
@@ -95,7 +96,6 @@ public sealed class MembershipService(
         return snapshots
             .Where(static snapshot => snapshot.State == NodeLivenessState.Alive)
             .Select(static snapshot => snapshot.Identity)
-            .OrderBy(static identity => identity.ToString(), StringComparer.Ordinal)
             .ToArray();
     }
 
@@ -105,9 +105,8 @@ public sealed class MembershipService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var snapshots = await store.ReadLivenessAsync(cancellationToken).ConfigureAwait(false);
-
-        return snapshots.OrderBy(static snapshot => snapshot.Identity.ToString(), StringComparer.Ordinal).ToArray();
+        // The store SPI returns snapshots already sorted by identity; no service-side re-sort is needed.
+        return await store.ReadLivenessAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default)

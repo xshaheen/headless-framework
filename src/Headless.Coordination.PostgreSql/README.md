@@ -53,4 +53,4 @@ Configure shared `CoordinationOptions` with `setup.Configure(...)`. Configure `P
 
 ## Side Effects
 
-Registers the core membership services, PostgreSQL membership store, `ProviderCapabilities`, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.
+Registers the core membership services, PostgreSQL membership store, storage initializer, and initializer hosted service. Creates snake_case tables and columns. Requires PostgreSQL DDL permission when initialization runs on startup.

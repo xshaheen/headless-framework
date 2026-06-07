@@ -11,5 +11,13 @@ namespace Headless.Coordination;
 [PublicAPI]
 public interface IMembershipEventSource
 {
+    /// <summary>
+    /// Streams best-effort membership observations until <paramref name="cancellationToken"/> is cancelled.
+    /// </summary>
+    /// <remarks>
+    /// Yields the following <see cref="NodeMembershipEvent"/> types: <see cref="NodeJoined"/>,
+    /// <see cref="NodeSuspected"/>, <see cref="NodeRecovered"/>, <see cref="NodeLeft"/>, and the local-only
+    /// <see cref="LocalMembershipLost"/>. The no-op implementation emits none and simply blocks until cancelled.
+    /// </remarks>
     IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default);
 }

@@ -20,14 +20,18 @@ internal sealed class SqlServerMembershipStorageInitializer(
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         await using var command = connection.CreateCommand();
-        command.CommandTimeout = _GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
-        command.CommandText = _CreateScript(providerOptions.Value, coordinationOptions.Value);
+        command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
+        command.CommandText = _CreateScript(providerOptions.Value);
         command.Parameters.AddWithValue("LockTimeout", _GetLockTimeoutMilliseconds(providerOptions.Value.CommandTimeout));
+        command.Parameters.AddWithValue(
+            "LockResource",
+            $"headless_coordination_init:{providerOptions.Value.Schema}:{coordinationOptions.Value.ClusterName}"
+        );
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static string _CreateScript(SqlServerCoordinationOptions provider, CoordinationOptions coordination)
+    private static string _CreateScript(SqlServerCoordinationOptions provider)
     {
         var schema = provider.Schema;
         var generationTable = _Qualified(schema, SqlServerMembershipSchema.Generation.Table);
@@ -36,12 +40,11 @@ internal sealed class SqlServerMembershipStorageInitializer(
         var generationObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Generation.Table);
         var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Descriptor.Table);
         var livenessObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Liveness.Table);
-        var lockResource = $"headless_coordination_init:{schema}:{coordination.ClusterName}";
 
         return $$"""
             DECLARE @lockResult int;
             EXEC @lockResult = sys.sp_getapplock
-                @Resource = N'{{lockResource}}',
+                @Resource = @LockResource,
                 @LockMode = N'Exclusive',
                 @LockOwner = N'Session',
                 @LockTimeout = @LockTimeout,
@@ -132,12 +135,12 @@ internal sealed class SqlServerMembershipStorageInitializer(
                     CREATE NONCLUSTERED INDEX [IX_{{SqlServerMembershipSchema.Liveness.Table}}_ClusterName_LastBeat]
                         ON {{livenessTable}} ([{{SqlServerMembershipSchema.ClusterName}}] ASC, [{{SqlServerMembershipSchema.Liveness.LastBeat}}] ASC);
 
-                EXEC sys.sp_releaseapplock @Resource = N'{{lockResource}}', @LockOwner = N'Session', @DbPrincipal = N'public';
+                EXEC sys.sp_releaseapplock @Resource = @LockResource, @LockOwner = N'Session', @DbPrincipal = N'public';
             END TRY
             BEGIN CATCH
                 BEGIN TRY
-                    IF APPLOCK_MODE(N'public', N'{{lockResource}}', N'Session') <> N'NoLock'
-                        EXEC sys.sp_releaseapplock @Resource = N'{{lockResource}}', @LockOwner = N'Session', @DbPrincipal = N'public';
+                    IF APPLOCK_MODE(N'public', @LockResource, N'Session') <> N'NoLock'
+                        EXEC sys.sp_releaseapplock @Resource = @LockResource, @LockOwner = N'Session', @DbPrincipal = N'public';
                 END TRY
                 BEGIN CATCH
                 END CATCH;
@@ -150,11 +153,6 @@ internal sealed class SqlServerMembershipStorageInitializer(
     private static string _Qualified(string schema, string table)
     {
         return SqlServerCoordinationIdentifier.Qualified(schema, table);
-    }
-
-    private static int _GetCommandTimeoutSeconds(TimeSpan timeout)
-    {
-        return timeout.TotalSeconds >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
     }
 
     private static int _GetLockTimeoutMilliseconds(TimeSpan timeout)

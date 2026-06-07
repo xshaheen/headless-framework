@@ -7,8 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
-[PublicAPI]
-public sealed class MembershipEventSource(ILogger<MembershipEventSource> logger, int capacity = 256)
+internal sealed class MembershipEventSource(ILogger<MembershipEventSource> logger, int capacity = 256)
     : IMembershipEventSource
 {
     private readonly Lock _gate = new();
@@ -19,6 +18,9 @@ public sealed class MembershipEventSource(ILogger<MembershipEventSource> logger,
         var channel = Channel.CreateBounded<NodeMembershipEvent>(
             new BoundedChannelOptions(capacity)
             {
+                // Wait + TryWrite is the non-blocking drop-and-log pairing: TryWrite returns false when the
+                // bounded channel is full (a DropWrite/DropOldest mode would instead return true and drop
+                // silently, losing the lagging-subscriber visibility logged below).
                 FullMode = BoundedChannelFullMode.Wait,
                 SingleReader = true,
                 SingleWriter = false,
@@ -46,9 +48,23 @@ public sealed class MembershipEventSource(ILogger<MembershipEventSource> logger,
         {
             if (!subscriber.Writer.TryWrite(@event))
             {
-                logger.MembershipEventDropped(@event.GetType().Name, @event.Identity);
+                logger.MembershipEventDropped(_Discriminator(@event), @event.Identity);
             }
         }
+    }
+
+    private static string _Discriminator(NodeMembershipEvent @event)
+    {
+        // Avoid reflection (GetType().Name) on the drop path.
+        return @event switch
+        {
+            NodeJoined => nameof(NodeJoined),
+            NodeSuspected => nameof(NodeSuspected),
+            NodeRecovered => nameof(NodeRecovered),
+            NodeLeft => nameof(NodeLeft),
+            LocalMembershipLost => nameof(LocalMembershipLost),
+            _ => @event.GetType().Name,
+        };
     }
 
     private async IAsyncEnumerable<NodeMembershipEvent> _ReadAsync(
