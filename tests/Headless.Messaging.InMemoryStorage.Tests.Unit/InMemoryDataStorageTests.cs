@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Internal;
@@ -138,7 +139,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             messagingOptions,
             _serializer,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            _fakeTimeProvider
+            _fakeTimeProvider,
+            new NullNodeMembership()
         );
     }
 
