@@ -30,12 +30,9 @@ internal abstract class DatabaseMembershipStoreBase(CoordinationOptions options)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (descriptor.Identity.NodeId.Value.Length == 0)
-        {
-            throw new ArgumentException("Descriptor identity must include a node id.", nameof(descriptor));
-        }
-
-        return UpsertDescriptorCoreAsync(ClusterName, descriptor, cancellationToken);
+        return descriptor.Identity.NodeId.Value.Length == 0
+            ? throw new ArgumentException(@"Descriptor identity must include a node id.", nameof(descriptor))
+            : UpsertDescriptorCoreAsync(ClusterName, descriptor, cancellationToken);
     }
 
     public ValueTask<bool> HeartbeatAsync(NodeIdentity identity, CancellationToken cancellationToken = default)

@@ -83,16 +83,16 @@ internal sealed class SqlServerMembershipStore(
     )
     {
         var descriptorTable = _Qualified(SqlServerMembershipSchema.Descriptor.Table);
-        var sql = $$"""
-            INSERT INTO {{descriptorTable}} (
-                [{{SqlServerMembershipSchema.ClusterName}}],
-                [{{SqlServerMembershipSchema.NodeId}}],
-                [{{SqlServerMembershipSchema.Incarnation}}],
-                [{{SqlServerMembershipSchema.Descriptor.HostName}}],
-                [{{SqlServerMembershipSchema.Descriptor.Endpoints}}],
-                [{{SqlServerMembershipSchema.Descriptor.Role}}],
-                [{{SqlServerMembershipSchema.Descriptor.Metadata}}],
-                [{{SqlServerMembershipSchema.DateCreated}}]
+        var sql = $"""
+            INSERT INTO {descriptorTable} (
+                [{SqlServerMembershipSchema.ClusterName}],
+                [{SqlServerMembershipSchema.NodeId}],
+                [{SqlServerMembershipSchema.Incarnation}],
+                [{SqlServerMembershipSchema.Descriptor.HostName}],
+                [{SqlServerMembershipSchema.Descriptor.Endpoints}],
+                [{SqlServerMembershipSchema.Descriptor.Role}],
+                [{SqlServerMembershipSchema.Descriptor.Metadata}],
+                [{SqlServerMembershipSchema.DateCreated}]
             )
             SELECT
                 @ClusterName,
@@ -105,10 +105,10 @@ internal sealed class SqlServerMembershipStore(
                 SYSUTCDATETIME()
             WHERE NOT EXISTS (
                 SELECT 1
-                FROM {{descriptorTable}} WITH (UPDLOCK, HOLDLOCK)
-                WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-                  AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-                  AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation
+                FROM {descriptorTable} WITH (UPDLOCK, HOLDLOCK)
+                WHERE [{SqlServerMembershipSchema.ClusterName}] = @ClusterName
+                  AND [{SqlServerMembershipSchema.NodeId}] = @NodeId
+                  AND [{SqlServerMembershipSchema.Incarnation}] = @Incarnation
             );
             """;
 
@@ -201,12 +201,12 @@ internal sealed class SqlServerMembershipStore(
     )
     {
         var livenessTable = _Qualified(SqlServerMembershipSchema.Liveness.Table);
-        var sql = $$"""
-            UPDATE {{livenessTable}}
-            SET [{{SqlServerMembershipSchema.Liveness.LeftAt}}] = SYSUTCDATETIME()
-            WHERE [{{SqlServerMembershipSchema.ClusterName}}] = @ClusterName
-              AND [{{SqlServerMembershipSchema.NodeId}}] = @NodeId
-              AND [{{SqlServerMembershipSchema.Incarnation}}] = @Incarnation;
+        var sql = $"""
+            UPDATE {livenessTable}
+            SET [{SqlServerMembershipSchema.Liveness.LeftAt}] = SYSUTCDATETIME()
+            WHERE [{SqlServerMembershipSchema.ClusterName}] = @ClusterName
+              AND [{SqlServerMembershipSchema.NodeId}] = @NodeId
+              AND [{SqlServerMembershipSchema.Incarnation}] = @Incarnation;
             """;
 
         await using var connection = providerOptions.Value.CreateConnection();
@@ -259,9 +259,9 @@ internal sealed class SqlServerMembershipStore(
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThresholdMs", _ToMilliseconds(DeadThreshold));
         command.Parameters.AddWithValue("SuspicionThresholdMs", _ToMilliseconds(SuspicionThreshold));
-        command.Parameters.AddWithValue("AliveState", NodeLivenessState.Alive.ToString());
-        command.Parameters.AddWithValue("SuspectedState", NodeLivenessState.Suspected.ToString());
-        command.Parameters.AddWithValue("DeadState", NodeLivenessState.Dead.ToString());
+        command.Parameters.AddWithValue("AliveState", nameof(NodeLivenessState.Alive));
+        command.Parameters.AddWithValue("SuspectedState", nameof(NodeLivenessState.Suspected));
+        command.Parameters.AddWithValue("DeadState", nameof(NodeLivenessState.Dead));
 
         var snapshots = new List<NodeLivenessSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -335,7 +335,7 @@ internal sealed class SqlServerMembershipStore(
         return JsonSerializer.Serialize(value, _JsonOptions);
     }
 
-    private static IReadOnlyDictionary<string, string> _DeserializeDictionary(string value)
+    private static Dictionary<string, string> _DeserializeDictionary(string value)
     {
         return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);

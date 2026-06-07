@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
 
 internal static partial class LoggerExtensions

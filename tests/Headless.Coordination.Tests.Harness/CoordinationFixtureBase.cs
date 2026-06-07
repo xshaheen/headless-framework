@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Headless.Coordination;
 using Microsoft.Extensions.Hosting;

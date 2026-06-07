@@ -114,9 +114,9 @@ internal sealed class RedisMembershipStore(
                     _ToMilliseconds(Options.SuspicionThreshold),
                     _ToMilliseconds(Options.DeadThreshold),
                     _OperationalPruneMilliseconds(),
-                    NodeLivenessState.Alive.ToString(),
-                    NodeLivenessState.Suspected.ToString(),
-                    NodeLivenessState.Dead.ToString()
+                    nameof(NodeLivenessState.Alive),
+                    nameof(NodeLivenessState.Suspected),
+                    nameof(NodeLivenessState.Dead)
                 ),
                 cancellationToken
             )
@@ -139,7 +139,7 @@ internal sealed class RedisMembershipStore(
             .ConfigureAwait(false);
     }
 
-    private static IReadOnlyList<NodeLivenessSnapshot> _ParseSnapshots(RedisResult[]? result)
+    private static NodeLivenessSnapshot[] _ParseSnapshots(RedisResult[]? result)
     {
         if (result is null || result.Length == 0)
         {
@@ -224,7 +224,7 @@ internal sealed class RedisMembershipStore(
         return JsonSerializer.Serialize(value ?? new Dictionary<string, string>(StringComparer.Ordinal), _JsonOptions);
     }
 
-    private static IReadOnlyDictionary<string, string> _DeserializeDictionary(string value)
+    private static Dictionary<string, string> _DeserializeDictionary(string value)
     {
         return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);

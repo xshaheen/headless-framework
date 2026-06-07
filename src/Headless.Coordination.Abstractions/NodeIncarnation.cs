@@ -24,4 +24,24 @@ public readonly record struct NodeIncarnation : IComparable<NodeIncarnation>
     {
         return Value.ToString(CultureInfo.InvariantCulture);
     }
+
+    public static bool operator <(NodeIncarnation left, NodeIncarnation right)
+    {
+        return left.CompareTo(right) < 0;
+    }
+
+    public static bool operator <=(NodeIncarnation left, NodeIncarnation right)
+    {
+        return left.CompareTo(right) <= 0;
+    }
+
+    public static bool operator >(NodeIncarnation left, NodeIncarnation right)
+    {
+        return left.CompareTo(right) > 0;
+    }
+
+    public static bool operator >=(NodeIncarnation left, NodeIncarnation right)
+    {
+        return left.CompareTo(right) >= 0;
+    }
 }

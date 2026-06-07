@@ -4,19 +4,9 @@ namespace Headless.Coordination;
 
 /// <summary>Incarnation-qualified node identity in the canonical <c>node@incarnation</c> form.</summary>
 [PublicAPI]
-public readonly record struct NodeIdentity
+public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarnation)
 {
     private const char _Separator = '@';
-
-    public NodeIdentity(NodeId nodeId, NodeIncarnation incarnation)
-    {
-        NodeId = nodeId;
-        Incarnation = incarnation;
-    }
-
-    public NodeId NodeId { get; }
-
-    public NodeIncarnation Incarnation { get; }
 
     public static NodeIdentity Parse(string value)
     {

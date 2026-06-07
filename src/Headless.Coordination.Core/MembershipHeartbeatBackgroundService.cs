@@ -13,10 +13,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
     ILogger<MembershipHeartbeatBackgroundService> logger
 ) : BackgroundService
 {
-    private IReadOnlyDictionary<NodeIdentity, NodeLivenessState> _previous = new Dictionary<
-        NodeIdentity,
-        NodeLivenessState
-    >();
+    private Dictionary<NodeIdentity, NodeLivenessState> _previous = [];
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

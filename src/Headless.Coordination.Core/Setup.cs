@@ -67,6 +67,7 @@ public static class SetupCoordinationCore
             services.TryAddSingleton<INodeIdProvider, DefaultNodeIdProvider>();
             services.TryAddSingleton<MembershipEventSource>();
             services.TryAddSingleton<IMembershipEventSource>(static sp => sp.GetRequiredService<MembershipEventSource>());
+
             services.TryAddSingleton<MembershipService>(sp => new MembershipService(
                 storeFactory(sp),
                 sp.GetRequiredService<INodeIdProvider>(),
@@ -75,9 +76,11 @@ public static class SetupCoordinationCore
                 sp.GetService<IHostApplicationLifetime>(),
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipService>>()
             ));
+
             services.TryAddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
-            services.TryAddSingleton<ProviderCapabilities>(new ProviderCapabilities(FailoverEligible: true));
+            services.TryAddSingleton(new ProviderCapabilities(FailoverEligible: true));
             services.TryAddSingleton<MembershipHeartbeatBackgroundService>();
+
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, MembershipHeartbeatBackgroundService>(static sp =>
                     sp.GetRequiredService<MembershipHeartbeatBackgroundService>()

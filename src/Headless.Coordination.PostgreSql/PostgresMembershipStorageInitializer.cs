@@ -102,6 +102,7 @@ internal sealed partial class PostgresMembershipStorageInitializer(
         Level = LogLevel.Information,
         Message = "Postgres coordination initializer absorbed a concurrent-DDL race (SqlState={SqlState}): {Detail}. Treating schema as initialized."
     )]
+    // ReSharper disable once InconsistentNaming
     private static partial void LogSchemaRaceObserved(ILogger logger, string sqlState, string detail);
 }
 #pragma warning restore CA2100

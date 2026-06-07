@@ -212,9 +212,9 @@ internal sealed class PostgresMembershipStore(
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("DeadThreshold", DeadThreshold);
         command.Parameters.AddWithValue("SuspicionThreshold", SuspicionThreshold);
-        command.Parameters.AddWithValue("AliveState", NodeLivenessState.Alive.ToString());
-        command.Parameters.AddWithValue("SuspectedState", NodeLivenessState.Suspected.ToString());
-        command.Parameters.AddWithValue("DeadState", NodeLivenessState.Dead.ToString());
+        command.Parameters.AddWithValue("AliveState", nameof(NodeLivenessState.Alive));
+        command.Parameters.AddWithValue("SuspectedState", nameof(NodeLivenessState.Suspected));
+        command.Parameters.AddWithValue("DeadState", nameof(NodeLivenessState.Dead));
 
         var snapshots = new List<NodeLivenessSnapshot>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -282,7 +282,7 @@ internal sealed class PostgresMembershipStore(
         return JsonSerializer.Serialize(value, _JsonOptions);
     }
 
-    private static IReadOnlyDictionary<string, string> _DeserializeDictionary(string value)
+    private static Dictionary<string, string> _DeserializeDictionary(string value)
     {
         return JsonSerializer.Deserialize<Dictionary<string, string>>(value, _JsonOptions)
             ?? new Dictionary<string, string>(StringComparer.Ordinal);
