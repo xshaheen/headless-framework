@@ -49,7 +49,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             timeProvider,
             leaseHandle.MonitoringCadence,
             leaseHandle.Resource,
-            leaseHandle.LockId,
+            leaseHandle.LeaseId,
             _logger,
             _disposalSource.Token
         );
@@ -63,7 +63,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             _handleLostSource,
             _logger,
             leaseHandle.Resource,
-            leaseHandle.LockId
+            leaseHandle.LeaseId
         );
 
         MonitoringTask = Task.Run(() => _MonitoringLoopAsync(loopState));
@@ -74,10 +74,10 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 var faultState = (FaultContinuationState)state!;
 
                 // Fail-safe FIRST: a faulted monitor cannot keep providing liveness signals, so
-                // signal loss to consumers via HandleLostToken before doing anything that could
+                // signal loss to consumers via LostToken before doing anything that could
                 // itself throw (e.g., a misbehaving logger). Catch both ObjectDisposedException
                 // (CTS already disposed during teardown) and AggregateException (a registered
-                // HandleLostToken callback threw — Cancel() wraps the failures).
+                // LostToken callback threw — Cancel() wraps the failures).
                 try
                 {
                     faultState.HandleLostSource.Cancel();
@@ -88,12 +88,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 }
                 catch (AggregateException aggregate)
                 {
-                    // A registered HandleLostToken callback threw. The original fault is still
+                    // A registered LostToken callback threw. The original fault is still
                     // logged below; log the aggregated callback failures defensively so they are
                     // not silently swallowed.
                     try
                     {
-                        faultState.Logger.LogLeaseMonitorFaulted(aggregate, faultState.Resource, faultState.LockId);
+                        faultState.Logger.LogLeaseMonitorFaulted(aggregate, faultState.Resource, faultState.LeaseId);
                     }
 #pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
                     catch
@@ -105,7 +105,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
 
                 try
                 {
-                    faultState.Logger.LogLeaseMonitorFaulted(task.Exception!, faultState.Resource, faultState.LockId);
+                    faultState.Logger.LogLeaseMonitorFaulted(task.Exception!, faultState.Resource, faultState.LeaseId);
                 }
 #pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
                 catch
@@ -128,14 +128,14 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         CancellationTokenSource HandleLostSource,
         ILogger Logger,
         string Resource,
-        string LockId
+        string LeaseId
     );
 
     private readonly AsyncAutoResetEvent _nudgeSignal;
 
     internal Task MonitoringTask { get; }
 
-    public CancellationToken HandleLostToken => _handleLostSource.Token;
+    public CancellationToken LostToken => _handleLostSource.Token;
 
     public void TriggerImmediateValidation()
     {
@@ -169,12 +169,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             catch (Exception exception)
             {
                 // A fault in the monitoring loop is already surfaced via the OnlyOnFaulted
-                // continuation (logged + HandleLostToken cancelled). Swallow during dispose so
+                // continuation (logged + LostToken cancelled). Swallow during dispose so
                 // teardown cannot throw on the caller of DisposeAsync. Log defensively — a
                 // misbehaving logger must not crash teardown.
                 try
                 {
-                    _logger.LogLeaseMonitorFaulted(exception, _leaseHandle.Resource, _leaseHandle.LockId);
+                    _logger.LogLeaseMonitorFaulted(exception, _leaseHandle.Resource, _leaseHandle.LeaseId);
                 }
 #pragma warning disable ERP022, CA1031 // Defensive: best-effort log; ignore further logger faults during teardown.
                 catch
@@ -234,7 +234,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            _logger.LogLeaseMonitorValidationUnknown(exception, _leaseHandle.Resource, _leaseHandle.LockId);
+            _logger.LogLeaseMonitorValidationUnknown(exception, _leaseHandle.Resource, _leaseHandle.LeaseId);
             nextState = LeaseState.Unknown;
         }
 
@@ -270,7 +270,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             shouldCancel = nextState == LeaseState.Lost;
         }
 
-        _logger.LogLeaseMonitorStateChanged(_leaseHandle.Resource, _leaseHandle.LockId, previousState, nextState);
+        _logger.LogLeaseMonitorStateChanged(_leaseHandle.Resource, _leaseHandle.LeaseId, previousState, nextState);
 
         if (!shouldCancel)
         {
@@ -296,7 +296,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         {
             try
             {
-                _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LockId);
+                _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LeaseId);
             }
 #pragma warning disable ERP022, CA1031 // Defensive: best-effort log from detached cancellation task.
             catch
@@ -363,7 +363,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     {
         string Resource { get; }
 
-        string LockId { get; }
+        string LeaseId { get; }
 
         TimeSpan LeaseDuration { get; }
 
@@ -378,7 +378,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         TimeProvider TimeProvider,
         TimeSpan Cadence,
         string Resource,
-        string LockId,
+        string LeaseId,
         ILogger Logger,
         CancellationToken DisposalToken
     );
@@ -390,12 +390,12 @@ internal static partial class LeaseMonitorLog
         EventId = 30,
         EventName = "LeaseMonitorStateChanged",
         Level = LogLevel.Debug,
-        Message = "Lease monitor state changed: R={Resource} Id={LockId} {PreviousState} -> {NextState}"
+        Message = "Lease monitor state changed: R={Resource} Id={LeaseId} {PreviousState} -> {NextState}"
     )]
     public static partial void LogLeaseMonitorStateChanged(
         this ILogger logger,
         string resource,
-        string lockId,
+        string leaseId,
         LeaseMonitor.LeaseState previousState,
         LeaseMonitor.LeaseState nextState
     );
@@ -404,25 +404,25 @@ internal static partial class LeaseMonitorLog
         EventId = 31,
         EventName = "LeaseMonitorValidationUnknown",
         Level = LogLevel.Debug,
-        Message = "Lease monitor validation failed transiently: R={Resource} Id={LockId}"
+        Message = "Lease monitor validation failed transiently: R={Resource} Id={LeaseId}"
     )]
     public static partial void LogLeaseMonitorValidationUnknown(
         this ILogger logger,
         Exception exception,
         string resource,
-        string lockId
+        string leaseId
     );
 
     [LoggerMessage(
         EventId = 32,
         EventName = "LeaseMonitorFaulted",
         Level = LogLevel.Error,
-        Message = "Lease monitor loop faulted: R={Resource} Id={LockId}"
+        Message = "Lease monitor loop faulted: R={Resource} Id={LeaseId}"
     )]
     public static partial void LogLeaseMonitorFaulted(
         this ILogger logger,
         Exception exception,
         string resource,
-        string lockId
+        string leaseId
     );
 }

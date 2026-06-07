@@ -45,7 +45,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     private readonly string _receiveRetryResource;
     private Task? _receivedRetryConsumeTask;
     private Task? _publishedRetryConsumeTask;
-    private volatile IDistributedLock? _receivedRetryHandle;
+    private volatile IDistributedLease? _receivedRetryHandle;
 
     // Threading contract:
     // - _AdjustPollingInterval is called only from ProcessAsync (sequential).
@@ -97,7 +97,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         IOptions<RetryProcessorOptions> retryOptions,
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
-        [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLockProvider lockProvider,
+        [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null
     )
     {
@@ -126,7 +126,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     public bool IsBackedOff => Interlocked.Read(ref _currentIntervalTicks) > _baseInterval.Ticks;
 
     /// <summary>The keyed-DI lock provider that was injected. Internal accessor — production code uses this; tests verify injection via InternalsVisibleTo.</summary>
-    internal IDistributedLockProvider LockProvider { get; }
+    internal IDistributedLock LockProvider { get; }
 
     /// <summary>Sets the current polling interval. Exposed for testing via InternalsVisibleTo.</summary>
     internal void SetCurrentIntervalForTest(TimeSpan value) =>
@@ -219,7 +219,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
                         // from scratch. The in-flight dispatch task keeps running under per-row LockedUntil,
                         // which is the actual correctness primitive against double-dispatch (see the
                         // "Distributed Lock Integration" section in docs/llms/messaging.md). The full
-                        // lock-loss signaling story — LeaseMonitor + IDistributedLock.HandleLostToken —
+                        // lock-loss signaling story — LeaseMonitor + IDistributedLease.LostToken —
                         // is tracked in #296 (depends on #289 Phase 2 shipping the abstraction).
                         _logger.ReceivedRetryLockOwnershipLost();
                         _receivedRetryHandle = null;
@@ -334,10 +334,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     /// <summary>
     /// Attempts to acquire the published-retry or received-retry distributed lock, wrapping
-    /// <c>IDistributedLockProvider.TryAcquireAsync</c> in the per-kind escalation-counter pattern shared with
+    /// <c>IDistributedLock.TryAcquireAsync</c> in the per-kind escalation-counter pattern shared with
     /// storage-pickup failures so adaptive polling backs off on lock-store outages rather than tight-looping.
     /// </summary>
-    private async Task<IDistributedLock?> _TryAcquireLockAsync(StoragePickupKind kind, ProcessingContext context)
+    private async Task<IDistributedLease?> _TryAcquireLockAsync(StoragePickupKind kind, ProcessingContext context)
     {
         var resource = kind switch
         {
@@ -506,7 +506,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         // (above) resets the same counter to 0 on a healthy storage call, which means a
         // persistent lock-store outage is masked whenever the database itself is fine. The
         // counter conflation is documented as intentional pending #296 (split lock vs storage
-        // counters once #289 surfaces IDistributedLock.HandleLostToken as the canonical
+        // counters once #289 surfaces IDistributedLease.LostToken as the canonical
         // lock-loss signal — at that point the lock-side gets its own escalation EventId).
         var failureCount = Interlocked.Increment(ref _CounterRef(kind));
         _CompareExchangeDouble();
@@ -691,7 +691,7 @@ internal static partial class RetryProcessorLog
         Level = LogLevel.Debug,
         Message = "Skipping retry for message {StorageId} — circuit open for group {Group}"
     )]
-    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, long storageId, string? group);
+    public static partial void RetrySkippedBecauseCircuitOpen(this ILogger logger, Guid storageId, string? group);
 
     [LoggerMessage(EventId = 3110, Level = LogLevel.Warning, Message = "Get messages from storage failed. Retrying...")]
     public static partial void GetMessagesFromStorageFailed(this ILogger logger, Exception ex);

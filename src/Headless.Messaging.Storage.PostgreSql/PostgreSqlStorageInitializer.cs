@@ -202,7 +202,7 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE SCHEMA IF NOT EXISTS "{schema}";
 
             CREATE TABLE IF NOT EXISTS {GetReceivedTableName()}(
-            	"Id" BIGINT PRIMARY KEY NOT NULL,
+                "Id" UUID PRIMARY KEY NOT NULL,
                 "Version" VARCHAR(20) NOT NULL,
             	"Name" VARCHAR(200) NOT NULL,
             	"Group" VARCHAR(200) NULL,
@@ -241,7 +241,7 @@ public sealed class PostgreSqlStorageInitializer(
             CREATE INDEX IF NOT EXISTS "idx_received_delayed" ON {GetReceivedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
             CREATE TABLE IF NOT EXISTS {GetPublishedTableName()}(
-            	"Id" BIGINT PRIMARY KEY NOT NULL,
+                "Id" UUID PRIMARY KEY NOT NULL,
                 "Version" VARCHAR(20) NOT NULL,
             	"Name" VARCHAR(200) NOT NULL,
             	"Content" TEXT NULL,

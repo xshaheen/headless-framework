@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -44,7 +45,7 @@ public static class SetupPostgresDistributedLocks
         private IServiceCollection _AddPostgresDistributedLocksCore()
         {
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.AddHeadlessGuidGenerator();
 
             // Build the data source once and share it across all three consumers (storage, release
             // signal, fencing) so a connection-string configuration produces a single pool rather than
@@ -65,24 +66,18 @@ public static class SetupPostgresDistributedLocks
             services.TryAddSingleton<DistributedLockOptions>(sp =>
                 sp.GetRequiredService<IOptions<DistributedLockOptions>>().Value
             );
-            services.TryAddSingleton<ConnectionScopedDistributedLockProvider>(
-                sp => new ConnectionScopedDistributedLockProvider(
-                    sp.GetRequiredService<IConnectionScopedLockStorage>(),
-                    sp.GetRequiredService<IReleaseSignal>(),
-                    sp.GetRequiredService<DistributedLockOptions>(),
-                    sp.GetRequiredService<ILongIdGenerator>(),
-                    sp.GetRequiredService<TimeProvider>(),
-                    sp.GetRequiredService<ILogger<ConnectionScopedDistributedLockProvider>>(),
-                    sp.GetService<IFencingTokenSource>(),
-                    pollingFallback: sp.GetRequiredService<
-                        IOptions<PostgresDistributedLockOptions>
-                    >().Value.PollingFallback
-                )
-            );
-            services.TryAddSingleton<IDistributedLockProvider>(sp =>
-                sp.GetRequiredService<ConnectionScopedDistributedLockProvider>()
-            );
-            services.TryAddSingleton<IDistributedReaderWriterLockProvider, ConnectionScopedReaderWriterLockProvider>();
+            services.TryAddSingleton<ConnectionScopedDistributedLock>(sp => new ConnectionScopedDistributedLock(
+                sp.GetRequiredService<IConnectionScopedLockStorage>(),
+                sp.GetRequiredService<IReleaseSignal>(),
+                sp.GetRequiredService<DistributedLockOptions>(),
+                sp.GetRequiredService<IGuidGenerator>(),
+                sp.GetRequiredService<TimeProvider>(),
+                sp.GetRequiredService<ILogger<ConnectionScopedDistributedLock>>(),
+                sp.GetService<IFencingTokenSource>(),
+                pollingFallback: sp.GetRequiredService<IOptions<PostgresDistributedLockOptions>>().Value.PollingFallback
+            ));
+            services.TryAddSingleton<IDistributedLock>(sp => sp.GetRequiredService<ConnectionScopedDistributedLock>());
+            services.TryAddSingleton<IDistributedReadWriteLock, ConnectionScopedReadWriteLock>();
 
             return services;
         }

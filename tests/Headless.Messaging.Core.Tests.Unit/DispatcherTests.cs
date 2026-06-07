@@ -50,7 +50,7 @@ public sealed class DispatcherTests : TestBase
         );
 
         using var cts = new CancellationTokenSource();
-        const long storageId = 1L;
+        var storageId = Guid.NewGuid();
 
         // when
         await dispatcher.StartAsync(cts.Token);
@@ -232,7 +232,10 @@ public sealed class DispatcherTests : TestBase
         await cts.CancelAsync();
 
         // then
-        sender.ReceivedMessages.Select(m => m.StorageId).Should().Equal([3L, 2L, 1L]);
+        sender
+            .ReceivedMessages.Select(m => m.StorageId)
+            .Should()
+            .Equal([_StorageGuid(3), _StorageGuid(2), _StorageGuid(1)]);
     }
 
     [Fact]
@@ -350,7 +353,10 @@ public sealed class DispatcherTests : TestBase
         await cts.CancelAsync();
 
         // then
-        sender.ReceivedMessages.Select(m => m.StorageId).Should().Equal([3L, 2L, 1L]);
+        sender
+            .ReceivedMessages.Select(m => m.StorageId)
+            .Should()
+            .Equal([_StorageGuid(3), _StorageGuid(2), _StorageGuid(1)]);
     }
 
     [Fact]
@@ -548,7 +554,7 @@ public sealed class DispatcherTests : TestBase
         using var cts = new CancellationTokenSource();
         await dispatcher.StartAsync(cts.Token);
 
-        await dispatcher.EnqueueToPublish(_CreateTestMessage(1), AbortToken);
+        await dispatcher.EnqueueToPublish(_CreateTestMessage(_StorageGuid(1)), AbortToken);
         await Task.Delay(100, CancellationToken.None);
         await cts.CancelAsync();
 
@@ -596,7 +602,7 @@ public sealed class DispatcherTests : TestBase
         // EnqueueToPublish would route through _WriteToChannelAsync since parallel-send is enabled
         // and Retries == 0. The post-dispose write must not propagate InvalidOperationException —
         // the EnqueueToPublish catch swallows OCE only.
-        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(1), AbortToken);
+        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(_StorageGuid(1)), AbortToken);
 
         // The Enqueue method's own try/catch absorbs OCE — so this call should complete without
         // throwing at all. If the post-dispose path throws InvalidOperationException, this assertion
@@ -646,13 +652,16 @@ public sealed class DispatcherTests : TestBase
         // Post-dispose enqueue with Retries == 0 goes through the inline-publish path (no channel
         // write). The EnqueueToPublish wrapper's catch contract still applies; verify no leaked
         // exception escapes.
-        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(1), AbortToken);
+        var act = async () => await dispatcher.EnqueueToPublish(_CreateTestMessage(_StorageGuid(1)), AbortToken);
         await act.Should().NotThrowAsync();
     }
 
-    private static MediumMessage _CreateTestMessage(long storageId = 1)
+    private static MediumMessage _CreateTestMessage(int storageId) => _CreateTestMessage(_StorageGuid(storageId));
+
+    private static MediumMessage _CreateTestMessage(Guid? storageId = null)
     {
-        var messageId = storageId.ToString(CultureInfo.InvariantCulture);
+        var resolvedStorageId = storageId ?? Guid.NewGuid();
+        var messageId = resolvedStorageId.ToString("D");
         var message = new Message(
             headers: new Dictionary<string, string?>(StringComparer.Ordinal) { { "headless-msg-id", messageId } },
             value: new MessageValue("test@test.com", "User")
@@ -660,12 +669,14 @@ public sealed class DispatcherTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = storageId,
+            StorageId = resolvedStorageId,
             Origin = message,
             Content = JsonSerializer.Serialize(message),
             IntentType = IntentType.Bus,
         };
     }
+
+    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
 
     /// <summary>
     /// Captures <see cref="IHostApplicationLifetime.StopApplication"/> calls so tests can assert

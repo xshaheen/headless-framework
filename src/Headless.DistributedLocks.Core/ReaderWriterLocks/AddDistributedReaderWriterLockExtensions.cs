@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Core;
 using Headless.Messaging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,59 +12,57 @@ using Microsoft.Extensions.Logging;
 namespace Headless.DistributedLocks;
 
 [PublicAPI]
-public static class AddDistributedReaderWriterLockExtensions
+public static class AddDistributedReadWriteLockExtensions
 {
     extension(IServiceCollection services)
     {
-        public IServiceCollection AddDistributedReaderWriterLock<TStorage>(
+        public IServiceCollection AddDistributedReadWriteLock<TStorage>(
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
-            where TStorage : class, IDistributedReaderWriterLockStorage
+            where TStorage : class, IDistributedReadWriteLockStorage
         {
             services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(optionSetupAction);
 
-            return services._AddDistributedReaderWriterLockCore<TStorage>();
+            return services._AddDistributedReadWriteLockCore<TStorage>();
         }
 
-        public IServiceCollection AddDistributedReaderWriterLock<TStorage>(
+        public IServiceCollection AddDistributedReadWriteLock<TStorage>(
             Action<DistributedLockOptions> optionSetupAction
         )
-            where TStorage : class, IDistributedReaderWriterLockStorage
+            where TStorage : class, IDistributedReadWriteLockStorage
         {
             services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(optionSetupAction);
 
-            return services._AddDistributedReaderWriterLockCore<TStorage>();
+            return services._AddDistributedReadWriteLockCore<TStorage>();
         }
 
-        public IServiceCollection AddDistributedReaderWriterLock<TStorage>(IConfiguration config)
-            where TStorage : class, IDistributedReaderWriterLockStorage
+        public IServiceCollection AddDistributedReadWriteLock<TStorage>(IConfiguration config)
+            where TStorage : class, IDistributedReadWriteLockStorage
         {
             services.Configure<DistributedLockOptions, DistributedLockOptionsValidator>(config);
 
-            return services._AddDistributedReaderWriterLockCore<TStorage>();
+            return services._AddDistributedReadWriteLockCore<TStorage>();
         }
 
-        private IServiceCollection _AddDistributedReaderWriterLockCore<TStorage>()
-            where TStorage : class, IDistributedReaderWriterLockStorage
+        private IServiceCollection _AddDistributedReadWriteLockCore<TStorage>()
+            where TStorage : class, IDistributedReadWriteLockStorage
         {
             services.TryAddSingleton<TStorage>();
             services.AddSingletonOptionValue<DistributedLockOptions>();
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
+            services.AddHeadlessGuidGenerator();
 
-            services.TryAddSingleton<DistributedReaderWriterLockProvider>(
-                provider => new DistributedReaderWriterLockProvider(
-                    provider.GetRequiredService<TStorage>(),
-                    provider.GetService<IOutboxBus>(),
-                    provider.GetRequiredService<DistributedLockOptions>(),
-                    provider.GetRequiredService<ILongIdGenerator>(),
-                    provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<ILogger<DistributedReaderWriterLockProvider>>()
-                )
-            );
+            services.TryAddSingleton<DistributedReadWriteLock>(provider => new DistributedReadWriteLock(
+                provider.GetRequiredService<TStorage>(),
+                provider.GetService<IOutboxBus>(),
+                provider.GetRequiredService<DistributedLockOptions>(),
+                provider.GetRequiredService<IGuidGenerator>(),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<ILogger<DistributedReadWriteLock>>()
+            ));
 
-            services.TryAddSingleton<IDistributedReaderWriterLockProvider>(sp =>
-                sp.GetRequiredService<DistributedReaderWriterLockProvider>()
+            services.TryAddSingleton<IDistributedReadWriteLock>(sp =>
+                sp.GetRequiredService<DistributedReadWriteLock>()
             );
 
             return services;

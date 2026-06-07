@@ -13,26 +13,29 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
 {
     private readonly SqlServerDistributedLockOptions _options;
     private readonly TimeProvider _timeProvider;
-    private readonly ConcurrentDictionary<string, HeldLock> _heldByLockId = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, HeldLock> _heldByLeaseId = new(StringComparer.Ordinal);
 
     // Set at the top of DisposeAsync so an acquire racing teardown does not register a lock the teardown snapshot of
-    // _heldByLockId already iterated past (which would leak its connection and applock).
+    // _heldByLeaseId already iterated past (which would leak its connection and applock).
     private volatile bool _disposed;
 
-    public SqlServerConnectionScopedLockStorage(IOptions<SqlServerDistributedLockOptions> options, TimeProvider timeProvider)
+    public SqlServerConnectionScopedLockStorage(
+        IOptions<SqlServerDistributedLockOptions> options,
+        TimeProvider timeProvider
+    )
     {
         _options = options.Value;
         _timeProvider = timeProvider;
     }
 
-    public bool BlocksServerSide => true;
+    public bool BlocksServerSide => false;
 
 #pragma warning disable CA2000 // The acquired connection is transferred to HeldLock, which owns disposal.
     public async ValueTask<ConnectionScopedLockHandle?> TryAcquireAsync(
         string resource,
-        string lockId,
+        string leaseId,
         bool isShared,
-        TimeSpan acquireTimeout,
+        bool observeLoss,
         CancellationToken cancellationToken = default
     )
     {
@@ -47,12 +50,27 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
             // Build the HeldLock before opening so its StateChange handler and active probe are wired before any
             // command runs: a connection break observed between open and acquire then still cancels the lost token,
             // closing the gap where a clean disconnect could be missed.
-            held = new HeldLock(resource, encodedResource, lockId, isShared, connection, _options.CommandTimeout, _timeProvider);
+            held = new HeldLock(
+                resource,
+                encodedResource,
+                leaseId,
+                isShared,
+                connection,
+                _options.CommandTimeout,
+                _timeProvider
+            );
 
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             var acquired = await SqlServerApplicationLock
-                .TryAcquireSessionAsync(connection, encodedResource, isShared, acquireTimeout, _options.CommandTimeout, cancellationToken)
+                .TryAcquireSessionAsync(
+                    connection,
+                    encodedResource,
+                    isShared,
+                    TimeSpan.Zero,
+                    _options.CommandTimeout,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             if (!acquired)
@@ -60,22 +78,30 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
                 return null;
             }
 
-            _heldByLockId[lockId] = held;
+            _heldByLeaseId[leaseId] = held;
 
             // Close the dispose race: if teardown has begun, the just-acquired lock would be missed by the teardown
             // snapshot, leaking its connection and applock. Drop it explicitly instead of leaving it registered.
             if (_disposed)
             {
-                _heldByLockId.TryRemove(lockId, out _);
+                _heldByLeaseId.TryRemove(leaseId, out _);
                 ObjectDisposedException.ThrowIf(_disposed, this);
             }
 
             // Begin active liveness probing only once the lock is held and registered, so a silent half-open
             // connection (no RST, no in-flight command) surfaces as a lost token instead of going unnoticed.
-            held.StartMonitoring();
+            if (observeLoss)
+            {
+                held.StartMonitoring();
+            }
             ownershipTransferred = true;
 
-            return new ConnectionScopedLockHandle(resource, lockId, ReleaseAsync, held.ConnectionLostToken)
+            return new ConnectionScopedLockHandle(
+                resource,
+                leaseId,
+                ReleaseAsync,
+                observeLoss ? held.ConnectionLostToken : CancellationToken.None
+            )
             {
                 HeldConnection = held.Connection,
             };
@@ -90,14 +116,17 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
     }
 #pragma warning restore CA2000
 
-    public async ValueTask ReleaseAsync(ConnectionScopedLockHandle handle, CancellationToken cancellationToken = default)
+    public async ValueTask ReleaseAsync(
+        ConnectionScopedLockHandle handle,
+        CancellationToken cancellationToken = default
+    )
     {
-        await ReleaseAsync(handle.Resource, handle.LockId, cancellationToken).ConfigureAwait(false);
+        await ReleaseAsync(handle.Resource, handle.LeaseId, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public async ValueTask ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
-        if (!_heldByLockId.TryRemove(lockId, out var held))
+        if (!_heldByLeaseId.TryRemove(leaseId, out var held))
         {
             return;
         }
@@ -111,7 +140,8 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
             {
                 if (held.Connection.State == ConnectionState.Open)
                 {
-                    await SqlServerApplicationLock.ReleaseSessionAsync(held.Connection, held.EncodedResource, CancellationToken.None)
+                    await SqlServerApplicationLock
+                        .ReleaseSessionAsync(held.Connection, held.EncodedResource, CancellationToken.None)
                         .ConfigureAwait(false);
                 }
             }
@@ -132,7 +162,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         CancellationToken cancellationToken = default
     )
     {
-        var local = _heldByLockId.Values.Any(x =>
+        var local = _heldByLeaseId.Values.Any(x =>
             string.Equals(x.Resource, resource, StringComparison.Ordinal)
             && (!isShared.HasValue || x.IsShared == isShared.Value)
         );
@@ -153,10 +183,11 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         CancellationToken cancellationToken = default
     )
     {
-        var localCount = (long)_heldByLockId.Values.Count(x =>
-            string.Equals(x.Resource, resource, StringComparison.Ordinal)
-            && (!isShared.HasValue || x.IsShared == isShared.Value)
-        );
+        var localCount = (long)
+            _heldByLeaseId.Values.Count(x =>
+                string.Equals(x.Resource, resource, StringComparison.Ordinal)
+                && (!isShared.HasValue || x.IsShared == isShared.Value)
+            );
 
         if (localCount > 0)
         {
@@ -167,24 +198,28 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         return await _IsLockedInDatabaseAsync(resource, isShared, cancellationToken).ConfigureAwait(false) ? 1 : 0;
     }
 
-    public ValueTask<string?> GetLocalLockIdAsync(string resource, CancellationToken cancellationToken = default)
+    public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         return ValueTask.FromResult(
-            _heldByLockId.Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))?.LockId
+            _heldByLeaseId
+                .Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))
+                ?.LeaseId
         );
     }
 
-    public ValueTask<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default)
+    public ValueTask<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+        CancellationToken cancellationToken = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        IReadOnlyList<LockInfo> locks = _heldByLockId
-            .Values.Select(x => new LockInfo
+        IReadOnlyList<DistributedLockInfo> locks = _heldByLeaseId
+            .Values.Select(x => new DistributedLockInfo
             {
                 Resource = x.Resource,
-                LockId = x.LockId,
+                LeaseId = x.LeaseId,
                 TimeToLive = null,
                 FencingToken = null,
             })
@@ -197,7 +232,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult((long)_heldByLockId.Count);
+        return ValueTask.FromResult((long)_heldByLeaseId.Count);
     }
 
     public async ValueTask DisposeAsync()
@@ -208,7 +243,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
 
         List<Exception>? teardownErrors = null;
 
-        foreach (var held in _heldByLockId.Values)
+        foreach (var held in _heldByLeaseId.Values)
         {
             try
             {
@@ -220,7 +255,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
             }
         }
 
-        _heldByLockId.Clear();
+        _heldByLeaseId.Clear();
 
         if (teardownErrors is not null)
         {
@@ -243,7 +278,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
 
         if (isShared is null)
         {
-            return !await _CanAcquireAsync(connection, encodedResource, SqlServerApplicationLock.ExclusiveLockMode, cancellationToken)
+            return !await _CanAcquireAsync(
+                    connection,
+                    encodedResource,
+                    SqlServerApplicationLock.ExclusiveLockMode,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
@@ -271,7 +311,12 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
                 .ConfigureAwait(false);
         }
 
-        return !await _CanAcquireAsync(connection, encodedResource, SqlServerApplicationLock.SharedLockMode, cancellationToken)
+        return !await _CanAcquireAsync(
+                connection,
+                encodedResource,
+                SqlServerApplicationLock.SharedLockMode,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
@@ -283,13 +328,18 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
     )
     {
         await using var command = connection.CreateCommand();
-        command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(TimeSpan.Zero, _options.CommandTimeout);
+        command.CommandTimeout = SqlServerApplicationLock.GetCommandTimeoutSeconds(
+            TimeSpan.Zero,
+            _options.CommandTimeout
+        );
         command.CommandText = "SELECT APPLOCK_TEST(N'public', @resource, @lockMode, N'Session');";
         command.Parameters.AddWithValue("resource", encodedResource);
         command.Parameters.AddWithValue("lockMode", lockMode);
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture)
-            == 1;
+        return Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                CultureInfo.InvariantCulture
+            ) == 1;
     }
 
     /// <summary>
@@ -319,7 +369,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         public HeldLock(
             string resource,
             string encodedResource,
-            string lockId,
+            string leaseId,
             bool isShared,
             SqlConnection connection,
             TimeSpan commandTimeout,
@@ -328,7 +378,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
         {
             Resource = resource;
             EncodedResource = encodedResource;
-            LockId = lockId;
+            LeaseId = leaseId;
             IsShared = isShared;
             Connection = connection;
             _timeProvider = timeProvider;
@@ -340,7 +390,7 @@ internal sealed class SqlServerConnectionScopedLockStorage : IConnectionScopedLo
 
         public string Resource { get; }
         public string EncodedResource { get; }
-        public string LockId { get; }
+        public string LeaseId { get; }
         public bool IsShared { get; }
         public SqlConnection Connection { get; }
         public CancellationToken ConnectionLostToken => _lostTokenSource.Token;

@@ -124,7 +124,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         var mediumMessage = new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
@@ -716,7 +716,7 @@ public sealed class SubscribeInvokerTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, json),
             Content = json,
             IntentType = IntentType.Bus,

@@ -8,21 +8,23 @@ Lets application and domain code depend on lock interfaces without referencing a
 
 ## Key Features
 
-- `IDistributedLockProvider` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
-- `IDistributedReaderWriterLockProvider` with read/write acquire methods returning `IDistributedLock`.
+- `IDistributedLock` with `TryAcquireAsync(...)` and `AcquireAsync(...)`.
+- `IDistributedReadWriteLock` with read/write acquire methods returning `IDistributedLease`.
 - `IDistributedSemaphoreProvider` and `IDistributedSemaphore` for creation-time `maxCount` concurrency control.
-- `IDistributedLock` handle with `LockId`, nullable `FencingToken`, `HandleLostToken`, `IsMonitored`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
+- `IDistributedLease` handle with `LeaseId`, nullable `FencingToken`, `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `TryUsingAsync(resource, work, ...)` convenience that acquires, executes work, and releases — prefer this over manual try/finally for simple guarded execution.
-- `LockAcquisitionTimeoutException`, `DistributedLockDeadlockException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
-- Lock inspection methods for current lock id, expiration, active count, active list, and lock info. `GetLockIdAsync` does not renew a lease; monitored holders should use `HandleLostToken` for lease-loss observation.
+- `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
+- Lock inspection methods for current lease id, expiration, active count, active list, and lock info. `GetLeaseIdAsync` does not renew a lease; monitored holders should use `LostToken` for lease-loss observation. Some backends can observe that a resource is locked without being able to surface the current holder id, so inspection `LeaseId` values may be null and provider-wide list/count APIs are limited to what the backend can enumerate.
 
 ## Design Notes
 
 - `AcquireAsync(...)` is a throwing convenience over `TryAcquireAsync(...)`. It does not provide stronger safety guarantees.
 - Per-call configuration (`TimeUntilExpires`, `AcquireTimeout`, `ReleaseOnDispose`, `Monitoring`) is bundled into `DistributedLockAcquireOptions`. Omit the argument to use defaults; use `with` expressions to derive variants.
 - `ReleaseOnDispose = false` prevents dispose-time release but does not disable explicit `ReleaseAsync(...)`.
-- `FencingToken` is a per-resource monotonic grant counter for stale-write rejection. It is distinct from `LockId`, which remains the opaque ownership token used for renew/release equality. It is `null` when the backend or lock type does not support fencing.
-- `HandleLostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `IsMonitored` to disambiguate). It is an observability signal. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
+- `FencingToken` is a per-resource monotonic grant counter for stale-write rejection. It is distinct from `LeaseId`, which remains the opaque ownership token used for renew/release equality. It is `null` when the backend or lock type does not support fencing.
+- `DistributedLockInfo.LeaseId` may be `null` when the backend can prove a resource is locked but cannot expose the current holder identity on the inspection path.
+- `LostToken` is `CancellationToken.None` unless the acquire call enables monitoring (check `CanObserveLoss` to disambiguate). It is an observability signal. A faulted monitor is surfaced as cancellation here as a fail-safe so a silently dead monitor cannot keep appearing healthy.
+- `ThrowIfLost()` is a self-fencing convenience for hot paths: it throws `LockHandleLostException` when `LostToken` has fired.
 - `TimeUntilExpires = null` uses the provider default. Built-in providers use a finite 20-minute default, so `null` is valid with `LockMonitoringMode.AutoExtend`; `Timeout.InfiniteTimeSpan` is not.
 
 ## Installation
@@ -34,7 +36,7 @@ dotnet add package Headless.DistributedLocks.Abstractions
 ## Quick Start
 
 ```csharp
-public sealed class OrderWorker(IDistributedLockProvider lockProvider)
+public sealed class OrderWorker(IDistributedLock lockProvider)
 {
     public async Task ProcessAsync(Guid orderId, CancellationToken ct)
     {
@@ -49,7 +51,8 @@ public sealed class OrderWorker(IDistributedLockProvider lockProvider)
             ct
         );
 
-        using var lostRegistration = lease.HandleLostToken.Register(() => { /* stop work */ });
+        using var lostRegistration = lease.LostToken.Register(() => { /* stop work */ });
+        lease.ThrowIfLost();
         // process the order while the lease is held
     }
 }

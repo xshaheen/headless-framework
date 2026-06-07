@@ -78,7 +78,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         };
 
         return new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
             new NullCurrentTenant(),

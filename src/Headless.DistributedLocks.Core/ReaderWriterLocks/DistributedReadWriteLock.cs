@@ -10,20 +10,20 @@ using Polly;
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
-public sealed class DistributedReaderWriterLockProvider(
-    IDistributedReaderWriterLockStorage storage,
+public sealed class DistributedReadWriteLock(
+    IDistributedReadWriteLockStorage storage,
     IOutboxBus? outboxBus,
     DistributedLockOptions lockOptions,
-    ILongIdGenerator longIdGenerator,
+    IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    ILogger<DistributedReaderWriterLockProvider> logger
-) : IDistributedReaderWriterLockProvider
+    ILogger<DistributedReadWriteLock> logger
+) : IDistributedReadWriteLock
 {
     private static readonly TimeSpan _LongLockWarningThreshold = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _NonBlockingAcquireDeadline = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan _WaitingMarkerCleanupTimeout = TimeSpan.FromSeconds(5);
 
-    private readonly ScopedDistributedReaderWriterLockStorage _storage = new(storage, lockOptions.KeyPrefix);
+    private readonly ScopedDistributedReadWriteLockStorage _storage = new(storage, lockOptions.KeyPrefix);
     private readonly IOutboxBus? _outboxBus = DistributedLockCoreHelpers.ConfigureOutboxBus(outboxBus, logger);
     private readonly LeaseMonitorRegistry _monitorRegistry = new(logger);
     private readonly int _maxResourceNameLength = lockOptions.MaxResourceNameLength;
@@ -42,7 +42,7 @@ public sealed class DistributedReaderWriterLockProvider(
 
     public TimeSpan DefaultAcquireTimeout { get; } = TimeSpan.FromSeconds(30);
 
-    public async Task<IDistributedLock> AcquireReadLockAsync(
+    public async Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -58,7 +58,7 @@ public sealed class DistributedReaderWriterLockProvider(
             );
     }
 
-    public Task<IDistributedLock?> TryAcquireReadLockAsync(
+    public Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -67,7 +67,7 @@ public sealed class DistributedReaderWriterLockProvider(
         return _TryAcquireAsync(ReaderWriterLockMode.Read, resource, options, cancellationToken);
     }
 
-    public async Task<IDistributedLock> AcquireWriteLockAsync(
+    public async Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -83,7 +83,7 @@ public sealed class DistributedReaderWriterLockProvider(
             );
     }
 
-    public Task<IDistributedLock?> TryAcquireWriteLockAsync(
+    public Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -116,13 +116,13 @@ public sealed class DistributedReaderWriterLockProvider(
     internal Task<bool> RenewAsync(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires = null,
         CancellationToken cancellationToken = default
     )
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
         timeUntilExpires = DistributedLockCoreHelpers.NormalizeTimeUntilExpires(
             timeUntilExpires,
@@ -134,10 +134,10 @@ public sealed class DistributedReaderWriterLockProvider(
             // Read renew also clamps null/infinite to the default — see _TryAcquireStorageAsync
             // for rationale.
             ReaderWriterLockMode.Read => _storage
-                .TryExtendReadAsync(resource, lockId, timeUntilExpires ?? DefaultTimeUntilExpires, cancellationToken)
+                .TryExtendReadAsync(resource, leaseId, timeUntilExpires ?? DefaultTimeUntilExpires, cancellationToken)
                 .AsTask(),
             ReaderWriterLockMode.Write => _storage
-                .TryExtendWriteAsync(resource, lockId, timeUntilExpires, cancellationToken)
+                .TryExtendWriteAsync(resource, leaseId, timeUntilExpires, cancellationToken)
                 .AsTask(),
             _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
         };
@@ -146,17 +146,17 @@ public sealed class DistributedReaderWriterLockProvider(
     internal Task<bool> ValidateAsync(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
         return mode switch
         {
-            ReaderWriterLockMode.Read => _storage.ValidateReadAsync(resource, lockId, cancellationToken).AsTask(),
-            ReaderWriterLockMode.Write => _storage.ValidateWriteAsync(resource, lockId, cancellationToken).AsTask(),
+            ReaderWriterLockMode.Read => _storage.ValidateReadAsync(resource, leaseId, cancellationToken).AsTask(),
+            ReaderWriterLockMode.Write => _storage.ValidateWriteAsync(resource, leaseId, cancellationToken).AsTask(),
             _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
         };
     }
@@ -164,12 +164,12 @@ public sealed class DistributedReaderWriterLockProvider(
     internal async Task ReleaseAsync(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         _ValidateResource(resource);
-        Argument.IsNotNullOrWhiteSpace(lockId);
+        Argument.IsNotNullOrWhiteSpace(leaseId);
 
         // Release is a terminal-state write. Per <see cref="DisposableReaderWriterLock.DisposeAsync"/>
         // contract, sustained storage unreachability can keep this pipeline retrying for the full
@@ -190,19 +190,19 @@ public sealed class DistributedReaderWriterLockProvider(
             ReaderWriterLockMode.Read => _releasePipeline.ExecuteAsync(
                 static async (state, ct) =>
                 {
-                    var (storage, resource, lockId) = state;
-                    await storage.ReleaseReadAsync(resource, lockId, ct).ConfigureAwait(false);
+                    var (storage, resource, leaseId) = state;
+                    await storage.ReleaseReadAsync(resource, leaseId, ct).ConfigureAwait(false);
                 },
-                (_storage, resource, lockId),
+                (_storage, resource, leaseId),
                 CancellationToken.None
             ),
             ReaderWriterLockMode.Write => _releasePipeline.ExecuteAsync(
                 static async (state, ct) =>
                 {
-                    var (storage, resource, lockId) = state;
-                    await storage.ReleaseWriteAsync(resource, lockId, ct).ConfigureAwait(false);
+                    var (storage, resource, leaseId) = state;
+                    await storage.ReleaseWriteAsync(resource, leaseId, ct).ConfigureAwait(false);
                 },
-                (_storage, resource, lockId),
+                (_storage, resource, leaseId),
                 CancellationToken.None
             ),
             _ => throw new InvalidOperationException("Unknown reader-writer lock mode."),
@@ -217,10 +217,10 @@ public sealed class DistributedReaderWriterLockProvider(
         }
         catch (TimeoutException)
         {
-            logger.LogLockReleaseTimedOut(resource, lockId, _disposeTimeout);
+            logger.LogLockReleaseTimedOut(resource, leaseId, _disposeTimeout);
         }
 
-        var monitor = _monitorRegistry.TryDeregister(resource, lockId);
+        var monitor = _monitorRegistry.TryDeregister(resource, leaseId);
 
         if (monitor is not null)
         {
@@ -230,13 +230,13 @@ public sealed class DistributedReaderWriterLockProvider(
             }
             catch (Exception exception)
             {
-                logger.LogLeaseMonitorFaulted(exception, resource, lockId);
+                logger.LogLeaseMonitorFaulted(exception, resource, leaseId);
             }
         }
 
         if (_outboxBus is not null)
         {
-            var released = new DistributedLockReleased(resource, lockId);
+            var released = new DistributedLockReleased(resource, leaseId);
 
             try
             {
@@ -244,12 +244,12 @@ public sealed class DistributedReaderWriterLockProvider(
             }
             catch (Exception exception)
             {
-                logger.LogLockReleasePublishFailed(exception, resource, lockId);
+                logger.LogLockReleasePublishFailed(exception, resource, leaseId);
             }
         }
     }
 
-    private async Task<IDistributedLock?> _TryAcquireAsync(
+    private async Task<IDistributedLease?> _TryAcquireAsync(
         ReaderWriterLockMode mode,
         string resource,
         DistributedLockAcquireOptions? acquireOptions,
@@ -269,8 +269,8 @@ public sealed class DistributedReaderWriterLockProvider(
         var autoExtend = acquireOptions.Monitoring == LockMonitoringMode.AutoExtend;
         var leaseDuration = DistributedLockCoreHelpers.RequireFiniteLeaseDuration(timeUntilExpires, monitorLease);
         var acquireTimeout = acquireOptions.AcquireTimeout;
-        var lockId = longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
-        Ensure.False(lockId.Contains(':', StringComparison.Ordinal), "Reader-writer lock ids cannot contain ':'.");
+        var leaseId = guidGenerator.Create().ToString("N");
+        Ensure.False(leaseId.Contains(':', StringComparison.Ordinal), "Reader-writer lock ids cannot contain ':'.");
 
         using var activity = _StartLockActivity(mode, resource);
         var timestamp = timeProvider.GetTimestamp();
@@ -280,7 +280,7 @@ public sealed class DistributedReaderWriterLockProvider(
             return await _TryAcquireOnceAsync(
                     mode,
                     resource,
-                    lockId,
+                    leaseId,
                     timeUntilExpires,
                     timestamp,
                     acquireOptions.ReleaseOnDispose,
@@ -313,7 +313,7 @@ public sealed class DistributedReaderWriterLockProvider(
 
                 try
                 {
-                    gotLock = await _TryAcquireStorageAsync(mode, resource, lockId, timeUntilExpires, attemptToken)
+                    gotLock = await _TryAcquireStorageAsync(mode, resource, leaseId, timeUntilExpires, attemptToken)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
@@ -342,7 +342,7 @@ public sealed class DistributedReaderWriterLockProvider(
                         waitingMarkerPlanted = true;
                     }
 
-                    logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+                    logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
                 }
 
                 if (gotLock)
@@ -376,7 +376,7 @@ public sealed class DistributedReaderWriterLockProvider(
         {
             if (!gotLock && waitingMarkerPlanted)
             {
-                await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
         }
 
@@ -391,17 +391,17 @@ public sealed class DistributedReaderWriterLockProvider(
 
         if (timeWaitedForLock > _LongLockWarningThreshold)
         {
-            logger.LogLongLockAcquired(resource, lockId, timeWaitedForLock);
+            logger.LogLongLockAcquired(resource, leaseId, timeWaitedForLock);
         }
         else
         {
-            logger.LogAcquiredLock(resource, lockId, timeWaitedForLock);
+            logger.LogAcquiredLock(resource, leaseId, timeWaitedForLock);
         }
 
         return _CreateLockHandle(
             mode,
             resource,
-            lockId,
+            leaseId,
             leaseDuration,
             timeWaitedForLock,
             acquireOptions.ReleaseOnDispose,
@@ -410,10 +410,10 @@ public sealed class DistributedReaderWriterLockProvider(
         );
     }
 
-    private async Task<IDistributedLock?> _TryAcquireOnceAsync(
+    private async Task<IDistributedLease?> _TryAcquireOnceAsync(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires,
         long timestamp,
         bool releaseOnDispose,
@@ -433,7 +433,7 @@ public sealed class DistributedReaderWriterLockProvider(
 
         try
         {
-            gotLock = await _TryAcquireStorageAsync(mode, resource, lockId, timeUntilExpires, attemptToken)
+            gotLock = await _TryAcquireStorageAsync(mode, resource, leaseId, timeUntilExpires, attemptToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -444,7 +444,7 @@ public sealed class DistributedReaderWriterLockProvider(
             // the cleanup performed by the post-loop block below for non-cancelled paths.
             if (mode == ReaderWriterLockMode.Write)
             {
-                await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
 
             if (callerToken.IsCancellationRequested)
@@ -456,7 +456,7 @@ public sealed class DistributedReaderWriterLockProvider(
         }
         catch (Exception e) when (e is not (ObjectDisposedException or InvalidOperationException))
         {
-            logger.LogErrorAcquiringLockElapsed(e, resource, lockId, timeProvider, timestamp);
+            logger.LogErrorAcquiringLockElapsed(e, resource, leaseId, timeProvider, timestamp);
             gotLock = false;
         }
 
@@ -474,7 +474,7 @@ public sealed class DistributedReaderWriterLockProvider(
             // non-cancelled "contended" return path.
             if (mode == ReaderWriterLockMode.Write)
             {
-                await _CleanupWaitingMarkerAsync(mode, resource, lockId).ConfigureAwait(false);
+                await _CleanupWaitingMarkerAsync(mode, resource, leaseId).ConfigureAwait(false);
             }
 
             DistributedLockMetrics.LockFailed.Add(1);
@@ -484,7 +484,7 @@ public sealed class DistributedReaderWriterLockProvider(
         return _CreateLockHandle(
             mode,
             resource,
-            lockId,
+            leaseId,
             leaseDuration,
             timeWaitedForLock,
             releaseOnDispose,
@@ -496,7 +496,7 @@ public sealed class DistributedReaderWriterLockProvider(
     private ValueTask<bool> _TryAcquireStorageAsync(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? timeUntilExpires,
         CancellationToken cancellationToken
     )
@@ -512,14 +512,14 @@ public sealed class DistributedReaderWriterLockProvider(
             // release path always reaches.
             ReaderWriterLockMode.Read => _storage.TryAcquireReadAsync(
                 resource,
-                lockId,
+                leaseId,
                 timeUntilExpires ?? DefaultTimeUntilExpires,
                 cancellationToken
             ),
             ReaderWriterLockMode.Write => _storage.TryAcquireWriteAsync(
                 resource,
-                lockId,
-                DistributedLockCoreHelpers.GetWriterWaitingId(lockId),
+                leaseId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(leaseId),
                 timeUntilExpires,
                 _writerWaitingMarkerTtl,
                 cancellationToken
@@ -531,7 +531,7 @@ public sealed class DistributedReaderWriterLockProvider(
     private DisposableReaderWriterLock _CreateLockHandle(
         ReaderWriterLockMode mode,
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan leaseDuration,
         TimeSpan timeWaitedForLock,
         bool releaseOnDispose,
@@ -542,7 +542,7 @@ public sealed class DistributedReaderWriterLockProvider(
         var handle = new DisposableReaderWriterLock(
             mode,
             resource,
-            lockId,
+            leaseId,
             leaseDuration,
             timeWaitedForLock,
             this,
@@ -562,13 +562,13 @@ public sealed class DistributedReaderWriterLockProvider(
 #pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
         var monitor = new LeaseMonitor(handle, timeProvider, logger);
 #pragma warning restore CA2000
-        _monitorRegistry.Register(resource, lockId, monitor);
+        _monitorRegistry.Register(resource, leaseId, monitor);
         handle.AttachMonitor(monitor);
 
         return handle;
     }
 
-    private async Task _CleanupWaitingMarkerAsync(ReaderWriterLockMode mode, string resource, string lockId)
+    private async Task _CleanupWaitingMarkerAsync(ReaderWriterLockMode mode, string resource, string leaseId)
     {
         if (mode != ReaderWriterLockMode.Write)
         {
@@ -578,17 +578,17 @@ public sealed class DistributedReaderWriterLockProvider(
         try
         {
             using var cleanupCts = timeProvider.CreateCancellationTokenSource(_WaitingMarkerCleanupTimeout);
-            await _storage.ReleaseWriteAsync(resource, lockId, cleanupCts.Token).ConfigureAwait(false);
+            await _storage.ReleaseWriteAsync(resource, leaseId, cleanupCts.Token).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            logger.LogBestEffortLockCleanupFailed(exception, resource, lockId);
+            logger.LogBestEffortLockCleanupFailed(exception, resource, leaseId);
         }
     }
 
-    private void _DeregisterMonitor(string resource, string lockId)
+    private void _DeregisterMonitor(string resource, string leaseId)
     {
-        _ = _monitorRegistry.TryDeregister(resource, lockId);
+        _ = _monitorRegistry.TryDeregister(resource, leaseId);
     }
 
     internal int GetActiveMonitorCount(string resource)

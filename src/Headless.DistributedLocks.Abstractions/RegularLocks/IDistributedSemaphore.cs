@@ -26,7 +26,7 @@ public interface IDistributedSemaphore
     /// <see cref="DistributedLockAcquireOptions.TimeUntilExpires"/> is <see cref="Timeout.InfiniteTimeSpan"/>
     /// (monitoring requires a finite lease).
     /// </exception>
-    Task<IDistributedLock> AcquireAsync(
+    Task<IDistributedLease> AcquireAsync(
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     );
@@ -35,7 +35,7 @@ public interface IDistributedSemaphore
     /// Attempts to acquire a semaphore slot, returning null when no slot becomes available before
     /// the acquire timeout.
     /// </summary>
-    Task<IDistributedLock?> TryAcquireAsync(
+    Task<IDistributedLease?> TryAcquireAsync(
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
     );

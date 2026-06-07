@@ -21,18 +21,18 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 {
     private readonly CancellationTokenSource _cts = new(TimeSpan.FromSeconds(30));
     private CancellationToken AbortToken => _cts.Token;
-    private readonly IDistributedLockProvider _realLockProvider;
+    private readonly IDistributedLock _realLockProvider;
 
     public RetryProcessorDistributedLockTests()
     {
         var storage = new InMemoryDistributedLockStorage(TimeProvider.System);
-        _realLockProvider = new DistributedLockProvider(
+        _realLockProvider = new DistributedLock(
             storage,
             Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            NullLogger<DistributedLockProvider>.Instance
+            NullLogger<DistributedLock>.Instance
         );
     }
 
@@ -166,12 +166,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_call_storage_when_lock_always_granted()
     {
         // Arrange — substitute that always hands back a non-null lock
-        var fakeLock = Substitute.For<IDistributedLock>();
+        var fakeLock = Substitute.For<IDistributedLease>();
         fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
-        var alwaysGranted = Substitute.For<IDistributedLockProvider>();
+        var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
 
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -197,7 +197,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_call_storage_without_acquiring_lock_when_use_storage_lock_is_false()
     {
         // Arrange
-        var mockProvider = Substitute.For<IDistributedLockProvider>();
+        var mockProvider = Substitute.For<IDistributedLock>();
 
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -233,12 +233,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // is held open via a TaskCompletionSource so _publishedRetryConsumeTask never completes
         // before the second tick. The in-progress guard at IProcessor.NeedRetry.cs:172 must skip
         // spawning a new task while the previous one is still running under UseStorageLock.
-        var fakeLock = Substitute.For<IDistributedLock>();
+        var fakeLock = Substitute.For<IDistributedLease>();
         fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
-        var alwaysGranted = Substitute.For<IDistributedLockProvider>();
+        var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(fakeLock));
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
 
         // The TCS fires from inside GetPublishedMessagesOfNeedRetryAsync so the test knows
         // exactly when _publishedRetryConsumeTask is in the running state. The published task
@@ -322,7 +322,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         string version,
         IDataStorage storage,
         bool useStorageLock,
-        IDistributedLockProvider? lockProvider = null,
+        IDistributedLock? lockProvider = null,
         IDispatcher? dispatcher = null
     )
     {
@@ -349,12 +349,12 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new ProcessingContext(provider, TimeProvider.System, AbortToken);
     }
 
-    private sealed class TrackingLockProvider(string resourceFilter) : IDistributedLockProvider
+    private sealed class TrackingLockProvider(string resourceFilter) : IDistributedLock
     {
         public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
         public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-        public async Task<IDistributedLock> AcquireAsync(
+        public async Task<IDistributedLease> AcquireAsync(
             string resource,
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
@@ -367,7 +367,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         /// <summary>The most recently issued lock that matched <c>resourceFilter</c>, if any.</summary>
         public TrackingLock? LastIssuedReceiveRetryLock { get; private set; }
 
-        public Task<IDistributedLock?> TryAcquireAsync(
+        public Task<IDistributedLease?> TryAcquireAsync(
             string resource,
             DistributedLockAcquireOptions? options = null,
             CancellationToken cancellationToken = default
@@ -378,20 +378,20 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             {
                 LastIssuedReceiveRetryLock = trackingLock;
             }
-            return Task.FromResult<IDistributedLock?>(trackingLock);
+            return Task.FromResult<IDistributedLease?>(trackingLock);
         }
 
         public Task<bool> RenewAsync(
             string resource,
-            string lockId,
+            string leaseId,
             TimeSpan? timeUntilExpires = null,
             CancellationToken cancellationToken = default
         ) => Task.FromResult(false);
 
-        public Task<string?> GetLockIdAsync(string resource, CancellationToken cancellationToken = default) =>
+        public Task<string?> GetLeaseIdAsync(string resource, CancellationToken cancellationToken = default) =>
             Task.FromResult<string?>(null);
 
-        public Task ReleaseAsync(string resource, string lockId, CancellationToken cancellationToken = default) =>
+        public Task ReleaseAsync(string resource, string leaseId, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
         public Task<bool> IsLockedAsync(string resource, CancellationToken cancellationToken = default) =>
@@ -400,30 +400,33 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         public Task<TimeSpan?> GetExpirationAsync(string resource, CancellationToken cancellationToken = default) =>
             Task.FromResult<TimeSpan?>(null);
 
-        public Task<LockInfo?> GetLockInfoAsync(string resource, CancellationToken cancellationToken = default) =>
-            Task.FromResult<LockInfo?>(null);
+        public Task<DistributedLockInfo?> GetLockInfoAsync(
+            string resource,
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<DistributedLockInfo?>(null);
 
-        public Task<IReadOnlyList<LockInfo>> ListActiveLocksAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<LockInfo>>([]);
+        public Task<IReadOnlyList<DistributedLockInfo>> ListActiveLocksAsync(
+            CancellationToken cancellationToken = default
+        ) => Task.FromResult<IReadOnlyList<DistributedLockInfo>>([]);
 
         public Task<long> GetActiveLocksCountAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(0L);
     }
 
-    private sealed class TrackingLock : IDistributedLock
+    private sealed class TrackingLock : IDistributedLease
     {
         private int _renewalCount;
 
-        public string LockId => "tracking-lock-id";
+        public string LeaseId => "tracking-lock-id";
         public long? FencingToken => null;
         public string Resource => "tracking-lock-resource";
         public int RenewalCount => Volatile.Read(ref _renewalCount);
         public DateTimeOffset DateAcquired => DateTimeOffset.UtcNow;
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken HandleLostToken => CancellationToken.None;
+        public CancellationToken LostToken => CancellationToken.None;
 
-        public bool IsMonitored => false;
+        public bool CanObserveLoss => false;
 
         public Task ReleaseAsync() => Task.CompletedTask;
 

@@ -157,10 +157,10 @@ internal sealed partial class IdempotencyMiddleware(
         // with 409 g:idempotency_in_flight_timeout. Lock-before-insert closes that window:
         // the winner holds the lock for the entire handler lifetime; concurrent losers either
         // block on the lock (WaitAndReplay) or short-circuit via _WriteInFlightResponseAsync (Reject).
-        IDistributedLock? winnerLock = null;
+        IDistributedLease? winnerLock = null;
         if (options.InFlightStrategy == InFlightStrategy.WaitAndReplay)
         {
-            var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
+            var lockProvider = _serviceProvider.GetRequiredService<IDistributedLock>();
             try
             {
                 winnerLock = await lockProvider
@@ -415,11 +415,11 @@ internal sealed partial class IdempotencyMiddleware(
         CancellationToken ct
     )
     {
-        var lockProvider = _serviceProvider.GetRequiredService<IDistributedLockProvider>();
+        var lockProvider = _serviceProvider.GetRequiredService<IDistributedLock>();
         var lockKey = $"lock:{cacheKey}";
 
         // Loser path: block until the winner releases the lock (or acquireTimeout elapses).
-        IDistributedLock? dlock;
+        IDistributedLease? dlock;
         try
         {
             dlock = await lockProvider

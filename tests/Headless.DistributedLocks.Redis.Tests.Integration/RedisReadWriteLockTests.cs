@@ -10,8 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace Tests.ReaderWriterLocks;
 
 [Collection<RedisTestFixture>]
-public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
-    : DistributedReaderWriterLockProviderTestsBase
+public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture) : DistributedReadWriteLockTestsBase
 {
     public override async ValueTask InitializeAsync()
     {
@@ -19,17 +18,15 @@ public sealed class RedisReaderWriterLockProviderTests(RedisTestFixture fixture)
         await fixture.ConnectionMultiplexer.FlushAllAsync();
     }
 
-    protected override IDistributedReaderWriterLockProvider GetReaderWriterLockProvider(
-        DistributedLockOptions? options = null
-    )
+    protected override IDistributedReadWriteLock GetReaderWriterLockProvider(DistributedLockOptions? options = null)
     {
-        return new DistributedReaderWriterLockProvider(
+        return new DistributedReadWriteLock(
             fixture.ReaderWriterLockStorage,
             outboxBus: null,
             options ?? new DistributedLockOptions(),
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            LoggerFactory.CreateLogger<DistributedReaderWriterLockProvider>()
+            LoggerFactory.CreateLogger<DistributedReadWriteLock>()
         );
     }
 

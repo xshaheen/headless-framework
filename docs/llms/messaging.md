@@ -250,6 +250,22 @@ services.AddHeadlessMessaging(setup =>
 | RabbitMQ | Exchange | Queue | None | `PrefetchCount(...)` |
 | Redis | Pub/Sub | Queue-like Redis transport | None | None |
 
+### Storage Providers
+
+| Provider          | Outbox + persisted retry storage | Schema initializer            |
+|-------------------|----------------------------------|-------------------------------|
+| `PostgreSql`      | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `SqlServer`       | yes (`IDataStorage`)             | yes (`IStorageInitializer`)   |
+| `InMemoryStorage` | yes (`IDataStorage`, in-memory)  | yes (`IStorageInitializer`)   |
+
+How to read each column:
+
+- **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
+- **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
+- **Storage row IDs** — `MediumMessage.StorageId`, monitoring APIs, dashboard routes, and bulk storage actions use `Guid`. Storage providers generate row IDs through provider-keyed `IGuidGenerator` strategies, not database defaults. PostgreSQL creates `UUID` `Id` columns and resolves the `Version7` strategy; SQL Server creates `uniqueidentifier` `Id` columns, resolves the `SqlServer` comb strategy, and creates a `uniqueidentifier` table-valued ID-list type.
+
+Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
+
 ## Headless.Messaging.Abstractions
 
 ### Problem Solved
@@ -441,6 +457,421 @@ Provides dashboard services and endpoints for inspecting messaging health, stora
 - Monitoring API integration.
 
 ### Installation
+
+Retries up to `MaxInlineRetries` run **inline** inside the same `ExecuteAsync` / `SendAsync` call (with `Task.Delay` between attempts). Once the inline budget is exhausted, the message is persisted with `NextRetryAt` set and picked up by `MessageNeedToRetryProcessor` (up to `MaxPersistedRetries` times). Each pickup then bursts another round of `MaxInlineRetries` inline attempts.
+
+Worked example with `MaxInlineRetries = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+
+```
+pickup 1 (initial dispatch):
+  attempt 1 (original)        ── inline
+  attempt 2 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 3 (inline retry #2) ── inline, after BackoffStrategy delay → persist (1/2)
+pickup 2 (persisted retry #1):
+  attempt 4                   ── inline
+  attempt 5 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 6 (inline retry #2) ── inline, after BackoffStrategy delay → persist (2/2)
+pickup 3 (persisted retry #2):
+  attempt 7                   ── inline
+  attempt 8 (inline retry #1) ── inline, after BackoffStrategy delay
+  attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
+```
+
+#### FailedInfo construction (for tests / fakes)
+
+`FailedInfo` has six required-init properties — `Exception`, `StorageId`, and `RetryCount` are now part of the contract:
+
+```csharp
+var info = new FailedInfo
+{
+    ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
+    MessageType     = MessageType.Subscribe, // or MessageType.Publish
+    Message         = message,
+    Exception       = ex,                    // the exhausting exception
+    StorageId       = mediumMessage.StorageId, // storage row identifier for DLQ correlation
+    RetryCount      = mediumMessage.Retries,   // final persisted-retry count
+};
+```
+
+`ServiceProvider` is the **live per-message DI scope** — the same scope used while the consume / publish attempts ran. Scoped services resolved through `FailedInfo.ServiceProvider` are the same instances seen by the consumer/handler.
+
+#### RetryProcessorOptions
+
+`MessagingOptions.RetryProcessor` controls the persisted-retry processor's polling cadence:
+
+| Property | Default | Notes |
+| --- | --- | --- |
+| `BaseInterval` | `60s` | Base polling interval. Replaces the old `FailedRetryInterval`. |
+| `AdaptivePolling` | `true` | When enabled, polling interval halves on healthy cycles and doubles when circuit-open skip rate exceeds threshold. |
+| `MaxPollingInterval` | `15m` | Cap on adaptive doubling. |
+| `CircuitOpenRateThreshold` | `0.8` | Above this fraction of circuit-open skips, the processor backs off. |
+
+#### Migration from pre-RetryPolicy primitives
+
+| Old property | New property | Notes |
+| --- | --- | --- |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(MaxInlineRetries + 1) × (MaxPersistedRetries + 1)`. Set both to `0` to disable retries. |
+| `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
+| `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
+| `RetryBackoffStrategy` | `RetryPolicy.BackoffStrategy` | Strategy contract is now one `Compute(int persistedRetryCount, int inlineRetryCount, Exception exception)` method returning `RetryDecision`. |
+| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | **Semantic change:** the callback now fires only on `RetryDecision.Exhausted`, not on permanent exceptions or cancellation (`RetryDecision.Stop`). |
+
+## Distributed Lock Integration
+
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
+
+Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
+
+```csharp
+// Instance overload — when you already have an IDistributedLockProvider
+var lockProvider = new MyDistributedLockProvider(...);
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(lockProvider);
+
+// Factory overload — when the provider depends on other DI services
+builder.Services.AddHeadlessMessaging(setup => { ... })
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
+```
+
+Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+
+### What this is and isn't (correctness vs coordination)
+
+- Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
+- The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
+- Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If renewal of an in-flight lock fails (EventId 79), the handle is cleared but the consume task keeps running — the per-row `LockedUntil` lease takes over as the correctness boundary.
+
+### When to enable
+
+- Multi-replica deployment where many retry pickups would otherwise contend. Each tick on each replica scans the same backlog table; the distributed lock makes only one replica do the scan per tick.
+- Pickup queries that are expensive (large backlog, complex filter, secondary indexes scanned). Even at two replicas, halving the pickup load is observable.
+- Operationally noisy retries without it: lots of "0 messages picked up" log lines from sibling replicas competing for the same backlog.
+
+### When to skip
+
+- Single replica. No contention exists; the lock provider is overhead.
+- Storage provider that natively prevents duplicate pickup (e.g., row-level locking under a `SELECT ... FOR UPDATE` pattern). Per-row `LockedUntil` already covers correctness; the distributed lock would only deduplicate the SELECT itself.
+- Tolerable duplicate pickup churn. Duplicate *pickup* attempts are not duplicate *delivery*; the per-row `LockedUntil` lease still prevents double-dispatch.
+
+### Requirements
+
+- Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
+- `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
+
+**NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
+
+### Lock names
+
+- `messaging.publish-retry-{version}` — held while processing published-message retries.
+- `messaging.receive-retry-{version}` — held while processing received-message retries.
+
+Both names follow the literal pattern shown above. They are constructed internally by `Headless.Messaging.Core`; downstream consumers must not depend on the internal helper that builds them — register a real provider exclusively via `MessagingBuilder.UseDistributedLock(...)` and let messaging resolve its own keyed-DI slot.
+
+`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
+
+**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
+
+### EventIds
+
+| EventId | Name | Severity | Trigger | Remediation |
+| --- | --- | --- | --- | --- |
+| 77 | `UseStorageLockWithNoOpProvider` | Warning | `UseStorageLock = true` but no real provider is registered under any key. | Wire a real provider via `MessagingBuilder.UseDistributedLock(...)`, or set `UseStorageLock = false`. |
+| 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | `UseStorageLock = true`, real provider registered un-keyed, but not flowed through `MessagingBuilder.UseDistributedLock(...)`. | Re-register the provider via `MessagingBuilder.UseDistributedLock(...)` so it lands under messaging's keyed slot. |
+| 79 | `ReceivedRetryLockOwnershipLost` | Warning | `RenewAsync` returned `false`; the coarse lock was lost. Per-row `LockedUntil` takes over for the in-flight consume task. | Investigate lock-store TTLs and clock skew if frequent; not a correctness issue. |
+| 80 | `ReceivedRetryLockRenewalFailed` | Warning | `RenewAsync` threw a non-cancellation exception. | Investigate lock-store health if frequent; the in-flight task continues. |
+| 81 | `PublishedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the published-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
+| 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+| 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
+| 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+
+### Pros and cons
+
+- **Pros:** less wasted pickup work, cleaner logs at scale, halves backlog scan load per added replica.
+- **Cons:** extra lock-store round trip per tick, extra dependency, more EventIds to monitor (79/80 for renewal, 81-84 for acquire failures).
+
+---
+
+## Strict Publish Tenancy
+
+`MessagingOptions.TenantContextRequired` is the messaging sibling of the EF write guard (#234) and the HTTP authorization requirement. Defaults to `false` to preserve today's behavior. When set to `true`, every publish must resolve a tenant identifier:
+
+1. `PublishOptions.TenantId` if set (the source of truth — see `Headers.TenantId` integrity rules in [Multi-Tenancy / Message Consumers](multi-tenancy.md#message-consumers)).
+2. Otherwise, the ambient `ICurrentTenant.Id`.
+3. If neither resolves, the publish wrapper throws `Headless.Abstractions.MissingTenantContextException`.
+
+The U2 raw-header checks (`ReservedTenantHeader`, `TenantIdMismatch`) still run first, so flipping `TenantContextRequired` cannot bypass them.
+
+Root tenancy setup:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging
+        .PropagateTenant()
+        .RequireTenantOnPublish()));
+```
+
+Messaging-only setup must still go through the root tenancy seam — `AddTenantPropagation()` has been removed. Combine `AddHeadlessMessaging` with the root tenancy registration:
+
+```csharp
+builder.Services.AddHeadlessMessaging(options =>
+{
+    options.TenantContextRequired = true;
+});
+
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging
+        .PropagateTenant()
+        .RequireTenantOnPublish()));
+```
+
+**Remediation for background workers / `IHostedService` callers (no ambient HTTP scope):**
+
+```csharp
+// Option A: pass the tenant explicitly
+await publisher.PublishAsync(
+    message,
+    new PublishOptions { TenantId = tenantId },
+    cancellationToken);
+
+// Option B: scope the AsyncLocal accessor before publishing
+using (currentTenant.Change(tenantId))
+{
+    await publisher.PublishAsync(message, cancellationToken);
+}
+```
+
+Catch `MissingTenantContextException` directly (it inherits from `Exception`, not `InvalidOperationException`) when a cross-cutting handler needs to map it to an HTTP 4xx or suppress retries.
+
+## Middleware
+
+The pipeline supports cross-cutting middleware on both sides via typed russian-doll contracts:
+
+- `IConsumeMiddleware<TContext>` where `TContext : ConsumeContext`
+- `IPublishMiddleware<TContext>` where `TContext : PublishContext`
+
+Middleware receives one mutable context plus `Func<ValueTask> next`. Code before `await next()` runs before the inner ring; code after it runs after a successful inner ring. Use ordinary `try/catch` around `await next()` for compensation, retries, and error policy. Returning without calling `next` short-circuits the inner handler or publisher.
+
+```csharp
+public sealed class AuditConsumeMiddleware(ILogger<AuditConsumeMiddleware> logger)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        logger.LogInformation("Consuming {MessageId}", context.MessageId);
+        await next();
+    }
+}
+
+public sealed class CorrelationPublishMiddleware
+    : IPublishMiddleware<PublishingContext<OrderPlaced>>
+{
+    public ValueTask InvokeAsync(PublishingContext<OrderPlaced> context, Func<ValueTask> next)
+    {
+        context.Options = (context.Options ?? new PublishOptions()) with
+        {
+            CorrelationId = context.Options?.CorrelationId ?? Guid.NewGuid().ToString(),
+        };
+
+        return next();
+    }
+}
+
+builder.Services.AddHeadlessMessaging(options => { /* ... */ })
+    .AddBusConsumeMiddleware<AuditConsumeMiddleware>()
+    .AddPublishMiddlewareFor<CorrelationPublishMiddleware, OrderPlaced>();
+```
+
+**Registration scopes:**
+
+- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume. Bus scope must implement `IPublishMiddleware<PublishContext>` or `IConsumeMiddleware<ConsumeContext>`.
+- `AddPublishMiddlewareFor<TMiddleware, TMessage>()`: typed publish middleware for one message type.
+- `AddConsumeMiddlewareFor<TMiddleware, TMessage>(group)`: typed consume middleware for one message type and consumer group.
+- Each call returns a registration handle with `.WithPriority(int)`. Lower priority runs first and wraps later middleware. Ties use registration order. Default priority is `0`; first-party tenant propagation uses `-1000`.
+
+**Framework guarantees:**
+
+- Post-success middleware failures are logged and suppressed only after the inner handler/publisher completed successfully, avoiding duplicate publish or consume retries.
+- `OperationCanceledException` whose token matches `context.CancellationToken` is never silently swallowed, including recursive `AggregateException` cases.
+- After middleware returns normally, the pipeline rechecks `context.CancellationToken.IsCancellationRequested` and throws OCE if the current context token is canceled.
+
+**Publish context rules:** `PublishingContext<T>.Options` and `DelayTime` are mutable before `await next()`. After the inner publisher completes, the context is marked read-only and setters throw `InvalidOperationException`; reads still work. `PublishingContext<T>.IsTransactional` is `true` only when the publish was buffered into the outbox under a non-AutoCommit ambient transaction whose commit is the caller's responsibility.
+
+**Cancellation token swaps:** middleware that creates per-attempt or per-operation tokens must call `context.WithCancellationToken(...)` before `await next()`. Downstream middleware must re-read `context.CancellationToken` at each await boundary; do not capture it once at method entry.
+
+### Multi-tenancy
+
+The framework ships built-in middleware that propagates the originating tenant on the wire:
+
+```csharp
+builder.AddHeadlessTenancy(tenancy => tenancy
+    .Messaging(messaging => messaging.PropagateTenant()));
+```
+
+The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
+
+## Message Ordering Guarantees
+
+Message ordering guarantees depend on the transport provider and configuration:
+
+### Transport-Specific Ordering
+
+- **Kafka**: Messages with same partition key are strictly ordered within partitions
+- **Azure Service Bus**: FIFO ordering when sessions are enabled (`EnableSessions = true`)
+- **RabbitMQ**: No ordering guarantees by default; consumers may process messages concurrently
+- **AWS SQS**: FIFO queues provide strict ordering; standard queues do not
+- **Redis Streams**: Ordered within consumer group, but parallel consumers may process out of order
+- **NATS**: Ordering preserved per subject, but concurrent consumers introduce variability
+- **Pulsar**: Ordered within partitions when using partition key
+- **InMemory**: FIFO ordering with single consumer thread
+
+### Configuration Impact on Ordering
+
+- **`ConsumerThreadCount > 1`**: Enables concurrent message consumption, messages may process out of order
+- **`EnableSubscriberParallelExecute = true`**: Buffers messages in-memory queue for parallel processing, no ordering guarantee
+- **Single consumer thread (`ConsumerThreadCount = 1`)**: Sequential processing, maintains transport order
+
+### Recommendations
+
+- For strict ordering: Use `ConsumerThreadCount = 1` with Kafka (partition key), Azure Service Bus (sessions), or AWS SQS (FIFO)
+- For high throughput: Use parallel processing; design consumers to be order-independent
+- Test ordering behavior with your specific transport and configuration
+
+## Circuit Breaker
+
+Per-consumer-group circuit breaker that pauses transport consumption when a dependency is unhealthy, preventing message-retry storms.
+
+**State machine:** Closed → Open (pause transport) → HalfOpen (probe) → Closed (resume) or Open (re-trip).
+
+Open duration escalates exponentially on repeated trips and resets after consecutive successful close cycles.
+
+### Global Configuration
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    // Global circuit breaker (applies to all consumer groups)
+    setup.Options.CircuitBreaker.FailureThreshold = 5;          // consecutive transient failures to trip
+    setup.Options.CircuitBreaker.OpenDuration = TimeSpan.FromSeconds(30);   // initial open duration
+    setup.Options.CircuitBreaker.MaxOpenDuration = TimeSpan.FromSeconds(240); // cap after escalation
+
+    // Adaptive retry backpressure
+    setup.Options.RetryProcessor.AdaptivePolling = true;
+    setup.Options.RetryProcessor.MaxPollingInterval = TimeSpan.FromMinutes(15);
+    setup.Options.RetryProcessor.CircuitOpenRateThreshold = 0.8; // back off above 80% circuit-open rate
+});
+```
+
+### Per-Consumer Override
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.ForMessage<PaymentProcessed>(message =>
+        message.MessageName("payments.process").OnBus<PaymentHandler>(consumer => consumer.WithCircuitBreaker(cb =>
+        {
+            cb.FailureThreshold = 3;                    // more sensitive
+            cb.OpenDuration = TimeSpan.FromSeconds(60); // longer cooldown
+        })));
+
+    // Disable circuit breaker for a best-effort consumer
+    setup.ForMessage<MetricsUpdated>(message =>
+        message.OnBus<MetricsHandler>(consumer => consumer.WithCircuitBreaker(cb => cb.Enabled = false)));
+});
+```
+
+### Custom Exception Predicate
+
+```csharp
+setup.Options.CircuitBreaker.IsTransientException = ex =>
+    CircuitBreakerDefaults.IsTransient(ex) || ex is MyCustomTransientException;
+```
+
+Default `CircuitBreakerDefaults.IsTransient` covers: `TimeoutException`, `HttpRequestException` (5xx), `SocketException`, `BrokerConnectionException`, `TaskCanceledException` (timeout-only).
+
+### Observability
+
+- **OTel counter**: `messaging.circuit_breaker.trips` (tagged by group)
+- **OTel histogram**: `messaging.circuit_breaker.open_duration` (tagged by group)
+- State transitions logged at Warning level
+
+### Programmatic Control
+
+Inject `ICircuitBreakerMonitor` for runtime observation and manual recovery:
+
+```csharp
+var monitor = app.Services.GetRequiredService<ICircuitBreakerMonitor>();
+
+// Enumerate registered group names (available before any messages are processed)
+IReadOnlySet<string> groups = monitor.KnownGroups;
+
+// Check state
+var states = monitor.GetAllStates(); // all groups with current state
+var isOpen = monitor.IsOpen(IntentType.Bus, "payments");
+var state = monitor.GetState(IntentType.Bus, "payments"); // Closed, Open, HalfOpen, or null if unregistered
+
+// Rich snapshot with escalation and timing details
+CircuitBreakerSnapshot? snapshot = monitor.GetSnapshot(IntentType.Bus, "payments");
+// snapshot.State, snapshot.EscalationLevel, snapshot.ConsecutiveFailures,
+// snapshot.FailureThreshold, snapshot.OpenedAt, snapshot.EstimatedRemainingOpenDuration,
+// snapshot.EffectiveOpenDuration
+
+// Manual recovery (operator/agent action)
+var wasReset = await monitor.ResetAsync(IntentType.Bus, "payments"); // true if reset performed
+var wasOpened = await monitor.ForceOpenAsync(IntentType.Bus, "payments"); // true if force-opened
+```
+
+Inject `IRetryProcessorMonitor` for adaptive retry backpressure inspection and reset:
+
+```csharp
+var retryMonitor = app.Services.GetRequiredService<IRetryProcessorMonitor>();
+
+// Inspect backpressure state
+var pollingInterval = retryMonitor.CurrentPollingInterval;
+var isBackedOff = retryMonitor.IsBackedOff;
+
+// Manual recovery (operator/agent action)
+await retryMonitor.ResetBackpressureAsync(cancellationToken);
+```
+
+### Cluster Scope Limitation
+
+The circuit breaker operates per-process only. There is no cross-instance coordination — each application instance maintains its own circuit state. In a multi-replica deployment, one instance may have an open circuit while others remain closed.
+
+## Dependencies
+
+- `Headless.Messaging.Abstractions`
+- `Headless.Extensions`
+- `Headless.Checks`
+- `Headless.MultiTenancy`
+- Transport package (RabbitMQ, Kafka, etc.)
+- Storage package (PostgreSql, SqlServer, etc.)
+
+## Side Effects
+
+- Starts background hosted service for message processing
+- Creates database tables for outbox storage (via storage provider)
+- Establishes transport connections (via transport provider)
+
+---
+
+# Headless.Messaging.Dashboard
+
+Web-based dashboard for monitoring and managing distributed messaging infrastructure.
+
+## Problem Solved
+
+Provides real-time visibility into message processing, failures, retries, and system health through an embedded web UI for operations and troubleshooting.
+
+## Key Features
+
+- **Real-Time Monitoring**: Live message throughput and latency metrics
+- **Message Explorer**: Search, filter, and inspect messages
+- **Failure Management**: View and retry failed messages
+- **Node Discovery**: Multi-instance cluster visibility
+- **Performance Metrics**: Consumer processing stats and bottlenecks
+
+## Installation
 
 ```bash
 dotnet add package Headless.Messaging.Dashboard
@@ -930,6 +1361,7 @@ Provides PostgreSQL durable storage for messaging publish/receive state, retries
 - `setup.UsePostgreSql(...)`.
 - PostgreSQL schema/table configuration.
 - EF/Core.Db integration and startup initialization.
+- **GUID Row IDs**: Message storage identifiers come from the `Version7` keyed `IGuidGenerator` and are persisted as PostgreSQL `UUID` columns.
 
 ### Installation
 
@@ -966,6 +1398,7 @@ Provides SQL Server durable storage for messaging publish/receive state, retries
 - `setup.UseSqlServer(...)`.
 - SQL Server schema/table configuration.
 - EF/Core.Db integration and startup initialization.
+- **GUID Row IDs**: Message storage identifiers come from the `SqlServer` keyed `IGuidGenerator` and are persisted as SQL Server `uniqueidentifier` columns.
 
 ### Installation
 

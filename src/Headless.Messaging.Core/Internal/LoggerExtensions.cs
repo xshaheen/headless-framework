@@ -44,7 +44,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The {Retries}th retrying consume of stored message failed. storage id: {StorageId}"
     )]
-    public static partial void ConsumerExecutionRetrying(this ILogger logger, long storageId, int retries);
+    public static partial void ConsumerExecutionRetrying(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 6,
@@ -52,7 +52,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The {Retries}th retrying send of stored message failed. storage id: {StorageId} "
     )]
-    public static partial void SenderRetrying(this ILogger logger, long storageId, int retries);
+    public static partial void SenderRetrying(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 7,
@@ -113,7 +113,7 @@ internal static partial class LoggerExtensions
         this ILogger logger,
         Exception? exception,
         string messageName,
-        long storageId,
+        Guid storageId,
         string? instance
     );
 
@@ -207,7 +207,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred when invoke subscriber. StorageId:{StorageId}"
     )]
-    public static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, long storageId);
+    public static partial void SubscriberInvocationFailed(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 23,
@@ -231,7 +231,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Delay message sending failed. StorageId: {StorageId} "
     )]
-    public static partial void DelayedMessageSendFailed(this ILogger logger, long storageId);
+    public static partial void DelayedMessageSendFailed(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 26,
@@ -239,7 +239,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "Error sending scheduled message. StorageId: {StorageId}"
     )]
-    public static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, long storageId);
+    public static partial void ScheduledMessageSendError(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 27,
@@ -255,7 +255,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Error,
         Message = "An exception occurred when sending a message to the transport. StorageId:{StorageId}"
     )]
-    public static partial void TransportSendError(this ILogger logger, Exception exception, long storageId);
+    public static partial void TransportSendError(this ILogger logger, Exception exception, Guid storageId);
 
     [LoggerMessage(
         EventId = 34,
@@ -263,7 +263,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The subscriber of stored message {StorageId} still fails after {Retries} executions and will stop retrying."
     )]
-    public static partial void ConsumerStoredMessageAfterThreshold(this ILogger logger, long storageId, int retries);
+    public static partial void ConsumerStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 35,
@@ -271,7 +271,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "The publisher of stored message {StorageId} still fails after {Retries} sends and will stop retrying."
     )]
-    public static partial void SenderStoredMessageAfterThreshold(this ILogger logger, long storageId, int retries);
+    public static partial void SenderStoredMessageAfterThreshold(this ILogger logger, Guid storageId, int retries);
 
     [LoggerMessage(
         EventId = 29,
@@ -417,7 +417,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Stored message {StorageId} execution was canceled by shutdown. Persisting for later retry."
     )]
-    public static partial void StoredMessageExecutionCanceled(this ILogger logger, long storageId);
+    public static partial void StoredMessageExecutionCanceled(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 58,
@@ -426,7 +426,7 @@ internal static partial class LoggerExtensions
     )]
     public static partial void StoredMessageNonRetryableFailure(
         this ILogger logger,
-        long storageId,
+        Guid storageId,
         string exceptionType
     );
 
@@ -465,7 +465,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Skipping OnExhausted: message {StorageId} already terminal"
     )]
-    public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, long storageId);
+    public static partial void SkippingOnExhaustedAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 67,
@@ -473,7 +473,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} did not complete within {TimeoutSeconds}s. The callback is orphaned; the dispatch loop has resumed."
     )]
-    public static partial void OnExhaustedTimedOut(this ILogger logger, long storageId, double timeoutSeconds);
+    public static partial void OnExhaustedTimedOut(this ILogger logger, Guid storageId, double timeoutSeconds);
 
     [LoggerMessage(
         EventId = 72,
@@ -508,7 +508,7 @@ internal static partial class LoggerExtensions
     public static partial void BackoffStrategyThrew(
         this ILogger logger,
         Exception ex,
-        long storageId,
+        Guid storageId,
         string exceptionType
     );
 
@@ -518,7 +518,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Publish succeeded after a terminal-Failed write for message {StorageId}; storage state will not be updated. Consumers will observe at-least-once delivery."
     )]
-    public static partial void PublishSucceededButStorageTerminal(this ILogger logger, long storageId);
+    public static partial void PublishSucceededButStorageTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 70,
@@ -534,7 +534,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Information,
         Message = "Skipping Succeeded state write: message {StorageId} already terminal"
     )]
-    public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, long storageId);
+    public static partial void SkippingSuccessfulAlreadyTerminal(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 72,
@@ -542,7 +542,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Debug,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} was cancelled by host shutdown."
     )]
-    public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, long storageId);
+    public static partial void OnExhaustedCallbackCancelledAtShutdown(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 73,
@@ -550,7 +550,7 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "RetryPolicy.OnExhausted callback for message {StorageId} timed out and is orphaned. Scope-bound services (FailedInfo.ServiceProvider) may become invalid once the dispatch scope disposes; cooperative callbacks should honor the supplied CancellationToken."
     )]
-    public static partial void OnExhaustedCallbackOrphaned(this ILogger logger, long storageId);
+    public static partial void OnExhaustedCallbackOrphaned(this ILogger logger, Guid storageId);
 
     [LoggerMessage(
         EventId = 74,
@@ -592,7 +592,7 @@ internal static partial class LoggerExtensions
         EventId = 77,
         EventName = "UseStorageLockWithNoOpProvider",
         Level = LogLevel.Warning,
-        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
+        Message = "UseStorageLock is enabled but no real IDistributedLock is registered for messaging (keyed). Coarse-grained mutual exclusion is disabled. Register a real provider via MessagingBuilder.UseDistributedLock(...) (e.g., Headless.DistributedLocks.Redis) or set UseStorageLock = false to silence this warning."
     )]
     public static partial void UseStorageLockWithNoOpProvider(this ILogger logger);
 
@@ -600,7 +600,7 @@ internal static partial class LoggerExtensions
         EventId = 78,
         EventName = "UseStorageLockWithNoOpProviderButRealUnkeyed",
         Level = LogLevel.Warning,
-        Message = "UseStorageLock is enabled but no real IDistributedLockProvider is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
+        Message = "UseStorageLock is enabled but no real IDistributedLock is registered under messaging's keyed slot — a real provider is registered un-keyed but messaging requires a keyed registration. Wire it through MessagingBuilder.UseDistributedLock(...) so messaging picks it up under its isolated key."
     )]
     public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
 
@@ -669,7 +669,7 @@ internal static partial class LoggerExtensions
     public static partial void StoredMessageUnsupportedIntent(
         this ILogger logger,
         Exception exception,
-        long storageId,
+        Guid storageId,
         string intentType
     );
 

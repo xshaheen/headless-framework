@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
+using System.Globalization;
 using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
-using System.Data.Common;
-using System.Globalization;
 
 namespace Headless.DistributedLocks.SqlServer;
 
@@ -58,7 +58,10 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
         command.CommandText =
             $"SELECT NEXT VALUE FOR {SqlServerIdentifier.Quote(options.Value.Schema)}.{SqlServerIdentifier.Quote(SqlServerIdentifier.FenceSequenceName(options.Value.KeyPrefix))}";
 
-        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture
+        );
     }
 
     private async ValueTask _EnsureSequenceAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -77,7 +80,8 @@ internal sealed class SqlServerFencingTokenSource(IOptions<SqlServerDistributedL
                 return;
             }
 
-            await SqlServerDistributedLocksStorageInitializer.EnsureSequenceAsync(connection, options.Value, cancellationToken)
+            await SqlServerDistributedLocksStorageInitializer
+                .EnsureSequenceAsync(connection, options.Value, cancellationToken)
                 .ConfigureAwait(false);
             Volatile.Write(ref _sequenceEnsured, true);
         }

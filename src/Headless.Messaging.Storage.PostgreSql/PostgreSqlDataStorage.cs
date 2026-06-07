@@ -9,6 +9,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
@@ -24,7 +25,8 @@ public sealed class PostgreSqlDataStorage(
     IOptions<MessagingOptions> messagingOptions,
     IStorageInitializer initializer,
     ISerializer serializer,
-    ILongIdGenerator longIdGenerator,
+    // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
+    [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider
 ) : IDataStorage
 {
@@ -72,7 +74,7 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public async ValueTask ChangePublishStateToDelayedAsync(
-        long[] storageIds,
+        Guid[] storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -201,7 +203,7 @@ public sealed class PostgreSqlDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var stored = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -278,7 +280,7 @@ public sealed class PostgreSqlDataStorage(
             name,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = content,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -301,7 +303,7 @@ public sealed class PostgreSqlDataStorage(
                 group,
                 new MediumMessage
                 {
-                    StorageId = 0,
+                    StorageId = Guid.Empty,
                     Origin = origin,
                     Content = content,
                     IntentType = IntentType.Bus,
@@ -322,7 +324,7 @@ public sealed class PostgreSqlDataStorage(
     {
         object[] sqlParams =
         [
-            new NpgsqlParameter("@Id", longIdGenerator.Create()),
+            new NpgsqlParameter("@Id", guidGenerator.Create()),
             new NpgsqlParameter("@Name", name),
             new NpgsqlParameter("@Group", NpgsqlDbType.Varchar) { Value = (object?)group ?? DBNull.Value },
             new NpgsqlParameter(
@@ -356,7 +358,7 @@ public sealed class PostgreSqlDataStorage(
         var added = timeProvider.GetUtcNow().UtcDateTime;
         var mediumMessage = new MediumMessage
         {
-            StorageId = longIdGenerator.Create(),
+            StorageId = guidGenerator.Create(),
             Origin = message.Origin,
             Content = serializer.Serialize(message.Origin),
             IntentType = message.IntentType,
@@ -403,7 +405,7 @@ public sealed class PostgreSqlDataStorage(
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = message,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -457,7 +459,7 @@ public sealed class PostgreSqlDataStorage(
         return await _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask<int> DeleteReceivedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_receivedTable} WHERE "Id"=@Id""";
 
@@ -473,7 +475,7 @@ public sealed class PostgreSqlDataStorage(
         return result;
     }
 
-    public async ValueTask<int> DeletePublishedMessageAsync(long id, CancellationToken cancellationToken = default)
+    public async ValueTask<int> DeletePublishedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var sql = $"""DELETE FROM {_publishedTable} WHERE "Id"=@Id""";
 
@@ -490,7 +492,7 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public async ValueTask<int> DeleteReceivedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -513,7 +515,7 @@ public sealed class PostgreSqlDataStorage(
     }
 
     public async ValueTask<int> DeletePublishedMessagesAsync(
-        IReadOnlyList<long> ids,
+        IReadOnlyList<Guid> ids,
         CancellationToken cancellationToken = default
     )
     {
@@ -571,7 +573,7 @@ public sealed class PostgreSqlDataStorage(
 
                         var mediumMessage = new MediumMessage
                         {
-                            StorageId = reader.GetInt64(0),
+                            StorageId = reader.GetGuid(0),
                             Origin = serializer.Deserialize(content)!,
                             Content = content,
                             IntentType = (IntentType)reader.GetInt16(2),
@@ -834,7 +836,7 @@ public sealed class PostgreSqlDataStorage(
 
                         var mediumMessage = new MediumMessage
                         {
-                            StorageId = reader.GetInt64(0),
+                            StorageId = reader.GetGuid(0),
                             Origin = serializer.Deserialize(content)!,
                             Content = content,
                             IntentType = (IntentType)reader.GetInt16(2),

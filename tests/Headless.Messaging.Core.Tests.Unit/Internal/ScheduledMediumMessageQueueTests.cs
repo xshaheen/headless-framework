@@ -55,9 +55,9 @@ public sealed class ScheduledMediumMessageQueueTests
         var yieldedThird = enumerator.Current;
 
         // then
-        yieldedFirst.StorageId.Should().Be(1);
-        yieldedSecond.StorageId.Should().Be(2);
-        yieldedThird.StorageId.Should().Be(3);
+        yieldedFirst.StorageId.Should().Be(_StorageGuid(1));
+        yieldedSecond.StorageId.Should().Be(_StorageGuid(2));
+        yieldedThird.StorageId.Should().Be(_StorageGuid(3));
         queue.Count.Should().Be(0);
 
         await enumerator.DisposeAsync();
@@ -86,21 +86,23 @@ public sealed class ScheduledMediumMessageQueueTests
         await moveNextTask.WaitAsync(TimeSpan.FromSeconds(1));
 
         // then
-        enumerator.Current.StorageId.Should().Be(7);
+        enumerator.Current.StorageId.Should().Be(_StorageGuid(7));
         queue.Count.Should().Be(0);
 
         await enumerator.DisposeAsync();
     }
 
-    private static MediumMessage _CreateMediumMessage(long storageId)
+    private static MediumMessage _CreateMediumMessage(int storageId)
     {
+        var storageGuid = _StorageGuid(storageId);
+
         return new MediumMessage
         {
-            StorageId = storageId,
+            StorageId = storageGuid,
             Origin = new Message(
                 new Dictionary<string, string?>(StringComparer.Ordinal)
                 {
-                    [Headers.MessageId] = storageId.ToString(CultureInfo.InvariantCulture),
+                    [Headers.MessageId] = storageGuid.ToString("D"),
                     [Headers.MessageName] = $"message-{storageId}",
                 },
                 null
@@ -109,6 +111,8 @@ public sealed class ScheduledMediumMessageQueueTests
             IntentType = IntentType.Bus,
         };
     }
+
+    private static Guid _StorageGuid(int value) => Guid.Parse($"00000000-0000-0000-0000-{value:000000000000}");
 
     private sealed class ManualTimeProvider : TimeProvider
     {

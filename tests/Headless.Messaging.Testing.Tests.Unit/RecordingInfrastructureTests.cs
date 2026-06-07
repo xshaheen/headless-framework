@@ -50,7 +50,7 @@ public sealed class RecordingInfrastructureTests : TestBase
     {
         return new MediumMessage
         {
-            StorageId = 1,
+            StorageId = Guid.NewGuid(),
             Content = "{}",
             IntentType = IntentType.Bus,
             Added = DateTime.UtcNow,

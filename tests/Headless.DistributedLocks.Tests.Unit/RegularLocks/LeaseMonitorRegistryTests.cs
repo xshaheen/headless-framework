@@ -63,13 +63,13 @@ public sealed class LeaseMonitorRegistryTests : TestBase
 
     private LeaseMonitorRegistry _CreateRegistry() => new(LoggerFactory.CreateLogger(nameof(LeaseMonitorRegistry)));
 
-    private LeaseMonitorScope _CreateMonitor(string resource, string lockId)
+    private LeaseMonitorScope _CreateMonitor(string resource, string leaseId)
     {
         var monitor = new LeaseMonitor(
             new FakeLeaseHandle
             {
                 Resource = resource,
-                LockId = lockId,
+                LeaseId = leaseId,
                 LeaseDuration = TimeSpan.FromMinutes(1),
                 MonitoringCadence = TimeSpan.FromSeconds(1),
             },
@@ -86,14 +86,14 @@ public sealed class LeaseMonitorRegistryTests : TestBase
         FakeTimeProvider timeProvider,
         ILogger logger,
         string resource,
-        string lockId
+        string leaseId
     )
     {
         var monitor = new LeaseMonitor(
             new FakeLeaseHandle
             {
                 Resource = resource,
-                LockId = lockId,
+                LeaseId = leaseId,
                 LeaseDuration = TimeSpan.FromMinutes(1),
                 MonitoringCadence = TimeSpan.FromSeconds(1),
             },
@@ -101,7 +101,7 @@ public sealed class LeaseMonitorRegistryTests : TestBase
             logger
         );
 
-        registry.Register(resource, lockId, monitor);
+        registry.Register(resource, leaseId, monitor);
     }
 
     private static void _MarkBucketRemoved(LeaseMonitorRegistry registry, string resource)

@@ -117,7 +117,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.StorageId.Should().BeGreaterThan(0);
+        result.StorageId.Should().NotBe(Guid.Empty);
         result.Origin.Should().BeSameAs(message);
     }
 
@@ -132,7 +132,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.StorageId.Should().BeGreaterThan(0);
+        result.StorageId.Should().NotBe(Guid.Empty);
         result.Origin.GetId().Should().Be("non-numeric-id");
     }
 
@@ -148,7 +148,7 @@ public abstract class DataStorageTestsBase : TestBase
         var message = CreateMessage();
         var envelope = new MediumMessage
         {
-            StorageId = 0,
+            StorageId = Guid.Empty,
             Origin = message,
             Content = string.Empty,
             IntentType = IntentType.Queue,
@@ -177,7 +177,7 @@ public abstract class DataStorageTestsBase : TestBase
             "intent-filter",
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -188,7 +188,7 @@ public abstract class DataStorageTestsBase : TestBase
             "intent-filter",
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = CreateMessage(),
                 Content = string.Empty,
                 IntentType = IntentType.Queue,
@@ -228,7 +228,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.StorageId.Should().BeGreaterThan(0);
+        result.StorageId.Should().NotBe(Guid.Empty);
         result.Origin.Should().BeSameAs(message);
     }
 
@@ -248,7 +248,7 @@ public abstract class DataStorageTestsBase : TestBase
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = bus,
                 Content = string.Empty,
                 IntentType = IntentType.Bus,
@@ -260,7 +260,7 @@ public abstract class DataStorageTestsBase : TestBase
             group,
             new MediumMessage
             {
-                StorageId = 0,
+                StorageId = Guid.Empty,
                 Origin = queue,
                 Content = string.Empty,
                 IntentType = IntentType.Queue,
@@ -505,7 +505,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         results.Should().HaveCount(20);
-        results.Should().AllSatisfy(r => r.StorageId.Should().BeGreaterThan(0));
+        results.Should().AllSatisfy(r => r.StorageId.Should().NotBe(Guid.Empty));
     }
 
     public virtual async Task should_schedule_messages_of_delayed()
@@ -545,7 +545,7 @@ public abstract class DataStorageTestsBase : TestBase
 
         // then
         result.Should().NotBeNull();
-        result.StorageId.Should().BeGreaterThan(0);
+        result.StorageId.Should().NotBe(Guid.Empty);
         result.Origin.Should().BeSameAs(message);
         result.Retries.Should().Be(0);
     }

@@ -20,7 +20,7 @@ Provides the foundational runtime for reliable distributed messaging with transa
 - **Bootstrapper**: Hosted service for startup and shutdown coordination
 - **Circuit Breaker**: Per-consumer-group circuit breaker (Closed → Open → HalfOpen) with exponential open-duration escalation
 - **Adaptive Retry Backpressure**: Retry processor backs off polling when circuit-open rate exceeds threshold
-- **Distributed Lock Integration**: Optional `IDistributedLockProvider`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
+- **Distributed Lock Integration**: Optional `IDistributedLock`-backed mutual exclusion for multi-replica retry pickup (`UseStorageLock`)
 
 ## Installation
 
@@ -332,6 +332,8 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
+`MediumMessage.StorageId` and `FailedInfo.StorageId` are `Guid` row identifiers. Storage providers generate them through provider-keyed `IGuidGenerator` strategies, persist them as provider-native GUID columns (`UUID` on PostgreSQL through `Version7`, `uniqueidentifier` on SQL Server through the `SqlServer` comb), and dashboard message routes use GUID route values.
+
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
 | `MaxInlineRetries` | `int` | `2` | Retries to run inline on each delivery before persisting. `>= 0`. |
@@ -479,28 +481,28 @@ The circuit breaker operates **per-process only**. There is no cross-instance co
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named lock before each retry pickup cycle, preventing duplicate work across replicas.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider — calling this implicitly sets `UseStorageLock = true`:
 
 ```csharp
 // Instance overload
-var lockProvider = new MyDistributedLockProvider(...);
+var lockProvider = new MyDistributedLock(...);
 builder.Services.AddHeadlessMessaging(setup => { ... })
     .UseDistributedLock(lockProvider);
 
 // Factory overload (provider depends on other DI services)
 builder.Services.AddHeadlessMessaging(setup => { ... })
-    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
 ```
 
-Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+Messaging registers its lock provider under an **internal keyed-DI key** so it never conflicts with any `IDistributedLock` registered at the application level for other purposes.
 
-Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
+Without a real provider, only `NoOpDistributedLock` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
 
-> **NoOp introspection contract:** when `NoOpDistributedLockProvider` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
+> **NoOp introspection contract:** when `NoOpDistributedLock` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
 
-When `UseStorageLock = false` (default), `IDistributedLockProvider` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
+When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup.
 
 ## Dependencies
 

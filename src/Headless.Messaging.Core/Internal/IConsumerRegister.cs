@@ -710,7 +710,7 @@ internal sealed class ConsumerRegister(
                             group,
                             new MediumMessage
                             {
-                                StorageId = 0,
+                                StorageId = Guid.Empty,
                                 Origin = message,
                                 Content = content,
                                 IntentType = intentType,
@@ -754,13 +754,13 @@ internal sealed class ConsumerRegister(
                                         ),
                                     // Poisoned-on-arrival messages bypass the dispatch scope and have
                                     // no associated MediumMessage; storageId is the storage's
-                                    // sentinel here too (0 == "no row identifier"), and the retry
-                                    // count is zero because no consume attempt ever ran.
-                                    StorageId = 0,
+                                    // sentinel here too (Guid.Empty == "no row identifier"), and the
+                                    // retry count is zero because no consume attempt ever ran.
+                                    StorageId = Guid.Empty,
                                     RetryCount = 0,
                                 },
                                 _options.RetryPolicy.OnExhaustedTimeout,
-                                storageId: 0,
+                                storageId: Guid.Empty,
                                 _logger,
                                 hostShutdownToken
                             )
@@ -788,7 +788,7 @@ internal sealed class ConsumerRegister(
                         group,
                         new MediumMessage
                         {
-                            StorageId = 0,
+                            StorageId = Guid.Empty,
                             Origin = message,
                             Content = string.Empty,
                             IntentType = intentType,

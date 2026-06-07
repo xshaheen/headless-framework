@@ -42,7 +42,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         return new MediumMessage
         {
-            StorageId = 1L,
+            StorageId = Guid.NewGuid(),
             Origin = new Message(headers, null),
             Content = "{}",
             IntentType = IntentType.Bus,
@@ -57,7 +57,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     )
     {
         var dispatcher = Substitute.For<IDispatcher>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var cb = Substitute.For<ICircuitBreakerMonitor>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
@@ -152,7 +152,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — no circuit breaker in DI
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions();
@@ -635,7 +635,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
@@ -736,7 +736,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         // Published-path acquire throws once; received-path returns null (no contention).
         lockProvider
             .TryAcquireAsync(
@@ -744,14 +744,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns<Task<IDistributedLock?>>(_ => throw new InvalidOperationException("lock store down"));
+            .Returns<Task<IDistributedLease?>>(_ => throw new InvalidOperationException("lock store down"));
         lockProvider
             .TryAcquireAsync(
                 Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult<IDistributedLock?>(null));
+            .Returns(Task.FromResult<IDistributedLease?>(null));
 
         dataStorage
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
@@ -798,7 +798,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             )
             .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
 
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var publishCallCount = 0;
         lockProvider
             .TryAcquireAsync(
@@ -806,7 +806,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns<Task<IDistributedLock?>>(_ =>
+            .Returns<Task<IDistributedLease?>>(_ =>
             {
                 var n = Interlocked.Increment(ref publishCallCount);
                 // First three throw → escalate to Error on the third. Fourth returns null (success path
@@ -818,7 +818,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 {
                     throw new InvalidOperationException("lock store down");
                 }
-                return Task.FromResult<IDistributedLock?>(Substitute.For<IDistributedLock>());
+                return Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>());
             });
         lockProvider
             .TryAcquireAsync(
@@ -826,7 +826,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 Arg.Any<DistributedLockAcquireOptions?>(),
                 Arg.Any<CancellationToken>()
             )
-            .Returns(Task.FromResult<IDistributedLock?>(null));
+            .Returns(Task.FromResult<IDistributedLease?>(null));
 
         dataStorage
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
@@ -878,7 +878,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Arrange — explicit construction so we can configure UseStorageLock=false and inspect the lock provider
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = false });
@@ -916,7 +916,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // not yet been assigned (or was cleared by a prior renewal-loss). Renewal branch must no-op.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         // Block the consume task indefinitely so the renewal branch can fire next tick.
         var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(
@@ -930,11 +930,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         // Always-grant lock so the consume task captures one (in real flow). Track renewals.
-        var captured = Substitute.For<IDistributedLock>();
+        var captured = Substitute.For<IDistributedLease>();
         captured.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(captured));
+            .Returns(Task.FromResult<IDistributedLease?>(captured));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
@@ -952,7 +952,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // pin window 2 (assignment race) but we can simulate the cleared handle by NOT letting the
         // consume task ever advance to the assignment. Use a never-completing acquire to keep the
         // background task pending and the handle null:
-        var neverCompletes = new TaskCompletionSource<IDistributedLock?>(
+        var neverCompletes = new TaskCompletionSource<IDistributedLease?>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         lockProvider
@@ -980,13 +980,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // by the IsCompleted check. Verify renewal does not fire when the previous task is done.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
-        var renewableLock = Substitute.For<IDistributedLock>();
+        var renewableLock = Substitute.For<IDistributedLease>();
         renewableLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(renewableLock));
+            .Returns(Task.FromResult<IDistributedLease?>(renewableLock));
 
         dataStorage
             .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
@@ -1040,7 +1040,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // so the next renewal attempt no-ops instead of pinging a stale handle.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         // Consume task blocks so renewal branch fires on tick 2.
         var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(
@@ -1054,11 +1054,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         // Lock acquire returns a handle whose Renew returns false.
-        var lostLock = Substitute.For<IDistributedLock>();
+        var lostLock = Substitute.For<IDistributedLease>();
         lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(lostLock));
+            .Returns(Task.FromResult<IDistributedLease?>(lostLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
@@ -1100,7 +1100,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // so the next renewal cycle does not see a stale handle.
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         // Storage throws — work body unwinds via the catch in _GetSafelyAsync, returning [].
         // The finally clear still runs after the foreach.
@@ -1111,11 +1111,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
-        var acquiredLock = Substitute.For<IDistributedLock>();
+        var acquiredLock = Substitute.For<IDistributedLease>();
         acquiredLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(acquiredLock));
+            .Returns(Task.FromResult<IDistributedLease?>(acquiredLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
@@ -1160,7 +1160,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         // Block the received consume task so the renewal branch fires on tick 2.
         var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(
@@ -1173,11 +1173,11 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
-        var lostLock = Substitute.For<IDistributedLock>();
+        var lostLock = Substitute.For<IDistributedLease>();
         lostLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(false));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(lostLock));
+            .Returns(Task.FromResult<IDistributedLease?>(lostLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
@@ -1227,7 +1227,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var dispatcher = Substitute.For<IDispatcher>();
         var dataStorage = Substitute.For<IDataStorage>();
-        var lockProvider = Substitute.For<IDistributedLockProvider>();
+        var lockProvider = Substitute.For<IDistributedLock>();
 
         var blocker = new TaskCompletionSource<IEnumerable<MediumMessage>>(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -1240,13 +1240,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
 
         // RenewAsync throws on tick 2 — simulates lock-store outage / network partition.
-        var failingLock = Substitute.For<IDistributedLock>();
+        var failingLock = Substitute.For<IDistributedLease>();
         failingLock
             .RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns<Task<bool>>(_ => throw new InvalidOperationException("simulated lock-store outage"));
         lockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<IDistributedLock?>(failingLock));
+            .Returns(Task.FromResult<IDistributedLease?>(failingLock));
 
         var options = Options.Create(new MessagingOptions { UseStorageLock = true });
         var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });

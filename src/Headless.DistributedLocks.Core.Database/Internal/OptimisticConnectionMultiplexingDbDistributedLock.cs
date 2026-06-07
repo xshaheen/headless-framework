@@ -37,10 +37,10 @@ internal sealed class OptimisticConnectionMultiplexingDbDistributedLock : IDbDis
         );
     }
 
-    public ValueTask<IDistributedLock?> TryAcquireAsync<TLockCookie>(
+    public ValueTask<IDistributedLease?> TryAcquireAsync<TLockCookie>(
         TimeSpan timeout,
         IDbSynchronizationStrategy<TLockCookie> strategy,
-        IDistributedLock? contextHandle,
+        IDistributedLease? contextHandle,
         CancellationToken cancellationToken
     )
         where TLockCookie : class

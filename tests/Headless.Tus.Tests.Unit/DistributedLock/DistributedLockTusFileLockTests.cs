@@ -8,7 +8,7 @@ namespace Tests.DistributedLock;
 
 public sealed class DistributedLockTusFileLockTests : TestBase
 {
-    private readonly IDistributedLockProvider _distributedLockProvider = Substitute.For<IDistributedLockProvider>();
+    private readonly IDistributedLock _distributedLockProvider = Substitute.For<IDistributedLock>();
 
     #region Lock
 
@@ -17,7 +17,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     {
         // given
         const string fileId = "test-file-123";
-        var distributedLock = Substitute.For<IDistributedLock>();
+        var distributedLock = Substitute.For<IDistributedLease>();
 
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -39,7 +39,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         const string fileId = "test-file-123";
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns((IDistributedLock?)null);
+            .Returns((IDistributedLease?)null);
 
         var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider);
 
@@ -141,10 +141,10 @@ public sealed class DistributedLockTusFileLockTests : TestBase
     {
         // given
         const string fileId = "test-file";
-        const string lockId = "lock-123";
-        var distributedLock = Substitute.For<IDistributedLock>();
+        const string leaseId = "lock-123";
+        var distributedLock = Substitute.For<IDistributedLease>();
         distributedLock.Resource.Returns("tus-file-lock-test-file");
-        distributedLock.LockId.Returns(lockId);
+        distributedLock.LeaseId.Returns(leaseId);
 
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -159,7 +159,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         // then
         await _distributedLockProvider
             .Received(1)
-            .ReleaseAsync("tus-file-lock-test-file", lockId, Arg.Any<CancellationToken>());
+            .ReleaseAsync("tus-file-lock-test-file", leaseId, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public sealed class DistributedLockTusFileLockTests : TestBase
         const string fileId = "test-file";
         _distributedLockProvider
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
-            .Returns((IDistributedLock?)null);
+            .Returns((IDistributedLease?)null);
 
         var sut = new DistributedLockTusFileLock(fileId, _distributedLockProvider);
         await sut.Lock(); // Lock fails, _distributedLock remains null

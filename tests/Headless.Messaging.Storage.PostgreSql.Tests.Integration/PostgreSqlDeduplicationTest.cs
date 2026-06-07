@@ -24,7 +24,6 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
 
@@ -71,8 +70,8 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         stored2.Should().NotBeNull();
 
         // ON CONFLICT should update existing row, verifying deduplication works
-        stored1.StorageId.Should().BeGreaterThan(0);
-        stored2.StorageId.Should().BeGreaterThan(0);
+        stored1.StorageId.Should().NotBe(Guid.Empty);
+        stored2.StorageId.Should().NotBe(Guid.Empty);
     }
 
     [Fact]

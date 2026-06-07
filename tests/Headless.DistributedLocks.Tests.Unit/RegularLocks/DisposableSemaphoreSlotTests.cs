@@ -14,7 +14,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
 {
     private readonly FakeTimeProvider _timeProvider = new();
     private readonly IDistributedSemaphoreStorage _storage = Substitute.For<IDistributedSemaphoreStorage>();
-    private readonly ILongIdGenerator _longIdGenerator = Substitute.For<ILongIdGenerator>();
+    private readonly IGuidGenerator _guidGenerator = Substitute.For<IGuidGenerator>();
 
     public DisposableSemaphoreSlotTests()
     {
@@ -291,7 +291,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         // then — still owner: classify as Unknown so the safety net governs, not Lost; the handle is
         // not signalled lost.
         result.Should().Be(LeaseMonitor.LeaseState.Unknown);
-        slot.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        slot.LostToken.IsCancellationRequested.Should().BeFalse();
         await _storage
             .Received(1)
             .ValidateAsync(
@@ -317,7 +317,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
     }
 
     // -----------------------------------------------------------------------
-    // Monitor stop on dispose does not fire HandleLostToken
+    // Monitor stop on dispose does not fire LostToken
     // -----------------------------------------------------------------------
 
     [Fact]
@@ -332,17 +332,17 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         );
         var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         slot.AttachMonitor(monitor);
-        slot.IsMonitored.Should().BeTrue();
-        var handleLostToken = slot.HandleLostToken;
+        slot.CanObserveLoss.Should().BeTrue();
+        var lostToken = slot.LostToken;
 
         // when
         await slot.DisposeAsync();
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
 
-        // then — monitor is stopped but HandleLostToken is not cancelled
-        slot.IsMonitored.Should().BeFalse();
+        // then — monitor is stopped but LostToken is not cancelled
+        slot.CanObserveLoss.Should().BeFalse();
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
-        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
     }
 
@@ -358,16 +358,16 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         );
         var monitor = new LeaseMonitor(slot, _timeProvider, LoggerFactory.CreateLogger(nameof(LeaseMonitor)));
         slot.AttachMonitor(monitor);
-        var handleLostToken = slot.HandleLostToken;
+        var lostToken = slot.LostToken;
 
         // when
         await slot.ReleaseAsync();
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
 
         // then
-        slot.IsMonitored.Should().BeFalse();
+        slot.CanObserveLoss.Should().BeFalse();
         monitor.MonitoringTask.IsCompleted.Should().BeTrue();
-        handleLostToken.IsCancellationRequested.Should().BeFalse();
+        lostToken.IsCancellationRequested.Should().BeFalse();
         deregisterCount.Should().Be(1);
         await _storage
             .Received(1)
@@ -389,14 +389,13 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         Action<string, string>? deregisterMonitor = null
     )
     {
-        var counter = 1000L;
-        _longIdGenerator.Create().Returns(_ => Interlocked.Increment(ref counter));
+        _guidGenerator.Create().Returns(_ => Guid.NewGuid());
 
         var provider = new DistributedSemaphoreProvider(
             _storage,
             Substitute.For<IOutboxBus>(),
             new DistributedLockOptions(),
-            _longIdGenerator,
+            _guidGenerator,
             _timeProvider,
             LoggerFactory.CreateLogger<DistributedSemaphoreProvider>()
         );
@@ -422,7 +421,7 @@ public sealed class DisposableSemaphoreSlotTests : TestBase
         {
             return new DisposableSemaphoreSlot(
                 resource,
-                slot.LockId,
+                slot.LeaseId,
                 slot.FencingToken,
                 TimeSpan.FromSeconds(10),
                 slot.TimeWaitedForLock,

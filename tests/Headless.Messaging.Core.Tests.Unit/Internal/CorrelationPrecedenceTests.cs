@@ -178,7 +178,7 @@ public sealed class CorrelationPrecedenceTests
             : [new MessageRegistration(typeof(TestMessage), null, message => selector((TestMessage)message), new Dictionary<Type, object>(), [])];
 
         return new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
             new NullCurrentTenant(),

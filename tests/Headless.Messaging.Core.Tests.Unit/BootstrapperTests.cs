@@ -121,7 +121,7 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .Contain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-                "UseStorageLockWithNoOpProvider warning must fire when only NullDistributedLockProvider is registered"
+                "UseStorageLockWithNoOpProvider warning must fire when only NullDistributedLock is registered"
             );
     }
 
@@ -141,19 +141,19 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .NotContain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-                "warning must be silent when UseStorageLock is false, even with NullDistributedLockProvider"
+                "warning must be silent when UseStorageLock is false, even with NullDistributedLock"
             );
     }
 
     [Fact]
     public async Task should_warn_with_eventid_78_when_unkeyed_real_provider_exists_but_use_distributed_lock_not_called()
     {
-        // Misconfiguration repro: user wired up a real IDistributedLockProvider (e.g. via
+        // Misconfiguration repro: user wired up a real IDistributedLock (e.g. via
         // Headless.DistributedLocks.Redis) but forgot to call MessagingBuilder.UseDistributedLock(...).
         // The bootstrapper must emit EventId 78 (UseStorageLockWithNoOpProviderButRealUnkeyed) so the
         // operator can distinguish this case from EventId 77 (no provider at all).
         var captured = new List<(LogLevel Level, EventId EventId)>();
-        var unkeyedRealProvider = Substitute.For<IDistributedLockProvider>();
+        var unkeyedRealProvider = Substitute.For<IDistributedLock>();
 
         await using var provider = _CreateProvider(
             captureLog: captured,
@@ -168,7 +168,7 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .Contain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 78,
-                "EventId 78 must fire when a real un-keyed IDistributedLockProvider exists but UseDistributedLock(...) was not called"
+                "EventId 78 must fire when a real un-keyed IDistributedLock exists but UseDistributedLock(...) was not called"
             );
         captured
             .Should()
@@ -182,7 +182,7 @@ public sealed class BootstrapperTests : TestBase
     public async Task should_not_log_warning_when_real_lock_provider_is_registered()
     {
         var captured = new List<(LogLevel Level, EventId EventId)>();
-        var realProvider = Substitute.For<IDistributedLockProvider>();
+        var realProvider = Substitute.For<IDistributedLock>();
         await using var provider = _CreateProvider(
             captureLog: captured,
             builderAction: builder => builder.UseDistributedLock(realProvider)
@@ -195,7 +195,7 @@ public sealed class BootstrapperTests : TestBase
             .Should()
             .NotContain(
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
-                "warning must be silent when a real IDistributedLockProvider is registered"
+                "warning must be silent when a real IDistributedLock is registered"
             );
     }
 
@@ -203,8 +203,8 @@ public sealed class BootstrapperTests : TestBase
     public async Task should_isolate_messaging_lock_provider_from_unkeyed_app_level_provider()
     {
         // given — an app-level un-keyed provider AND a messaging-keyed provider
-        var appLevelProvider = Substitute.For<IDistributedLockProvider>();
-        var messagingProvider = Substitute.For<IDistributedLockProvider>();
+        var appLevelProvider = Substitute.For<IDistributedLock>();
+        var messagingProvider = Substitute.For<IDistributedLock>();
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -223,9 +223,9 @@ public sealed class BootstrapperTests : TestBase
         var processor = provider.GetRequiredService<MessageNeedToRetryProcessor>();
 
         // then — un-keyed remains visible to app code, keyed remains messaging's
-        provider.GetRequiredService<IDistributedLockProvider>().Should().BeSameAs(appLevelProvider);
+        provider.GetRequiredService<IDistributedLock>().Should().BeSameAs(appLevelProvider);
         provider
-            .GetRequiredKeyedService<IDistributedLockProvider>(MessagingKeys.LockProvider)
+            .GetRequiredKeyedService<IDistributedLock>(MessagingKeys.LockProvider)
             .Should()
             .BeSameAs(messagingProvider);
 

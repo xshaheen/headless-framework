@@ -8,13 +8,13 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-public abstract class DistributedLockProviderTestsBase : TestBase
+public abstract class DistributedLockTestsBase : TestBase
 {
-    protected static readonly SnowflakeIdLongIdGenerator LongGenerator = new(1);
+    protected static readonly IGuidGenerator GuidGenerator = new SequentialGuidGenerator(SequentialGuidType.Version7);
     protected static readonly TimeProvider TimeProvider = TimeProvider.System;
     protected static readonly DistributedLockOptions Options = new() { KeyPrefix = "test:" };
 
-    protected abstract IDistributedLockProvider GetLockProvider();
+    protected abstract IDistributedLock GetLockProvider();
 
     /// <summary>
     /// Kills the backing session/connection that holds <paramref name="handle"/> from a separate admin connection,
@@ -22,7 +22,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
     /// (SQL Server <c>KILL</c>, PostgreSQL <c>pg_terminate_backend</c>) override this so the cross-provider
     /// connection-death scenario runs against them; lease-based or in-process providers leave it unsupported.
     /// </summary>
-    protected virtual Task KillLockHoldingConnectionAsync(IDistributedLock handle, CancellationToken cancellationToken)
+    protected virtual Task KillLockHoldingConnectionAsync(IDistributedLease handle, CancellationToken cancellationToken)
     {
         throw new NotSupportedException(
             "This provider does not back its lock with a killable connection; "
@@ -38,7 +38,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         handle.Should().NotBeNull();
         handle.Resource.Should().Be(resource);
-        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.LeaseId.Should().NotBeNullOrEmpty();
         handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
@@ -51,7 +51,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await using var handle = await lockProvider.AcquireAsync(resource);
 
         handle.Resource.Should().Be(resource);
-        handle.LockId.Should().NotBeNullOrEmpty();
+        handle.LeaseId.Should().NotBeNullOrEmpty();
         handle.DateAcquired.Should().BeCloseTo(DateTimeOffset.UtcNow, TimeSpan.FromSeconds(10));
         handle.RenewalCount.Should().Be(0);
         handle.TimeWaitedForLock.Should().BePositive();
@@ -183,7 +183,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await handle.DisposeAsync();
 
         (await locker.IsLockedAsync(resource)).Should().BeTrue();
-        await locker.ReleaseAsync(resource, handle.LockId);
+        await locker.ReleaseAsync(resource, handle.LeaseId);
     }
 
     public virtual async Task should_release_explicitly_when_release_on_dispose_false()
@@ -441,7 +441,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         successCount.Should().Be(2);
 
-        static Task<bool> doLockedWorkAsync(IDistributedLockProvider locker, string resource)
+        static Task<bool> doLockedWorkAsync(IDistributedLock locker, string resource)
         {
             return locker.TryUsingAsync(
                 resource: resource,
@@ -501,7 +501,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
 
         info.Should().NotBeNull();
         info.Resource.Should().Be(resource);
-        info.LockId.Should().Be(handle.LockId);
+        info.LeaseId.Should().Be(handle.LeaseId);
         info.TimeToLive.Should().NotBeNull();
         info.TimeToLive!.Value.Should().BeCloseTo(ttl, TimeSpan.FromSeconds(5));
     }
@@ -560,7 +560,7 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await using var handle = await locker.TryAcquireAsync(resource);
 
         handle.Should().NotBeNull();
-        handle!.HandleLostToken.Should().Be(CancellationToken.None);
+        handle!.LostToken.Should().Be(CancellationToken.None);
     }
 
     public virtual async Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
@@ -584,13 +584,13 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
-        handle!.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle!.LostToken.IsCancellationRequested.Should().BeFalse();
     }
 
     /// <summary>
     /// Connection-scoped providers back the lock with a dedicated session. When that session dies silently
     /// (network drop with no RST, or an out-of-band <c>KILL</c>), the provider's active liveness probe must
-    /// surface the loss by cancelling the handle's <see cref="IDistributedLock.HandleLostToken"/>. The probe
+    /// surface the loss by cancelling the handle's <see cref="IDistributedLease.LostToken"/>. The probe
     /// runs on a bounded cadence, so the wait here is generous on purpose. Only wired by providers that
     /// override <see cref="KillLockHoldingConnectionAsync"/>.
     /// </summary>
@@ -599,16 +599,20 @@ public abstract class DistributedLockProviderTestsBase : TestBase
         var locker = GetLockProvider();
         var resource = Faker.Random.String2(3, 20);
 
-        await using var handle = await locker.AcquireAsync(resource, cancellationToken: AbortToken);
+        await using var handle = await locker.AcquireAsync(
+            resource,
+            new DistributedLockAcquireOptions { Monitoring = LockMonitoringMode.Monitor },
+            cancellationToken: AbortToken
+        );
 
-        handle.HandleLostToken.CanBeCanceled.Should().BeTrue();
-        handle.HandleLostToken.IsCancellationRequested.Should().BeFalse();
+        handle.LostToken.CanBeCanceled.Should().BeTrue();
+        handle.LostToken.IsCancellationRequested.Should().BeFalse();
 
         // Kill the lock-holding session out-of-band; the provider's probe should observe the dead connection.
         await KillLockHoldingConnectionAsync(handle, AbortToken);
 
         // Probe cadence is ~30s; poll generously (independent of AbortToken so we observe the lost token itself).
-        var lostToken = handle.HandleLostToken;
+        var lostToken = handle.LostToken;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
 
         while (!lostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)
@@ -616,7 +620,9 @@ public abstract class DistributedLockProviderTestsBase : TestBase
             await Task.Delay(TimeSpan.FromMilliseconds(500), AbortToken);
         }
 
-        lostToken.IsCancellationRequested.Should().BeTrue("the lock-holding connection died and the probe should detect it");
+        lostToken
+            .IsCancellationRequested.Should()
+            .BeTrue("the lock-holding connection died and the probe should detect it");
     }
 
     #endregion

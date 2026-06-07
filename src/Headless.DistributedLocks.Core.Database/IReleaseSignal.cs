@@ -4,7 +4,7 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Wake-up seam used by <see cref="ConnectionScopedDistributedLockProvider"/> to avoid busy-polling a
+/// Wake-up seam used by <see cref="ConnectionScopedDistributedLock"/> to avoid busy-polling a
 /// contended resource. A custom provider may back this with a native push channel (for example Postgres
 /// <c>LISTEN/NOTIFY</c>) so a blocked acquirer is woken promptly when a holder releases.
 /// </summary>

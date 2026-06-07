@@ -31,7 +31,7 @@ public sealed class PostgreSqlMonitoringApi(
     private readonly string _receivedTable = initializer.GetReceivedTableName();
 
     public async ValueTask<MediumMessage?> GetPublishedMessageAsync(
-        long id,
+        Guid id,
         CancellationToken cancellationToken = default
     )
     {
@@ -39,7 +39,7 @@ public sealed class PostgreSqlMonitoringApi(
     }
 
     public async ValueTask<IReadOnlyList<MediumMessage>> GetPublishedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -47,7 +47,7 @@ public sealed class PostgreSqlMonitoringApi(
     }
 
     public async ValueTask<MediumMessage?> GetReceivedMessageAsync(
-        long id,
+        Guid id,
         CancellationToken cancellationToken = default
     )
     {
@@ -55,7 +55,7 @@ public sealed class PostgreSqlMonitoringApi(
     }
 
     public async ValueTask<IReadOnlyList<MediumMessage>> GetReceivedMessagesAsync(
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -203,7 +203,7 @@ public sealed class PostgreSqlMonitoringApi(
                         messages.Add(
                             new MessageView
                             {
-                                StorageId = reader.GetInt64(index++),
+                                StorageId = reader.GetGuid(index++),
                                 MessageId = reader.GetString(index++),
                                 Version = reader.GetString(index++),
                                 Name = reader.GetString(index++),
@@ -363,7 +363,7 @@ public sealed class PostgreSqlMonitoringApi(
 
                     while (await reader.ReadAsync(token).ConfigureAwait(false))
                     {
-                        dictionary.Add(reader.GetString(0), (int)reader.GetInt64(1));
+                        dictionary.Add(reader.GetString(0), reader.GetInt32(1));
                     }
 
                     return dictionary;
@@ -387,7 +387,7 @@ public sealed class PostgreSqlMonitoringApi(
 
     private async Task<IReadOnlyList<MediumMessage>> _GetMessagesAsync(
         string tableName,
-        IReadOnlyList<long> storageIds,
+        IReadOnlyList<Guid> storageIds,
         CancellationToken cancellationToken = default
     )
     {
@@ -417,7 +417,7 @@ public sealed class PostgreSqlMonitoringApi(
                         messages.Add(
                             new MediumMessage
                             {
-                                StorageId = reader.GetInt64(0),
+                                StorageId = reader.GetGuid(0),
                                 Origin = serializer.Deserialize(reader.GetString(1))!,
                                 Content = reader.GetString(1),
                                 IntentType = (IntentType)reader.GetInt16(2),
@@ -450,7 +450,7 @@ public sealed class PostgreSqlMonitoringApi(
 
     private async Task<MediumMessage?> _GetMessageAsync(
         string tableName,
-        long id,
+        Guid id,
         CancellationToken cancellationToken = default
     )
     {
@@ -473,7 +473,7 @@ public sealed class PostgreSqlMonitoringApi(
                     {
                         message = new MediumMessage
                         {
-                            StorageId = reader.GetInt64(0),
+                            StorageId = reader.GetGuid(0),
                             Origin = serializer.Deserialize(reader.GetString(1))!,
                             Content = reader.GetString(1),
                             IntentType = (IntentType)reader.GetInt16(2),

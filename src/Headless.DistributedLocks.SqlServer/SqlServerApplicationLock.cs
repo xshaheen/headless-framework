@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.DistributedLocks;
 using Microsoft.Data.SqlClient;
-using System.Globalization;
 
 namespace Headless.DistributedLocks.SqlServer;
 
@@ -53,7 +53,8 @@ internal static class SqlServerApplicationLock
         CancellationToken cancellationToken = default
     )
     {
-        var connection = transaction.Connection
+        var connection =
+            transaction.Connection
             ?? throw new InvalidOperationException(
                 "The transaction has no associated open connection (already committed, rolled back, or disposed)."
             );
@@ -76,12 +77,18 @@ internal static class SqlServerApplicationLock
         }
         catch (OperationCanceledException)
         {
-            await _ReleaseTransactionAsync(connection, transaction, resource, CancellationToken.None).ConfigureAwait(false);
+            await _ReleaseTransactionAsync(connection, transaction, resource, CancellationToken.None)
+                .ConfigureAwait(false);
             throw;
         }
     }
 
-    internal static bool MapAcquireResult(string resource, int result, TimeSpan acquireTimeout, CancellationToken cancellationToken = default)
+    internal static bool MapAcquireResult(
+        string resource,
+        int result,
+        TimeSpan acquireTimeout,
+        CancellationToken cancellationToken = default
+    )
     {
         return result switch
         {
@@ -185,7 +192,10 @@ internal static class SqlServerApplicationLock
         command.Parameters.AddWithValue("lockMode", isShared ? SharedLockMode : ExclusiveLockMode);
         command.Parameters.AddWithValue("lockTimeout", _ToLockTimeoutMilliseconds(acquireTimeout));
 
-        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        return Convert.ToInt32(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture
+        );
     }
 
     /// <summary>
@@ -206,11 +216,10 @@ internal static class SqlServerApplicationLock
             return 0;
         }
 
-        var effectiveTimeout = acquireTimeout <= TimeSpan.Zero
-            ? commandTimeout
-            : commandTimeout > acquireTimeout
-                ? commandTimeout
-                : acquireTimeout + TimeSpan.FromSeconds(1);
+        var effectiveTimeout =
+            acquireTimeout <= TimeSpan.Zero ? commandTimeout
+            : commandTimeout > acquireTimeout ? commandTimeout
+            : acquireTimeout + TimeSpan.FromSeconds(1);
 
         return effectiveTimeout.TotalSeconds >= int.MaxValue
             ? int.MaxValue

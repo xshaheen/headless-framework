@@ -185,6 +185,37 @@ public sealed class ConnectionMonitorTests : TestBase
         releaser!.Dispose();
     }
 
+    [Fact]
+    public async Task keepalive_probe_should_not_cancel_token_on_non_terminal_command_failure()
+    {
+        // given
+        var (connection, fake) = _CreateConnection();
+        await using var _ = connection;
+
+        // register handle to get connection lost token
+        using var handle = connection.GetConnectionMonitoringHandle();
+
+        var cadence = TimeSpan.FromSeconds(30);
+        connection.SetKeepaliveCadence(cadence);
+
+        // simulate command failure
+        fake.ExecuteNonQueryHandler = (_, _) => throw new InvalidOperationException("Non-terminal database error");
+
+        // when (advancing past cadence)
+        _timeProvider.Advance(cadence);
+
+        // then (probe ran and failed, but since connection state remains Open, token is NOT cancelled)
+        await _DrainUntilAsync(() => fake.ExecuteNonQueryCount >= 1);
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeFalse();
+
+        // when (terminal loss occurs and connection state is set to Closed)
+        fake.SetState(ConnectionState.Closed);
+
+        // then (the token is cancelled)
+        await _DrainUntilAsync(() => handle.ConnectionLostToken.IsCancellationRequested);
+        handle.ConnectionLostToken.IsCancellationRequested.Should().BeTrue();
+    }
+
     private (TestDatabaseConnection Connection, FakeDbConnection Fake) _CreateConnection()
     {
         var fake = new FakeDbConnection();

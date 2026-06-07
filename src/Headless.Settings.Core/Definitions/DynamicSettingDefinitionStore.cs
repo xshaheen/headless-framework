@@ -32,7 +32,7 @@ public sealed class DynamicSettingDefinitionStore(
     IStaticSettingDefinitionStore staticStore,
     ISettingDefinitionSerializer definitionSerializer,
     ICache distributedCache,
-    IDistributedLockProvider distributedLockProvider,
+    IDistributedLock distributedLockProvider,
     IGuidGenerator guidGenerator,
     IApplicationInformationAccessor application,
     IOptions<SettingManagementOptions> optionsAccessor,

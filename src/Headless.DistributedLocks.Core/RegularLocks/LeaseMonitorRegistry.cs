@@ -11,15 +11,15 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
 {
     private readonly ConcurrentDictionary<string, MonitorBucket> _activeMonitors = new(StringComparer.Ordinal);
 
-    public void Register(string resource, string lockId, LeaseMonitor monitor)
+    public void Register(string resource, string leaseId, LeaseMonitor monitor)
     {
         while (true)
         {
             var bucket = _activeMonitors.GetOrAdd(resource, static _ => new MonitorBucket());
 
-            if (bucket.TryRegister(lockId, monitor))
+            if (bucket.TryRegister(leaseId, monitor))
             {
-                logger.LogLeaseMonitorRegistered(resource, lockId);
+                logger.LogLeaseMonitorRegistered(resource, leaseId);
 
                 return;
             }
@@ -28,16 +28,16 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
         }
     }
 
-    public LeaseMonitor? TryDeregister(string resource, string lockId)
+    public LeaseMonitor? TryDeregister(string resource, string leaseId)
     {
         if (!_activeMonitors.TryGetValue(resource, out var bucket))
         {
             return null;
         }
 
-        if (bucket.TryDeregister(lockId, out var monitor, out var removeBucket))
+        if (bucket.TryDeregister(leaseId, out var monitor, out var removeBucket))
         {
-            logger.LogLeaseMonitorDeregistered(resource, lockId);
+            logger.LogLeaseMonitorDeregistered(resource, leaseId);
         }
 
         if (removeBucket)
@@ -62,10 +62,10 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
             _TryRemoveBucket(resource, bucket);
         }
 
-        foreach (var (lockId, monitor) in liveMonitors)
+        foreach (var (leaseId, monitor) in liveMonitors)
         {
             monitor.TriggerImmediateValidation();
-            logger.LogLeaseMonitorNudged(resource, lockId);
+            logger.LogLeaseMonitorNudged(resource, leaseId);
         }
     }
 
@@ -118,7 +118,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
         private readonly Dictionary<string, WeakReference<LeaseMonitor>> _monitors = new(StringComparer.Ordinal);
         private bool _isRemoved;
 
-        public bool TryRegister(string lockId, LeaseMonitor monitor)
+        public bool TryRegister(string leaseId, LeaseMonitor monitor)
         {
             lock (_syncRoot)
             {
@@ -128,13 +128,13 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                 }
 
                 _PruneDeadEntries();
-                _monitors[lockId] = new WeakReference<LeaseMonitor>(monitor);
+                _monitors[leaseId] = new WeakReference<LeaseMonitor>(monitor);
 
                 return true;
             }
         }
 
-        public bool TryDeregister(string lockId, out LeaseMonitor? monitor, out bool removeBucket)
+        public bool TryDeregister(string leaseId, out LeaseMonitor? monitor, out bool removeBucket)
         {
             lock (_syncRoot)
             {
@@ -147,7 +147,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                 }
 
                 monitor =
-                    _monitors.Remove(lockId, out var weakReference) && weakReference.TryGetTarget(out var target)
+                    _monitors.Remove(leaseId, out var weakReference) && weakReference.TryGetTarget(out var target)
                         ? target
                         : null;
                 removeBucket = _MarkRemovedIfEmpty();
@@ -156,7 +156,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
             }
         }
 
-        public List<(string LockId, LeaseMonitor Monitor)> GetLiveMonitorsForNudge(out bool removeBucket)
+        public List<(string LeaseId, LeaseMonitor Monitor)> GetLiveMonitorsForNudge(out bool removeBucket)
         {
             lock (_syncRoot)
             {
@@ -167,9 +167,9 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                     return [];
                 }
 
-                List<(string LockId, LeaseMonitor Monitor)>? liveMonitors = null;
+                List<(string LeaseId, LeaseMonitor Monitor)>? liveMonitors = null;
 
-                foreach (var (lockId, weakReference) in _monitors)
+                foreach (var (leaseId, weakReference) in _monitors)
                 {
                     if (!weakReference.TryGetTarget(out var monitor))
                     {
@@ -177,7 +177,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                     }
 
                     liveMonitors ??= [];
-                    liveMonitors.Add((lockId, monitor));
+                    liveMonitors.Add((leaseId, monitor));
                 }
 
                 _PruneDeadEntries();
@@ -209,7 +209,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
         {
             List<string>? deadKeys = null;
 
-            foreach (var (lockId, weakReference) in _monitors)
+            foreach (var (leaseId, weakReference) in _monitors)
             {
                 if (weakReference.TryGetTarget(out _))
                 {
@@ -217,7 +217,7 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                 }
 
                 deadKeys ??= [];
-                deadKeys.Add(lockId);
+                deadKeys.Add(leaseId);
             }
 
             if (deadKeys is null)
@@ -225,9 +225,9 @@ internal sealed class LeaseMonitorRegistry(ILogger logger)
                 return;
             }
 
-            foreach (var lockId in deadKeys)
+            foreach (var leaseId in deadKeys)
             {
-                _monitors.Remove(lockId);
+                _monitors.Remove(leaseId);
             }
         }
 

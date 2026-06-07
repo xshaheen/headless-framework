@@ -11,25 +11,25 @@ internal static partial class LoggerExtensions
         EventId = 1,
         Level = LogLevel.Warning,
         EventName = "ConnectionScopedLockReleaseFailed",
-        Message = "Connection-scoped lock release failed for resource {Resource} and lock id {LockId}."
+        Message = "Connection-scoped lock release failed for resource {Resource} and lock id {LeaseId}."
     )]
     public static partial void LogConnectionScopedLockReleaseFailed(
         this ILogger logger,
         Exception exception,
         string resource,
-        string lockId
+        string leaseId
     );
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Warning,
         EventName = "ReleaseWakePublishFailed",
-        Message = "Publishing the release wake-up for resource {Resource} (lock id {LockId}) failed; waiters fall back to polling."
+        Message = "Publishing the release wake-up for resource {Resource} (lock id {LeaseId}) failed; waiters fall back to polling."
     )]
     public static partial void LogReleaseWakePublishFailed(
         this ILogger logger,
         Exception exception,
         string resource,
-        string lockId
+        string leaseId
     );
 }

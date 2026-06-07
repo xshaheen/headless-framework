@@ -4,18 +4,17 @@
 namespace Headless.DistributedLocks;
 
 /// <summary>
-/// Tests-only <see cref="IDistributedReaderWriterLockProvider"/> that never contends.
+/// Tests-only <see cref="IDistributedReadWriteLock"/> that never contends.
 /// Every read and write acquire succeeds immediately and every renew returns true.
 /// </summary>
 [PublicAPI]
-public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timeProvider)
-    : IDistributedReaderWriterLockProvider
+public sealed class NullDistributedReadWriteLock(TimeProvider timeProvider) : IDistributedReadWriteLock
 {
     public TimeSpan DefaultTimeUntilExpires => TimeSpan.FromMinutes(20);
 
     public TimeSpan DefaultAcquireTimeout => TimeSpan.FromSeconds(30);
 
-    public Task<IDistributedLock> AcquireReadLockAsync(
+    public Task<IDistributedLease> AcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -24,10 +23,10 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock>(new NullReaderWriterLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease>(new NullReaderWriterLock(resource, timeProvider));
     }
 
-    public Task<IDistributedLock?> TryAcquireReadLockAsync(
+    public Task<IDistributedLease?> TryAcquireReadLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -36,10 +35,10 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock?>(new NullReaderWriterLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease?>(new NullReaderWriterLock(resource, timeProvider));
     }
 
-    public Task<IDistributedLock> AcquireWriteLockAsync(
+    public Task<IDistributedLease> AcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -48,10 +47,10 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock>(new NullReaderWriterLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease>(new NullReaderWriterLock(resource, timeProvider));
     }
 
-    public Task<IDistributedLock?> TryAcquireWriteLockAsync(
+    public Task<IDistributedLease?> TryAcquireWriteLockAsync(
         string resource,
         DistributedLockAcquireOptions? options = null,
         CancellationToken cancellationToken = default
@@ -60,7 +59,7 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
         cancellationToken.ThrowIfCancellationRequested();
         _ValidateAcquireOptions(options);
 
-        return Task.FromResult<IDistributedLock?>(new NullReaderWriterLock(resource, timeProvider));
+        return Task.FromResult<IDistributedLease?>(new NullReaderWriterLock(resource, timeProvider));
     }
 
     public Task<bool> IsReadLockedAsync(string resource, CancellationToken cancellationToken = default)
@@ -95,11 +94,11 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
         }
     }
 
-    private sealed class NullReaderWriterLock(string resource, TimeProvider timeProvider) : IDistributedLock
+    private sealed class NullReaderWriterLock(string resource, TimeProvider timeProvider) : IDistributedLease
     {
         private int _renewalCount;
 
-        public string LockId { get; } = Guid.NewGuid().ToString("N");
+        public string LeaseId { get; } = Guid.NewGuid().ToString("N");
 
         public long? FencingToken => null;
 
@@ -111,9 +110,9 @@ public sealed class NullDistributedReaderWriterLockProvider(TimeProvider timePro
 
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken HandleLostToken => CancellationToken.None;
+        public CancellationToken LostToken => CancellationToken.None;
 
-        public bool IsMonitored => false;
+        public bool CanObserveLoss => false;
 
         public Task ReleaseAsync()
         {

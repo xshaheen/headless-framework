@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
@@ -278,7 +279,7 @@ public static class SetupMessaging
         services.TryAddSingleton(services);
         services.TryAddSingleton(new MessagingMarkerService("Messaging"));
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
-        services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
+        services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
@@ -308,11 +309,9 @@ public static class SetupMessaging
         services.TryAddSingleton<IConsumerRegister, ConsumerRegister>();
 
         // Fallback lock provider under the messaging-scoped key. Isolated from any app-level
-        // IDistributedLockProvider so UseStorageLock always targets the provider wired via
+        // IDistributedLock so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
-        services.TryAddKeyedSingleton<IDistributedLockProvider, NullDistributedLockProvider>(
-            MessagingKeys.LockProvider
-        );
+        services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(MessagingKeys.LockProvider);
 
         //Processors
         services.TryAddEnumerable(

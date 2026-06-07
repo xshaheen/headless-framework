@@ -8,16 +8,16 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 
 ## Key Features
 
-- `DistributedLockProvider` implements `IDistributedLockProvider`.
-- `DistributedReaderWriterLockProvider` implements `IDistributedReaderWriterLockProvider`.
+- `DistributedLock` implements `IDistributedLock`.
+- `DistributedReadWriteLock` implements `IDistributedReadWriteLock`.
 - `DistributedSemaphoreProvider` implements `IDistributedSemaphoreProvider`.
 - `DisposableDistributedLock` releases on dispose by default.
-- `IDistributedReaderWriterLockStorage` defines read/write acquire, extend, release, and validation operations.
+- `IDistributedReadWriteLockStorage` defines read/write acquire, extend, release, and validation operations.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
 - `AddDistributedLock(...)` overloads wire storage, options, time provider, and ID generator.
 - `setup.UseDistributedLockReleaseWakeups()` registers the optional `DistributedLockReleased` consumer from `AddHeadlessMessaging(...)`.
-- `AddDistributedReaderWriterLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
+- `AddDistributedReadWriteLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
 - `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
 
 ## Design Notes
@@ -27,7 +27,7 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
-- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. Structured fields are `Resource`, `LockId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` is `internal` and intended for tests only.
+- Intermediate monitor states are surfaced via the `LeaseMonitorStateChanged` log event (`EventId = 30`) for programmatic log filtering. Structured fields are `Resource`, `LeaseId`, `PreviousState`, and `NextState`. `GetActiveMonitorCount` is `internal` and intended for tests only.
 
 ## Installation
 
@@ -66,7 +66,7 @@ options.PollingCadenceFraction = 0.5;
 options.AutoExtensionCadenceFraction = 1.0 / 3.0;
 ```
 
-Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per call by passing a `DistributedLockAcquireOptions` instance to `AcquireAsync(...)` or `TryAcquireAsync(...)`. Set `Monitoring = LockMonitoringMode.Monitor` for `HandleLostToken` loss detection and `Monitoring = LockMonitoringMode.AutoExtend` for background renewal.
+Default lock expiration is 20 minutes and default acquire timeout is 30 seconds; override those per call by passing a `DistributedLockAcquireOptions` instance to `AcquireAsync(...)` or `TryAcquireAsync(...)`. Set `Monitoring = LockMonitoringMode.Monitor` for `LostToken` loss detection and `Monitoring = LockMonitoringMode.AutoExtend` for background renewal.
 
 Use `AutoExtend` when the protected work can exceed the initial TTL and should keep the lease alive while the process is healthy:
 
@@ -92,8 +92,8 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ## Side Effects
 
-- Registers `IDistributedLockProvider` as singleton.
-- Registers `IDistributedReaderWriterLockProvider` as singleton when `AddDistributedReaderWriterLock(...)` is called.
+- Registers `IDistributedLock` as singleton.
+- Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
 - Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
-- Registers `TimeProvider.System` and `ILongIdGenerator` when absent.
+- Registers `TimeProvider.System` and `IGuidGenerator` when absent.
 - Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.

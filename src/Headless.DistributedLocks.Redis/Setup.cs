@@ -109,30 +109,30 @@ public static class SetupRedisDistributedLock
         #region Redis Distributed Reader-Writer Lock
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReaderWriterLock(
+        public IServiceCollection AddRedisDistributedReadWriteLock(
             Action<DistributedLockOptions, IServiceProvider> optionSetupAction
         )
         {
             return services._AddRedisDistributedCore(
-                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction),
+                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(optionSetupAction),
                 _ReaderWriterScripts
             );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReaderWriterLock(Action<DistributedLockOptions> optionSetupAction)
+        public IServiceCollection AddRedisDistributedReadWriteLock(Action<DistributedLockOptions> optionSetupAction)
         {
             return services._AddRedisDistributedCore(
-                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(optionSetupAction),
+                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(optionSetupAction),
                 _ReaderWriterScripts
             );
         }
 
         /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReaderWriterLock(IConfiguration config)
+        public IServiceCollection AddRedisDistributedReadWriteLock(IConfiguration config)
         {
             return services._AddRedisDistributedCore(
-                s => s.AddDistributedReaderWriterLock<RedisDistributedReaderWriterLockStorage>(config),
+                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(config),
                 _ReaderWriterScripts
             );
         }

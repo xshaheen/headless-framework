@@ -157,7 +157,7 @@ internal sealed class OutboxMessageWriter(
     private static MediumMessage _CreateStorageEnvelope(PreparedPublishMessage publishRequest) =>
         new()
         {
-            StorageId = 0,
+            StorageId = Guid.Empty,
             Origin = publishRequest.Message,
             Content = string.Empty,
             IntentType = publishRequest.IntentType,

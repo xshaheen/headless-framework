@@ -701,7 +701,7 @@ public sealed class BusTests : TestBase
     {
         var optionsAccessor = Options.Create(options);
         var publishRequestFactory = new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             new NullCurrentTenant()
@@ -727,7 +727,7 @@ public sealed class BusTests : TestBase
         var serializer = new JsonUtf8Serializer(optionsAccessor);
 
         var publishRequestFactory = new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
             currentTenant ?? new NullCurrentTenant()

@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
+using Headless.Core;
 using Headless.Domain;
 using Headless.EntityFramework.CompiledQueryCache;
 using Headless.EntityFramework.Contexts.Runtime;
@@ -119,8 +120,7 @@ public static class SetupEntityFramework
 
             services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<IClock, Clock>();
-            services.TryAddSingleton<IGuidGenerator, SequentialAtEndGuidGenerator>();
-            services.TryAddSingleton<ILongIdGenerator, SnowflakeIdLongIdGenerator>();
+            services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();

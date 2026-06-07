@@ -9,15 +9,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests;
 
 /// <summary>
-/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockProviderTestsBase"/>)
+/// Runs the cross-provider lock conformance contract (<see cref="DistributedLockTestsBase"/>)
 /// against the SQL Server application-lock provider. SQL Server-specific behavior lives in the sibling
 /// test classes; this class only wires the portable scenarios as facts.
 /// </summary>
 [Collection<SqlServerDistributedLockFixture>]
-public sealed class SqlServerDistributedLockConformanceTests : DistributedLockProviderTestsBase
+public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTestsBase
 {
     private readonly ServiceProvider _services;
-    private readonly IDistributedLockProvider _provider;
+    private readonly IDistributedLock _provider;
     private readonly string _connectionString;
 
     public SqlServerDistributedLockConformanceTests(SqlServerDistributedLockFixture fixture)
@@ -34,10 +34,10 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockPr
         });
 
         _services = services.BuildServiceProvider();
-        _provider = _services.GetRequiredService<IDistributedLockProvider>();
+        _provider = _services.GetRequiredService<IDistributedLock>();
     }
 
-    protected override IDistributedLockProvider GetLockProvider() => _provider;
+    protected override IDistributedLock GetLockProvider() => _provider;
 
     /// <summary>
     /// Simulates silent connection death for the SQL Server provider by discovering the SPID of the session that
@@ -45,7 +45,7 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockPr
     /// in-flight command at this point, so only the provider's active liveness probe can surface the loss.
     /// </summary>
     protected override async Task KillLockHoldingConnectionAsync(
-        IDistributedLock handle,
+        IDistributedLease handle,
         CancellationToken cancellationToken
     )
     {

@@ -26,9 +26,9 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
 
         // when
         var results = await Task.WhenAll(
-            lockIds.Select(lockId =>
+            lockIds.Select(leaseId =>
                 fixture
-                    .ReaderWriterLockStorage.TryAcquireReadAsync(resource, lockId, TimeSpan.FromMinutes(1), AbortToken)
+                    .ReaderWriterLockStorage.TryAcquireReadAsync(resource, leaseId, TimeSpan.FromMinutes(1), AbortToken)
                     .AsTask()
             )
         );

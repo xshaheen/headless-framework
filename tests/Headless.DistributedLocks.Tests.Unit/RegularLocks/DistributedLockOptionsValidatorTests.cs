@@ -102,4 +102,69 @@ public sealed class DistributedLockOptionsValidatorTests : TestBase
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.WriterWaitingMarkerTtl));
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_invalid_max_resource_name_length(int length)
+    {
+        var options = new DistributedLockOptions { MaxResourceNameLength = length };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.MaxResourceNameLength));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_invalid_max_waiters_per_resource(int maxWaiters)
+    {
+        var options = new DistributedLockOptions { MaxWaitersPerResource = maxWaiters };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(DistributedLockOptions.MaxWaitersPerResource));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_invalid_max_concurrent_waiting_resources(int maxWaiting)
+    {
+        var options = new DistributedLockOptions { MaxConcurrentWaitingResources = maxWaiting };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .Contain(e => e.PropertyName == nameof(DistributedLockOptions.MaxConcurrentWaitingResources));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10_000)]
+    public void should_validate_boundary_max_resource_name_length(int length)
+    {
+        var options = new DistributedLockOptions { MaxResourceNameLength = length };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(100_000)]
+    public void should_validate_boundary_max_waiters_per_resource(int maxWaiters)
+    {
+        var options = new DistributedLockOptions { MaxWaitersPerResource = maxWaiters };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(1_000_000)]
+    public void should_validate_boundary_max_concurrent_waiting_resources(int maxWaiting)
+    {
+        var options = new DistributedLockOptions { MaxConcurrentWaitingResources = maxWaiting };
+        var result = _validator.Validate(options);
+        result.IsValid.Should().BeTrue();
+    }
 }

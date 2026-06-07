@@ -8,20 +8,20 @@ namespace Headless.DistributedLocks.InMemory;
 /// <summary>Process-local reader-writer lock storage for tests, local development, and single-instance apps.</summary>
 /// <remarks>This storage is in-process only. It does not coordinate across application instances.</remarks>
 [PublicAPI]
-public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider timeProvider)
-    : IDistributedReaderWriterLockStorage
+public sealed class InMemoryDistributedReadWriteLockStorage(TimeProvider timeProvider)
+    : IDistributedReadWriteLockStorage
 {
     private readonly ConcurrentDictionary<string, ResourceState> _resources = new(StringComparer.Ordinal);
 
     public ValueTask<bool> TryAcquireReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         var state = _resources.GetOrAdd(resource, static _ => new ResourceState());
@@ -35,7 +35,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
                 return ValueTask.FromResult(false);
             }
 
-            state.Readers[lockId] = new LeaseEntry(_GetExpiration(ttl));
+            state.Readers[leaseId] = new LeaseEntry(_GetExpiration(ttl));
 
             return ValueTask.FromResult(true);
         }
@@ -43,13 +43,13 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
     public ValueTask<bool> TryExtendReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -61,7 +61,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         {
             _PruneExpired(state);
 
-            if (!state.Readers.TryGetValue(lockId, out var existing))
+            if (!state.Readers.TryGetValue(leaseId, out var existing))
             {
                 return ValueTask.FromResult(false);
             }
@@ -73,7 +73,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
             // Readers must always carry a finite TTL: a null ttl keeps the existing finite expiry rather than
             // promoting the lease to infinite, which would let a zombie reader block writers forever.
-            state.Readers[lockId] = existing with
+            state.Readers[leaseId] = existing with
             {
                 Expiration = _ExtendExpiration(existing.Expiration, _GetExpiration(ttl), allowInfinite: false),
             };
@@ -82,10 +82,10 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         }
     }
 
-    public ValueTask ReleaseReadAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask ReleaseReadAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (_resources.TryGetValue(resource, out var state))
@@ -93,7 +93,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
             lock (state)
             {
                 _PruneExpired(state);
-                state.Readers.Remove(lockId);
+                state.Readers.Remove(leaseId);
             }
         }
 
@@ -102,7 +102,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
     public ValueTask<bool> TryAcquireWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         string waitingId,
         TimeSpan? ttl = null,
         TimeSpan? markerTtl = null,
@@ -110,7 +110,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         Argument.IsNotNullOrEmpty(waitingId);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -127,7 +127,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
             if (state.Readers.Count is 0)
             {
-                state.Writer = new WriterEntry(lockId, _GetExpiration(ttl));
+                state.Writer = new WriterEntry(leaseId, _GetExpiration(ttl));
                 // A successful claim drops any pending waiting marker (mirrors Redis's single-key overwrite).
                 state.WriterWaitingMarker = null;
 
@@ -143,13 +143,13 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
     public ValueTask<bool> TryExtendWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -161,7 +161,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         {
             _PruneExpired(state);
 
-            if (state.Writer is not { } existing || !string.Equals(existing.LockId, lockId, StringComparison.Ordinal))
+            if (state.Writer is not { } existing || !string.Equals(existing.LeaseId, leaseId, StringComparison.Ordinal))
             {
                 return ValueTask.FromResult(false);
             }
@@ -176,10 +176,10 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         }
     }
 
-    public ValueTask ReleaseWriteAsync(string resource, string lockId, CancellationToken cancellationToken = default)
+    public ValueTask ReleaseWriteAsync(string resource, string leaseId, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (_resources.TryGetValue(resource, out var state))
@@ -188,15 +188,15 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
             {
                 _PruneExpired(state);
 
-                if (state.Writer is { } writer && string.Equals(writer.LockId, lockId, StringComparison.Ordinal))
+                if (state.Writer is { } writer && string.Equals(writer.LeaseId, leaseId, StringComparison.Ordinal))
                 {
                     state.Writer = null;
                 }
 
-                var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(lockId);
+                var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(leaseId);
                 if (
                     state.WriterWaitingMarker is { } marker
-                    && string.Equals(marker.LockId, waitingId, StringComparison.Ordinal)
+                    && string.Equals(marker.LeaseId, waitingId, StringComparison.Ordinal)
                 )
                 {
                     state.WriterWaitingMarker = null;
@@ -209,12 +209,12 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
     public ValueTask<bool> ValidateReadAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -226,18 +226,18 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         {
             _PruneExpired(state);
 
-            return ValueTask.FromResult(state.Readers.ContainsKey(lockId));
+            return ValueTask.FromResult(state.Readers.ContainsKey(leaseId));
         }
     }
 
     public ValueTask<bool> ValidateWriteAsync(
         string resource,
-        string lockId,
+        string leaseId,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNullOrEmpty(resource);
-        _ValidateLockId(lockId);
+        _ValidateLockId(leaseId);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (!_resources.TryGetValue(resource, out var state))
@@ -250,7 +250,7 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
             _PruneExpired(state);
 
             return ValueTask.FromResult(
-                state.Writer is { } writer && string.Equals(writer.LockId, lockId, StringComparison.Ordinal)
+                state.Writer is { } writer && string.Equals(writer.LeaseId, leaseId, StringComparison.Ordinal)
             );
         }
     }
@@ -341,20 +341,20 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
         List<string>? expiredReaders = null;
 
-        foreach (var (lockId, entry) in state.Readers)
+        foreach (var (leaseId, entry) in state.Readers)
         {
             if (_IsExpired(entry.Expiration, now))
             {
                 expiredReaders ??= [];
-                expiredReaders.Add(lockId);
+                expiredReaders.Add(leaseId);
             }
         }
 
         if (expiredReaders is not null)
         {
-            foreach (var lockId in expiredReaders)
+            foreach (var leaseId in expiredReaders)
             {
-                state.Readers.Remove(lockId);
+                state.Readers.Remove(leaseId);
             }
         }
 
@@ -374,11 +374,11 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
         return expiration is { } exp && exp <= now;
     }
 
-    private static void _ValidateLockId(string lockId)
+    private static void _ValidateLockId(string leaseId)
     {
-        Argument.IsNotNullOrEmpty(lockId);
+        Argument.IsNotNullOrEmpty(leaseId);
         Ensure.False(
-            lockId.Contains(':', StringComparison.Ordinal),
+            leaseId.Contains(':', StringComparison.Ordinal),
             "Reader-writer lock ids cannot contain ':' because it conflicts with the writer-waiting suffix delimiter."
         );
     }
@@ -394,5 +394,5 @@ public sealed class InMemoryDistributedReaderWriterLockStorage(TimeProvider time
 
     private sealed record LeaseEntry(DateTimeOffset? Expiration);
 
-    private sealed record WriterEntry(string LockId, DateTimeOffset? Expiration);
+    private sealed record WriterEntry(string LeaseId, DateTimeOffset? Expiration);
 }

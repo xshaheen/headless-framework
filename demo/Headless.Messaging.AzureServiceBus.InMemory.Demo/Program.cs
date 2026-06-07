@@ -1,7 +1,6 @@
 using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
-using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 
@@ -18,11 +17,9 @@ builder.Services.AddHeadlessMessaging(setup =>
         asb.ConnectionString = builder.Configuration.GetConnectionString("AzureServiceBus")!;
         asb.CustomHeadersBuilder = (message, serviceProvider) =>
         {
-            var longIdGenerator = serviceProvider.GetRequiredService<ILongIdGenerator>();
-
             return
             [
-                new(Headers.MessageId, longIdGenerator.Create().ToString(CultureInfo.InvariantCulture)),
+                new(Headers.MessageId, Guid.NewGuid().ToString("D")),
                 new(Headers.MessageName, message.Subject),
                 new("IsFromSampleProject", "'true'"),
             ];

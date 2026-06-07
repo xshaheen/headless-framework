@@ -22,7 +22,7 @@ public sealed class RedisDistributedLockStorage(
 
     public async ValueTask<DistributedLockAcquireResult> InsertAsync(
         string key,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl = null,
         CancellationToken cancellationToken = default
     )
@@ -33,7 +33,7 @@ public sealed class RedisDistributedLockStorage(
         var lockKey = _GetLockKey(key);
         var fenceKey = _GetFenceKey(key);
 
-        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, lockId, ttl, cancellationToken)
+        var result = await _TryAcquireLockAsync(Db, lockKey, fenceKey, leaseId, ttl, cancellationToken)
             .ConfigureAwait(false);
 
         return result.Acquired
@@ -148,7 +148,7 @@ public sealed class RedisDistributedLockStorage(
     }
 
     public async ValueTask<
-        IReadOnlyDictionary<string, (string LockId, TimeSpan? Ttl)>
+        IReadOnlyDictionary<string, (string LeaseId, TimeSpan? Ttl)>
     > GetAllWithExpirationByPrefixAsync(string prefix, CancellationToken cancellationToken = default)
     {
         prefix ??= "";
@@ -247,12 +247,12 @@ public sealed class RedisDistributedLockStorage(
         IDatabase db,
         RedisKey key,
         RedisKey fenceKey,
-        string lockId,
+        string leaseId,
         TimeSpan? ttl,
         CancellationToken cancellationToken
     )
     {
-        var parameters = _GetAcquireLockParameters(key, fenceKey, lockId, ttl);
+        var parameters = _GetAcquireLockParameters(key, fenceKey, leaseId, ttl);
         var result = await scriptsLoader
             .EvaluateAsync(db, TryAcquireLockWithFenceScriptDefinition.Instance, parameters, cancellationToken)
             .ConfigureAwait(false);
@@ -293,13 +293,13 @@ public sealed class RedisDistributedLockStorage(
     private static AcquireLockParams _GetAcquireLockParameters(
         RedisKey key,
         RedisKey fenceKey,
-        string lockId,
+        string leaseId,
         TimeSpan? expires
     )
     {
         var expiresValue = expires.HasValue ? (int)expires.Value.TotalMilliseconds : RedisValue.EmptyString;
 
-        return new AcquireLockParams(key, fenceKey, lockId, expiresValue);
+        return new AcquireLockParams(key, fenceKey, leaseId, expiresValue);
     }
 
     private static RedisKey _GetFenceKey(string key)
@@ -381,7 +381,7 @@ public sealed class RedisDistributedLockStorage(
     private async ValueTask _ProcessBatchWithExpirationAsync(
         List<RedisKey> batch,
         string prefix,
-        Dictionary<string, (string LockId, TimeSpan? Ttl)> result
+        Dictionary<string, (string LeaseId, TimeSpan? Ttl)> result
     )
     {
         // NOTE: We avoid IDatabase.CreateBatch() because IBatch is bound to a single node.
@@ -419,7 +419,7 @@ public sealed class RedisDistributedLockStorage(
     private readonly record struct AcquireLockParams(
         RedisKey key,
         RedisKey fenceKey,
-        string lockId,
+        string leaseId,
         RedisValue expires
     );
 

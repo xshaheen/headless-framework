@@ -20,7 +20,6 @@ namespace Tests;
 public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 {
     private PostgreSqlDataStorage _storage = null!;
-    private ILongIdGenerator _longIdGenerator = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -36,20 +35,17 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         });
         services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
         var initializer = provider.GetRequiredService<IStorageInitializer>();
         await initializer.InitializeAsync();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _storage = new PostgreSqlDataStorage(
             provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System
         );
 
@@ -76,7 +72,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_delete_published_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -117,7 +113,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_delete_received_message()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
             [Headers.MessageId] = msgId,
@@ -146,7 +142,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_published_message()
     {
         // given
-        const long nonExistentId = 999999999L;
+        var nonExistentId = Guid.NewGuid();
 
         // when
         var deleted = await _storage.DeletePublishedMessageAsync(nonExistentId, AbortToken);
@@ -159,7 +155,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_return_zero_when_deleting_nonexistent_received_message()
     {
         // given
-        const long nonExistentId = 999999999L;
+        var nonExistentId = Guid.NewGuid();
 
         // when
         var deleted = await _storage.DeleteReceivedMessageAsync(nonExistentId, AbortToken);
@@ -176,7 +172,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var expiredTime = DateTime.UtcNow.AddDays(-1);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
 
         await connection.ExecuteAsync(
@@ -213,7 +209,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_not_delete_non_expired_messages()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
         var message = new Message(header, new { Data = "test" });
         var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
@@ -243,7 +239,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
 
@@ -281,8 +277,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var id = Guid.NewGuid();
+        var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
             new CommandDefinition(
@@ -318,7 +314,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await connection.OpenAsync(AbortToken);
 
         var addedTime = DateTime.UtcNow.AddMinutes(-5);
-        var id = _longIdGenerator.Create();
+        var id = Guid.NewGuid();
         var messageId = $"msg-{id}";
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + messageId + "\"},\"Value\":null}";
         await connection.ExecuteAsync(
@@ -347,7 +343,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     public async Task should_store_received_exception_message_with_failed_status()
     {
         // given
-        var msgId = _longIdGenerator.Create().ToString(CultureInfo.InvariantCulture);
+        var msgId = Guid.NewGuid().ToString("D");
         var content = "{\"Headers\":{\"headless-msg-id\":\"" + msgId + "\"},\"Value\":null}";
 
         // when

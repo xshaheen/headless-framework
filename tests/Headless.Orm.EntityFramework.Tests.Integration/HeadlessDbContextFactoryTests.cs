@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Abstractions;
+using Headless.Domain;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,6 +67,35 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
     }
 
     [Fact]
+    public void should_use_provider_keyed_guid_generator_for_guid_entity_ids()
+    {
+        // given
+        var providerGuid = Guid.Parse("019b055c-8f3e-7a6d-a71d-94536be55948");
+        var unkeyedGuid = Guid.Parse("019b055c-8f3e-7a6d-a71d-94536be55949");
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IGuidGenerator>(new FixedGuidGenerator(unkeyedGuid));
+        services.AddKeyedSingleton<IGuidGenerator>(SequentialGuidType.Version7, new FixedGuidGenerator(providerGuid));
+        services.AddHeadlessDbContext<KeyedGuidDbContext>(options =>
+            options.UseNpgsql("Host=localhost;Database=headless;Username=headless;Password=headless")
+        );
+
+        using var sp = services.BuildServiceProvider();
+        using var scope = sp.CreateScope();
+        using var ctx = scope.ServiceProvider.GetRequiredService<KeyedGuidDbContext>();
+
+        var entity = new KeyedGuidEntity { Name = "postgres" };
+
+        // when
+        ctx.Entities.Add(entity);
+
+        // then
+        entity.Id.Should().Be(providerGuid);
+        entity.Id.Should().NotBe(unkeyedGuid);
+    }
+
+    [Fact]
     public async Task should_dispose_owned_scope_when_dbcontext_constructor_throws()
     {
         // given — a scoped probe whose disposal we observe, and a context whose ctor throws.
@@ -75,10 +106,9 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
         services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<
-            Headless.Abstractions.IGuidGenerator,
-            Headless.Abstractions.SequentialAsStringGuidGenerator
-        >();
+        services.AddSingleton<Headless.Abstractions.IGuidGenerator>(
+            new Headless.Abstractions.SequentialGuidGenerator(Headless.Abstractions.SequentialGuidType.Version7)
+        );
         services.AddScoped<ScopeProbe>();
         services.AddHeadlessDbContext<ThrowingDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
 
@@ -113,10 +143,9 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         services.AddSingleton<Headless.Abstractions.IClock>(fixture.Clock);
         services.AddSingleton<Headless.Abstractions.ICurrentTenant>(fixture.CurrentTenant);
         services.AddSingleton<Headless.Abstractions.ICurrentUser>(fixture.CurrentUser);
-        services.AddSingleton<
-            Headless.Abstractions.IGuidGenerator,
-            Headless.Abstractions.SequentialAsStringGuidGenerator
-        >();
+        services.AddSingleton<Headless.Abstractions.IGuidGenerator>(
+            new Headless.Abstractions.SequentialGuidGenerator(Headless.Abstractions.SequentialGuidType.Version7)
+        );
         services.AddHeadlessDbContext<FactoryTestDbContext>(options => options.UseNpgsql(fixture.SqlConnectionString));
         configure?.Invoke(services);
 
@@ -129,6 +158,28 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         public void Dispose() => IsDisposed = true;
     }
+}
+
+file sealed class FixedGuidGenerator(Guid value) : IGuidGenerator
+{
+    public Guid Create() => value;
+}
+
+file sealed class KeyedGuidDbContext(HeadlessDbContextServices services, DbContextOptions<KeyedGuidDbContext> options)
+    : HeadlessDbContext(services, options)
+{
+    public DbSet<KeyedGuidEntity> Entities => Set<KeyedGuidEntity>();
+
+    public override string DefaultSchema => "";
+}
+
+file sealed class KeyedGuidEntity : IEntity<Guid>
+{
+    public Guid Id { get; private init; }
+
+    public required string Name { get; init; }
+
+    public IReadOnlyList<object> GetKeys() => [Id];
 }
 
 /// <summary>

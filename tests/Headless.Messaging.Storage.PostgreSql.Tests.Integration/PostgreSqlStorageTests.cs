@@ -24,7 +24,6 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
 {
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
-    private ILongIdGenerator? _longIdGenerator;
     private ISerializer? _serializer;
 
     /// <inheritdoc />
@@ -134,15 +133,12 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             x.UseStorageLock = true;
         });
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
-        services.AddSingleton<ILongIdGenerator>(new SnowflakeIdLongIdGenerator());
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
 
         var postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
         var messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-
-        _longIdGenerator = provider.GetRequiredService<ILongIdGenerator>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
         _initializer = new PostgreSqlStorageInitializer(
@@ -156,7 +152,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
             messagingOptions,
             _initializer,
             provider.GetRequiredService<ISerializer>(),
-            _longIdGenerator,
+            new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System
         );
     }

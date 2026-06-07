@@ -13,7 +13,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - **Distributed messaging.** Use `Headless.Messaging` abstractions. Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`, `Azure.Messaging.ServiceBus`) from application code.
 - **Background jobs.** Use `Headless.Jobs` — mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`. Do not use Hangfire or Quartz.
 - **Feature flags.** Use `Headless.Features`. Do not use `Microsoft.FeatureManagement`.
-- **Distributed locks.** Use `IDistributedLock` from `Headless.DistributedLocks.Abstractions`, not ad-hoc Redis `SET NX` or database row locks.
+- **Distributed locks.** Use `IDistributedLease` from `Headless.DistributedLocks.Abstractions`, not ad-hoc Redis `SET NX` or database row locks.
 - **Rate limiting.** The framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` for in-process limits; for distributed scenarios, use `Polly.RateLimiting` composed with a community Redis-backed `RateLimiter` such as `RedisRateLimiting`.
 - **Dev packages.** Use `*.Dev` packages (`Headless.Emails.Dev`, `Headless.Sms.Dev`, `Headless.PushNotifications.Dev`) in development so no real messages are sent.
 

@@ -33,7 +33,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_expire_readers_and_waiting_marker_deterministically()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
         var waitingId = DistributedLockCoreHelpers.GetWriterWaitingId(writerId);
@@ -75,7 +75,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_extend_without_shortening_and_reject_expired_leases()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
@@ -107,7 +107,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_refuse_read_extend_when_writer_is_waiting()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
@@ -135,7 +135,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_not_shorten_infinite_write_lease()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
@@ -175,11 +175,11 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
 
         async Task contendAsync()
         {
-            var lockId = Guid.NewGuid().ToString("N");
+            var leaseId = Guid.NewGuid().ToString("N");
 
             for (var i = 0; i < iterations; i++)
             {
-                var result = await storage.InsertAsync(key, lockId, TimeSpan.FromSeconds(30), AbortToken);
+                var result = await storage.InsertAsync(key, leaseId, TimeSpan.FromSeconds(30), AbortToken);
 
                 if (!result.Acquired)
                 {
@@ -196,7 +196,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
                 }
 
                 _Max(ref maxToken, token);
-                await storage.RemoveIfEqualAsync(key, lockId, AbortToken);
+                await storage.RemoveIfEqualAsync(key, leaseId, AbortToken);
             }
         }
 
@@ -210,7 +210,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_clear_stale_marker_when_write_claim_succeeds()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerA = Guid.NewGuid().ToString("N");
         var writerB = Guid.NewGuid().ToString("N");
@@ -257,7 +257,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_keep_reader_lease_finite_when_extended_with_null_ttl()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
 
         (await storage.TryAcquireReadAsync(resource, "reader-1", TimeSpan.FromSeconds(5), AbortToken))
@@ -281,7 +281,7 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Fact]
     public async Task reader_writer_storage_should_keep_writer_lease_infinite_when_extended_with_null_ttl()
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
         var writerId = Guid.NewGuid().ToString("N");
 
@@ -311,18 +311,18 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
     [Theory]
     [InlineData("lock:with:colon")]
     [InlineData("a:b")]
-    public async Task reader_writer_storage_should_reject_lock_id_containing_colon(string lockId)
+    public async Task reader_writer_storage_should_reject_lock_id_containing_colon(string leaseId)
     {
-        var storage = new InMemoryDistributedReaderWriterLockStorage(_timeProvider);
+        var storage = new InMemoryDistributedReadWriteLockStorage(_timeProvider);
         var resource = Faker.Random.AlphaNumeric(10);
 
         var acquireRead = async () =>
-            await storage.TryAcquireReadAsync(resource, lockId, TimeSpan.FromSeconds(5), AbortToken);
+            await storage.TryAcquireReadAsync(resource, leaseId, TimeSpan.FromSeconds(5), AbortToken);
         var acquireWrite = async () =>
             await storage.TryAcquireWriteAsync(
                 resource,
-                lockId,
-                DistributedLockCoreHelpers.GetWriterWaitingId(lockId),
+                leaseId,
+                DistributedLockCoreHelpers.GetWriterWaitingId(leaseId),
                 TimeSpan.FromSeconds(5),
                 TimeSpan.FromSeconds(5),
                 AbortToken
@@ -354,12 +354,12 @@ public sealed class InMemoryStorageDeterministicTests : TestBase
         services.AddLogging();
         services.AddInMemoryDistributedLock(static _ => { });
         services.AddInMemoryDistributedSemaphore(static _ => { });
-        services.AddInMemoryDistributedReaderWriterLock(static _ => { });
+        services.AddInMemoryDistributedReadWriteLock(static _ => { });
 
         using var provider = services.BuildServiceProvider();
 
-        provider.GetRequiredService<IDistributedLockProvider>().Should().NotBeNull();
+        provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
         provider.GetRequiredService<IDistributedSemaphoreProvider>().Should().NotBeNull();
-        provider.GetRequiredService<IDistributedReaderWriterLockProvider>().Should().NotBeNull();
+        provider.GetRequiredService<IDistributedReadWriteLock>().Should().NotBeNull();
     }
 }

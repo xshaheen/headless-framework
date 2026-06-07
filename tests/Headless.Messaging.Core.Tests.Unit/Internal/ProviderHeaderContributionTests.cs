@@ -193,7 +193,7 @@ public sealed class ProviderHeaderContributionTests
         var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.message" } };
 
         return new MessagePublishRequestFactory(
-            new SnowflakeIdLongIdGenerator(),
+            new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             Options.Create(options),
             new NullCurrentTenant(),
