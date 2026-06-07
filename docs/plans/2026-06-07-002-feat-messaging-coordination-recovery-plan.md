@@ -1,6 +1,6 @@
 ---
 title: "feat: Messaging node-incarnation orphan recovery via Coordination"
-status: active
+status: completed
 date: 2026-06-07
 type: feat
 issue: 396
