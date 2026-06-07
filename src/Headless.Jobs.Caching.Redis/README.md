@@ -1,18 +1,16 @@
 # Headless.Jobs.Caching.Redis
 
-Redis-backed distributed coordination for Jobs with node heartbeat monitoring and dead node detection.
+Redis-backed cron-expression caching for Jobs in multi-instance deployments.
 
 ## Problem Solved
 
-Enables multi-instance Jobs deployments with Redis-based node registry, heartbeat monitoring, and automatic dead node cleanup for high availability job scheduling.
+Caches cron-expression lookups in Redis so multi-instance Jobs deployments avoid repeated database reads for the cron-expression set. This package is caching only -- node liveness, heartbeat, and membership are provided by `Headless.Coordination`, not Redis.
 
 ## Key Features
 
-- **Node Registry**: Track all Jobs nodes in Redis
-- **Heartbeat Monitoring**: Periodic node liveness checks
-- **Dead Node Detection**: Automatic cleanup of failed nodes
-- **Distributed Coordination**: Shared state across Jobs instances
-- **Dashboard Integration**: Real-time cluster visibility
+- **Cron-Expression Caching**: Shared Redis cache for the cron-expression set across instances
+- **Distributed Cache Access**: Exposes the underlying distributed cache to the EF persistence layer
+- **Connection Awareness**: Skips cache invalidation when no Redis connection is available
 
 ## Installation
 
@@ -31,7 +29,6 @@ builder.Services
     .AddStackExchangeRedis(redis =>
     {
         redis.Configuration = "localhost:6379";
-        redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
     });
 ```
 
@@ -41,20 +38,13 @@ builder.Services
 builder.Services
     .AddHeadlessJobs()
     .AddStackExchangeRedis(redis =>
-{
-    redis.Configuration = "localhost:6379,ssl=true,password=secret";
-    redis.InstanceName = "jobs:";
-    redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
-});
-
-builder.Services.AddHeadlessJobs(options =>
-{
-    options.ConfigureScheduler(scheduler =>
     {
-        scheduler.NodeIdentifier = "instance-1";
+        redis.Configuration = "localhost:6379,ssl=true,password=secret";
+        redis.InstanceName = "jobs:";
     });
-});
 ```
+
+`AddStackExchangeRedis` takes `JobsRedisOptionBuilder` (a `RedisCacheOptions`). There is no node-heartbeat option -- membership/liveness is configured through `AddHeadlessCoordination(...)`.
 
 ## Dependencies
 
@@ -63,12 +53,5 @@ builder.Services.AddHeadlessJobs(options =>
 
 ## Side Effects
 
-- Stores node registry and heartbeats in Redis
-- Background service sends periodic heartbeats
-- Periodically scans for and removes dead nodes
-- Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
-
-## Error Handling Behavior in Clusters
-
-When a node is detected as dead, Jobs releases orphaned locks and marks affected in-progress work as skipped with a reason.
-This prevents stuck jobs and allows healthy nodes to continue processing safely.
+- Registers `IJobsCacheContext` backed by Redis for cron-expression caching
+- Stores cron-expression cache entries under the configured `InstanceName` prefix
