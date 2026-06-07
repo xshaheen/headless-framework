@@ -598,11 +598,27 @@ internal sealed class InMemoryDataStorage(
         return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(PublishedMessages, cancellationToken));
     }
 
+    public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(0);
+    }
+
     public ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return ValueTask.FromResult(_ClaimMessagesOfNeedRetry(ReceivedMessages, cancellationToken));
+    }
+
+    public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(0);
     }
 
     private IEnumerable<MediumMessage> _ClaimMessagesOfNeedRetry(

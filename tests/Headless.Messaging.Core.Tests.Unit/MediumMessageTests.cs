@@ -90,6 +90,39 @@ public sealed class MediumMessageTests : TestBase
     }
 
     [Fact]
+    public void should_default_owner_to_null()
+    {
+        // when
+        var mediumMessage = new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(),
+            Content = "{}",
+            IntentType = IntentType.Bus,
+        };
+
+        // then
+        mediumMessage.Owner.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_set_owner()
+    {
+        // when
+        var mediumMessage = new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(),
+            Content = "{}",
+            IntentType = IntentType.Bus,
+            Owner = "node-a@7",
+        };
+
+        // then
+        mediumMessage.Owner.Should().Be("node-a@7");
+    }
+
+    [Fact]
     public void should_set_expires_at()
     {
         // given

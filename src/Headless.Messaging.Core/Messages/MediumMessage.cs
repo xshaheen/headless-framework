@@ -35,6 +35,12 @@ public class MediumMessage
     /// </summary>
     public DateTime? LockedUntil { get; set; }
 
+    /// <summary>
+    /// Gets or sets the node-incarnation owner that currently holds this row's active lease.
+    /// <see langword="null"/> means no Coordination-backed owner was stamped.
+    /// </summary>
+    public string? Owner { get; set; }
+
     public int Retries { get; set; }
 
     public string? ExceptionInfo { get; set; }

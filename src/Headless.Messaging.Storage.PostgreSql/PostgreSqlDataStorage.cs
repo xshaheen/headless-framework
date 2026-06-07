@@ -452,11 +452,27 @@ public sealed class PostgreSqlDataStorage(
         return await _GetMessagesOfNeedRetryAsync(_publishedTable, cancellationToken).ConfigureAwait(false);
     }
 
+    public ValueTask<int> ReclaimDeadPublishedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(0);
+    }
+
     public async ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
         CancellationToken cancellationToken = default
     )
     {
         return await _GetMessagesOfNeedRetryAsync(_receivedTable, cancellationToken).ConfigureAwait(false);
+    }
+
+    public ValueTask<int> ReclaimDeadReceivedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return ValueTask.FromResult(0);
     }
 
     public async ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
