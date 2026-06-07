@@ -80,7 +80,7 @@ public sealed class HeadlessRedisScriptsLoaderTests
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
 
         // when
-        var act = () => sut.LoadAsync([ReplaceIfEqualScriptDefinition.Instance]).AsTask();
+        var act = () => sut.LoadAsync([CustomReturnOneScriptDefinition.Instance]).AsTask();
 
         // then
         await act.Should().ThrowAsync<RedisConnectionException>().WithMessage("No writable Redis endpoints*");
@@ -125,11 +125,10 @@ public sealed class HeadlessRedisScriptsLoaderTests
         // given
         RedisScriptDefinition[] scripts =
         [
-            IncrementWithExpireScriptDefinition.Instance,
-            RemoveIfEqualScriptDefinition.Instance,
-            ReplaceIfEqualScriptDefinition.Instance,
-            SetIfHigherScriptDefinition.Instance,
-            SetIfLowerScriptDefinition.Instance,
+            CustomReturnOneScriptDefinition.Instance,
+            CustomReturnTwoScriptDefinition.Instance,
+            CustomReturnThreeScriptDefinition.Instance,
+            CustomReturnFourScriptDefinition.Instance,
         ];
         var (multiplexer, server) = _CreateMultiplexerWithServer(isConnected: true, isReplica: false);
         using var sut = new HeadlessRedisScriptsLoader(multiplexer);
@@ -414,6 +413,22 @@ public sealed class HeadlessRedisScriptsLoaderTests
 
         private CustomReturnTwoScriptDefinition()
             : base("return 2") { }
+    }
+
+    private sealed class CustomReturnThreeScriptDefinition : RedisScriptDefinition
+    {
+        public static CustomReturnThreeScriptDefinition Instance { get; } = new();
+
+        private CustomReturnThreeScriptDefinition()
+            : base("return 3") { }
+    }
+
+    private sealed class CustomReturnFourScriptDefinition : RedisScriptDefinition
+    {
+        public static CustomReturnFourScriptDefinition Instance { get; } = new();
+
+        private CustomReturnFourScriptDefinition()
+            : base("return 4") { }
     }
 
     private sealed class VariantScriptDefinition(string source) : RedisScriptDefinition(source);

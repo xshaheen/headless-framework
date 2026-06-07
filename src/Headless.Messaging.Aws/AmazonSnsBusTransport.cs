@@ -49,7 +49,7 @@ internal sealed class AmazonSnsBusTransport(
 
                 if (normalizeForAws.IsAwsFifoName())
                 {
-                    request.MessageGroupId = message.GetGroup() ?? "default";
+                    request.MessageGroupId = _ResolveMessageGroupId(message);
 
                     if (
                         message.Headers.TryGetValue(Headers.MessageId, out var messageId)
@@ -93,6 +93,19 @@ internal sealed class AmazonSnsBusTransport(
 
             return OperateResult.Failed(wrapperEx, errors);
         }
+    }
+
+    private static string _ResolveMessageGroupId(TransportMessage message)
+    {
+        if (
+            message.Headers.TryGetValue(AwsMessagingHeaders.MessageGroupId, out var messageGroupId)
+            && !string.IsNullOrWhiteSpace(messageGroupId)
+        )
+        {
+            return messageGroupId;
+        }
+
+        return message.GetGroup() ?? "default";
     }
 
     private async Task _FetchExistingTopicArns(CancellationToken cancellationToken = default)

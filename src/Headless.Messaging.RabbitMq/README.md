@@ -28,7 +28,7 @@ builder.Services.AddHeadlessMessaging(options =>
     options.ForMessagesFromAssemblyContaining<Program>();
     options.UsePostgreSql("connection_string");
 
-    options.UseRabbitMQ(rmq =>
+    options.UseRabbitMq(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessMessaging(options =>
 ## Configuration
 
 ```csharp
-options.UseRabbitMQ(rmq =>
+options.UseRabbitMq(rmq =>
 {
     rmq.HostName = "localhost";
     rmq.Port = 5672;
@@ -58,6 +58,24 @@ options.UseRabbitMQ(rmq =>
         factory.NetworkRecoveryInterval = TimeSpan.FromSeconds(10);
     };
 });
+
+options.ForMessage<OrderEvent>(message =>
+    message
+        .MessageName("orders.events")
+        .OnBus<OrderProjection>(consumer =>
+            consumer
+                .Group("orders-projection")
+                .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+```
+
+Consumer-side RabbitMQ knobs attach to the consumer registration:
+
+```csharp
+options.ForMessage<OrderEvent>(message =>
+    message.OnBus<OrderProjection>(consumer =>
+        consumer
+            .Group("orders-projection")
+            .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
 ```
 
 ### Security Best Practices

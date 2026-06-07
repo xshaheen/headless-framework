@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Coordination.Redis\Headless.Coordination.Redis.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
+    <ProjectReference Include="..\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>

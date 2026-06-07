@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.InteropServices;
 using Headless.Checks;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;
@@ -187,19 +186,4 @@ public sealed class RedisDistributedSemaphoreStorage(
 
         return (hashTag + ":holders", "fence:" + hashTag);
     }
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct SemaphoreAcquireParams(
-        RedisKey holdersKey,
-        RedisKey fenceKey,
-        string leaseId,
-        int maxCount,
-        long expires
-    );
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct SemaphoreSlotParams(RedisKey holdersKey, string leaseId, RedisValue expires);
-
-    [StructLayout(LayoutKind.Auto)]
-    private readonly record struct SemaphoreCountParams(RedisKey holdersKey);
 }

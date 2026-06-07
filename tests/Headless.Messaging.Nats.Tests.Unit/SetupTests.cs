@@ -101,8 +101,85 @@ public sealed class SetupTests : TestBase
             .Be("nats://localhost:4222");
     }
 
+    // Shard symmetry validation
+
+    [Fact]
+    public void should_not_throw_when_sharded_producer_and_sharded_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message =>
+                    message
+                        .UseNats(nats => nats.SubjectShard(m => m.TenantId))
+                        .OnBus<_ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+                );
+            });
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_throw_with_clear_message_when_sharded_producer_has_unsharded_consumer()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message =>
+                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).OnBus<_ShardTestConsumer>()
+                );
+            });
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*_ShardTestConsumer*")
+            .And.Message.Should()
+            .Contain("UseNats");
+    }
+
+    [Fact]
+    public void should_not_throw_when_message_has_no_subject_shard()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message => message.OnBus<_ShardTestConsumer>());
+            });
+
+        // then
+        act.Should().NotThrow();
+    }
+
     private static MessagingSetupBuilder _CreateSetup()
     {
         return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
+    }
+
+    private sealed record _ShardTestMessage(string TenantId);
+
+    private sealed class _ShardTestConsumer : IConsume<_ShardTestMessage>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<_ShardTestMessage> context, CancellationToken cancellationToken) =>
+            ValueTask.CompletedTask;
     }
 }

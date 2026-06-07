@@ -36,7 +36,7 @@ namespace Tests;
 /// {
 ///     protected override void ConfigureTransport(MessagingSetupBuilder setup)
 ///     {
-///         setup.UseRabbitMQ(r => r.HostName = "localhost");
+///         setup.UseRabbitMq(r => r.HostName = "localhost");
 ///     }
 ///
 ///     protected override void ConfigureStorage(MessagingSetupBuilder setup)

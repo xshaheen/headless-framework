@@ -87,42 +87,72 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_use_exact_subject_for_single_token_topic()
-    {
-        NatsConsumerClient.BuildStreamSubjects("orders", ["orders"]).Should().BeEquivalentTo(["orders"]);
-    }
-
-    [Fact]
-    public void BuildStreamSubjects_should_use_wildcard_for_hierarchical_subjects()
-    {
-        NatsConsumerClient.BuildStreamSubjects("orders", ["orders.created"]).Should().BeEquivalentTo(["orders.>"]);
-    }
-
-    [Fact]
-    public void BuildStreamSubjects_should_include_bare_and_hierarchical_subjects_together()
+    public void BuildStreamSubjects_should_use_exact_subject_for_unsharded_topic()
     {
         NatsConsumerClient
-            .BuildStreamSubjects("orders", ["orders", "orders.created"])
+            .BuildStreamSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal))
             .Should()
-            .BeEquivalentTo(["orders", "orders.>"]);
+            .BeEquivalentTo(["orders"]);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_add_wildcard_only_for_sharded_message_names()
+    {
+        NatsConsumerClient
+            .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal) { "orders.created" })
+            .Should()
+            .BeEquivalentTo(["orders.created", "orders.created.>"]);
+    }
+
+    [Fact]
+    public void BuildStreamSubjects_should_mix_sharded_and_unsharded_subjects_precisely()
+    {
+        NatsConsumerClient
+            .BuildStreamSubjects(
+                ["orders", "orders.created"],
+                new HashSet<string>(StringComparer.Ordinal) { "orders.created" }
+            )
+            .Should()
+            .BeEquivalentTo(["orders", "orders.created", "orders.created.>"]);
     }
 
     [Fact]
     public void BuildStreamSubjects_should_deduplicate_topics()
     {
         NatsConsumerClient
-            .BuildStreamSubjects("orders", ["orders.created", "orders.created"])
+            .BuildStreamSubjects(
+                ["orders.created", "orders.created"],
+                new HashSet<string>(StringComparer.Ordinal) { "orders.created" }
+            )
             .Should()
-            .BeEquivalentTo(["orders.>"]);
+            .BeEquivalentTo(["orders.created", "orders.created.>"]);
     }
 
     [Fact]
-    public void BuildStreamSubjects_should_preserve_non_prefix_topics()
+    public void BuildStreamSubjects_should_preserve_non_prefix_topics_without_wildcard_when_unsharded()
     {
         NatsConsumerClient
-            .BuildStreamSubjects("events", ["orders.created"])
+            .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal))
             .Should()
             .BeEquivalentTo(["orders.created"]);
+    }
+
+    [Fact]
+    public void BuildConsumerSubjects_should_include_exact_and_sharded_descendant_subjects_for_sharded_message()
+    {
+        NatsConsumerClient
+            .BuildConsumerSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal) { "orders" })
+            .Should()
+            .BeEquivalentTo(["orders", "orders.>"]);
+    }
+
+    [Fact]
+    public void BuildConsumerSubjects_should_not_include_wildcard_for_unsharded_message()
+    {
+        NatsConsumerClient
+            .BuildConsumerSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal))
+            .Should()
+            .BeEquivalentTo(["orders"]);
     }
 
     [Fact]
@@ -500,7 +530,7 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             (_, _, _) => Task.FromResult(consumer)
         );
-        await client.SubscribeAsync(["orders.created"]);
+        await client.SubscribeAsync(["orders.created", "orders.updated"]);
         await client.PauseAsync();
 
         using var cts = new CancellationTokenSource();
