@@ -19,7 +19,36 @@ internal static class AzureServiceBusMessageBuilder
         if (enableSessions)
         {
             transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.SessionId, out var sessionId);
-            message.SessionId = string.IsNullOrEmpty(sessionId) ? transportMessage.GetId() : sessionId;
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var fallbackPartitionKey);
+                message.SessionId = string.IsNullOrWhiteSpace(fallbackPartitionKey)
+                    ? transportMessage.GetId()
+                    : fallbackPartitionKey;
+            }
+            else
+            {
+                message.SessionId = sessionId;
+            }
+        }
+
+        if (
+            transportMessage.Headers.TryGetValue(AzureServiceBusHeaders.PartitionKey, out var partitionKey)
+            && !string.IsNullOrWhiteSpace(partitionKey)
+        )
+        {
+            if (
+                enableSessions
+                && !string.IsNullOrWhiteSpace(message.SessionId)
+                && !string.Equals(message.SessionId, partitionKey, StringComparison.Ordinal)
+            )
+            {
+                throw new InvalidOperationException(
+                    "Azure Service Bus requires PartitionKey to match SessionId when sessions are enabled."
+                );
+            }
+
+            message.PartitionKey = partitionKey;
         }
 
         if (

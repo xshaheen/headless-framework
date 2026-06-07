@@ -74,6 +74,20 @@
         <Project Path="tests\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Caching.Hybrid.Tests.Unit/Headless.Caching.Hybrid.Tests.Unit.csproj" />
     </Folder>
+    <Folder Name="/Coordination/">
+        <Project Path="src\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
+        <Project Path="src\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
+        <Project Path="src\Headless.Coordination.Core.Database\Headless.Coordination.Core.Database.csproj" />
+        <Project Path="src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
+        <Project Path="src\Headless.Coordination.Redis\Headless.Coordination.Redis.csproj" />
+        <Project Path="src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
+        <Project Path="tests\Headless.Coordination.Abstractions.Tests.Unit\Headless.Coordination.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Coordination.Core.Tests.Unit\Headless.Coordination.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Coordination.PostgreSql.Tests.Integration\Headless.Coordination.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Coordination.Redis.Tests.Integration\Headless.Coordination.Redis.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Coordination.SqlServer.Tests.Integration\Headless.Coordination.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
+    </Folder>
     <Folder Name="/Captcha/">
         <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
         <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />

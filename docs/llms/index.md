@@ -8,6 +8,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 
 - **Abstraction + provider pattern.** Depend on `Headless.*.Abstractions` interfaces. Add exactly one provider package per feature (e.g., `Headless.Caching.Redis`, `Headless.Blobs.Azure`). Never reference a provider type from application code.
 - **Caching.** Use `ICache` from `Headless.Caching.Abstractions`. Do not use `Microsoft.Extensions.Caching.Distributed.IDistributedCache` or `IMemoryCache` directly.
+- **Coordination.** Use `INodeMembership` from `Headless.Coordination.Abstractions` for node liveness and `node@incarnation` identity. Do not use it as a consensus system or ownership ledger.
 - **Blob storage.** Use `IBlobStorage` from `Headless.Blobs.Abstractions`. Do not call cloud SDK clients (`Amazon.S3.IAmazonS3`, `Azure.Storage.Blobs.BlobServiceClient`) from application code.
 - **Serialization.** Use `ISerializer` from `Headless.Serializer.Abstractions`. Default to `Headless.Serializer.Json`; use `Headless.Serializer.MessagePack` only when binary performance is required. Do not call `System.Text.Json.JsonSerializer` directly.
 - **Distributed messaging.** Use `Headless.Messaging` abstractions. Do not use raw transport clients (`RabbitMQ.Client`, `Confluent.Kafka`, `Azure.Messaging.ServiceBus`) from application code.
@@ -101,6 +102,7 @@ Fetch only what's relevant to the task. Each file documents the domain's package
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
 - [blobs.md](blobs.md) — Unified blob storage (AWS S3, Azure, file system, Redis, SFTP).
 - [caching.md](caching.md) — Memory, Redis, and Hybrid (L1+L2) caching.
+- [coordination.md](coordination.md) — Node membership, liveness, lifecycle events, and provider-backed fail-stop fencing.
 - [emails.md](emails.md) — Email sending (AWS SES, MailKit SMTP, dev no-op).
 - [features.md](features.md) — Feature flags with caching, value providers, EF Core storage.
 - [identity.md](identity.md) — ASP.NET Core Identity with EF Core integration.
@@ -164,6 +166,14 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Caching.InMemory` — In-process single-instance cache.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.
+
+### Coordination
+- `Headless.Coordination.Abstractions` — Node identity, liveness, membership, and event contracts.
+- `Headless.Coordination.Core` — Provider-agnostic heartbeat engine, event stream, and fail-stop membership service.
+- `Headless.Coordination.Core.Database` — Shared relational substrate for native SQL providers.
+- `Headless.Coordination.PostgreSql` — PostgreSQL membership provider using `clock_timestamp()`.
+- `Headless.Coordination.Redis` — Redis membership provider using Lua and Redis `TIME`.
+- `Headless.Coordination.SqlServer` — SQL Server membership provider using `SYSUTCDATETIME()`.
 
 ### Email
 - `Headless.Emails.Abstractions` — Email sending interface.

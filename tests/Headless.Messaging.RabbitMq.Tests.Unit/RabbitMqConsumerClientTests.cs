@@ -79,6 +79,27 @@ public sealed class RabbitMqConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_consumer_prefetch_config_for_basic_qos()
+    {
+        // given
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            new RabbitMqConsumerConfig(20)
+        );
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+
+        // when
+        await client.ListeningAsync(TimeSpan.Zero, cts.Token);
+
+        // then
+        await _channel.Received(1).BasicQosAsync(0, 20, false, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_declare_queue_with_default_options()
     {
         // given

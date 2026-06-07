@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Exceptions;
+using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
 
@@ -9,7 +10,8 @@ namespace Headless.Messaging.RabbitMq;
 internal sealed class RabbitMqConsumerClientFactory(
     IOptions<RabbitMqOptions> rabbitMqOptions,
     IConnectionChannelPool channelPool,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    IConsumerRegistry? consumerRegistry = null
 ) : IIntentAwareConsumerClientFactory
 {
     public Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent)
@@ -19,6 +21,10 @@ internal sealed class RabbitMqConsumerClientFactory(
 
     public async Task<IConsumerClient> CreateAsync(string groupName, byte groupConcurrent, IntentType intentType)
     {
+        // Resolve outside the broker try/catch so config errors surface as InvalidOperationException,
+        // not as a BrokerConnectionException.
+        var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(groupName, intentType);
+
         try
         {
             var client = new RabbitMqConsumerClient(
@@ -27,6 +33,7 @@ internal sealed class RabbitMqConsumerClientFactory(
                 channelPool,
                 rabbitMqOptions,
                 serviceProvider,
+                config,
                 intentType
             );
 

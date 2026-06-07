@@ -163,7 +163,7 @@ public static class SetupMessaging
     ///     setup.Options.RetryPolicy.MaxPersistedRetries = 15;
     ///     setup.Options.SucceedMessageExpiredAfter = 24 * 3600;
     ///     setup.UseSqlServer("connection_string");
-    ///     setup.UseRabbitMQ(rabbit =>
+    ///     setup.UseRabbitMq(rabbit =>
     ///     {
     ///         rabbit.HostName = "localhost";
     ///         rabbit.Port = 5672;
@@ -233,7 +233,15 @@ public static class SetupMessaging
                 new ServiceDescriptor(serviceType, sp => sp.GetRequiredService(consumerType), ServiceLifetime.Scoped)
             );
 
-            setup.Services.AddSingleton(new MessageRegistration(messageType, MessageName: null, [builder.Build()]));
+            setup.Services.AddSingleton(
+                new MessageRegistration(
+                    messageType,
+                    MessageName: null,
+                    CorrelationSelector: null,
+                    ProviderConfigs: new Dictionary<Type, object>(),
+                    Consumers: [builder.Build()]
+                )
+            );
         }
     }
 
@@ -260,6 +268,8 @@ public static class SetupMessaging
         // strict-tenancy guard (#238) still fails fast when TenantContextRequired = true and no caller / seam set a tenant.
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+        services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
+        services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton<OutboxMessageWriter>();
         services.TryAddSingleton<IRuntimeConsumerRegistry, RuntimeConsumerRegistry>();
@@ -448,7 +458,11 @@ public static class SetupMessaging
                         consumer.Concurrency,
                         consumer.HandlerId,
                         consumer.IntentType
-                    );
+                    )
+                    with
+                    {
+                        ProviderConfigs = consumer.ProviderConfigs,
+                    };
 
                     var key = new ConsumerRegistrationKey(
                         resolved.MessageName,
@@ -460,14 +474,15 @@ public static class SetupMessaging
                     var settings = new ConsumerRegistrationSettings(
                         resolved.Concurrency,
                         resolved.ResolvedHandlerId,
-                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride)
+                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
+                        resolved.ProviderConfigs
                     );
 
                     if (registeredKeys.TryGetValue(key, out var existing))
                     {
                         // R9a: re-registering the SAME consumer for the same (message name, group, intent)
                         // is an idempotent merge only when the registration is genuinely identical. Diverging
-                        // concurrency / handler id / circuit-breaker overrides would otherwise be silently
+                        // concurrency / handler id / circuit-breaker / provider overrides would otherwise be silently
                         // dropped here, so fail fast and name the conflict instead.
                         if (existing != settings)
                         {
@@ -530,11 +545,91 @@ public static class SetupMessaging
             );
     }
 
-    private readonly record struct ConsumerRegistrationSettings(
-        byte Concurrency,
-        string ResolvedHandlerId,
-        ConsumerCircuitBreakerSettings CircuitBreaker
-    );
+    private readonly struct ConsumerRegistrationSettings : IEquatable<ConsumerRegistrationSettings>
+    {
+        private readonly byte _concurrency;
+        private readonly string _resolvedHandlerId;
+        private readonly ConsumerCircuitBreakerSettings _circuitBreaker;
+        private readonly IReadOnlyDictionary<Type, object> _providerConfigs;
+
+        public ConsumerRegistrationSettings(
+            byte concurrency,
+            string resolvedHandlerId,
+            ConsumerCircuitBreakerSettings circuitBreaker,
+            IReadOnlyDictionary<Type, object> providerConfigs
+        )
+        {
+            _concurrency = concurrency;
+            _resolvedHandlerId = resolvedHandlerId;
+            _circuitBreaker = circuitBreaker;
+            _providerConfigs = providerConfigs;
+        }
+
+        public bool Equals(ConsumerRegistrationSettings other) =>
+            _concurrency == other._concurrency
+            && string.Equals(_resolvedHandlerId, other._resolvedHandlerId, StringComparison.Ordinal)
+            && _circuitBreaker == other._circuitBreaker
+            && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
+
+        public override bool Equals(object? obj) =>
+            obj is ConsumerRegistrationSettings other && Equals(other);
+
+        public override int GetHashCode()
+        {
+            var hash = new HashCode();
+            hash.Add(_concurrency);
+            hash.Add(_resolvedHandlerId, StringComparer.Ordinal);
+            hash.Add(_circuitBreaker);
+
+            foreach (var pair in _providerConfigs.OrderBy(static pair => pair.Key.FullName, StringComparer.Ordinal))
+            {
+                hash.Add(pair.Key);
+                hash.Add(pair.Value);
+            }
+
+            return hash.ToHashCode();
+        }
+
+        public static bool operator ==(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
+            left.Equals(right);
+
+        public static bool operator !=(ConsumerRegistrationSettings left, ConsumerRegistrationSettings right) =>
+            !left.Equals(right);
+
+        private static bool _ProviderConfigsEqual(
+            IReadOnlyDictionary<Type, object> left,
+            IReadOnlyDictionary<Type, object> right
+        )
+        {
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            foreach (var (key, value) in left)
+            {
+                if (!right.TryGetValue(key, out var otherValue))
+                {
+                    return false;
+                }
+
+                // Class-based message-scope configs (e.g. KafkaMessageConfig<T>) implement
+                // IProviderHeaderContributions and hold a Func — they have no meaningful value
+                // equality. Two instances of the same type for the same key are idempotent.
+                if (value is IProviderHeaderContributions)
+                {
+                    continue;
+                }
+
+                if (!Equals(value, otherValue))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+    }
 
     private readonly record struct ConsumerCircuitBreakerSettings(
         bool HasOverride,

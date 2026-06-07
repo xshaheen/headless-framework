@@ -61,7 +61,7 @@ builder.Services.AddHeadlessMessaging(setup =>
     setup.UsePostgreSql("connection_string");
 
     // Add transport (required)
-    setup.UseRabbitMQ(rmq =>
+    setup.UseRabbitMq(rmq =>
     {
         rmq.HostName = "localhost";
         rmq.Port = 5672;
@@ -99,6 +99,19 @@ public sealed class ImportService(IQueue queue)
 - `setup.ForMessage<TMessage>(...)` is the primary registration API. `MessageName(...)` sets the publish and consume name for that message type; `OnBus<TConsumer>()` registers broadcast delivery and `OnQueue<TConsumer>()` registers point-to-point delivery.
 - `setup.ForMessage<TMessage>(message => message.MessageName("orders.placed"))` is valid without consumers and declares a publisher-only message-name mapping.
 - `IServiceCollection.ForMessage<TMessage>(...)` is the library/package registration seam. It can run before or after `AddHeadlessMessaging(...)` during service configuration; pending registrations drain into `ConsumerRegistry` before topology reads at startup.
+- `CorrelationFrom(...)` derives `headless-corr-id` from the outgoing payload when `PublishOptions.CorrelationId` is not set. Correlation precedence is explicit publish option, message selector, ambient consume context, then framework message ID.
+- Outbound header validation is centralized in the publish factory: reserved framework headers stay typed-only, provider contributions cannot overwrite framework-owned keys, and all stamped header names/values reject control characters before they reach a broker client.
+- Explicit `PublishOptions.MessageName` uses the same message-name validator as configured mappings: no leading/trailing dots, no consecutive dots, and only alphanumeric, `.`, `-`, and `_`.
+- Provider packages can add message-level escape hatches such as Kafka partition keys, Azure Service Bus partition keys, AWS FIFO message group IDs, and NATS subject shards. These physical-routing selectors run in the typed publish factory and are stamped as provider-owned headers; they do not change the logical `MessageName`.
+- Example:
+
+```csharp
+setup.ForMessage<OrderPlaced>(message =>
+    message
+        .MessageName("orders.placed")
+        .CorrelationFrom(order => order.OrderId.ToString()));
+```
+
 - `setup.ForMessagesFromAssembly(...)` and `setup.ForMessagesFromAssemblyContaining<TMarker>()` preserve assembly scanning for closed `IConsume<TMessage>` implementations and register untouched scanned consumers as bus consumers from the `AddHeadlessMessaging(...)` callback. Use the callback overloads to call `OnQueue()`, `Group(...)`, `Concurrency(...)`, `HandlerId(...)`, `WithCircuitBreaker(...)`, or `Skip()` per discovered consumer; message-name overrides stay on explicit `ForMessage<TMessage>(...)` registrations.
 - message-name mappings are type-level. Re-registering the same message type merges consumers; mapping two different message types to the same resolved message name fails at startup.
 - message-name and group defaults are deterministic; duplicate registrations fail fast by default.

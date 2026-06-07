@@ -329,6 +329,56 @@ public sealed class MessagingOptions
         return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
     }
 
+    internal static void ValidateMessageName(string messageName)
+    {
+        Argument.IsNotNullOrWhiteSpace(messageName);
+        _ValidateMessageName(messageName);
+    }
+
+    /// <summary>
+    /// Validates message-name format and constraints.
+    /// </summary>
+    private static void _ValidateMessageName(string messageName)
+    {
+        const int maxMessageNameLength = 255;
+
+        if (messageName.Length > maxMessageNameLength)
+        {
+            throw new ArgumentException(
+                $"Message name '{messageName}' exceeds maximum length of {maxMessageNameLength} characters.",
+                nameof(messageName)
+            );
+        }
+
+        if (messageName.StartsWith('.') || messageName.EndsWith('.'))
+        {
+            throw new ArgumentException(
+                $@"Message name '{messageName}' cannot start or end with a dot.",
+                nameof(messageName)
+            );
+        }
+
+        if (messageName.Contains("..", StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                $@"Message name '{messageName}' cannot contain consecutive dots.",
+                nameof(messageName)
+            );
+        }
+
+        foreach (var c in messageName)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
+            {
+                throw new ArgumentException(
+                    $@"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
+                    nameof(messageName)
+                );
+            }
+        }
+    }
+
+
     internal ConsumerMetadata CreateConsumerMetadata(
         Type consumerType,
         Type messageType,
