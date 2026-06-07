@@ -10,7 +10,7 @@ Provides a TUS file lock provider implementation using the framework's distribut
 
 - `DistributedLockTusLockProvider` - ITusFileLockProvider implementation
 - `DistributedLockTusLock` - Distributed file lock wrapper
-- Works with any IDistributedLock (Redis, Cache)
+- Works with any configured `IDistributedLock` provider
 
 ## Installation
 
@@ -25,7 +25,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add resource lock provider first
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
-builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider
 builder.Services.AddDistributedLockTusLockProvider();
