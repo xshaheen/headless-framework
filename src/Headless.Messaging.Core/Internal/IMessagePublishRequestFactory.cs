@@ -41,6 +41,9 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
     };
 
+    private static readonly HashSet<string> _ProviderReservedHeaders =
+        new(_ReservedHeaders, StringComparer.Ordinal) { Headers.TenantId };
+
     private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;
 
@@ -56,12 +59,14 @@ internal sealed class MessagePublishRequestFactory(
             Argument.IsPositive(requestedDelay);
         }
 
-        var messageType = options?.MessageType ?? typeof(T);
-        var metadataLookupType = contentObj?.GetType() ?? messageType;
+        var publishType = typeof(T);
+        var explicitMessageType = options?.MessageType;
+        var metadataLookupType = contentObj?.GetType() ?? explicitMessageType ?? publishType;
         MessageMetadata? metadata = null;
         metadataRegistry?.TryGet(metadataLookupType, out metadata);
 
-        var messageName = _ResolveMessageName(typeof(T), options?.MessageName);
+        var messageType = explicitMessageType ?? metadata?.MessageType ?? publishType;
+        var messageName = _ResolveMessageName(messageType, options?.MessageName);
         var headers = _CreateHeaders(
             messageType,
             messageName,
@@ -81,6 +86,8 @@ internal sealed class MessagePublishRequestFactory(
         {
             headers[Headers.DelayTime] = delayTime.Value.ToString();
         }
+
+        _ValidateHeaderValues(headers);
 
         return new PreparedPublishMessage
         {
@@ -105,7 +112,7 @@ internal sealed class MessagePublishRequestFactory(
                 ? new Dictionary<string, string?>(options.Headers, StringComparer.Ordinal)
                 : new Dictionary<string, string?>(StringComparer.Ordinal);
 
-        _ValidateCustomHeaders(headers);
+        _ValidateCustomHeaderNames(headers);
         _ApplyTenantId(headers, options);
 
         var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
@@ -113,12 +120,14 @@ internal sealed class MessagePublishRequestFactory(
             : _ValidateMessageId(options!.MessageId);
 
         headers[Headers.MessageId] = messageId;
-        headers[Headers.CorrelationId] = _ResolveCorrelationId(
+        var correlationId = _ResolveCorrelationId(
             options?.CorrelationId,
             selectorCorrelationId,
             ambientCorrelationId,
             messageId
         );
+
+        headers[Headers.CorrelationId] = correlationId;
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );
@@ -239,9 +248,9 @@ internal sealed class MessagePublishRequestFactory(
 
     private static void _ValidateProviderHeaderName(string headerName, object providerConfig)
     {
-        Argument.IsNotNullOrWhiteSpace(headerName);
+        _ValidateHeaderName(headerName);
 
-        if (_ReservedHeaders.Contains(headerName))
+        if (_ProviderReservedHeaders.Contains(headerName))
         {
             throw new InvalidOperationException(
                 $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' tried to write "
@@ -252,13 +261,62 @@ internal sealed class MessagePublishRequestFactory(
 
     private static void _ValidateProviderHeaderValue(string headerName, string value, object providerConfig)
     {
-        if (value.Any(static character => char.IsControl(character)))
+        if (_ContainsControlCharacter(value))
         {
             throw new InvalidOperationException(
                 $"Provider config '{providerConfig.GetType().FullName ?? providerConfig.GetType().Name}' returned an invalid "
                     + $"value for header '{headerName}'. Header values cannot contain control characters."
             );
         }
+    }
+
+    private static void _ValidateHeaderName(string headerName)
+    {
+        Argument.IsNotNullOrWhiteSpace(headerName);
+
+        if (_ContainsControlCharacter(headerName))
+        {
+            var safeHeaderName = LogSanitizer.Sanitize(headerName, 200);
+            throw new InvalidOperationException(
+                $"Header '{safeHeaderName}' is invalid. Header names cannot contain control characters."
+            );
+        }
+    }
+
+    private static void _ValidateHeaderValue(string headerName, string value)
+    {
+        if (_ContainsControlCharacter(value))
+        {
+            throw new InvalidOperationException(
+                $"Header '{headerName}' contains an invalid value. Header values cannot contain control characters."
+            );
+        }
+    }
+
+    private static void _ValidateHeaderValues(IReadOnlyDictionary<string, string?> headers)
+    {
+        foreach (var (headerName, value) in headers)
+        {
+            if (value is null)
+            {
+                continue;
+            }
+
+            _ValidateHeaderValue(headerName, value);
+        }
+    }
+
+    private static bool _ContainsControlCharacter(string value)
+    {
+        foreach (var character in value.AsSpan())
+        {
+            if (char.IsControl(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string _ValidateMessageId(string messageId)
@@ -269,6 +327,8 @@ internal sealed class MessagePublishRequestFactory(
             $"Options.MessageId must be {MessageOptions.MessageIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(messageId)
         );
+
+        _ValidateHeaderValue(Headers.MessageId, messageId);
 
         return messageId;
     }
@@ -372,16 +432,22 @@ internal sealed class MessagePublishRequestFactory(
             $"Options.TenantId must be {MessageOptions.TenantIdMaxLength} characters or fewer before durable storage.",
             paramName: nameof(tenantId)
         );
+
+        _ValidateHeaderValue(Headers.TenantId, tenantId);
     }
 
-    private static void _ValidateCustomHeaders(IReadOnlyDictionary<string, string?> headers)
+    private static void _ValidateCustomHeaderNames(IReadOnlyDictionary<string, string?> headers)
     {
-        var invalidHeader = headers.Keys.FirstOrDefault(_ReservedHeaders.Contains);
-        if (invalidHeader != null)
+        foreach (var headerName in headers.Keys)
         {
-            throw new InvalidOperationException(
-                $"Header '{invalidHeader}' is reserved. Use the typed publish options properties for messaging metadata overrides."
-            );
+            _ValidateHeaderName(headerName);
+
+            if (_ReservedHeaders.Contains(headerName))
+            {
+                throw new InvalidOperationException(
+                    $"Header '{headerName}' is reserved. Use the typed publish options properties for messaging metadata overrides."
+                );
+            }
         }
     }
 
@@ -400,6 +466,7 @@ internal sealed class MessagePublishRequestFactory(
     {
         if (!string.IsNullOrWhiteSpace(explicitMessageName))
         {
+            MessagingOptions.ValidateMessageName(explicitMessageName!);
             return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 

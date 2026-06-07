@@ -65,6 +65,16 @@ options.ForMessage<OrderEvent>(message =>
 
 `PartitionBy(...)` stamps `KafkaHeaders.KafkaKey` (`headless-kafka-key`) during publish. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
 
+Consumer-side Kafka knobs attach to the consumer registration:
+
+```csharp
+options.ForMessage<OrderEvent>(message =>
+    message.OnQueue<OrderWorker>(consumer =>
+        consumer
+            .Group("orders")
+            .UseKafka(kafka => kafka.IsolationLevel(IsolationLevel.ReadCommitted))));
+```
+
 ## Message Ordering
 
 Kafka provides **strict FIFO ordering within partitions**:

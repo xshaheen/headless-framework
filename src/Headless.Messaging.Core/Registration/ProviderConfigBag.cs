@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using System.Collections.ObjectModel;
 
 namespace Headless.Messaging;
 
@@ -24,6 +25,8 @@ internal readonly record struct ProviderHeaderContribution(string HeaderName, Fu
 
 internal sealed class ProviderConfigBag
 {
+    private static readonly IReadOnlyDictionary<Type, object> _EmptyConfigs = ReadOnlyDictionary<Type, object>.Empty;
+
     private readonly Dictionary<Type, object> _configs = [];
 
     public IReadOnlyDictionary<Type, object> Values => _configs;
@@ -39,8 +42,8 @@ internal sealed class ProviderConfigBag
 
     public IReadOnlyDictionary<Type, object> Build() =>
         _configs.Count == 0
-            ? new Dictionary<Type, object>()
-            : new Dictionary<Type, object>(_configs);
+            ? _EmptyConfigs
+            : new ReadOnlyDictionary<Type, object>(new Dictionary<Type, object>(_configs));
 
     public IReadOnlyDictionary<Type, object> BuildOverlay(IReadOnlyDictionary<Type, object> baseConfigs)
     {
@@ -51,7 +54,7 @@ internal sealed class ProviderConfigBag
 
         if (IsEmpty)
         {
-            return new Dictionary<Type, object>(baseConfigs);
+            return new ReadOnlyDictionary<Type, object>(new Dictionary<Type, object>(baseConfigs));
         }
 
         var merged = new Dictionary<Type, object>(baseConfigs);
@@ -61,6 +64,6 @@ internal sealed class ProviderConfigBag
             merged[pair.Key] = pair.Value;
         }
 
-        return merged;
+        return new ReadOnlyDictionary<Type, object>(merged);
     }
 }

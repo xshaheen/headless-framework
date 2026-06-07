@@ -194,6 +194,25 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_callback_name_values_with_control_characters()
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+
+        var publisher = _CreateBus(testTransport, options);
+        var publishOptions = new PublishOptions { CallbackName = "callbacks\r\nnext" };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{Headers.CallbackName}*control characters*");
+    }
+
+    [Fact]
     public async Task should_allow_maximum_supported_message_id_length()
     {
         // given
@@ -232,6 +251,25 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_message_id_values_with_control_characters()
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+
+        var publisher = _CreateBus(testTransport, options);
+        var publishOptions = new PublishOptions { MessageId = "msg\r\n1" };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{Headers.MessageId}*control characters*");
+    }
+
+    [Fact]
     public async Task should_allow_explicit_topic_from_publish_options()
     {
         // given
@@ -247,6 +285,26 @@ public sealed class BusTests : TestBase
         // then
         testTransport.SentMessages.Should().HaveCount(1);
         testTransport.SentMessages[0].GetName().Should().Be("explicit.messageName");
+    }
+
+    [Theory]
+    [InlineData(".leading-dot")]
+    [InlineData("trailing-dot.")]
+    [InlineData("double..dot")]
+    [InlineData("bad/slash")]
+    public async Task should_reject_invalid_explicit_message_name_from_publish_options(string messageName)
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var publisher = _CreateBus(testTransport, new MessagingOptions());
+        var publishOptions = new PublishOptions { MessageName = messageName };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("messageName");
+        testTransport.SentMessages.Should().BeEmpty();
     }
 
     [Fact]
@@ -271,6 +329,50 @@ public sealed class BusTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*reserved*");
+    }
+
+    [Fact]
+    public async Task should_reject_custom_header_names_with_control_characters()
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+
+        var publisher = _CreateBus(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["bad\r\nheader"] = "value" },
+        };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*cannot contain control characters*");
+    }
+
+    [Fact]
+    public async Task should_reject_custom_header_values_with_control_characters()
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+
+        var publisher = _CreateBus(testTransport, options);
+        var publishOptions = new PublishOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-custom"] = "bad\r\nvalue" },
+        };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*x-custom*control characters*");
     }
 
     [Fact]
@@ -411,6 +513,26 @@ public sealed class BusTests : TestBase
 
         // then
         await act.Should().ThrowAsync<ArgumentException>().WithParameterName("tenantId");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_reject_typed_tenant_id_with_control_characters()
+    {
+        // given
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+
+        var publisher = _CreateBus(testTransport, options);
+        var publishOptions = new PublishOptions { TenantId = "acme\r\ncorp" };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{Headers.TenantId}*control characters*");
         testTransport.SentMessages.Should().BeEmpty();
     }
 

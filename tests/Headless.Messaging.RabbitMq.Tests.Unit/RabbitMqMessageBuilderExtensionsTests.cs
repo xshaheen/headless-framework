@@ -9,19 +9,6 @@ namespace Tests;
 public sealed class RabbitMqMessageBuilderExtensionsTests
 {
     [Fact]
-    public void should_store_routing_key_header_contribution()
-    {
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
-
-        builder.UseRabbitMq(rabbit => rabbit.RoutingKeyFromMessage(static message => $"tenant.{message.TenantId}"));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
-
-        contribution.HeaderName.Should().Be(RabbitMqHeaders.RoutingKey);
-        contribution.Selector(new TestMessage("a")).Should().Be("tenant.a");
-    }
-
-    [Fact]
     public void should_store_consumer_prefetch_config()
     {
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());

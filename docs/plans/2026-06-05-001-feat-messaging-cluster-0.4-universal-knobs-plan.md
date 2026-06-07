@@ -13,7 +13,7 @@ depends_on: 357
 
 ## Summary
 
-Cluster 0.3 (#357, merged) shipped the `ForMessage<T>` builder with a `MessageName` stub. This plan adds the remaining message-level configuration surface: the universal `CorrelationFrom` Layer-2 knob with full 4-level correlation precedence, and the provider escape-hatch mechanism (`x.UseKafka(...)`, `x.UseRabbitMQ(...)`, etc.) across five providers — RabbitMQ, Kafka, Azure Service Bus, AWS, NATS.
+Cluster 0.3 (#357, merged) shipped the `ForMessage<T>` builder with a `MessageName` stub. This plan adds the remaining message-level configuration surface: the universal `CorrelationFrom` Layer-2 knob with full 4-level correlation precedence, and the provider escape-hatch mechanism (`x.UseKafka(...)`, `x.UseRabbitMq(...)`, etc.) across five providers — RabbitMQ, Kafka, Azure Service Bus, AWS, NATS.
 
 **Key deviation from spec §4 (owner-approved):** `PartitionBy` is **not** a Layer-2 universal knob. Partition affinity is provider-divergent (Kafka key ≠ ASB PartitionKey ≠ SQS MessageGroupId ≠ NATS subject), so it lives inside each provider's Layer-3 escape hatch. This deletes the "warn-at-startup on unsupported partition" acceptance criterion from the issue and retires the deferred `UnsupportedHintBehavior` enum's only v1 use case. See [Key Technical Decisions](#key-technical-decisions) and [Scope Boundaries](#scope-boundaries).
 
@@ -64,7 +64,7 @@ Traced from issue #358 and origin §4 (`MessageName`/`CorrelationFrom` Layer 2; 
 - **R1.** `x.CorrelationFrom(Func<T,string>)` selector reaches the outgoing message's correlation header for **all** providers (it is a single universal header).
 - **R2.** Correlation precedence, highest wins: (1) explicit `PublishOptions.CorrelationId`; (2) `CorrelationFrom` selector; (3) ambient `ConsumeContext.CorrelationId`; (4) framework-generated default (`messageId`).
 - **R3.** W3C `traceparent` is isolated from correlation logic — never read or written by the `CorrelationFrom` path. The two headers stay orthogonal.
-- **R4.** Provider escape hatches (`x.UseRabbitMQ`, `x.UseKafka`, `x.UseAzureServiceBus`, `x.UseAws`, `x.UseNats`) attach broker-specific physical config at **message scope** and **per-consumer scope**.
+- **R4.** Provider escape hatches (`x.UseRabbitMq`, `x.UseKafka`, `x.UseAzureServiceBus`, `x.UseAws`, `x.UseNats`) attach broker-specific physical config at **message scope** and **per-consumer scope**.
 - **R5.** Escape-hatch config has two faces. **Producer-side** knobs (partition key, routing key — anything stamped on the outgoing wire) are **message-scope only**: the publisher has no consumer identity, so per-consumer override of a publish-time value is incoherent. **Consumer-side** knobs (consume isolation level, prefetch, subscription settings) attach per-consumer, and a per-consumer value overrides the message-scope value for the same provider. The "per-consumer overrides message-scope" rule (issue AC) applies to the consumer-side face.
 - **R6.** An escape-hatch block compiles only when the matching provider package is referenced.
 - **R7.** Partition affinity is honored end-to-end on the partition-capable providers (Kafka, ASB, AWS-SQS, NATS) — expressed through each provider's Layer-3 escape hatch, not a universal knob.
@@ -312,22 +312,20 @@ Grouped into four phases. Phases A–B land the Layer-2 + correlation core; Phas
 
 ### U7. RabbitMQ escape hatch
 
-- **Goal:** `x.UseRabbitMQ(rmq => rmq.ExchangeType(...).RoutingKeyFromMessage(Func<T,string>))` — `RoutingKeyFromMessage` is producer-side (message-scope, per KTD-4); consume-side RabbitMQ knobs (prefetch, queue args) attach per-consumer. **No partition method** (RabbitMQ has no partition primitive — KTD-1).
+- **Goal:** RabbitMQ exposes consume-side knobs only in this cluster. `x.UseRabbitMq(rmq => rmq.PrefetchCount(...))` attaches per-consumer. **No producer-side routing-key selector** ships in this cluster because the current subscription topology binds consumers by logical message name only, so a publish-time routing-key override would be incoherent without a matching binding surface. **No partition method** (RabbitMQ has no partition primitive — KTD-1).
 - **Requirements:** R4, R5, R6, R8.
 - **Dependencies:** U5.
 - **Files:**
   - New `src/Headless.Messaging.RabbitMq/Registration/RabbitMqMessageBuilderExtensions.cs`.
-  - `src/Headless.Messaging.RabbitMq/RabbitMqTransport.cs` — read a routing-key header contribution if present, else fall back to message name (current behavior at `RabbitMqTransport.cs:44`).
+  - `src/Headless.Messaging.RabbitMq/RabbitMqTransport.cs` — publish using the logical message name as the routing key.
   - `tests/Headless.Messaging.RabbitMq.Tests.Unit/...`, `tests/Headless.Messaging.RabbitMq.Tests.Integration/...`
-- **Approach:** `RoutingKeyFromMessage` registers a header contribution → a RabbitMQ routing-key header that the transport reads at publish. `ExchangeType` is startup topology config. Deliberately omit any partition method — its absence is the enforcement of KTD-1 (no warn-at-startup machinery needed).
+- **Approach:** keep RabbitMQ producer topology aligned with the logical message name until a future cluster adds explicit binding topology. Deliberately omit any partition method — its absence is the enforcement of KTD-1 (no warn-at-startup machinery needed).
 - **Patterns to follow:** `SetupRabbitMqMessaging`; existing `RabbitMqTransport` publish path.
-- **Test suite design:** unit for builder; integration for routing-key-driven delivery.
+- **Test suite design:** unit for consumer config only; no routing-key delivery coverage in this cluster because the producer-side selector is intentionally absent.
 - **Test scenarios:**
-  - Unit: `RoutingKeyFromMessage` stores a producer-side contribution (message-scope); `ExchangeType` stores topology config.
-  - Unit: a consume-side knob (e.g. prefetch) set per-consumer overrides the message-scope value; `RoutingKeyFromMessage` is absent from the consumer surface (compile-time).
-  - Integration: a message with a custom routing key binds/delivers to the matching queue; default falls back to message name.
-  - Surface check: no `PartitionBy`/partition method exists on the RabbitMQ builder (compile-time absence).
-- **Verification:** unit + integration pass; routing key honored; no partition surface present.
+  - Unit: a consume-side knob (e.g. prefetch) is stored on the consumer registration.
+  - Surface check: no producer-side RabbitMQ message builder hatch exists in this cluster; no `PartitionBy`/partition method exists on the RabbitMQ builder (compile-time absence).
+- **Verification:** unit pass; no unsupported producer routing surface present.
 
 ### U8. Azure Service Bus + AWS escape hatches
 

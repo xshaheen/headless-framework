@@ -89,14 +89,88 @@ public sealed class ProviderConfigBagTests
     public void should_build_empty_configs_when_unset()
     {
         // given
-        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var first = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var second = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         // when
+        var firstRegistration = first.Build();
+        var secondRegistration = second.Build();
+
+        // then
+        firstRegistration.ProviderConfigs.Should().BeEmpty();
+        firstRegistration.ProviderConfigs.Should().BeSameAs(secondRegistration.ProviderConfigs);
+        firstRegistration.Consumers.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_build_read_only_provider_config_snapshots()
+    {
+        // given
+        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+        var config = new FakeProviderConfig("message");
+
+        // when
+        ((IMessageProviderConfigBuilder<TestMessage>)builder).SetMessageProviderConfig(config);
         var registration = builder.Build();
 
         // then
-        registration.ProviderConfigs.Should().BeEmpty();
-        registration.Consumers.Should().BeEmpty();
+        registration.ProviderConfigs.Should().NotBeAssignableTo<Dictionary<Type, object>>();
+    }
+
+    [Fact]
+    public void should_carry_effective_consumer_provider_config_into_consumer_metadata()
+    {
+        // given
+        var services = new ServiceCollection();
+        var messageConfig = new FakeProviderConfig("message");
+        var consumerConfig = new FakeProviderConfig("consumer");
+
+        // when
+        services.AddHeadlessMessaging(setup =>
+            setup.ForMessage<TestMessage>(message =>
+            {
+                ((IMessageProviderConfigBuilder<TestMessage>)message).SetMessageProviderConfig(messageConfig);
+                message.OnBus<TestConsumer>(consumer =>
+                    ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(consumerConfig)
+                );
+            })
+        );
+
+        using var provider = services.BuildServiceProvider();
+        var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
+
+        // then
+        metadata.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(consumerConfig);
+    }
+
+    [Fact]
+    public void should_reject_duplicate_consumer_registration_with_conflicting_provider_config()
+    {
+        // given
+        var services = new ServiceCollection();
+
+        // when
+        var action = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.ForMessage<TestMessage>(message =>
+                    message.OnBus<TestConsumer>(consumer =>
+                        ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
+                            new FakeProviderConfig("first")
+                        )
+                    )
+                );
+                setup.ForMessage<TestMessage>(message =>
+                    message.OnBus<TestConsumer>(consumer =>
+                        ((IConsumerProviderConfigBuilder)consumer).SetConsumerProviderConfig(
+                            new FakeProviderConfig("second")
+                        )
+                    )
+                );
+            });
+
+        // then
+        action.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
     }
 
     private sealed record TestMessage;

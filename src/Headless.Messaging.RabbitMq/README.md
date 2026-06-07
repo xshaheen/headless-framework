@@ -62,10 +62,21 @@ options.UseRabbitMq(rmq =>
 options.ForMessage<OrderEvent>(message =>
     message
         .MessageName("orders.events")
-        .UseRabbitMq(rabbit => rabbit.RoutingKeyFromMessage(order => $"customer.{order.CustomerId}")));
+        .OnBus<OrderProjection>(consumer =>
+            consumer
+                .Group("orders-projection")
+                .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
 ```
 
-`RoutingKeyFromMessage(...)` stamps `RabbitMqHeaders.RoutingKey` (`headless-rabbitmq-routing-key`) during publish. The RabbitMQ transport uses that value as the AMQP routing key and keeps `MessageName(...)` as the logical framework message name. The selector output is broker-visible metadata, so do not put secrets or raw PII in it.
+Consumer-side RabbitMQ knobs attach to the consumer registration:
+
+```csharp
+options.ForMessage<OrderEvent>(message =>
+    message.OnBus<OrderProjection>(consumer =>
+        consumer
+            .Group("orders-projection")
+            .UseRabbitMq(rabbit => rabbit.PrefetchCount(20))));
+```
 
 ### Security Best Practices
 
@@ -105,7 +116,6 @@ options.EnableSubscriberParallelExecute = false; // No parallel execution
 ## Messaging Semantics
 
 - Publish sends the serialized body to the configured exchange and preserves headers.
-- Message-level `RoutingKeyFromMessage(...)` can override the AMQP publish routing key without changing `headless-msg-name`.
 - Delay stays in the core pipeline unless you add RabbitMQ delayed-message plugins yourself.
 - Commit sends `BasicAck`.
 - Reject sends `BasicReject(requeue: true)`. Dead-letter behavior follows queue arguments and broker policies.

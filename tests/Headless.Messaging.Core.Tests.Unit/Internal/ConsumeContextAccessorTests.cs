@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using System.Reflection;
 
 namespace Tests.Internal;
 
@@ -50,6 +51,19 @@ public sealed class ConsumeContextAccessorTests
 
         // then
         accessor.Current.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_not_allocate_holder_when_clearing_empty_context()
+    {
+        // given
+        var accessor = new AsyncLocalConsumeContextAccessor();
+
+        // when
+        accessor.Current = null;
+
+        // then
+        _GetHolderValue(accessor).Should().BeNull();
     }
 
     [Fact]
@@ -105,6 +119,17 @@ public sealed class ConsumeContextAccessorTests
             MessageName = "test",
             IntentType = IntentType.Bus,
         };
+
+    private static object? _GetHolderValue(AsyncLocalConsumeContextAccessor accessor)
+    {
+        var holderField = typeof(AsyncLocalConsumeContextAccessor).GetField(
+            "_holder",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        )!;
+        var holder = holderField.GetValue(accessor)!;
+
+        return holder.GetType().GetProperty(nameof(AsyncLocal<object>.Value))!.GetValue(holder);
+    }
 
     private sealed record TestMessage;
 }

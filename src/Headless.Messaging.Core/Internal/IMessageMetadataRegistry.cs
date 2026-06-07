@@ -62,18 +62,15 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
 
         foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
         {
-            var correlationSelector = _MergeCorrelationSelector(group.Key, group);
-            var providerConfigs = _MergeProviderConfigs(group.Key, group);
+            var correlationSelector = _MergeCorrelationSelector(group);
+            var providerConfigs = _MergeProviderConfigs(group);
             metadata[group.Key] = new MessageMetadata(group.Key, correlationSelector, providerConfigs);
         }
 
         return metadata;
     }
 
-    private static Func<object, string?>? _MergeCorrelationSelector(
-        Type messageType,
-        IEnumerable<MessageRegistration> registrations
-    )
+    private static Func<object, string?>? _MergeCorrelationSelector(IEnumerable<MessageRegistration> registrations)
     {
         Func<object, string?>? selector = null;
 
@@ -84,27 +81,15 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
                 continue;
             }
 
-            if (selector is null)
-            {
-                selector = registration.CorrelationSelector;
-                continue;
-            }
-
-            if (!ReferenceEquals(selector, registration.CorrelationSelector))
-            {
-                throw new InvalidOperationException(
-                    $"Message type '{messageType.FullName ?? messageType.Name}' has conflicting CorrelationFrom selectors."
-                );
-            }
+            // Delegate semantic equality is not knowable here. Registration order is deterministic,
+            // so repeated metadata blocks use the last explicit selector as the effective override.
+            selector = registration.CorrelationSelector;
         }
 
         return selector;
     }
 
-    private static IReadOnlyDictionary<Type, object> _MergeProviderConfigs(
-        Type messageType,
-        IEnumerable<MessageRegistration> registrations
-    )
+    private static IReadOnlyDictionary<Type, object> _MergeProviderConfigs(IEnumerable<MessageRegistration> registrations)
     {
         var configs = new Dictionary<Type, object>();
 
@@ -112,19 +97,10 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
         {
             foreach (var pair in registration.ProviderConfigs)
             {
-                if (!configs.TryGetValue(pair.Key, out var existing))
-                {
-                    configs[pair.Key] = pair.Value;
-                    continue;
-                }
-
-                if (!Equals(existing, pair.Value))
-                {
-                    throw new InvalidOperationException(
-                        $"Message type '{messageType.FullName ?? messageType.Name}' has conflicting provider config "
-                            + $"'{pair.Key.FullName ?? pair.Key.Name}'."
-                    );
-                }
+                // Provider config objects can contain delegates, so reference/value equality is not a
+                // reliable conflict detector. Registration order is deterministic; later message-level
+                // config of the same provider type intentionally replaces earlier config.
+                configs[pair.Key] = pair.Value;
             }
         }
 

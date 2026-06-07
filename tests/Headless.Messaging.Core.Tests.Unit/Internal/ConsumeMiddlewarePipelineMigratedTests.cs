@@ -97,6 +97,42 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     }
 
     [Fact]
+    public async Task should_restore_previous_consume_context_when_dispatcher_throws()
+    {
+        // given
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder, shouldThrow: true);
+        var accessor = new AsyncLocalConsumeContextAccessor
+        {
+            Current = new ConsumeContext<MigratedConsumeMessage>
+            {
+                Message = new MigratedConsumeMessage("previous"),
+                MessageId = "previous-message",
+                CorrelationId = "previous-correlation",
+                Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+                Timestamp = DateTimeOffset.UtcNow,
+                MessageName = "previous",
+                IntentType = IntentType.Bus,
+            },
+        };
+        var previous = accessor.Current;
+        var pipeline = _BuildPipeline(services, accessor);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MigratedConsumeMessage("order-1"),
+                typeof(MigratedConsumeMessage),
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("dispatcher failed");
+        accessor.Current.Should().BeSameAs(previous);
+    }
+
+    [Fact]
     public async Task should_invoke_bus_middleware_before_typed_consume_middleware()
     {
         // given
@@ -251,14 +287,18 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         return services;
     }
 
-    private static IConsumeMiddlewarePipeline _BuildPipeline(ServiceCollection services)
+    private static IConsumeMiddlewarePipeline _BuildPipeline(
+        ServiceCollection services,
+        IConsumeContextAccessor? consumeContextAccessor = null
+    )
     {
         var provider = services.BuildServiceProvider();
         var runtimeRegistry = Substitute.For<IRuntimeConsumerRegistry>();
         return new ConsumeMiddlewarePipeline(
             provider,
             runtimeRegistry,
-            provider.GetService<IMiddlewareDescriptorRegistry>()
+            provider.GetService<IMiddlewareDescriptorRegistry>(),
+            consumeContextAccessor: consumeContextAccessor
         );
     }
 

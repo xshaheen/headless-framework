@@ -57,6 +57,32 @@ public sealed class ProviderHeaderContributionTests
     }
 
     [Fact]
+    public void should_reject_contribution_header_names_with_control_characters()
+    {
+        // given
+        var factory = _CreateFactory(new FakeProviderConfig("x-provider\r\nkey", static message => message.Key));
+
+        // when
+        var act = () => factory.Create(new TestMessage("tenant-1"));
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*cannot contain control characters*");
+    }
+
+    [Fact]
+    public void should_reject_tenant_id_contribution_header()
+    {
+        // given
+        var factory = _CreateFactory(new FakeProviderConfig(Headers.TenantId, static message => message.Key));
+
+        // when
+        var act = () => factory.Create(new TestMessage("tenant-1"));
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*reserved header*headless-tenant-id*");
+    }
+
+    [Fact]
     public void should_reject_contribution_value_with_control_characters()
     {
         // given

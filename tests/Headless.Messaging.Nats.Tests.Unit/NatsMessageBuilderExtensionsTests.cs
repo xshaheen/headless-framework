@@ -26,6 +26,9 @@ public sealed class NatsMessageBuilderExtensionsTests
     [InlineData("tenant*")]
     [InlineData("tenant>")]
     [InlineData("tenant a")]
+    [InlineData("tenant\r")]
+    [InlineData("tenant\n")]
+    [InlineData("tenant\t")]
     public void should_reject_invalid_subject_shard_tokens(string shard)
     {
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());

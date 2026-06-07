@@ -204,7 +204,7 @@ public sealed class RabbitMqIntegrationTests(RabbitMqFixture fixture)
 {
     protected override void ConfigureTransport(MessagingOptions options)
     {
-        options.UseRabbitMQ(r =>
+        options.UseRabbitMq(r =>
         {
             r.HostName = fixture.HostName;
             r.Port = fixture.Port;

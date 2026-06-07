@@ -323,8 +323,7 @@ public sealed class MessagingOptions
     /// </summary>
     internal void WithMessageNameMapping(Type messageType, string messageName)
     {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-        _ValidateMessageName(messageName);
+        ValidateMessageName(messageName);
 
         if (
             MessageNameMappings.TryGetValue(messageType, out var existingMessageName)
@@ -353,6 +352,12 @@ public sealed class MessagingOptions
         Argument.IsNotNullOrWhiteSpace(group);
 
         return string.IsNullOrWhiteSpace(GroupNamePrefix) ? group : string.Concat(GroupNamePrefix, ".", group);
+    }
+
+    internal static void ValidateMessageName(string messageName)
+    {
+        Argument.IsNotNullOrWhiteSpace(messageName);
+        _ValidateMessageName(messageName);
     }
 
     /// <summary>

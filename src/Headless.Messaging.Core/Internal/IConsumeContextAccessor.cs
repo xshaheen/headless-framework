@@ -16,6 +16,11 @@ internal sealed class AsyncLocalConsumeContextAccessor : IConsumeContextAccessor
         get => _holder.Value?.Context;
         set
         {
+            if (value is null && _holder.Value is null)
+            {
+                return;
+            }
+
             _holder.Value ??= new ConsumeContextHolder();
             _holder.Value.Context = value;
         }

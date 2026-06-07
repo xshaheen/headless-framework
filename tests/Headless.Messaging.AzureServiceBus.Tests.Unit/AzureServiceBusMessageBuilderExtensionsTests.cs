@@ -23,6 +23,20 @@ public sealed class AzureServiceBusMessageBuilderExtensionsTests
     }
 
     [Fact]
+    public void should_reject_partition_key_longer_than_service_bus_limit()
+    {
+        var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
+
+        builder.UseAzureServiceBus(asb => asb.PartitionKey(static _ => new string('x', 129)));
+        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
+            .HeaderContributions.Single();
+
+        var act = () => contribution.Selector(new TestMessage("tenant-a"));
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*PartitionKey*128*");
+    }
+
+    [Fact]
     public void should_map_partition_key_header_to_service_bus_message()
     {
         var message = _TransportMessage(

@@ -94,20 +94,43 @@ public sealed class MessageMetadataRegistryTests
     }
 
     [Fact]
-    public void should_throw_when_repeated_registrations_have_conflicting_provider_config()
+    public void should_use_last_correlation_selector_when_message_type_is_registered_more_than_once()
     {
         // given
-        var registrations = new[]
-        {
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(new FakeProviderConfig("a")), []),
-            new MessageRegistration(typeof(TestMessage), null, null, _Configs(new FakeProviderConfig("b")), []),
-        };
+        string? First(object _) => "first";
+        string? Second(object _) => "second";
+        var registry = new MessageMetadataRegistry(
+            [
+                new MessageRegistration(typeof(TestMessage), null, First, new Dictionary<Type, object>(), []),
+                new MessageRegistration(typeof(TestMessage), null, Second, new Dictionary<Type, object>(), []),
+            ]
+        );
 
         // when
-        var act = () => new MessageMetadataRegistry(registrations);
+        registry.TryGet(typeof(TestMessage), out var metadata);
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting provider config*FakeProviderConfig*");
+        metadata!.CorrelationSelector!(new TestMessage()).Should().Be("second");
+    }
+
+    [Fact]
+    public void should_use_last_provider_config_when_message_type_is_registered_more_than_once()
+    {
+        // given
+        var first = new FakeProviderConfig("a");
+        var second = new FakeProviderConfig("b");
+        var registry = new MessageMetadataRegistry(
+            [
+                new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
+                new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
+            ]
+        );
+
+        // when
+        registry.TryGet(typeof(TestMessage), out var metadata);
+
+        // then
+        metadata!.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(second);
     }
 
     private static IReadOnlyDictionary<Type, object> _Configs(object config) =>

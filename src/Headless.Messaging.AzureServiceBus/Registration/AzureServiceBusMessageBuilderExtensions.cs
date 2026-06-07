@@ -41,22 +41,21 @@ public sealed class AzureServiceBusMessageConfigBuilder<TMessage>
     internal AzureServiceBusMessageConfig<TMessage> Build() => new(_partitionKeySelector);
 }
 
-internal sealed class AzureServiceBusMessageConfig<TMessage>(Func<TMessage, string?>? partitionKeySelector)
-    : IProviderHeaderContributions
+internal sealed class AzureServiceBusMessageConfig<TMessage>(Func<TMessage, string?>? partitionKeySelector) : IProviderHeaderContributions
     where TMessage : class
 {
     private const int _PartitionKeyMaxLength = 128;
 
-    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions =>
-        partitionKeySelector is null
-            ? []
-            :
-            [
-                new ProviderHeaderContribution(
-                    AzureServiceBusHeaders.PartitionKey,
-                    message => _ValidatePartitionKey(partitionKeySelector((TMessage)message))
-                ),
-            ];
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+            partitionKeySelector is null
+                ? []
+                :
+                [
+                    new ProviderHeaderContribution(
+                        AzureServiceBusHeaders.PartitionKey,
+                        message => _ValidatePartitionKey(partitionKeySelector((TMessage)message))
+                    ),
+                ];
 
     private static string? _ValidatePartitionKey(string? partitionKey)
     {

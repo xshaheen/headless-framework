@@ -41,22 +41,21 @@ public sealed class AwsMessageConfigBuilder<TMessage>
     internal AwsMessageConfig<TMessage> Build() => new(_messageGroupIdSelector);
 }
 
-internal sealed class AwsMessageConfig<TMessage>(Func<TMessage, string?>? messageGroupIdSelector)
-    : IProviderHeaderContributions
+internal sealed class AwsMessageConfig<TMessage>(Func<TMessage, string?>? messageGroupIdSelector) : IProviderHeaderContributions
     where TMessage : class
 {
     private const int _MessageGroupIdMaxLength = 128;
 
-    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions =>
-        messageGroupIdSelector is null
-            ? []
-            :
-            [
-                new ProviderHeaderContribution(
-                    AwsMessagingHeaders.MessageGroupId,
-                    message => _ValidateMessageGroupId(messageGroupIdSelector((TMessage)message))
-                ),
-            ];
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
+            messageGroupIdSelector is null
+                ? []
+                :
+                [
+                    new ProviderHeaderContribution(
+                        AwsMessagingHeaders.MessageGroupId,
+                        message => _ValidateMessageGroupId(messageGroupIdSelector((TMessage)message))
+                    ),
+                ];
 
     private static string? _ValidateMessageGroupId(string? messageGroupId)
     {

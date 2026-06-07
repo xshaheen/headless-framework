@@ -304,7 +304,7 @@ internal sealed class Bootstrapper(
         {
             throw new InvalidOperationException(
                 "Messaging requires a transport provider. Register a native IBusTransport/IQueueTransport "
-                    + "(e.g., UseRabbitMQ, UseKafka, UseAzureServiceBus)."
+                    + "(e.g., UseRabbitMq, UseKafka, UseAzureServiceBus)."
                     + Environment.NewLine
                     + "Example: services.AddHeadlessMessaging(setup => { setup.UseRabbitMq(...); });"
             );

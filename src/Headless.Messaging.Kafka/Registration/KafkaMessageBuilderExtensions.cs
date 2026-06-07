@@ -91,18 +91,16 @@ public sealed class KafkaConsumerConfigBuilder
 
 internal sealed record KafkaConsumerConfig(IsolationLevel? IsolationLevel);
 
-internal sealed class KafkaMessageConfig<TMessage>(Func<TMessage, string?>? partitionSelector)
-    : IProviderHeaderContributions
+internal sealed class KafkaMessageConfig<TMessage> : IProviderHeaderContributions
     where TMessage : class
 {
-    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions =>
-        partitionSelector is null
-            ? []
-            :
-            [
-                new ProviderHeaderContribution(
-                    KafkaHeaders.KafkaKey,
-                    message => partitionSelector((TMessage)message)
-                ),
-            ];
+    public KafkaMessageConfig(Func<TMessage, string?>? partitionSelector)
+    {
+        HeaderContributions =
+            partitionSelector is null
+                ? []
+                : [new ProviderHeaderContribution(KafkaHeaders.KafkaKey, message => partitionSelector((TMessage)message))];
+    }
+
+    public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; }
 }

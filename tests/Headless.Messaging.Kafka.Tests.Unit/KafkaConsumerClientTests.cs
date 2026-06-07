@@ -267,6 +267,33 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task Connect_should_apply_consumer_isolation_level_config()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        ConsumerConfig? capturedConfig = null;
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            new KafkaConsumerConfig(IsolationLevel.ReadCommitted),
+            consumerFactory: config =>
+            {
+                capturedConfig = config;
+                return consumer;
+            }
+        );
+
+        // when
+        client.Connect();
+
+        // then
+        capturedConfig!.IsolationLevel.Should().Be(IsolationLevel.ReadCommitted);
+    }
+
+    [Fact]
     public async Task ListeningAsync_should_process_messages_concurrently_when_concurrency_is_requested()
     {
         // given

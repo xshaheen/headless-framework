@@ -39,6 +39,24 @@ public sealed class CorrelationPrecedenceTests
         prepared.Message.Headers[Headers.CorrelationId].Should().Be("selector-correlation");
     }
 
+    [Theory]
+    [InlineData("explicit\r\ncorrelation", "explicit")]
+    [InlineData("selector\r\ncorrelation", "selector")]
+    [InlineData("ambient\r\ncorrelation", "ambient")]
+    public void should_reject_correlation_values_with_control_characters(string correlationId, string source)
+    {
+        // given
+        var accessor = source == "ambient" ? new AsyncLocalConsumeContextAccessor { Current = _ConsumeContext(correlationId) } : null;
+        var factory = source == "selector" ? _CreateFactory(selector: _ => correlationId) : _CreateFactory(accessor: accessor);
+        var options = source == "explicit" ? new PublishOptions { CorrelationId = correlationId } : null;
+
+        // when
+        var act = () => factory.Create(new TestMessage(null), options);
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*headless-corr-id*control characters*");
+    }
+
     [Fact]
     public void should_use_ambient_correlation_when_explicit_and_selector_are_absent()
     {
