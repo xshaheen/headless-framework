@@ -58,11 +58,11 @@ public sealed class InMemoryCacheTests : TestBase
         var lastFactoryErrorType = typeof(InMemoryCache).GetNestedType("LastFactoryError", BindingFlags.NonPublic);
         lastFactoryErrorType.Should().NotBeNull();
 
-        // Binds the private CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
+        // Binds the CacheEntry constructor by exact signature. Each M1 envelope PR (#373 fail-safe,
         // #378 tags) adds parameters here; when that happens GetConstructor returns null and the NotBeNull
         // assertion below fails with a descriptive message instead of an opaque NRE at Invoke.
         var constructor = entryType!.GetConstructor(
-            BindingFlags.Instance | BindingFlags.NonPublic,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
             binder: null,
             [
                 typeof(object),
@@ -293,7 +293,7 @@ public sealed class InMemoryCacheTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_physical_expiration_for_reads_and_logical_expiration_for_expiration_query()
+    public async Task should_use_logical_expiration_for_value_reads_and_physical_expiration_for_key_presence()
     {
         // given
         using var cache = _CreateCache();
@@ -311,12 +311,15 @@ public sealed class InMemoryCacheTests : TestBase
         var cached = await cache.GetAsync<string>(key, AbortToken);
         var exists = await cache.ExistsAsync(key, AbortToken);
         var expiration = await cache.GetExpirationAsync(key, AbortToken);
+        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
+        var keys = await cache.GetAllKeysByPrefixAsync("", AbortToken);
 
         // then
-        cached.HasValue.Should().BeTrue();
-        cached.Value.Should().Be("value");
-        exists.Should().BeTrue();
-        expiration.Should().BeLessThan(TimeSpan.Zero);
+        cached.HasValue.Should().BeFalse();
+        exists.Should().BeFalse();
+        expiration.Should().BeNull();
+        count.Should().Be(1);
+        keys.Should().Contain(key);
     }
 
     [Fact]
@@ -1688,6 +1691,52 @@ public sealed class InMemoryCacheTests : TestBase
         result.HasValue.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_treat_entry_as_expired_at_exact_expiration_tick()
+    {
+        // Pins the `<= now` boundary: an entry whose PhysicalExpiresAt == GetUtcNow() is expired,
+        // not alive. If the check regresses to `< now` (strict less-than) this test will fail
+        // because the entry would still be returned as a hit at the exact tick.
+
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+
+        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+
+        // when — advance by exactly the duration so GetUtcNow() == PhysicalExpiresAt
+        _timeProvider.Advance(duration);
+
+        // then — entry is expired AT the exact tick (inclusive boundary)
+        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        result.HasValue.Should().BeFalse("entry must be expired when now == expiresAt (inclusive boundary)");
+    }
+
+    [Fact]
+    public async Task should_return_value_one_tick_before_expiration()
+    {
+        // Sibling to the at-tick test: ensures the >= boundary does not over-expire.
+        // An entry whose PhysicalExpiresAt is one tick in the future must still be a hit.
+        // If the check incorrectly uses `<= now` for a time strictly before expiry this would fail,
+        // but that is an impossible regression; the test's real value is documenting the just-before boundary.
+
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var duration = TimeSpan.FromMinutes(5);
+
+        await cache.UpsertAsync(key, "value", duration, TestContext.Current.CancellationToken);
+
+        // when — advance to one tick before expiration
+        _timeProvider.Advance(duration - TimeSpan.FromTicks(1));
+
+        // then — entry is still alive one tick before expiry
+        var result = await cache.GetAsync<string>(key, TestContext.Current.CancellationToken);
+        result.HasValue.Should().BeTrue("entry must be alive one tick before expiration");
+        result.Value.Should().Be("value");
+    }
+
     #endregion
 
     #region MaxItems/LRU Eviction
@@ -1800,6 +1849,83 @@ public sealed class InMemoryCacheTests : TestBase
 
         // then
         ReferenceEquals(result1.Value, result2.Value).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_clone_get_or_add_hits_when_option_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions { CloneValues = true };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        await cache.UpsertAsync(key, new TestClass { Value = 1 }, TimeSpan.FromMinutes(5), AbortToken);
+
+        // when
+        var first = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 2 }),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+        var second = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 3 }),
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        first.Value!.Value = 99;
+
+        // then
+        ReferenceEquals(first.Value, second.Value).Should().BeFalse();
+        second.Value!.Value.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_clone_failsafe_stale_value_when_option_enabled()
+    {
+        // given
+        var options = new InMemoryCacheOptions { CloneValues = true };
+        using var cache = _CreateCache(options);
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        await ((IFactoryCacheStore)cache)
+            .SetEntryAsync(
+                key,
+                new TestClass { Value = 1 },
+                isNull: false,
+                logicalExpiresAt: now.AddMinutes(-1),
+                physicalExpiresAt: now.AddMinutes(5),
+                AbortToken
+            );
+
+        var failSafeOptions = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(1),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromMinutes(10),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+        };
+
+        // when
+        var stale = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => throw new InvalidOperationException("factory failed"),
+            failSafeOptions,
+            AbortToken
+        );
+        stale.Value!.Value = 99;
+        var cached = await cache.GetOrAddAsync<TestClass>(
+            key,
+            _ => ValueTask.FromResult<TestClass?>(new TestClass { Value = 2 }),
+            failSafeOptions,
+            AbortToken
+        );
+
+        // then
+        stale.IsStale.Should().BeTrue();
+        cached.Value!.Value.Should().Be(1);
     }
 
     [Fact]

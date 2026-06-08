@@ -18,7 +18,7 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Design Notes
 
-Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte header followed by the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is still mapped to the Redis key TTL; logical expiration rides in the payload so later fail-safe and refresh features can diverge logical staleness from physical eviction without changing the wire format. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
+Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte header followed by the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is mapped to the Redis key TTL; when fail-safe is enabled, Redis retains the key until physical expiration even after logical expiration has passed. Logical expiration rides in the payload so normal value reads can miss while `GetOrAddAsync` still has a fail-safe reserve. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
 
 The envelope byte layout is:
 
@@ -80,6 +80,7 @@ This design ensures consumers never observe partial results from batch operation
 ## Dependencies
 
 - `Headless.Caching.Abstractions`
+- `Headless.Caching.Core`
 - `Headless.Hosting`
 - `Headless.Redis`
 - `Headless.Serializer.Json`

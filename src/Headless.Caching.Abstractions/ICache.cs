@@ -15,7 +15,11 @@ public interface ICache
     /// <param name="options">Cache entry options for the cached value.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <see cref="CacheEntryOptions.Duration"/> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <see cref="CacheEntryOptions.Duration"/> is not positive, or when fail-safe is enabled and
+    /// <see cref="CacheEntryOptions.FailSafeMaxDuration"/> or
+    /// <see cref="CacheEntryOptions.FailSafeThrottleDuration"/> is not positive.
+    /// </exception>
     ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,

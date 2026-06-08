@@ -20,6 +20,12 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
         return ValueTask.CompletedTask;
     }
 
+    protected override ValueTask AdvanceAsync(TimeSpan duration)
+    {
+        _timeProvider.Advance(duration);
+        return ValueTask.CompletedTask;
+    }
+
     [Fact]
     public override Task should_round_trip_object_and_string_values() =>
         base.should_round_trip_object_and_string_values();
@@ -48,4 +54,28 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_insert_only_when_missing_and_replace_only_when_present() =>
         base.should_insert_only_when_missing_and_replace_only_when_present();
+
+    [Fact]
+    public override Task should_serve_stale_when_failsafe_factory_throws_within_window() =>
+        base.should_serve_stale_when_failsafe_factory_throws_within_window();
+
+    [Fact]
+    public override Task should_propagate_factory_exception_after_failsafe_physical_window() =>
+        base.should_propagate_factory_exception_after_failsafe_physical_window();
+
+    [Fact]
+    public override Task should_propagate_factory_exception_when_failsafe_cache_is_cold() =>
+        base.should_propagate_factory_exception_when_failsafe_cache_is_cold();
+
+    [Fact]
+    public override Task should_throttle_failsafe_factory_retries() =>
+        base.should_throttle_failsafe_factory_retries();
+
+    [Fact]
+    public override Task should_not_serve_stale_when_failsafe_disabled_by_default() =>
+        base.should_not_serve_stale_when_failsafe_disabled_by_default();
+
+    [Fact]
+    public override Task should_not_serve_stale_when_caller_cancels() =>
+        base.should_not_serve_stale_when_caller_cancels();
 }
