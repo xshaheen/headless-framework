@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Globalization;
 using Headless.Abstractions;
 using Headless.AmbientTransactions;
 using Headless.Messaging;
@@ -66,10 +67,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: true);
+        var harness = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: true);
 
         // when
-        await publisher.PublishAsync(
+        await harness.Publisher.PublishAsync(
             new TestMessage("hi"),
             options: null,
             intentType: IntentType.Bus,
@@ -91,10 +92,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: true, ambientTransaction: true);
+        var harness = _BuildOutboxMessageWriter(pipeline, autoCommit: true, ambientTransaction: true);
 
         // when
-        await publisher.PublishAsync(
+        await harness.Publisher.PublishAsync(
             new TestMessage("hi"),
             options: null,
             intentType: IntentType.Bus,
@@ -116,10 +117,10 @@ public sealed class IsTransactionalPropagationTests : TestBase
         new MessagingBuilder(services).AddPublishMiddlewareFor<IsTransactionalCapturingMiddleware, TestMessage>();
         var pipeline = _BuildPublishPipeline(services);
 
-        var (publisher, _) = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: false);
+        var harness = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: false);
 
         // when
-        await publisher.PublishAsync(
+        await harness.Publisher.PublishAsync(
             new TestMessage("hi"),
             options: null,
             intentType: IntentType.Bus,
@@ -130,7 +131,49 @@ public sealed class IsTransactionalPropagationTests : TestBase
         observed.Captured.Should().BeFalse();
     }
 
-    private static (OutboxMessageWriter publisher, TestAmbientTransaction? tx) _BuildOutboxMessageWriter(
+    [Fact]
+    public async Task should_register_one_commit_drain_and_preserve_delayed_vs_immediate_dispatch()
+    {
+        // given
+        var services = new ServiceCollection();
+        var pipeline = _BuildPublishPipeline(services);
+        var harness = _BuildOutboxMessageWriter(pipeline, autoCommit: false, ambientTransaction: true);
+        var transaction = harness.Transaction!;
+
+        // when
+        await harness.Publisher.PublishAsync(
+            new TestMessage("immediate"),
+            options: null,
+            intentType: IntentType.Bus,
+            cancellationToken: AbortToken
+        );
+        await harness.Publisher.PublishDelayAsync(
+            TimeSpan.FromMinutes(5),
+            new TestMessage("delayed"),
+            options: null,
+            intentType: IntentType.Bus,
+            cancellationToken: AbortToken
+        );
+
+        // then — both publishes share the same ambient transaction buffer and do not dispatch before commit.
+        transaction.CommitWorkCount.Should().Be(1);
+        harness.Dispatcher.Published.Should().BeEmpty();
+        harness.Dispatcher.Scheduled.Should().BeEmpty();
+
+        // when
+        await transaction.CommitAsync(AbortToken);
+
+        // then
+        harness.Dispatcher.Published.Should().ContainSingle();
+        harness.Dispatcher.Scheduled.Should().ContainSingle();
+        var scheduled = harness.Dispatcher.Scheduled[0];
+        scheduled.Message.Origin.Headers.Should().ContainKey(Headers.DelayTime);
+        scheduled.PublishAt
+            .Should()
+            .Be(DateTime.Parse(scheduled.Message.Origin.Headers[Headers.SentTime]!, CultureInfo.InvariantCulture));
+    }
+
+    private static OutboxWriterHarness _BuildOutboxMessageWriter(
         IPublishMiddlewarePipeline pipeline,
         bool autoCommit,
         bool ambientTransaction
@@ -163,18 +206,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                 );
             });
 
-        var dispatcher = Substitute.For<IDispatcher>();
-        dispatcher
-            .EnqueueToPublish(Arg.Any<MediumMessage>(), Arg.Any<CancellationToken>())
-            .Returns(ValueTask.CompletedTask);
-        dispatcher
-            .EnqueueToScheduler(
-                Arg.Any<MediumMessage>(),
-                Arg.Any<DateTime>(),
-                Arg.Any<object?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(Task.CompletedTask);
+        var dispatcher = new RecordingDispatcher();
 
         TestAmbientTransaction? tx = null;
         var currentAmbientTransaction = new InMemoryCurrentAmbientTransaction();
@@ -184,7 +216,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             currentAmbientTransaction.Current = tx;
         }
 
-        var outbox = new OutboxMessageWriter(
+        var publisher = new OutboxMessageWriter(
             storage,
             dispatcher,
             publishRequestFactory,
@@ -193,7 +225,8 @@ public sealed class IsTransactionalPropagationTests : TestBase
             pipeline,
             TimeProvider.System
         );
-        return (outbox, tx);
+
+        return new OutboxWriterHarness(publisher, dispatcher, tx);
     }
 
     private static PublishMiddlewarePipeline _BuildPublishPipeline(ServiceCollection services)
@@ -211,6 +244,48 @@ public sealed class IsTransactionalPropagationTests : TestBase
             capture.Captured = context.IsTransactional;
         }
     }
+
+    private sealed record OutboxWriterHarness(
+        OutboxMessageWriter Publisher,
+        RecordingDispatcher Dispatcher,
+        TestAmbientTransaction? Transaction
+    );
+}
+
+internal sealed class RecordingDispatcher : IDispatcher
+{
+    public List<MediumMessage> Published { get; } = [];
+
+    public List<ScheduledMessage> Scheduled { get; } = [];
+
+    public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
+    {
+        Published.Add(message);
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask EnqueueToExecute(
+        MediumMessage message,
+        ConsumerExecutorDescriptor? descriptor = null,
+        CancellationToken cancellationToken = default
+    ) => ValueTask.CompletedTask;
+
+    public Task EnqueueToScheduler(
+        MediumMessage message,
+        DateTime publishTime,
+        object? transaction = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Scheduled.Add(new ScheduledMessage(message, publishTime));
+        return Task.CompletedTask;
+    }
+
+    public ValueTask StartAsync(CancellationToken stoppingToken) => ValueTask.CompletedTask;
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+    public sealed record ScheduledMessage(MediumMessage Message, DateTime PublishAt);
 }
 
 internal sealed class TransactionalCapture
@@ -243,6 +318,8 @@ internal sealed class InMemoryCurrentAmbientTransaction : ICurrentAmbientTransac
 internal sealed class TestAmbientTransaction : IAmbientTransaction
 {
     private readonly List<Func<CancellationToken, ValueTask>> _commitWork = [];
+
+    public int CommitWorkCount => _commitWork.Count;
 
     public bool AutoCommit { get; set; }
 
