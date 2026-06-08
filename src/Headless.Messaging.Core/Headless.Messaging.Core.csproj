@@ -28,6 +28,8 @@
     <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Redis.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Nats.Tests.Unit" />

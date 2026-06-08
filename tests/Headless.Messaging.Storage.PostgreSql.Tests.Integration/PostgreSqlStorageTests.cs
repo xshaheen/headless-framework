@@ -22,7 +22,6 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : DataStorageTestsBase
 {
-    private const int _OwnerColumnMaxLength = 512;
 
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
@@ -297,7 +296,10 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
     public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
 
     [Fact]
-    public override Task should_be_inert_when_owner_is_null() => base.should_be_inert_when_owner_is_null();
+    public override Task should_be_inert_when_no_dead_owners_passed() => base.should_be_inert_when_no_dead_owners_passed();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();
 
     [Fact]
     public override Task should_reclaim_dead_owner_rows_idempotently() =>
@@ -403,7 +405,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         );
 
         dataType.Should().Be("character varying");
-        maxLength.Should().Be(_OwnerColumnMaxLength);
+        maxLength.Should().Be(DataStorageConstants.OwnerColumnMaxLength);
     }
 
     // -------------------------------------------------------------------------
