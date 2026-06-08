@@ -76,6 +76,14 @@ function stateClass(state: string): string {
       <h2 class="card-title">
         <v-icon class="title-icon" color="primary">mdi-lan-connect</v-icon>
         Live Nodes
+        <span class="title-info">
+          <v-icon size="x-small" class="title-info-icon">mdi-information-outline</v-icon>
+          <v-tooltip activator="parent" location="top" max-width="280">
+            Who's online <strong>right now</strong> — real-time cluster membership from the
+            coordination provider's heartbeats. A node turns Suspected then Dead and drops off when it
+            stops beating.
+          </v-tooltip>
+        </span>
       </h2>
       <p class="card-subtitle">{{ nodes.length }} cluster nodes</p>
     </div>
@@ -145,26 +153,43 @@ function stateClass(state: string): string {
   height: 10px;
   border-radius: 50%;
   flex-shrink: 0;
+  /* Fill derives from the state color so the same state class can color both the dot
+     (as a filled circle) and the text label (as colored text) without a green-on-green block. */
+  background-color: currentColor;
 }
 
+/* State classes set color only. The dot turns it into a fill via currentColor; the label uses it as
+   text color on the card background. Setting background here would paint the label green-on-green. */
 .node-state-alive {
-  background: #4caf50;
   color: #4caf50;
 }
 
 .node-state-suspected {
-  background: #ffb74d;
   color: #ffb74d;
 }
 
 .node-state-dead {
-  background: #f44336;
   color: #f44336;
 }
 
 .node-state-unknown {
-  background: #9e9e9e;
   color: #9e9e9e;
+}
+
+.title-info {
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.title-info-icon {
+  color: #9e9e9e;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.title-info:hover .title-info-icon {
+  opacity: 1;
 }
 
 .node-info {
