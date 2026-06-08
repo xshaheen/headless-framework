@@ -121,14 +121,21 @@ public static class JobsServiceExtensions
 
     private static void _AddCoordinatedDurablePath(IServiceCollection services)
     {
-        // Fail-fast (R5): the durable path requires a real coordination provider. INodeMembership is only ever
-        // registered by AddHeadlessCoordination(...), so an absent descriptor means no provider was registered
-        // (call it before AddHeadlessJobs). NullNodeMembership is checked defensively in case one was added by hand.
-        var membershipDescriptor = services.FirstOrDefault(descriptor =>
+        // Fail-fast (R5): the durable path requires a real coordination provider. INodeMembership resolves by
+        // last-wins registration (AddHeadlessCoordination uses AddSingleton, not TryAdd), so a consumer package may
+        // register a NullNodeMembership fallback first and have coordination replace it. Inspect the LAST descriptor
+        // — the one DI will actually resolve — not the first; FirstOrDefault would see the null fallback and reject a
+        // valid config. A factory-registered NullNodeMembership cannot be detected pre-build, so AddHeadlessCoordination
+        // must be registered before AddHeadlessJobs(... AddOperationalStore(...)).
+        var membershipDescriptor = services.LastOrDefault(descriptor =>
             descriptor.ServiceType == typeof(INodeMembership)
         );
 
-        if (membershipDescriptor is null || membershipDescriptor.ImplementationType == typeof(NullNodeMembership))
+        var isNullProvider =
+            membershipDescriptor?.ImplementationType == typeof(NullNodeMembership)
+            || membershipDescriptor?.ImplementationInstance is NullNodeMembership;
+
+        if (membershipDescriptor is null || isNullProvider)
         {
             throw new InvalidOperationException(
                 "The durable Jobs operational store requires a coordination provider. Register one with "
