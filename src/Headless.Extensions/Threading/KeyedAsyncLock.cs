@@ -133,6 +133,11 @@ public sealed class KeyedAsyncLock : IDisposable
         {
             _DecrementRefCount(key);
         }
+        catch
+        {
+            _DecrementRefCount(key);
+            throw;
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
         return null;

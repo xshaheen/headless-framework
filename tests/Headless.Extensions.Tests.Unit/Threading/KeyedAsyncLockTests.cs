@@ -1,6 +1,7 @@
 using Headless.Testing.Tests;
 using Headless.Threading;
 using Microsoft.Extensions.Time.Testing;
+using System.Reflection;
 
 namespace Tests.Threading;
 
@@ -468,6 +469,35 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
+    public async Task should_cleanup_ref_count_when_timeout_and_caller_cancellation_race()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var timeProvider = new FakeTimeProvider();
+        var holder = await keyedLock.LockAsync("timeout-cancel-race-key", AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var waiter = keyedLock.LockAsync("timeout-cancel-race-key", TimeSpan.FromSeconds(5), timeProvider, cts.Token);
+        timeProvider.Advance(TimeSpan.FromSeconds(5));
+        await cts.CancelAsync();
+
+        try
+        {
+            _ = await waiter;
+        }
+        catch (OperationCanceledException)
+        {
+            // The assertion below is about lock cleanup; either timeout-null or caller cancellation is valid here.
+        }
+
+        holder.Dispose();
+
+        // then
+        _SemaphoreCount(keyedLock).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_cleanup_ref_count_on_cancellation()
     {
         // given
@@ -652,5 +682,13 @@ public sealed class KeyedAsyncLockTests : TestBase
         // Clean up the releaser (should be safe even after parent disposed)
         var act2 = releaser3.Dispose;
         act2.Should().NotThrow();
+    }
+
+    private static int _SemaphoreCount(KeyedAsyncLock keyedLock)
+    {
+        var field = typeof(KeyedAsyncLock).GetField("_semaphores", BindingFlags.Instance | BindingFlags.NonPublic);
+        var semaphores = (System.Collections.IDictionary)field!.GetValue(keyedLock)!;
+
+        return semaphores.Count;
     }
 }
