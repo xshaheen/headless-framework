@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.CommitCoordination;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
@@ -13,6 +14,7 @@ internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
+    ICurrentCommitCoordinator currentCommitCoordinator,
     IOutboxTransactionAccessor transactionAccessor,
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
@@ -80,6 +82,16 @@ internal sealed class OutboxMessageWriter(
 
     private bool _IsNonAutoCommitTransactional()
     {
+        if (
+            currentCommitCoordinator.Current?.TryGetCapability<IRelationalCommitContext>(
+                out var relationalCommitContext
+            ) == true
+            && relationalCommitContext.Transaction is not null
+        )
+        {
+            return true;
+        }
+
         var currentTransaction = transactionAccessor.Current;
         return currentTransaction?.DbTransaction is not null && !currentTransaction.AutoCommit;
     }
@@ -90,6 +102,30 @@ internal sealed class OutboxMessageWriter(
         try
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message, publishRequest.IntentType, cancellationToken);
+
+            var currentCoordinator = currentCommitCoordinator.Current;
+
+            if (
+                currentCoordinator?.TryGetCapability<IRelationalCommitContext>(out var relationalCommitContext) == true
+                && relationalCommitContext.Transaction is { } relationalTransaction
+            )
+            {
+                var mediumMessage = await storage
+                    .StoreMessageAsync(
+                        publishRequest.MessageName,
+                        _CreateStorageEnvelope(publishRequest),
+                        relationalTransaction,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
+
+                var buffer = currentCoordinator.GetOrAdd(coordinator => new MessageOutboxBuffer(coordinator, dispatcher));
+                buffer.Add(mediumMessage);
+
+                return;
+            }
 
             var currentTransaction = transactionAccessor.Current;
 

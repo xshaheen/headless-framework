@@ -188,6 +188,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
             storage,
             dispatcher,
             publishRequestFactory,
+            new NullCurrentCommitCoordinator(),
             accessor,
             pipeline,
             TimeProvider.System
