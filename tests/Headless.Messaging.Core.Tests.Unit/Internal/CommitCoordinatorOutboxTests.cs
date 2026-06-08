@@ -121,7 +121,7 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
             MessageOptions? messageOptions,
             TimeSpan? delayTime,
             Func<MessageOptions?, TimeSpan?, CancellationToken, Task> innerPublish,
-            bool isTransactional,
+            bool isTransactional = false,
             CancellationToken cancellationToken = default
         )
         {
