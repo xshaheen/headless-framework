@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -1124,6 +1125,75 @@ public sealed class ForMessageRegistrationTests
                 && entry.Message.Contains("ForMessage<T>")
                 && entry.Message.Contains('1')
             );
+    }
+
+    [Fact]
+    public void should_resolve_explicit_message_name_for_publish_before_consumer_drain()
+    {
+        // given — names are registered eagerly at ForMessage<T>(...) time, so a publish that races ahead
+        // of the startup consumer drain (e.g. an IHostedService publishing in StartAsync) must still see
+        // the explicit name. Before Plan B the factory fell back to the convention name and cached it
+        // permanently, silently diverging publish from subscribe.
+        var services = new ServiceCollection();
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // when — resolve and publish WITHOUT draining the registry first
+        var factory = provider.GetRequiredService<IMessagePublishRequestFactory>();
+        var prepared = factory.Create(new OrderPlaced());
+
+        // then — the eager name resolved even though the consumer drain has not run
+        prepared.MessageName.Should().Be("orders.placed");
+        provider.GetRequiredService<ConsumerRegistry>().HasCompletedMessageRegistrationDrain.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_share_registry_for_seam_registered_before_add_headless_messaging()
+    {
+        // given — the service-collection seam runs BEFORE AddHeadlessMessaging. Find-or-create must hand
+        // both call sites the same ConsumerRegistry, so the seam's eager name is authoritative regardless
+        // of registration order.
+        var services = new ServiceCollection();
+        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed").OnBus<OrderPlacedHandler>());
+
+        // when
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // then — name is resolvable eagerly, before any drain
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+        registry.TryGetMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.placed");
+        registry.HasCompletedMessageRegistrationDrain.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_cross_entry_point_name_conflict_eagerly()
+    {
+        // given — a seam and the builder map the SAME message type to different names. Because both write
+        // to the shared registry eagerly, the conflict surfaces at registration time, not at startup.
+        var services = new ServiceCollection();
+        services.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed"));
+
+        // when
+        var act = () =>
+            services.AddHeadlessMessaging(static setup =>
+                setup.ForMessage<OrderPlaced>(message => message.MessageName("orders.placed.v2"))
+            );
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped*");
     }
 
     private sealed record OrderPlaced;

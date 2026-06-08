@@ -42,7 +42,15 @@ public static class SetupMessaging
 
             var builder = new MessageBuilder<TMessage>(setup.Services);
             configure(builder);
-            setup.Services.AddSingleton(builder.Build());
+            var registration = builder.Build();
+            setup.Services.AddSingleton(registration);
+
+            // Name authority is eager: register the raw name now so publish/subscribe agree without waiting
+            // for the startup consumer drain. Consumer metadata still drains at bootstrap (it needs options).
+            if (registration.MessageName is { } messageName)
+            {
+                setup.Registry.RegisterMessageName(registration.MessageType, messageName);
+            }
 
             return setup;
         }
@@ -139,7 +147,16 @@ public static class SetupMessaging
 
         var builder = new MessageBuilder<TMessage>(services);
         configure(builder);
-        services.AddSingleton(builder.Build());
+        var registration = builder.Build();
+        services.AddSingleton(registration);
+
+        // Name authority is eager and order-independent: the shared registry is found-or-created, so a name
+        // declared here is authoritative immediately whether this seam runs before or after AddHeadlessMessaging.
+        // This closes the publish-before-drain window — consumer metadata still drains at bootstrap.
+        if (registration.MessageName is { } messageName)
+        {
+            _GetOrAddConsumerRegistry(services).RegisterMessageName(registration.MessageType, messageName);
+        }
 
         return services;
     }
@@ -185,15 +202,32 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        var registry = new ConsumerRegistry();
-        services.TryAddSingleton<IConsumerRegistry>(registry);
-        services.TryAddSingleton(registry);
+        // Found-or-created so a library that called services.ForMessage<T>(...) before AddHeadlessMessaging
+        // shares the same registry instance — registration order does not matter.
+        var registry = _GetOrAddConsumerRegistry(services);
         var options = new MessagingOptions();
         var setup = new MessagingSetupBuilder(services, options, registry);
 
         configure(setup);
 
         return _RegisterCoreMessagingServices(services, setup);
+    }
+
+    private static ConsumerRegistry _GetOrAddConsumerRegistry(IServiceCollection services)
+    {
+        if (
+            services.FirstOrDefault(static d => d.ServiceType == typeof(ConsumerRegistry))?.ImplementationInstance
+            is ConsumerRegistry existing
+        )
+        {
+            return existing;
+        }
+
+        var registry = new ConsumerRegistry();
+        services.AddSingleton(registry);
+        services.TryAddSingleton<IConsumerRegistry>(registry);
+
+        return registry;
     }
 
     private static IEnumerable<(Type ConsumerType, Type MessageType)> _FindConsumers(Assembly assembly)
@@ -460,97 +494,73 @@ public static class SetupMessaging
 
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
 
-        foreach (var group in registrations.GroupBy(static registration => registration.MessageType))
+        // Names are registered eagerly at ForMessage<T>(...) time, so the drain only builds consumer
+        // metadata (which needs MessagingOptions). Iterate registrations directly — no per-type grouping.
+        foreach (var registration in registrations)
         {
-            var explicitMessageNames = group
-                .Select(static registration => registration.MessageName)
-                .Where(static messageName => messageName is not null)
-                // Message names match case-insensitively at dispatch (IConsumerServiceSelector), so
-                // case-variant explicit names for one type are the same name, not a conflict.
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            if (explicitMessageNames.Count > 1)
+            foreach (var consumer in registration.Consumers)
             {
-                throw new InvalidOperationException(
-                    $"Message type {group.Key.FullName ?? group.Key.Name} is already mapped to messageName '{explicitMessageNames[0]}'. "
-                        + $"Cannot map to '{explicitMessageNames[1]}'."
-                );
-            }
-
-            var explicitMessageName = explicitMessageNames.Count == 0 ? null : explicitMessageNames[0];
-
-            if (explicitMessageName is not null)
-            {
-                registry.RegisterMessageName(group.Key, explicitMessageName);
-            }
-
-            foreach (var registration in group)
-            {
-                foreach (var consumer in registration.Consumers)
+                if (
+                    consumer.IsAssemblyScan
+                    && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
+                )
                 {
-                    if (
-                        consumer.IsAssemblyScan
-                        && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
-                    )
-                    {
-                        continue;
-                    }
-
-                    var resolved = options.CreateConsumerMetadata(
-                        consumer.ConsumerType,
-                        registration.MessageType,
-                        messageName: null,
-                        registry.TryGetMessageName(registration.MessageType, out var mappedMessageName)
-                            ? mappedMessageName
-                            : null,
-                        consumer.Group,
-                        consumer.Concurrency,
-                        consumer.HandlerId,
-                        consumer.IntentType
-                    )
-                    with
-                    {
-                        ProviderConfigs = consumer.ProviderConfigs,
-                    };
-
-                    var key = new ConsumerRegistrationKey(
-                        resolved.MessageName,
-                        resolved.Group,
-                        resolved.IntentType,
-                        resolved.ConsumerType
-                    );
-
-                    var settings = new ConsumerRegistrationSettings(
-                        resolved.Concurrency,
-                        resolved.ResolvedHandlerId,
-                        ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
-                        resolved.ProviderConfigs
-                    );
-
-                    if (registeredKeys.TryGetValue(key, out var existing))
-                    {
-                        // R9a: re-registering the SAME consumer for the same (message name, group, intent)
-                        // is an idempotent merge only when the registration is genuinely identical. Diverging
-                        // concurrency / handler id / circuit-breaker / provider overrides would otherwise be silently
-                        // dropped here, so fail fast and name the conflict instead.
-                        if (existing != settings)
-                        {
-                            throw new InvalidOperationException(
-                                $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
-                                    + $"more than once for message name '{resolved.MessageName}' "
-                                    + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
-                                    + "Register the consumer once, or make every registration identical."
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    registeredKeys.Add(key, settings);
-                    registry.Register(resolved);
-                    _ApplyCircuitBreakerOverride(circuitBreakerRegistry, resolved, consumer);
+                    continue;
                 }
+
+                var resolved = options.CreateConsumerMetadata(
+                    consumer.ConsumerType,
+                    registration.MessageType,
+                    messageName: null,
+                    registry.TryGetMessageName(registration.MessageType, out var mappedMessageName)
+                        ? mappedMessageName
+                        : null,
+                    consumer.Group,
+                    consumer.Concurrency,
+                    consumer.HandlerId,
+                    consumer.IntentType
+                )
+                with
+                {
+                    ProviderConfigs = consumer.ProviderConfigs,
+                };
+
+                var key = new ConsumerRegistrationKey(
+                    resolved.MessageName,
+                    resolved.Group,
+                    resolved.IntentType,
+                    resolved.ConsumerType
+                );
+
+                var settings = new ConsumerRegistrationSettings(
+                    resolved.Concurrency,
+                    resolved.ResolvedHandlerId,
+                    ConsumerCircuitBreakerSettings.From(consumer.CircuitBreakerOverride),
+                    resolved.ProviderConfigs
+                );
+
+                if (registeredKeys.TryGetValue(key, out var existing))
+                {
+                    // R9a: re-registering the SAME consumer for the same (message name, group, intent)
+                    // is an idempotent merge only when the registration is genuinely identical. Diverging
+                    // concurrency / handler id / circuit-breaker / provider overrides would otherwise be silently
+                    // dropped here, so fail fast and name the conflict instead.
+                    if (existing != settings)
+                    {
+                        throw new InvalidOperationException(
+                            $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is registered "
+                                + $"more than once for message name '{resolved.MessageName}' "
+                                + $"(group '{resolved.Group}', intent {resolved.IntentType}) with conflicting settings. "
+                                + "Register the consumer once, or make every registration identical."
+                        );
+                    }
+
+                    continue;
+                }
+
+                registeredKeys.Add(key, settings);
+                registry.Register(resolved);
+                _ApplyCircuitBreakerOverride(circuitBreakerRegistry, resolved, consumer);
             }
         }
 
