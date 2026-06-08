@@ -78,4 +78,20 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_not_serve_stale_when_caller_cancels() =>
         base.should_not_serve_stale_when_caller_cancels();
+
+    [Fact]
+    public override Task should_return_stale_on_soft_timeout_and_refresh_in_background() =>
+        base.should_return_stale_on_soft_timeout_and_refresh_in_background();
+
+    [Fact]
+    public override Task should_throw_cache_factory_timeout_when_hard_timeout_fires_without_fallback() =>
+        base.should_throw_cache_factory_timeout_when_hard_timeout_fires_without_fallback();
+
+    [Fact]
+    public override Task should_serve_stale_when_hard_timeout_fires_with_fallback() =>
+        base.should_serve_stale_when_hard_timeout_fires_with_fallback();
+
+    [Fact]
+    public override Task should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock() =>
+        base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
 }

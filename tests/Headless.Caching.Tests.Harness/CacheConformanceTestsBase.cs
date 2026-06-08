@@ -333,6 +333,130 @@ public abstract class CacheConformanceTestsBase : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    public virtual async Task should_return_stale_on_soft_timeout_and_refresh_in_background()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateTimeoutOptions();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await TriggerTimeoutAsync(options.FactorySoftTimeout);
+
+        var timedOut = await timeoutTask;
+        factoryGate.SetResult("fresh");
+
+        await WaitUntilAsync(async () =>
+        {
+            var cached = await cache.GetAsync<string>(key, AbortToken);
+            return cached.HasValue && cached.Value == "fresh";
+        });
+
+        timedOut.Value.Should().Be("stale");
+        timedOut.IsStale.Should().BeTrue();
+    }
+
+    public virtual async Task should_throw_cache_factory_timeout_when_hard_timeout_fires_without_fallback()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateTimeoutOptions(isFailSafeEnabled: false);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await TriggerTimeoutAsync(options.FactoryHardTimeout);
+        var act = async () => await timeoutTask;
+
+        await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+    }
+
+    public virtual async Task should_serve_stale_when_hard_timeout_fires_with_fallback()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateTimeoutOptions(factorySoftTimeout: Timeout.InfiniteTimeSpan);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        var timeoutTask = cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await TriggerTimeoutAsync(options.FactoryHardTimeout);
+        var result = await timeoutTask;
+
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    public virtual async Task should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateTimeoutOptions();
+        var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFactoryCalls = 0;
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("stale"), options, AbortToken);
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        {
+            firstStarted.SetResult();
+            return await firstGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        ValueTask<string?> SecondFactory(CancellationToken _)
+        {
+            secondFactoryCalls++;
+            return ValueTask.FromResult<string?>("second");
+        }
+
+        var first = cache.GetOrAddAsync(key, FirstFactory, options, AbortToken).AsTask();
+        await firstStarted.Task;
+        await Task.Yield();
+        var second = cache.GetOrAddAsync(key, SecondFactory, options, AbortToken).AsTask();
+        await TriggerTimeoutAsync(options.FactorySoftTimeout);
+        var secondResult = await second;
+        firstGate.SetResult("fresh");
+        await first;
+
+        secondResult.Value.Should().Be("stale");
+        secondResult.IsStale.Should().BeTrue();
+        secondFactoryCalls.Should().Be(0);
+    }
+
     private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null) =>
         new()
         {
@@ -341,6 +465,43 @@ public abstract class CacheConformanceTestsBase : TestBase
             FailSafeMaxDuration = TimeSpan.FromMilliseconds(900),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromMilliseconds(200),
         };
+
+    private static CacheEntryOptions _CreateTimeoutOptions(
+        bool isFailSafeEnabled = true,
+        TimeSpan? factorySoftTimeout = null
+    ) =>
+        new()
+        {
+            Duration = TimeSpan.FromMilliseconds(100),
+            IsFailSafeEnabled = isFailSafeEnabled,
+            FailSafeMaxDuration = TimeSpan.FromSeconds(2),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+            FactorySoftTimeout = factorySoftTimeout ?? TimeSpan.FromMilliseconds(75),
+            FactoryHardTimeout = TimeSpan.FromMilliseconds(250),
+            BackgroundFactoryCeiling = TimeSpan.FromSeconds(2),
+        };
+
+    private async ValueTask TriggerTimeoutAsync(TimeSpan timeout)
+    {
+        await Task.Yield();
+        await AdvanceAsync(timeout);
+    }
+
+    private async ValueTask WaitUntilAsync(Func<ValueTask<bool>> condition)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            if (await condition())
+            {
+                return;
+            }
+
+            await AdvanceAsync(TimeSpan.FromMilliseconds(20));
+            await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(10), AbortToken);
+        }
+
+        throw new TimeoutException("Condition was not satisfied within the polling window.");
+    }
 
     protected sealed record CacheConformanceObject(Guid Id, string Name);
 }
