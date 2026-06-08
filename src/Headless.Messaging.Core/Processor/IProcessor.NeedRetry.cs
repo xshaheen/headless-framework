@@ -314,7 +314,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         await _TryReclaimDeadOwnersAsync(
                 StoragePickupKind.Published,
-                liveOwnersForReclaim!,
+                liveOwnersForReclaim,
                 liveOwners => connection.ReclaimDeadPublishedOwnersAsync(liveOwners, context.CancellationToken)
             )
             .ConfigureAwait(false);
@@ -348,7 +348,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             await _TryReclaimDeadOwnersAsync(
                     StoragePickupKind.Received,
-                    liveOwnersForReclaim!,
+                    liveOwnersForReclaim,
                     liveOwners => connection.ReclaimDeadReceivedOwnersAsync(liveOwners, context.CancellationToken)
                 )
                 .ConfigureAwait(false);
@@ -396,10 +396,19 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task _TryReclaimDeadOwnersAsync(
         StoragePickupKind kind,
-        LiveOwnersForReclaimCache liveOwnersForReclaim,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim,
         Func<IReadOnlyCollection<string>, ValueTask<int>> reclaim
     )
     {
+        // Reclaim only runs under the storage-lock path; the cache is null exactly when
+        // UseStorageLock is false (see ProcessAsync), and both callers already short-circuit
+        // that case. Encode the invariant in the type instead of a null-forgiving operator so a
+        // future caller cannot silently NRE here — a null cache degrades to skipping reclaim.
+        if (liveOwnersForReclaim is null)
+        {
+            return;
+        }
+
         var liveOwners = await liveOwnersForReclaim.GetAsync().ConfigureAwait(false);
         if (liveOwners is null)
         {
