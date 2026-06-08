@@ -1,6 +1,29 @@
 # Headless.Caching.Hybrid
 
-Two-tier hybrid cache combining fast in-memory L1 cache with distributed L2 cache, featuring automatic cross-instance cache invalidation via messaging.
+Two-tier cache combining in-memory L1 with remote L2 and cross-instance invalidation through messaging.
+
+## Problem Solved
+
+Provides one `ICache` implementation that reads from a fast local cache first, falls back to a shared remote cache, and invalidates other instances when writes change cached data.
+
+## Key Features
+
+- L1 + L2 read path: local in-memory first, remote cache second.
+- Write path updates L2, updates L1, and publishes invalidation.
+- Miss path executes the factory once through the shared `FactoryCacheCoordinator`.
+- Supports strongly typed `ICache<T>`.
+- Uses `DefaultLocalExpiration` to keep L1 fresher than L2.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, and background completion behavior through `Headless.Caching.Core`.
+
+## Design Notes
+
+Register an in-memory cache as non-default, then a remote cache, then the hybrid cache. The hybrid cache becomes the default `ICache` when `isDefault: true`.
+
+Hybrid fail-safe and factory timeouts use the same coordinator semantics as the other providers. A stale reserve can come from L1 or L2. On soft timeout, the stale value is returned to the caller and the detached background factory writes through the composite store on success, so both tiers are refreshed. `DefaultLocalExpiration` still caps L1 physical retention independently of the L2 duration.
+
+On reads, Hybrid promotes L2 entries into L1 only when they are logically fresh. Promoting stale reserves on every read would amplify L1 writes and could overwrite a newer L1 reserve. Fail-safe activation and background success still write through the composite store intentionally.
+
+Publish failures are non-fatal. Other instances may keep their L1 value until TTL or the next successful invalidation, while the local instance still observes the write result.
 
 ## Installation
 
@@ -8,27 +31,20 @@ Two-tier hybrid cache combining fast in-memory L1 cache with distributed L2 cach
 dotnet add package Headless.Caching.Hybrid
 ```
 
-## Prerequisites
-
-- In-memory cache: `Headless.Caching.InMemory`
-- Distributed cache: `Headless.Caching.Redis`
-- Messaging: Any messaging provider (e.g., `Headless.Messaging.Redis`)
-
-## Usage
-
-### Basic Setup
+## Quick Start
 
 ```csharp
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+
 services.AddInMemoryCache(isDefault: false);
-services.AddRedisCache(options => options.ConnectionString = "localhost:6379");
+services.AddSingleton<IConnectionMultiplexer>(redis);
+services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 services.AddHeadlessMessaging(builder => builder.UseRedis("localhost:6379"));
 services.AddHybridCache(options =>
 {
     options.DefaultLocalExpiration = TimeSpan.FromMinutes(5);
 });
 ```
-
-### Using the Cache
 
 ```csharp
 public sealed record Product(string Id, string Name);
@@ -45,7 +61,14 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
         var cached = await cache.GetOrAddAsync(
             $"product:{id}",
             token => repository.GetByIdAsync(id, token),
-            TimeSpan.FromHours(1),
+            new CacheEntryOptions
+            {
+                Duration = TimeSpan.FromHours(1),
+                IsFailSafeEnabled = true,
+                FailSafeMaxDuration = TimeSpan.FromHours(6),
+                FactorySoftTimeout = TimeSpan.FromMilliseconds(250),
+                FactoryHardTimeout = TimeSpan.FromSeconds(3),
+            },
             ct
         );
 
@@ -54,59 +77,27 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 }
 ```
 
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         HybridCache                              │
-│  ┌─────────────┐    ┌─────────────┐    ┌──────────────────────┐ │
-│  │ L1 Cache    │    │ L2 Cache    │    │ Message Bus          │ │
-│  │ (InMemory)  │    │ (Redis)     │    │ (Pub/Sub)            │ │
-│  │             │    │             │    │                      │ │
-│  │ - Fast      │    │ - Shared    │    │ - Invalidation       │ │
-│  │ - Per-inst. │    │ - Durable   │    │ - Cross-instance     │ │
-│  └─────────────┘    └─────────────┘    └──────────────────────┘ │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Read Path
-
-1. Check L1 (local in-memory) - fastest, per-instance
-2. On L1 miss, check L2 (distributed) - slower but shared
-3. On L2 miss, execute factory, populate both caches
-
-### Write/Invalidation Path
-
-1. Update L2 (distributed cache)
-2. Update L1 (local cache)
-3. Publish invalidation message
-4. Other instances receive message and invalidate their L1
-
 ## Configuration
 
 | Option | Default | Description |
-|--------|---------|-------------|
-| `KeyPrefix` | `""` | Prefix for all cache keys |
-| `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL (uses L2 TTL if null) |
-| `InstanceId` | Auto-generated | Unique ID for filtering self-originated messages |
+| --- | --- | --- |
+| `KeyPrefix` | `""` | Prefix for all cache keys. |
+| `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL; when null, L1 uses the L2 expiration. |
+| `InstanceId` | Auto-generated | Unique ID for filtering self-originated invalidation messages. |
 
-## Exception Handling
+## Dependencies
 
-| Scenario | Behavior |
-|----------|----------|
-| L2 write fails | Log warning, continue to populate L1 |
-| Publish fails | Log warning, other instances serve stale until TTL |
-| L1 write fails | Propagate exception (indicates serious issue) |
-| L2 read fails | Treat as miss for `GetOrAddAsync`; serve any L1 fail-safe reserve if available |
-| Caller-token cancellation | Propagate; fail-safe is not activated |
-| Unrelated/downstream `OperationCanceledException` | Treated as a failure (by token identity); activates fail-safe and serves stale if available |
+- `Headless.Caching.Abstractions`
+- `Headless.Caching.Core`
+- `Headless.Hosting`
+- `Headless.Messaging.Abstractions`
+- `Headless.Messaging.Bus.Abstractions`
 
-## Metrics
+## Side Effects
 
-The `HybridCache` exposes metrics:
-
-```csharp
-var cache = services.GetRequiredService<HybridCache>();
-Console.WriteLine($"L1 hits: {cache.LocalCacheHits}");
-Console.WriteLine($"Invalidation calls: {cache.InvalidateCacheCalls}");
-```
+- Registers `HybridCache` as singleton.
+- Registers `ICache` as singleton when `isDefault: true`.
+- Registers keyed `ICache` under `CacheConstants.HybridCacheProvider`.
+- Registers `ICache<T>` as singleton.
+- Reads configured `HybridCacheOptions`.
+- Publishes cache invalidation messages through the registered message bus.

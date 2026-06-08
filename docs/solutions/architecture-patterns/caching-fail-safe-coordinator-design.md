@@ -57,6 +57,26 @@ Two structural rules in the coordinator:
 
 On a composite read, promote an L2 entry into L1 **only when it is logically fresh** — promoting a stale reserve on every read amplifies L1 writes and can overwrite a newer L1 reserve. Fail-safe activation still re-stamps the (now throttle-fresh) value into L1 via the composite write; that is intentional FusionCache parity so the throttle window is an L1 hit.
 
+### 9. Factory timeouts ride the same fallback candidate and lock
+
+Factory soft/hard timeouts are not provider features. They extend `FactoryCacheCoordinator` because the coordinator already owns stale-candidate detection, keyed locking, cancellation classification, and fresh writes.
+
+Select exactly one effective factory timeout:
+
+- If fail-safe is enabled, a valid stale reserve exists, and `FactorySoftTimeout` is finite, use the soft timeout. The caller returns stale and the same factory continues in the background.
+- Otherwise, if `FactoryHardTimeout` is finite, use the hard timeout. The coordinator cancels or abandons the factory; stale is served when available, and a cold cache throws `CacheFactoryTimeoutException`.
+- Otherwise, preserve existing behavior: the factory runs until it completes or the caller cancels.
+
+Soft timeout also bounds per-key lock acquisition for callers that already have a stale fallback. This is what makes waiters and supported same-key re-entrant calls return stale instead of blocking behind the in-flight/background factory. Do not add a separate stampede primitive for this path unless there is a stronger requirement than per-key serialization.
+
+### 10. Detached background completion needs a ceiling and a write gate
+
+After a soft timeout, the background factory runs with a coordinator-owned token that is not linked to the caller token. This is deliberate: ASP.NET request cancellation after the stale response is returned must not kill the refresh intended for future callers. The cost is a contract for factory authors: do not capture request-scoped disposables; create a fresh scope inside the factory if scoped services are needed after the request path returns.
+
+The lock hand-off protects the key only while the background task is still under coordinator ownership. `BackgroundFactoryCeiling` (default 2 minutes) races the factory and releases the per-key lock if a token-ignoring factory does not finish. On the ceiling branch, cancel the internal token and do **not** await the factory. A non-cooperative factory may continue running untracked, but the success write must be gated on the internal token so an abandoned factory cannot clobber a newer timeout-path value after the lock is released.
+
+The guarantee is per key and cooperative-factory clean: while the background refresh is in flight, the key does not run duplicate cooperative factories. It is not a global concurrency bound across distinct keys. It also does not protect explicit user writes (`Set`, `Upsert`, `Remove`) from a slow successful background refresh; versioned/CAS writes are a separate future hardening.
+
 ## Why This Matters
 
 Fail-safe trades a hard failure for a bounded stale read; each edge above, gotten wrong, silently breaks that trade in a way tests rarely catch unless they target the branch:
@@ -64,10 +84,12 @@ Fail-safe trades a hard failure for a bounded stale read; each edge above, gotte
 - **#6** would return stale and discard a freshly-computed value on a transient cache-write blip.
 - **#7** turns the throttle into a no-op and hammers a down dependency.
 - **#5** is the dominant cause of cross-provider "works here, not there" bugs.
+- **#9/#10** prevent a timeout feature from becoming either ineffective (soft timeout without stale fallback), lossy (hard timeout allowing background writes), or an availability leak (awaiting a non-cooperative background factory while holding the key lock).
 
 ## When to Apply
 
 - Building or extending the caching resilience engine (timeouts, eager/adaptive refresh ride the same coordinator).
+- Adding factory timeout, background refresh, or waiter lock-timeout behavior.
 - Any code that must distinguish "the caller cancelled" from "a dependency failed" — reach for token identity plus the `CanBeCanceled` guard.
 - Any multi-provider contract with an expiration/freshness boundary — pick one operator convention and assert it at the exact tick.
 

@@ -1,30 +1,37 @@
 # Headless.Caching.Abstractions
 
-Defines the unified caching interface for both in-memory and distributed cache implementations.
+Defines the unified caching interface for in-memory, distributed, and hybrid cache implementations.
 
 ## Problem Solved
 
-Provides a provider-agnostic caching API, enabling seamless switching between memory and Redis caches without changing application code.
+Provides a provider-agnostic caching API so applications can switch between memory, Redis, and hybrid caches without changing call sites.
 
 ## Key Features
 
-- `ICache` - Core interface for all cache operations:
+- `ICache` - core interface for cache operations:
   - Upsert/Get/Remove with expiration
   - Bulk operations (UpsertAll, GetAll, RemoveAll)
   - Prefix-based operations (GetByPrefix, RemoveByPrefix)
   - Atomic operations (TryInsert, TryReplace, Increment, SetIfHigher/Lower)
   - Set operations (SetAdd, SetRemove, GetSet)
-- `IInMemoryCache` - Marker interface for in-memory implementations
-- `IRemoteCache` - Marker interface for remote implementations
-- `ICache<T>` - Strongly-typed cache wrapper
-- `CacheValue<T>` - Cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
-- `CacheEntryOptions` - Factory-backed entry options: `Duration`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, and `FailSafeThrottleDuration`.
+- `IInMemoryCache` - marker interface for in-memory implementations.
+- `IRemoteCache` - marker interface for remote implementations.
+- `ICache<T>` - strongly typed cache wrapper.
+- `CacheValue<T>` - cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
+- `CacheEntryOptions` - factory-backed entry options: `Duration`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, `FailSafeThrottleDuration`, `FactorySoftTimeout`, `FactoryHardTimeout`, and `BackgroundFactoryCeiling`.
+- `CacheFactoryTimeoutException` - `TimeoutException` subtype thrown when a hard factory timeout fires without a stale fallback.
 
 ## Design Notes
 
-`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
+`GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeouts, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
 
 Fail-safe is opt-in and only applies to `GetOrAddAsync`. Direct writes keep the `TimeSpan?` API and write logical expiration equal to physical expiration. A stale value served by fail-safe returns `CacheValue<T>.IsStale = true` only for the activating call; reads during the throttle window are logical hits and return `IsStale = false`.
+
+Factory soft timeouts are useful only when fail-safe is enabled and a stale reserve exists. In that case the caller gets stale data and the factory continues in the background. Soft timeouts configured without fail-safe are inert and logged once per key. Factory hard timeouts cancel or abandon the factory; they serve stale when possible and throw `CacheFactoryTimeoutException` on a cold cache.
+
+Background completion uses a detached coordinator-owned cancellation token, not the caller token. A request token may be cancelled after the stale response is returned and the background refresh can still finish. Factories used with soft timeouts must not capture request-scoped disposables; create a fresh dependency scope inside the factory when scoped services are required after the request path returns.
+
+`BackgroundFactoryCeiling` defaults to 2 minutes and bounds how long a detached background factory can hold the per-key lock. Cooperative factories stop when the coordinator cancels the internal token. Non-cooperative factories may continue running untracked after the ceiling, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
 
 ## Installation
 
@@ -67,6 +74,9 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
                     IsFailSafeEnabled = true,
                     FailSafeMaxDuration = TimeSpan.FromHours(1),
                     FailSafeThrottleDuration = TimeSpan.FromSeconds(30),
+                    FactorySoftTimeout = TimeSpan.FromMilliseconds(200),
+                    FactoryHardTimeout = TimeSpan.FromSeconds(2),
+                    BackgroundFactoryCeiling = TimeSpan.FromMinutes(2),
                 },
                 ct
             )
