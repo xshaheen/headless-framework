@@ -95,7 +95,7 @@ public static class SetupCoordinationCore
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipService>>()
             ));
 
-            services.TryAddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
+            services.AddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
             services.TryAddSingleton<MembershipHeartbeatBackgroundService>();
 
             services.TryAddEnumerable(
