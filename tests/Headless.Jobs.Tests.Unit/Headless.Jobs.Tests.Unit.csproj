@@ -10,5 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

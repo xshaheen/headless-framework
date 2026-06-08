@@ -1,6 +1,6 @@
 
 import { useBaseHttpService } from '../base/baseHttpService';
-import { CancelJobRequest, CancelJobResponse, GetFunctionDataRequest, GetJobStatusesOverall, GetFunctionDataResponse, GetJobStatusesPastWeek, GetMachineJobs, GetNextPlannedJobResponse, GetOptions, GetJobDataRequest, GetJobDataResponse, GetJobHostStatusResponse } from './types/jobsService.types';
+import { CancelJobRequest, CancelJobResponse, GetFunctionDataRequest, GetJobStatusesOverall, GetFunctionDataResponse, GetJobStatusesPastWeek, GetLiveNode, GetMachineJobs, GetNextPlannedJobResponse, GetOptions, GetJobDataRequest, GetJobDataResponse, GetJobHostStatusResponse } from './types/jobsService.types';
 
 const requestCancel = () => {
     const baseHttp = useBaseHttpService<CancelJobRequest, CancelJobResponse>('single');
@@ -114,6 +114,18 @@ const getMachineJobs = () => {
 }
 
 
+const getLiveNodes = () => {
+    const baseHttp = useBaseHttpService<object, GetLiveNode>('array');
+
+    const requestAsync = async () => (await baseHttp.sendAsync("GET", "nodes"));
+
+    return {
+        ...baseHttp,
+        requestAsync
+    };
+}
+
+
 const getJobStatusesPastWeek = () => {
     const baseHttp = useBaseHttpService<object, GetJobStatusesPastWeek>('array');
 
@@ -148,6 +160,7 @@ export const jobsService = {
     getJobHostStatus,
     getOptions,
     getMachineJobs,
+    getLiveNodes,
     getJobStatusesPastWeek,
     getJobStatusesOverall
 };

@@ -11,7 +11,7 @@ namespace Headless.Jobs.Managers;
 
 internal class JobsManager<TTimeJob, TCronJob>(
     IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
-    IJobsHostScheduler tickerQHostScheduler,
+    IJobsHostScheduler jobsHostScheduler,
     TimeProvider timeProvider,
     IJobsNotificationHubSender notificationHubSender,
     JobsExecutionContext executionContext,
@@ -20,7 +20,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-    private readonly IJobsHostScheduler _tickerQHostScheduler = Argument.IsNotNull(tickerQHostScheduler);
+    private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
 
@@ -127,7 +127,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
             }
             else
             {
-                _tickerQHostScheduler.RestartIfNeeded(executionTime);
+                _jobsHostScheduler.RestartIfNeeded(executionTime);
             }
 
             await notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
@@ -169,7 +169,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
         {
             await persistenceProvider.InsertCronJobs([entity], cancellationToken: cancellationToken);
 
-            _tickerQHostScheduler.RestartIfNeeded(nextOccurrence);
+            _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
 
             await notificationHubSender.AddCronJobNotifyAsync(entity);
 
@@ -204,11 +204,11 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
             if (_executionContext.Functions.Any(x => x.JobId == timeJob.Id))
             {
-                _tickerQHostScheduler.Restart();
+                _jobsHostScheduler.Restart();
             }
             else
             {
-                _tickerQHostScheduler.RestartIfNeeded(timeJob.ExecutionTime);
+                _jobsHostScheduler.RestartIfNeeded(timeJob.ExecutionTime);
             }
 
             return new JobResult<TTimeJob>(timeJob, affectedRows);
@@ -261,10 +261,10 @@ internal class JobsManager<TTimeJob, TCronJob>(
                     .UpdateCronJobOccurrence(internalFunction, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
 
-                _tickerQHostScheduler.Restart();
+                _jobsHostScheduler.Restart();
             }
 
-            _tickerQHostScheduler.RestartIfNeeded(nextOccurrence);
+            _jobsHostScheduler.RestartIfNeeded(nextOccurrence);
 
             return new JobResult<TCronJob>(cronJob, affectedRows);
         }
@@ -280,7 +280,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.ParentId == id))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
 
         return new JobResult<TCronJob>(affectedRows);
@@ -292,7 +292,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
 
         return new JobResult<TTimeJob>(affectedRows);
@@ -420,7 +420,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
             if (earliestForNonImmediate != default)
             {
-                _tickerQHostScheduler.RestartIfNeeded(earliestForNonImmediate);
+                _jobsHostScheduler.RestartIfNeeded(earliestForNonImmediate);
             }
 
             return new JobResult<List<TTimeJob>>(entities);
@@ -482,7 +482,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
             {
                 // Restart scheduler for earliest occurrence
                 var earliestOccurrence = nextOccurrences.Min();
-                _tickerQHostScheduler.RestartIfNeeded(earliestOccurrence);
+                _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
 
                 // Send notifications for all
                 foreach (var entity in validEntities)
@@ -546,12 +546,12 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
             if (needsRestart)
             {
-                _tickerQHostScheduler.Restart();
+                _jobsHostScheduler.Restart();
             }
             else if (validTickers.Count != 0)
             {
                 var earliestExecution = validTickers.Min(t => t.ExecutionTime);
-                _tickerQHostScheduler.RestartIfNeeded(earliestExecution);
+                _jobsHostScheduler.RestartIfNeeded(earliestExecution);
             }
 
             return new JobResult<List<TTimeJob>>(validTickers, affectedRows);
@@ -631,12 +631,12 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
             if (needsRestart)
             {
-                _tickerQHostScheduler.Restart();
+                _jobsHostScheduler.Restart();
             }
             else if (nextOccurrences.Count != 0)
             {
                 var earliestOccurrence = nextOccurrences.Min();
-                _tickerQHostScheduler.RestartIfNeeded(earliestOccurrence);
+                _jobsHostScheduler.RestartIfNeeded(earliestOccurrence);
             }
 
             return new JobResult<List<TCronJob>>(validTickers, affectedRows);
@@ -659,7 +659,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
 
         return new JobResult<TTimeJob>(affectedRows);
@@ -677,7 +677,7 @@ internal class JobsManager<TTimeJob, TCronJob>(
 
         if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))
         {
-            _tickerQHostScheduler.Restart();
+            _jobsHostScheduler.Restart();
         }
 
         return new JobResult<TCronJob>(affectedRows);

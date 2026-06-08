@@ -10,8 +10,8 @@ namespace Headless.Jobs.Infrastructure;
 internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
-    SchedulerOptionsBuilder optionsBuilder,
-    IJobsRedisContext redisContext
+    IJobsOwnerIdentity ownerIdentity,
+    IJobsCacheContext cacheContext
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -19,11 +19,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 {
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
 
-    protected string LockHolder { get; } = optionsBuilder.NodeIdentifier;
+    // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
+    // and refuse to touch rows when membership is not established (registration pending or membership lost).
+    protected IJobsOwnerIdentity OwnerIdentity { get; } = ownerIdentity;
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
-    protected IJobsRedisContext RedisContext { get; } = redisContext;
+    protected IJobsCacheContext CacheContext { get; } = cacheContext;
 
     #region Core_Time_Ticker_Methods
     public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
@@ -31,6 +33,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            yield break;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -47,7 +54,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .Where(x => x.UpdatedAt == timeJob.UpdatedAt)
                 .ExecuteUpdateAsync(
                     prop =>
-                        prop.SetProperty(x => x.LockHolder, LockHolder)
+                        prop.SetProperty(x => x.LockHolder, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.Queued),
@@ -60,7 +67,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             }
 
             timeJob.UpdatedAt = now;
-            timeJob.LockHolder = LockHolder;
+            timeJob.LockHolder = owner;
             timeJob.LockedAt = now;
             timeJob.Status = JobStatus.Queued;
 
@@ -72,6 +79,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            yield break;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -99,7 +111,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
-                            .SetProperty(x => x.LockHolder, LockHolder)
+                            .SetProperty(x => x.LockHolder, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.InProgress),
@@ -118,6 +130,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task ReleaseAcquiredTimeJobs(Guid[] timeJobIds, CancellationToken cancellationToken)
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return;
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -130,7 +147,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 : dbContext.Set<TTimeJob>().Where(x => ((IEnumerable<Guid>)timeJobIds).Contains(x.Id));
 
         await baseQuery
-            .WhereCanAcquire(LockHolder)
+            .WhereCanAcquire(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -180,6 +197,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<TimeJobEntity[]> GetEarliestTimeJobs(CancellationToken cancellationToken)
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return [];
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -193,7 +215,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .AsNoTracking()
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
-            .WhereCanAcquire(LockHolder);
+            .WhereCanAcquire(owner);
 
         // Find the earliest job within our window
         var minExecutionTime = await baseQuery
@@ -247,7 +269,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return request ?? [];
     }
 
-    public async Task ReleaseDeadNodeTimeJobResources(
+    public async Task<int> ReleaseDeadNodeTimeJobResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -257,9 +279,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        // KTD6: a NodeLeft reclaim may race host shutdown; the writes must not be torn down mid-statement,
+        // so they run under CancellationToken.None. The two statements are wrapped in one transaction
+        // (finding 3.1) so a crash between them can't leave a half-reclaimed node — the idempotent reconcile
+        // (U2) re-reclaims a partial node on the next tick, but the transaction removes the transient state.
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        // Release the dead node's Idle/Queued rows back to Idle so a live node re-acquires them.
+        var released = await dbContext
             .Set<TTimeJob>()
-            .WhereCanAcquire(instanceIdentifier)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -267,13 +299,15 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await dbContext
+        // Mark rows the dead node was mid-execution on as Skipped (cannot safely resume).
+        var skipped = await dbContext
             .Set<TTimeJob>()
-            .Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -281,9 +315,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return released + skipped;
     }
     #endregion
 
@@ -297,6 +335,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return [];
         }
 
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return [];
+        }
+
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -306,11 +349,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var affected = await dbContext
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
-            .WhereCanAcquire(LockHolder)
+            .WhereCanAcquire(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
-                        .SetProperty(x => x.LockHolder, LockHolder)
+                        .SetProperty(x => x.LockHolder, owner)
                         .SetProperty(x => x.LockedAt, now)
                         .SetProperty(x => x.Status, JobStatus.InProgress)
                         .SetProperty(x => x.UpdatedAt, now),
@@ -328,9 +371,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .AsNoTracking()
             .Where(x =>
-                ((IEnumerable<Guid>)ids).Contains(x.Id)
-                && x.LockHolder == LockHolder
-                && x.Status == JobStatus.InProgress
+                ((IEnumerable<Guid>)ids).Contains(x.Id) && x.LockHolder == owner && x.Status == JobStatus.InProgress
             )
             .Include(x => x.Children.Where(y => y.ExecutionTime == null))
             .Select(MappingExtensions.ForQueueTimeJobs<TTimeJob>())
@@ -423,7 +464,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)
     {
-        var result = await RedisContext.GetOrSetArrayAsync(
+        // Finding 5.1: return the get-or-set result. The factory already reads the DB on a cache miss, so a
+        // cache hit must skip the DB entirely — the previous code populated the cache then ignored it and
+        // re-queried on every call, making the cache dead weight.
+        var result = await CacheContext.GetOrSetArrayAsync(
             cacheKey: "cron:expressions",
             factory: async (ct) =>
             {
@@ -439,16 +483,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             cancellationToken: cancellationToken
         );
 
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        return await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return result ?? [];
     }
     #endregion
 
@@ -473,6 +508,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            yield break;
+        }
+
         var now = TimeProvider.GetUtcNow().UtcDateTime;
         var fallbackThreshold = now.AddSeconds(-1); // Fallback picks up tasks older than main 1-second window
 
@@ -500,7 +540,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 .ExecuteUpdateAsync(
                     setter =>
                         setter
-                            .SetProperty(x => x.LockHolder, LockHolder)
+                            .SetProperty(x => x.LockHolder, owner)
                             .SetProperty(x => x.LockedAt, now)
                             .SetProperty(x => x.UpdatedAt, now)
                             .SetProperty(x => x.Status, JobStatus.InProgress),
@@ -517,7 +557,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
     }
 
-    public async Task ReleaseDeadNodeOccurrenceResources(
+    public async Task<int> ReleaseDeadNodeOccurrenceResources(
         string instanceIdentifier,
         CancellationToken cancellationToken = default
     )
@@ -527,9 +567,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await dbContext
+        // See ReleaseDeadNodeTimeJobResources: strict WhereOwnedBy (KTD5/R4), one transaction (finding 3.1),
+        // CancellationToken.None for the reclaim writes (KTD6).
+        await using var transaction = await dbContext
+            .Database.BeginTransactionAsync(CancellationToken.None)
+            .ConfigureAwait(false);
+
+        var released = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereCanAcquire(instanceIdentifier)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -537,13 +584,14 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedAt, _ => null)
                         .SetProperty(x => x.Status, JobStatus.Idle)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
 
-        await dbContext
+        var skipped = await dbContext
             .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => x.LockHolder == instanceIdentifier && x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(instanceIdentifier)
+            .Where(x => x.Status == JobStatus.InProgress)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -551,9 +599,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.SkippedReason, "Node is not alive!")
                         .SetProperty(x => x.ExecutedAt, now)
                         .SetProperty(x => x.UpdatedAt, now),
-                cancellationToken
+                CancellationToken.None
             )
             .ConfigureAwait(false);
+
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+        return released + skipped;
     }
 
     public async Task ReleaseAcquiredCronJobOccurrences(
@@ -561,6 +613,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return;
+        }
+
         var now = TimeProvider.GetUtcNow().UtcDateTime;
         await using var dbContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
@@ -574,7 +631,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id));
 
         await baseQuery
-            .WhereCanAcquire(LockHolder)
+            .WhereCanAcquire(owner)
             .ExecuteUpdateAsync(
                 setter =>
                     setter
@@ -592,6 +649,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            yield break;
+        }
+
         var now = TimeProvider.GetUtcNow().UtcDateTime;
         var executionTime = cronJobOccurrences.Key;
 
@@ -611,7 +673,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     Id = Guid.NewGuid(),
                     Status = JobStatus.Queued,
-                    LockHolder = LockHolder,
+                    LockHolder = owner,
                     ExecutionTime = executionTime,
                     CronJobId = item.Id,
                     LockedAt = now,
@@ -635,7 +697,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 {
                     Id = item.Id,
                     Function = item.FunctionName,
-                    InitIdentifier = LockHolder,
+                    InitIdentifier = owner,
                     Expression = item.Expression,
                     Retries = item.Retries,
                     RetryIntervals = item.RetryIntervals,
@@ -647,10 +709,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 var affectedUpdate = await context
                     .Where(x => x.Id == item.NextCronOccurrence.Id)
                     .Where(x => x.ExecutionTime == executionTime)
-                    .WhereCanAcquire(LockHolder)
+                    .WhereCanAcquire(owner)
                     .ExecuteUpdateAsync(
                         prop =>
-                            prop.SetProperty(y => y.LockHolder, LockHolder)
+                            prop.SetProperty(y => y.LockHolder, owner)
                                 .SetProperty(y => y.LockedAt, now)
                                 .SetProperty(y => y.UpdatedAt, now)
                                 .SetProperty(y => y.Status, JobStatus.Queued),
@@ -669,7 +731,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     CronJobId = item.Id,
                     ExecutionTime = executionTime,
                     Status = JobStatus.Queued,
-                    LockHolder = LockHolder,
+                    LockHolder = owner,
                     LockedAt = now,
                     UpdatedAt = now,
                     CreatedAt = item.NextCronOccurrence.CreatedAt,
@@ -677,7 +739,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     {
                         Id = item.Id,
                         Function = item.FunctionName,
-                        InitIdentifier = LockHolder,
+                        InitIdentifier = owner,
                         Expression = item.Expression,
                         Retries = item.Retries,
                         RetryIntervals = item.RetryIntervals,
@@ -692,6 +754,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return null!;
+        }
+
         var now = TimeProvider.GetUtcNow().UtcDateTime;
         var mainSchedulerThreshold = now.AddSeconds(-1);
         await using var dbContext = await DbContextFactory
@@ -704,7 +771,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Include(x => x.CronJob)
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.CronJobId))
             .Where(x => x.ExecutionTime >= mainSchedulerThreshold) // Only items within the 1-second main scheduler window
-            .WhereCanAcquire(LockHolder)
+            .WhereCanAcquire(owner)
             .OrderBy(x => x.ExecutionTime)
             .Select(MappingExtensions.ForLatestQueuedCronJobOccurrence<CronJobOccurrenceEntity<TCronJob>, TCronJob>())
             .FirstOrDefaultAsync(cancellationToken)

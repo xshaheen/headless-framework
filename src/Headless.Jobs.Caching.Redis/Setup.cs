@@ -20,8 +20,8 @@ public static class ServiceExtension
             var options = new JobsRedisOptionBuilder { InstanceName = "jobs:" };
 
             setupAction?.Invoke(options);
-            services.AddHostedService<NodeHeartBeatBackgroundService>();
-            services.AddSingleton<IJobsRedisContext, JobsRedisContext>();
+            // Redis is now caching-only for Jobs; node liveness/recovery is driven by Headless.Coordination.
+            services.AddSingleton<IJobsCacheContext, RedisJobsCacheContext>();
             services.AddKeyedSingleton<IDistributedCache>("jobs", (sp, key) => new RedisCache(options));
             services.AddSingleton(_ => options);
         };
@@ -29,8 +29,5 @@ public static class ServiceExtension
         return jobsConfiguration;
     }
 
-    public sealed class JobsRedisOptionBuilder : RedisCacheOptions
-    {
-        public TimeSpan NodeHeartbeatInterval { get; set; } = TimeSpan.FromMinutes(1);
-    }
+    public sealed class JobsRedisOptionBuilder : RedisCacheOptions;
 }

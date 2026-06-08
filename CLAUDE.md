@@ -52,6 +52,7 @@ This repo's abstraction-plus-provider pattern (`Headless.<Feature>.Abstractions`
 - [Headless.DistributedLocks.Tests.Harness](tests/Headless.DistributedLocks.Tests.Harness) — lock-provider conformance
 - [Headless.Orm.Tests.Harness](tests/Headless.Orm.Tests.Harness) — `HeadlessDbContext` runtime + EF Core base behavior
 - [Headless.Messaging.Core.Tests.Harness](tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch/outbox
+- [Headless.Jobs.EntityFramework.Tests.Harness](tests/Headless.Jobs.EntityFramework.Tests.Harness) — Jobs+Coordination conformance across the EF DB providers (Postgres, SqlServer); uses the interface + extensions shape (`IJobsCoordinationFixture`) rather than an abstract fixture base
 
 **Anti-pattern to avoid:** the storage-domain integration tests today (`Headless.{AuditLog,Features,Permissions,Settings}.Storage.{EntityFramework,PostgreSql,SqlServer}.Tests.Integration`) each own a private `<Provider><Feature>Fixture.cs` with substantial overlap. This is the exact shape this rule is meant to prevent — when adding a new domain or provider, extract first.
 

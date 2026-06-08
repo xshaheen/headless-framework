@@ -521,7 +521,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
         {
             "received" => $$"""
                 INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Group","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
-                SELECT ('00000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid, 'v1', 'plan-test', NULL, '{}', 0, 0, now(), NULL,
+                SELECT gen_random_uuid(), 'v1', 'plan-test', NULL, '{}', 0, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
                        NULL, 'Failed', 'plan-' || g
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
@@ -529,7 +529,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlTestFixture fixture) : Data
                 """,
             "published" => $$"""
                 INSERT INTO {{qualifiedTable}} ("Id","Version","Name","Content","IntentType","Retries","Added","ExpiresAt","NextRetryAt","LockedUntil","StatusName","MessageId")
-                SELECT ('00000000-0000-0000-0000-' || lpad(g::text, 12, '0'))::uuid, 'v1', 'plan-test', '{}', 0, 0, now(), NULL,
+                SELECT gen_random_uuid(), 'v1', 'plan-test', '{}', 0, 0, now(), NULL,
                        CASE WHEN g % 2 = 0 THEN now() - interval '1 minute' ELSE NULL END,
                        NULL, 'Failed', 'plan-' || g
                 FROM generate_series(1000, 1000 + {{seedRows - 1}}) g
