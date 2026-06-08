@@ -38,6 +38,23 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
+    public async Task should_resolve_publish_message_name_from_registry_mapping()
+    {
+        // given — registry maps TestMessage to a domain-specific name; publish path must agree
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: "orders.placed");
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
+
+        // then — transport message name must equal the registry-sourced mapping, not a convention-derived fallback
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].GetName().Should().Be("orders.placed");
+    }
+
+    [Fact]
     public async Task should_resolve_topic_from_conventions_when_no_explicit_mapping()
     {
         // given

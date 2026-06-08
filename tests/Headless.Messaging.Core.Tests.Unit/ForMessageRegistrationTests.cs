@@ -3,9 +3,10 @@
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
-using Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Tests.Helpers;
 
 namespace Tests;
 
@@ -1082,6 +1083,49 @@ public sealed class ForMessageRegistrationTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");
     }
 
+    [Fact]
+    public void should_warn_when_for_message_called_after_provider_built()
+    {
+        // given — drain runs once at build time; a post-build ForMessage<T> call silently adds a
+        // descriptor that the already-frozen provider cannot see. The guard must emit a warning
+        // rather than letting the registration vanish without a trace.
+        var services = new ServiceCollection();
+        var capturedWarnings = new List<(LogLevel Level, string Message)>();
+
+        services.AddLogging(logging =>
+        {
+            logging.AddProvider(new CapturingLoggerProvider(capturedWarnings));
+            logging.SetMinimumLevel(LogLevel.Warning);
+        });
+
+        services.AddHeadlessMessaging(static setup =>
+        {
+            setup.UseInMemory();
+            setup.UseInMemoryStorage();
+        });
+
+        using var provider = services.BuildServiceProvider();
+
+        // drain once so HasCompletedMessageRegistrationDrain == true
+        provider.GetDrainedConsumerRegistry();
+
+        // when — register after the provider is built; the descriptor lands in the collection
+        // but the frozen provider cannot resolve it
+        services.ForMessage<OrderPlaced>(message => message.OnBus<OrderPlacedHandler>());
+
+        // trigger the drain short-circuit path
+        provider.GetDrainedConsumerRegistry();
+
+        // then
+        capturedWarnings
+            .Should()
+            .ContainSingle(entry =>
+                entry.Level == LogLevel.Warning
+                && entry.Message.Contains("ForMessage<T>")
+                && entry.Message.Contains('1')
+            );
+    }
+
     private sealed record OrderPlaced;
 
     private sealed record OtherOrderPlaced;
@@ -1107,6 +1151,32 @@ public sealed class ForMessageRegistrationTests
         public ValueTask ConsumeAsync(ConsumeContext<OtherOrderPlaced> context, CancellationToken cancellationToken)
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingLoggerProvider(List<(LogLevel Level, string Message)> sink) : ILoggerProvider
+    {
+        public void Dispose() { }
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(sink);
+
+        private sealed class CapturingLogger(List<(LogLevel Level, string Message)> sink) : ILogger
+        {
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                sink.Add((logLevel, formatter(state, exception)));
+            }
         }
     }
 }

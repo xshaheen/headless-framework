@@ -14,6 +14,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
@@ -388,6 +389,31 @@ public static class SetupMessaging
 
         if (registry.HasCompletedMessageRegistrationDrain)
         {
+            // Guard: detect ForMessage<T> calls that happened after BuildServiceProvider(). On .NET 10,
+            // ServiceCollection is not made read-only after build — mutations silently succeed but the
+            // existing provider never sees the new descriptors. Compare the descriptor count in the
+            // registered IServiceCollection (snapshot from before build) against what the provider can
+            // actually resolve to surface this misuse as a loud warning rather than a silent no-op.
+            var serviceCollection = provider.GetService<IServiceCollection>();
+
+            if (serviceCollection is not null)
+            {
+                var descriptorCount = serviceCollection.Count(static d => d.ServiceType == typeof(MessageRegistration));
+                var resolvedCount = provider.GetServices<MessageRegistration>().Count();
+
+                if (descriptorCount > resolvedCount)
+                {
+                    var logger = provider
+                        .GetService<ILoggerFactory>()
+                        ?.CreateLogger(typeof(SetupMessaging).FullName!);
+
+                    if (logger is not null)
+                    {
+                        SetupMessagingLog.ForMessageCalledAfterProviderBuilt(logger, descriptorCount - resolvedCount);
+                    }
+                }
+            }
+
             return;
         }
 
@@ -676,4 +702,16 @@ public static class SetupMessaging
                 );
         }
     }
+
+}
+
+internal static partial class SetupMessagingLog
+{
+    [LoggerMessage(
+        EventId = 88,
+        EventName = "ForMessageCalledAfterProviderBuilt",
+        Level = LogLevel.Warning,
+        Message = "{Count} ForMessage<T> registration(s) were added after the service provider was built and will be ignored. Move all ForMessage<T> calls before BuildServiceProvider() / host.Build()."
+    )]
+    public static partial void ForMessageCalledAfterProviderBuilt(this ILogger logger, int count);
 }
