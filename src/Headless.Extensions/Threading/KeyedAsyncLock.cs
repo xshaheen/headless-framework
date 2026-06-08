@@ -70,6 +70,74 @@ public sealed class KeyedAsyncLock : IDisposable
         return new Releaser(this, key);
     }
 
+    /// <summary>
+    /// Asynchronously acquires a lock for the specified key, returning <see langword="null"/> when the timeout
+    /// elapses before acquisition.
+    /// </summary>
+    /// <param name="key">The key to lock on.</param>
+    /// <param name="timeout">The acquisition timeout, or <see cref="Timeout.InfiniteTimeSpan"/> for unbounded wait.</param>
+    /// <param name="timeProvider">The time provider used for deterministic timeout scheduling.</param>
+    /// <param name="cancellationToken">Optional cancellation token.</param>
+    /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> on timeout.</returns>
+    [MustDisposeResource]
+    public async Task<IDisposable?> LockAsync(
+        string key,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(timeProvider);
+
+        if (timeout == Timeout.InfiniteTimeSpan)
+        {
+            return await LockAsync(key, cancellationToken).ConfigureAwait(false);
+        }
+
+        Argument.IsPositive(timeout);
+
+        var semaphore = _GetOrCreate(key);
+
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using var delayCts = new CancellationTokenSource();
+        var waitTask = semaphore.WaitAsync(waitCts.Token);
+        var delayTask = Task.Delay(timeout, timeProvider, delayCts.Token);
+        var winner = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
+
+        if (winner == waitTask)
+        {
+            try
+            {
+                await waitTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                await delayCts.CancelAsync().ConfigureAwait(false);
+                _DecrementRefCount(key);
+                throw;
+            }
+
+            await delayCts.CancelAsync().ConfigureAwait(false);
+            return new Releaser(this, key);
+        }
+
+        await waitCts.CancelAsync().ConfigureAwait(false);
+
+        try
+        {
+            await waitTask.ConfigureAwait(false);
+            _Release(key);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            _DecrementRefCount(key);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        return null;
+    }
+
     private SemaphoreSlim _GetOrCreate(string key)
     {
         lock (_semaphores)
