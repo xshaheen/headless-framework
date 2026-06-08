@@ -10,6 +10,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.AmbientTransactions.Tests.Harness\Headless.AmbientTransactions.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.AmbientTransactions.EntityFramework\Headless.AmbientTransactions.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.AmbientTransactions.InMemory\Headless.AmbientTransactions.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.AmbientTransactions.PostgreSql\Headless.AmbientTransactions.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.AmbientTransactions.SqlServer\Headless.AmbientTransactions.SqlServer.csproj" />
