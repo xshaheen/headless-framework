@@ -10,22 +10,69 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
+#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
+
 /// <summary>
-/// R2/R3/R4: dead-node reclaim against real SQL. The strict <c>WhereOwnedBy</c> predicate touches only the dead
-/// incarnation's non-terminal rows; reclaim is idempotent; and a surviving node recovers a crashed node's work
-/// end-to-end through the coordination <c>NodeLeft</c> event — with no Redis in the wiring (R3).
+/// Cross-provider Jobs+Coordination conformance scenarios that must hold identically on every backend:
+/// <list type="bullet">
+/// <item>R1 — a durable node stamps work with its <c>node@incarnation</c> coordination owner.</item>
+/// <item>R4 — the strict reclaim predicate touches only the dead incarnation's non-terminal rows.</item>
+/// <item>reclaim is idempotent (a second pass affects zero rows).</item>
+/// <item>R2/R3 — a surviving node recovers a crashed node's work end-to-end via the coordination
+/// <c>NodeLeft</c> event, with no Redis in the wiring.</item>
+/// </list>
+/// Each leaf derives a sealed class with <c>[Collection&lt;TFixture&gt;]</c> and re-declares the methods with
+/// <c>[Fact]</c> so the runner discovers them per provider.
 /// </summary>
-[Collection<JobsCoordinationFixture>]
-public sealed class DeadNodeRecoveryTests(JobsCoordinationFixture fixture)
+public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixture)
+    where TFixture : class, IJobsCoordinationFixture
 {
-    [Fact]
-    public async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
+    public virtual async Task queued_job_is_stamped_with_the_node_incarnation_owner()
     {
         var ct = TestContext.Current.CancellationToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
-        await JobsCoordinationFixture.CreateJobsSchemaAsync(host, ct);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            // The gate registers during StartingAsync, which completes before StartAsync returns.
+            var membership = host.Services.GetRequiredService<INodeMembership>();
+            membership.Identity.Should().NotBeNull();
+            var owner = membership.Identity!.Value.ToString();
+            owner.Should().StartWith("node-a@");
+
+            var jobId = Guid.NewGuid();
+            await fixture.SeedTimeJobAsync(jobId, "Stamp_Sample", (int)JobStatus.Idle, lockHolder: null, ct);
+
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // Fetch the row with its current UpdatedAt (QueueTimeJobs uses optimistic concurrency on it), then stamp.
+            var idle = await persistence.GetTimeJobs(x => x.Id == jobId, ct);
+            idle.Should().ContainSingle();
+
+            var stamped = await persistence.QueueTimeJobs(idle, ct).ToListAsync(ct);
+            stamped.Should().ContainSingle();
+
+            var (status, lockHolder) = await fixture.ReadTimeJobAsync(jobId, ct);
+            status.Should().Be((int)JobStatus.Queued);
+            lockHolder.Should().Be(owner);
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
+    public virtual async Task reclaim_touches_only_the_dead_incarnations_non_terminal_rows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("node-a");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
         try
@@ -63,14 +110,13 @@ public sealed class DeadNodeRecoveryTests(JobsCoordinationFixture fixture)
         }
     }
 
-    [Fact]
-    public async Task reclaim_is_idempotent_a_second_pass_affects_zero_rows()
+    public virtual async Task reclaim_is_idempotent_a_second_pass_affects_zero_rows()
     {
         var ct = TestContext.Current.CancellationToken;
         await fixture.ResetDatabaseAsync(ct);
 
         using var host = fixture.BuildHost("node-a");
-        await JobsCoordinationFixture.CreateJobsSchemaAsync(host, ct);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
         try
@@ -90,8 +136,7 @@ public sealed class DeadNodeRecoveryTests(JobsCoordinationFixture fixture)
         }
     }
 
-    [Fact]
-    public async Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event()
+    public virtual async Task surviving_node_recovers_a_crashed_nodes_work_via_node_left_event()
     {
         var ct = TestContext.Current.CancellationToken;
         await fixture.ResetDatabaseAsync(ct);
@@ -101,7 +146,7 @@ public sealed class DeadNodeRecoveryTests(JobsCoordinationFixture fixture)
         var hostA = fixture.BuildHost("node-a");
         var hostB = fixture.BuildHost("node-b");
 
-        await JobsCoordinationFixture.CreateJobsSchemaAsync(hostA, ct);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(hostA, ct);
         await hostA.StartAsync(ct);
         await hostB.StartAsync(ct);
 
