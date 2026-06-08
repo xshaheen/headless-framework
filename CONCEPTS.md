@@ -62,3 +62,26 @@ failover even if it can serve approximate dashboard views.
 - "Generation" had been used loosely for both a node's Incarnation and the durable counter that
   issues incarnations — these are distinct: Incarnation is the per-node value, the generation
   table/counter is the authority.
+
+## Commit Coordination
+
+### Commit coordinator
+
+The register-only scope object that collects commit and rollback callbacks for one physical unit of
+work. It guarantees exactly-once callback invocation per coordinator instance, not exactly-once
+business effects.
+
+### Commit signal source
+
+The provider adapter that turns a native commit or rollback edge into a coordinator terminal signal.
+Examples include owner-driven in-memory signals and SQL Server provider-key correlation.
+
+### Work buffer
+
+Scope-local state owned by a coordinator. Buffers hold deferred work until the terminal outcome; they
+must not be used as arbitrary service-locator bags.
+
+### Capability
+
+A read-only provider escape hatch attached by the scope owner. `IRelationalCommitContext` is the
+current capability for BCL `DbConnection` and `DbTransaction` handles.
