@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -35,6 +36,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private readonly ILogger<MessageNeedToRetryProcessor> _logger;
     private readonly IDispatcher _dispatcher;
+    private readonly INodeMembership _nodeMembership;
     private readonly TimeSpan _baseInterval;
     private readonly TimeSpan _maxInterval;
     private readonly IOptions<MessagingOptions> _options;
@@ -83,6 +85,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     // fire even when one side has been down for hours.
     private int _consecutivePublishedPickupFailures;
     private int _consecutiveReceivedPickupFailures;
+    private int _consecutiveMembershipQueryFailures;
 
     private const int _StoragePickupErrorEscalationThreshold = 3;
 
@@ -98,12 +101,14 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         ILogger<MessageNeedToRetryProcessor> logger,
         IDispatcher dispatcher,
         [FromKeyedServices(MessagingKeys.LockProvider)] IDistributedLock lockProvider,
+        INodeMembership nodeMembership,
         ICircuitBreakerMonitor? circuitBreakerMonitor = null
     )
     {
         _options = options;
         _logger = logger;
         _dispatcher = dispatcher;
+        _nodeMembership = nodeMembership;
         _baseInterval = retryOptions.Value.BaseInterval;
         _currentIntervalTicks = _baseInterval.Ticks;
         LockProvider = lockProvider;
@@ -150,6 +155,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
         Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
         Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
+        Interlocked.Exchange(ref _consecutiveMembershipQueryFailures, 0);
         Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0);
         return ValueTask.CompletedTask;
     }
@@ -166,6 +172,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
+        var liveOwnersForReclaim = _options.Value.UseStorageLock
+            ? new LiveOwnersForReclaimCache(_GetLiveOwnersForReclaimAsync, context.CancellationToken)
+            : null;
 
         // Mirror the received-retry guard below: skip spawning a new published-retry task while
         // the previous one is still running under UseStorageLock to avoid concurrent lock-renewal
@@ -175,7 +184,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             _publishedRetryConsumeTask = Task
                 .Factory.StartNew(
-                    () => _ProcessPublishedAsync(storage, context),
+                    () => _ProcessPublishedAsync(storage, context, liveOwnersForReclaim),
                     CancellationToken.None,
                     TaskCreationOptions.DenyChildAttach,
                     TaskScheduler.Default
@@ -248,7 +257,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         _receivedRetryConsumeTask = Task
             .Factory.StartNew(
-                () => _ProcessReceivedAsync(storage, context),
+                () => _ProcessReceivedAsync(storage, context, liveOwnersForReclaim),
                 CancellationToken.None,
                 TaskCreationOptions.DenyChildAttach,
                 TaskScheduler.Default
@@ -276,7 +285,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
     }
 
-    private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessPublishedAsync(
+        IDataStorage connection,
+        ProcessingContext context,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim
+    )
     {
         // Asymmetry note: unlike _ProcessReceivedAsync, the published path does NOT stash the
         // acquired handle into a cross-tick field. The published pickup is expected to complete
@@ -301,10 +314,21 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return;
         }
 
+        await _TryReclaimDeadOwnersAsync(
+                StoragePickupKind.Published,
+                liveOwnersForReclaim,
+                liveOwners => connection.ReclaimDeadPublishedOwnersAsync(liveOwners, context.CancellationToken)
+            )
+            .ConfigureAwait(false);
+
         await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
     }
 
-    private async Task _ProcessReceivedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessReceivedAsync(
+        IDataStorage connection,
+        ProcessingContext context,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim
+    )
     {
         context.ThrowIfStopping();
 
@@ -324,11 +348,132 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         _receivedRetryHandle = acquiredHandle;
         try
         {
+            await _TryReclaimDeadOwnersAsync(
+                    StoragePickupKind.Received,
+                    liveOwnersForReclaim,
+                    liveOwners => connection.ReclaimDeadReceivedOwnersAsync(liveOwners, context.CancellationToken)
+                )
+                .ConfigureAwait(false);
+
             await _ExecuteReceivedWorkAsync(connection, context).ConfigureAwait(false);
         }
         finally
         {
             _receivedRetryHandle = null;
+        }
+    }
+
+    private async ValueTask<IReadOnlyCollection<string>?> _GetLiveOwnersForReclaimAsync(CancellationToken ct)
+    {
+        if (_nodeMembership.Identity is not { } ownIdentity)
+        {
+            return null;
+        }
+
+        // Membership is best-effort acceleration (see INodeMembership remarks): a Coordination outage
+        // must degrade reclaim to the per-row LockedUntil floor, not take down the whole retry tick.
+        // Returning null here skips reclaim for this tick while published/received dispatch proceeds.
+        //
+        // Correctness invariant: Coordination must not classify an owner dead before any in-flight
+        // dispatch lease can expire. Keep CoordinationOptions.DeadThreshold >= the largest configured
+        // RetryPolicyOptions.DispatchTimeout, or dead-owner reclaim can pull LockedUntil back while the
+        // previous owner is still doing legitimate work.
+        IReadOnlyList<NodeIdentity> liveNodes;
+        try
+        {
+            liveNodes = await _nodeMembership.GetLiveNodesAsync(ct).ConfigureAwait(false);
+            Interlocked.Exchange(ref _consecutiveMembershipQueryFailures, 0);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            var failureCount = Interlocked.Increment(ref _consecutiveMembershipQueryFailures);
+            if (failureCount >= _StoragePickupErrorEscalationThreshold)
+            {
+                _logger.CoordinationMembershipQueryFailureEscalated(e, failureCount);
+            }
+            else
+            {
+                _logger.CoordinationMembershipQueryFailed(e);
+            }
+
+            return null;
+        }
+
+        if (!liveNodes.Contains(ownIdentity))
+        {
+            return null;
+        }
+
+        return liveNodes.Select(static node => node.ToString()).Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    private async Task _TryReclaimDeadOwnersAsync(
+        StoragePickupKind kind,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim,
+        Func<IReadOnlyCollection<string>, ValueTask<int>> reclaim
+    )
+    {
+        // Reclaim only runs under the storage-lock path; the cache is null exactly when
+        // UseStorageLock is false (see ProcessAsync), and both callers already short-circuit
+        // that case. Encode the invariant in the type instead of a null-forgiving operator so a
+        // future caller cannot silently NRE here — a null cache degrades to skipping reclaim.
+        if (liveOwnersForReclaim is null)
+        {
+            return;
+        }
+
+        var liveOwners = await liveOwnersForReclaim.GetAsync().ConfigureAwait(false);
+        if (liveOwners is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var reclaimedRows = await reclaim(liveOwners).ConfigureAwait(false);
+            if (reclaimedRows > 0 && _logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.MessagingDeadOwnerRowsReclaimed(kind.ToString(), reclaimedRows);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                _logger.MessagingDeadOwnerReclaimFailed(ex, kind.ToString());
+            }
+        }
+    }
+
+    private sealed class LiveOwnersForReclaimCache(
+        Func<CancellationToken, ValueTask<IReadOnlyCollection<string>?>> getLiveOwners,
+        CancellationToken cancellationToken
+    )
+    {
+        private readonly Lock _gate = new();
+        private Task<IReadOnlyCollection<string>?>? _task;
+
+        public async ValueTask<IReadOnlyCollection<string>?> GetAsync()
+        {
+            Task<IReadOnlyCollection<string>?> task;
+            lock (_gate)
+            {
+                _task ??= getLiveOwners(cancellationToken).AsTask();
+                task = _task;
+            }
+
+            // VSTHRD003 false positive: this helper creates and owns the cached task above.
+#pragma warning disable VSTHRD003
+            return await task.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
         }
     }
 

@@ -3,6 +3,7 @@
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Coordination;
 using Headless.Core;
 using Headless.DistributedLocks;
 using Headless.Messaging;
@@ -312,6 +313,7 @@ public static class SetupMessaging
         // IDistributedLock so UseStorageLock always targets the provider wired via
         // MessagingBuilder.UseDistributedLock(…), not an unrelated app registration.
         services.TryAddKeyedSingleton<IDistributedLock, NullDistributedLock>(MessagingKeys.LockProvider);
+        services.TryAddSingleton<INodeMembership, NullNodeMembership>();
 
         //Processors
         services.TryAddEnumerable(

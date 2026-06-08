@@ -138,7 +138,8 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
             messagingOptions,
             _serializer,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            _fakeTimeProvider
+            _fakeTimeProvider,
+            NodeMembership
         );
     }
 
@@ -329,6 +330,34 @@ public sealed class InMemoryDataStorageTests : DataStorageTestsBase
     [Fact]
     public override Task should_handle_concurrent_state_updates_to_same_row() =>
         base.should_handle_concurrent_state_updates_to_same_row();
+
+    [Fact]
+    public override Task should_reclaim_published_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_published_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_reclaim_received_retry_row_owned_by_dead_node() =>
+        base.should_reclaim_received_retry_row_owned_by_dead_node();
+
+    [Fact]
+    public override Task should_stamp_owner_on_claim() => base.should_stamp_owner_on_claim();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_of_live_or_restarted_incarnation() =>
+        base.should_not_reclaim_rows_of_live_or_restarted_incarnation();
+
+    [Fact]
+    public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
+
+    [Fact]
+    public override Task should_be_inert_when_no_dead_owners_passed() => base.should_be_inert_when_no_dead_owners_passed();
+
+    [Fact]
+    public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();
+
+    [Fact]
+    public override Task should_reclaim_dead_owner_rows_idempotently() =>
+        base.should_reclaim_dead_owner_rows_idempotently();
 
     #endregion
 }
