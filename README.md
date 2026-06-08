@@ -62,6 +62,21 @@ app.UseHsts();
 app.Run();
 ```
 
+## Templates
+
+Install the agent-ready shop capability tour when you want a runnable modular app that demonstrates Headless API defaults, tenant posture, Mediator commands/queries, EF-backed modules, Headless messaging, OpenAPI, permissions, and validation guardrails.
+
+```bash
+dotnet new install Headless.Templates.HeadlessShop
+dotnet new headless-shop -n TrailStore
+```
+
+Generated output includes `AGENTS.md`, architecture guidance, validation commands, one add-command recipe, architecture tests, and integration smoke tests. Maintainers can validate the packed template with:
+
+```bash
+./tools/validate-headless-shop-template.sh
+```
+
 ## Packages
 
 ### API & Web

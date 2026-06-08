@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>Headless.Templates.HeadlessShop</id>
+    <version>$version$</version>
+    <authors>$authors$</authors>
+    <description>$description$</description>
+    <copyright>$copyright$</copyright>
+    <projectUrl>https://github.com/xshaheen/headless-framework</projectUrl>
+    <repository type="git" url="https://github.com/xshaheen/headless-framework.git" />
+    <readme>README.md</readme>
+    <packageTypes>
+      <packageType name="Template" />
+    </packageTypes>
+  </metadata>
+  <files>
+    <file src="README.md" target="" />
+    <file src="content\**\*.*" target="content" exclude="content\**\bin\**;content\**\obj\**" />
+  </files>
+</package>

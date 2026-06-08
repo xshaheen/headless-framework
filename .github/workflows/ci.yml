@@ -6,7 +6,10 @@ on:
     paths:
       - '.github/workflows/**'
       - 'src/**'
+      - 'templates/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'docs/llms/templates.md'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -16,7 +19,10 @@ on:
     paths:
       - '.github/workflows/**'
       - 'src/**'
+      - 'templates/**'
       - 'tests/**'
+      - 'tools/**'
+      - 'docs/llms/templates.md'
       - 'Directory.*'
       - 'global.json'
       - 'headless-framework.slnx'
@@ -94,6 +100,14 @@ jobs:
           for csproj in src/*/*.csproj; do
             dotnet pack "$csproj" --configuration "${CONFIGURATION}" --no-restore --no-build --include-symbols --output "${PACKAGES_DIR}"
           done
+          dotnet pack templates/HeadlessShop/HeadlessShop.csproj --configuration "${CONFIGURATION}" --no-restore --no-build --output "${PACKAGES_DIR}"
+        shell: bash
+
+      - name: "Validate headless-shop template"
+        run: |
+          set -euo pipefail
+          package_path="$(find "${PACKAGES_DIR}" -name 'Headless.Templates.HeadlessShop.*.nupkg' -type f | head -n 1)"
+          HEADLESS_SHOP_TEMPLATE_PACKAGE_PATH="$package_path" HEADLESS_SHOP_LOCAL_PACKAGE_SOURCE="${PACKAGES_DIR}" ./tools/validate-headless-shop-template.sh
         shell: bash
 
       - name: "Publish Artifacts"
