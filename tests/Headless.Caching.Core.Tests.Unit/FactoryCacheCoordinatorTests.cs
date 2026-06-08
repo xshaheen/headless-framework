@@ -560,8 +560,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
-        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
-        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(
@@ -579,11 +581,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await timeoutRegistered;
+        await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var result = await resultTask;
         factoryGate.SetResult("fresh");
-        await backgroundFinished;
+        await backgroundFinished.Task;
 
         // then
         result.Value.Should().Be("stale");
@@ -599,8 +601,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
-        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
-        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryCalls = 0;
@@ -620,13 +624,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await timeoutRegistered;
+        await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await first).IsStale.Should().BeTrue();
 
         var second = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
         factoryGate.SetResult("fresh");
-        await backgroundFinished;
+        await backgroundFinished.Task;
         var secondResult = await second;
 
         // then
@@ -643,8 +647,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
-        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
-        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryCalls = 0;
@@ -666,11 +672,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
         await factoryStarted.Task;
-        await timeoutRegistered;
+        await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await first).IsStale.Should().BeTrue();
         factoryGate.SetResult();
-        await backgroundFinished;
+        await backgroundFinished.Task;
 
         var throttled = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
 
@@ -810,8 +816,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
         var coordinator = _CreateCoordinator();
-        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
-        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
         var options = _CreateOptions(
@@ -830,12 +838,12 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token).AsTask();
         await factoryStarted.Task;
-        await timeoutRegistered;
+        await timeoutRegistered.Task;
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         (await resultTask).IsStale.Should().BeTrue();
         await cts.CancelAsync();
         factoryGate.SetResult("fresh");
-        await backgroundFinished;
+        await backgroundFinished.Task;
 
         // then
         _store.GetEntry(key)!.Value.Should().Be("fresh");
