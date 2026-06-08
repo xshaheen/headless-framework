@@ -90,6 +90,13 @@
         <Project Path="tests\Headless.Coordination.SqlServer.Tests.Integration\Headless.Coordination.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.Tests.Harness\Headless.Coordination.Tests.Harness.csproj" />
     </Folder>
+    <Folder Name="/CommitCoordination/">
+        <Project Path="src/Headless.CommitCoordination.Abstractions/Headless.CommitCoordination.Abstractions.csproj" />
+        <Project Path="src/Headless.CommitCoordination.Core/Headless.CommitCoordination.Core.csproj" />
+        <Project Path="src/Headless.CommitCoordination.InMemory/Headless.CommitCoordination.InMemory.csproj" />
+        <Project Path="tests/Headless.CommitCoordination.Core.Tests.Unit/Headless.CommitCoordination.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.CommitCoordination.Tests.Harness/Headless.CommitCoordination.Tests.Harness.csproj" />
+    </Folder>
     <Folder Name="/Captcha/">
         <Project Path="demo/Headless.ReCaptcha.Demo/Headless.ReCaptcha.Demo.csproj" />
         <Project Path="src/Headless.ReCaptcha/Headless.ReCaptcha.csproj" />
