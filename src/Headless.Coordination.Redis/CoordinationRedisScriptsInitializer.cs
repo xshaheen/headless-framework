@@ -12,6 +12,7 @@ internal sealed class CoordinationRedisScriptsInitializer(
 {
     private static readonly IReadOnlyList<RedisScriptDefinition> _Definitions =
     [
+        RedisMembershipAllocateIncarnationScriptDefinition.Instance,
         RedisMembershipHeartbeatScriptDefinition.Instance,
         RedisMembershipReadScriptDefinition.Instance,
         RedisMembershipLeaveScriptDefinition.Instance,

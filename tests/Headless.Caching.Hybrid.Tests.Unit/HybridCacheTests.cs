@@ -29,7 +29,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, options);
+        var cache = new HybridCache(l1, l2, publisher, options, timeProvider: _timeProvider);
 
         return (cache, l1, l2, publisher);
     }
@@ -100,6 +100,40 @@ public sealed class HybridCacheTests : TestBase
         var l1Result = await l1.GetAsync<int>(key, AbortToken);
         l1Result.HasValue.Should().BeTrue();
         l1Result.Value.Should().Be(value);
+    }
+
+    [Fact]
+    public async Task should_return_fresh_l2_value_when_l1_has_stale_reserve()
+    {
+        // given
+        var (cache, l1, l2, _) = _CreateCache();
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var staleValue = Faker.Random.Int(1, 100);
+        var freshValue = Faker.Random.Int(101, 200);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        await ((IFactoryCacheStore)l1)
+            .SetEntryAsync(key, staleValue, isNull: false, now.AddMinutes(-1), now.AddMinutes(5), AbortToken);
+        await l2.UpsertAsync(key, freshValue, TimeSpan.FromMinutes(5), AbortToken);
+        var factoryCalled = false;
+
+        // when
+        var result = await cache.GetOrAddAsync(
+            key,
+            _ =>
+            {
+                factoryCalled = true;
+                return new ValueTask<int?>(999);
+            },
+            TimeSpan.FromMinutes(5),
+            AbortToken
+        );
+
+        // then
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be(freshValue);
+        factoryCalled.Should().BeFalse("a fresh L2 value should win over a stale L1 reserve");
     }
 
     [Fact]
@@ -523,7 +557,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(Task.CompletedTask);
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -717,7 +751,7 @@ public sealed class HybridCacheTests : TestBase
             .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
             .Returns(_ => throw new InvalidOperationException("Publish failed"));
 
-        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions());
+        var cache = new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
@@ -883,159 +917,4 @@ public sealed class HybridCacheTests : TestBase
 
     #endregion
 
-    /// <summary>Simple adapter to use InMemoryCache as IRemoteCache for testing.</summary>
-    private sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteCache
-    {
-        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
-            string key,
-            Func<CancellationToken, ValueTask<T?>> factory,
-            CacheEntryOptions options,
-            CancellationToken cancellationToken = default
-        ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
-
-        public ValueTask<bool> UpsertAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.UpsertAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<int> UpsertAllAsync<T>(
-            IDictionary<string, T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.UpsertAllAsync(value, expiration, cancellationToken);
-
-        public ValueTask<bool> TryInsertAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.TryInsertAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<bool> TryReplaceAsync<T>(
-            string key,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.TryReplaceAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<bool> TryReplaceIfEqualAsync<T>(
-            string key,
-            T? expected,
-            T? value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
-
-        public ValueTask<double> IncrementAsync(
-            string key,
-            double amount,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.IncrementAsync(key, amount, expiration, cancellationToken);
-
-        public ValueTask<long> IncrementAsync(
-            string key,
-            long amount,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.IncrementAsync(key, amount, expiration, cancellationToken);
-
-        public ValueTask<double> SetIfHigherAsync(
-            string key,
-            double value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<long> SetIfHigherAsync(
-            string key,
-            long value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<double> SetIfLowerAsync(
-            string key,
-            double value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<long> SetIfLowerAsync(
-            string key,
-            long value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<long> SetAddAsync<T>(
-            string key,
-            IEnumerable<T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetAddAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
-            IEnumerable<string> cacheKeys,
-            CancellationToken cancellationToken = default
-        ) => cache.GetAllAsync<T>(cacheKeys, cancellationToken);
-
-        public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
-            string prefix,
-            CancellationToken cancellationToken = default
-        ) => cache.GetByPrefixAsync<T>(prefix, cancellationToken);
-
-        public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
-            string prefix,
-            CancellationToken cancellationToken = default
-        ) => cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
-
-        public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
-            cache.GetAsync<T>(key, cancellationToken);
-
-        public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
-            cache.GetCountAsync(prefix, cancellationToken);
-
-        public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
-            cache.ExistsAsync(key, cancellationToken);
-
-        public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
-            cache.GetExpirationAsync(key, cancellationToken);
-
-        public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
-            string key,
-            int? pageIndex = null,
-            int pageSize = 100,
-            CancellationToken cancellationToken = default
-        ) => cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
-
-        public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default) =>
-            cache.RemoveAsync(key, cancellationToken);
-
-        public ValueTask<bool> RemoveIfEqualAsync<T>(
-            string key,
-            T? expected,
-            CancellationToken cancellationToken = default
-        ) => cache.RemoveIfEqualAsync(key, expected, cancellationToken);
-
-        public ValueTask<int> RemoveAllAsync(
-            IEnumerable<string> cacheKeys,
-            CancellationToken cancellationToken = default
-        ) => cache.RemoveAllAsync(cacheKeys, cancellationToken);
-
-        public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
-            cache.RemoveByPrefixAsync(prefix, cancellationToken);
-
-        public ValueTask<long> SetRemoveAsync<T>(
-            string key,
-            IEnumerable<T> value,
-            TimeSpan? expiration,
-            CancellationToken cancellationToken = default
-        ) => cache.SetRemoveAsync(key, value, expiration, cancellationToken);
-
-        public ValueTask FlushAsync(CancellationToken cancellationToken = default) =>
-            cache.FlushAsync(cancellationToken);
-    }
 }

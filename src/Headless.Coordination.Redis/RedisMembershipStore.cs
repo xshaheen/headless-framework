@@ -35,9 +35,17 @@ internal sealed class RedisMembershipStore(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var value = await Db.StringIncrementAsync(_GenKey(nodeId)).ConfigureAwait(false);
+        var value = await scriptsLoader
+            .EvaluateAsync(
+                Db,
+                RedisMembershipAllocateIncarnationScriptDefinition.Instance,
+                new AllocateIncarnationParams(_GenKey(nodeId), _KnownKey(), _GenerationField(nodeId)),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-        return new NodeIncarnation(value);
+        // The allocate script returns redis.call('incr'), which is always an integer and never nil, so this cast is unconditionally safe.
+        return new NodeIncarnation((long)value);
     }
 
     public async ValueTask UpsertDescriptorAsync(
@@ -62,6 +70,7 @@ internal sealed class RedisMembershipStore(
                     _LiveKey(),
                     _KnownKey(),
                     _GenKey(descriptor.Identity.NodeId),
+                    _GenerationField(descriptor.Identity.NodeId),
                     descriptor.Identity.ToString(),
                     descriptor.Identity.Incarnation.Value,
                     _ToMilliseconds(Options.DeadThreshold),
@@ -88,6 +97,7 @@ internal sealed class RedisMembershipStore(
                     _LiveKey(),
                     _KnownKey(),
                     _GenKey(identity.NodeId),
+                    _GenerationField(identity.NodeId),
                     identity.ToString(),
                     identity.Incarnation.Value,
                     _ToMilliseconds(Options.DeadThreshold),
@@ -123,6 +133,8 @@ internal sealed class RedisMembershipStore(
             .ConfigureAwait(false);
     }
 
+    // The read path performs opportunistic writes (stale-member prune and generation-mirror backfill) and
+    // therefore must target a writable Redis primary; routing it to a read-only replica will fail.
     public async ValueTask<IReadOnlyList<NodeLivenessSnapshot>> ReadLivenessAsync(
         CancellationToken cancellationToken = default
     )
@@ -137,6 +149,7 @@ internal sealed class RedisMembershipStore(
                     _KnownKey(),
                     _LiveKey(),
                     _GenKeyPrefix(),
+                    _GenerationFieldPrefix,
                     _ToMilliseconds(Options.SuspicionThreshold),
                     _ToMilliseconds(Options.DeadThreshold),
                     _OperationalPruneMilliseconds(),
@@ -159,7 +172,7 @@ internal sealed class RedisMembershipStore(
             .EvaluateAsync(
                 Db,
                 RedisMembershipCleanupScriptDefinition.Instance,
-                new CleanupParams(_KnownKey(), _LiveKey(), _OperationalPruneMilliseconds()),
+                new CleanupParams(_KnownKey(), _LiveKey(), _GenerationFieldPrefix, _OperationalPruneMilliseconds()),
                 cancellationToken
             )
             .ConfigureAwait(false);
@@ -208,7 +221,9 @@ internal sealed class RedisMembershipStore(
 
     private string _MetadataJson(NodeIdentity identity, NodeDescriptor? descriptor)
     {
-        return _metadataJson.TryGetValue(identity, out var cached) ? cached : _SerializeDictionary(descriptor?.Metadata);
+        return _metadataJson.TryGetValue(identity, out var cached)
+            ? cached
+            : _SerializeDictionary(descriptor?.Metadata);
     }
 
     private RedisKey _LiveKey()
@@ -226,6 +241,13 @@ internal sealed class RedisMembershipStore(
         return _GenKeyPrefix() + nodeId.Value;
     }
 
+    private const string _GenerationFieldPrefix = "__gen:";
+
+    private static string _GenerationField(NodeId nodeId)
+    {
+        return _GenerationFieldPrefix + nodeId.Value;
+    }
+
     private string _GenKeyPrefix()
     {
         return $"{Options.KeyPrefix}{{{Options.ClusterName}}}:gen:";
@@ -233,10 +255,14 @@ internal sealed class RedisMembershipStore(
 
     private RedisKey _ClusterKey(string suffix)
     {
-        if (Options.ClusterName.Contains('{', StringComparison.Ordinal)
-            || Options.ClusterName.Contains('}', StringComparison.Ordinal))
+        if (
+            Options.ClusterName.Contains('{', StringComparison.Ordinal)
+            || Options.ClusterName.Contains('}', StringComparison.Ordinal)
+        )
         {
-            throw new InvalidOperationException("Redis coordination cluster names cannot contain Redis hash-tag braces.");
+            throw new InvalidOperationException(
+                "Redis coordination cluster names cannot contain Redis hash-tag braces."
+            );
         }
 
         return $"{Options.KeyPrefix}{{{Options.ClusterName}}}:{suffix}";

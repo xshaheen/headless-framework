@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging;
-using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -32,12 +31,14 @@ public sealed class HybridCache(
     IRemoteCache l2Cache,
     IBus publisher,
     HybridCacheOptions options,
-    ILogger<HybridCache>? logger = null
-) : ICache, IAsyncDisposable
+    ILogger<HybridCache>? logger = null,
+    TimeProvider? timeProvider = null
+) : ICache, IFactoryCacheStore, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = options.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly KeyedAsyncLock _keyedLock = new();
+    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider ?? TimeProvider.System, logger);
 
     private long _localCacheHits;
     private long _invalidateCacheCalls;
@@ -115,62 +116,9 @@ public sealed class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
 
-        var expiration = options.Duration;
-        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Check L1 first
-        var cacheValue = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-        if (cacheValue.HasValue)
-        {
-            _logger.LogLocalCacheHit(key);
-            Interlocked.Increment(ref _localCacheHits);
-            return cacheValue;
-        }
-
-        _logger.LogLocalCacheMiss(key);
-
-        // Stampede protection + factory
-        using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
-        {
-            // Double-check L1 after acquiring lock (another thread may have populated it)
-            cacheValue = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-            if (cacheValue.HasValue)
-            {
-                return cacheValue;
-            }
-
-            // Double-check L2 after acquiring lock (another instance may have populated it)
-            cacheValue = await l2Cache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-            if (cacheValue.HasValue)
-            {
-                await LocalCache
-                    .UpsertAsync(key, cacheValue.Value, _GetLocalExpiration(expiration), cancellationToken)
-                    .ConfigureAwait(false);
-                return cacheValue;
-            }
-
-            // Execute factory
-            var value = await factory(cancellationToken).ConfigureAwait(false);
-
-            // Populate L2 first (with exception handling)
-            try
-            {
-                await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // L2 failure is non-fatal: log and continue to populate L1
-                _logger.LogFailedToWriteToL2Cache(ex, key);
-            }
-
-            // Populate L1
-            await LocalCache
-                .UpsertAsync(key, value, _GetLocalExpiration(expiration), cancellationToken)
-                .ConfigureAwait(false);
-
-            return new CacheValue<T>(value, hasValue: true);
-        }
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -248,23 +196,21 @@ public sealed class HybridCache(
         var result = new Dictionary<string, CacheValue<T>>(localValues, StringComparer.Ordinal);
         var distributedResults = await l2Cache.GetAllAsync<T>(missedKeys, cancellationToken).ConfigureAwait(false);
 
-        // Collect values to batch upsert to L1 (avoid N+1 pattern)
-        var valuesToCache = new Dictionary<string, T>(StringComparer.Ordinal);
+        var valuesToCache = new Dictionary<string, (T Value, TimeSpan? Expiration)>(StringComparer.Ordinal);
         foreach (var kvp in distributedResults)
         {
             result[kvp.Key] = kvp.Value;
             if (kvp.Value is { HasValue: true, Value: not null })
             {
-                valuesToCache[kvp.Key] = kvp.Value.Value;
+                var expiration = await l2Cache.GetExpirationAsync(kvp.Key, cancellationToken).ConfigureAwait(false);
+                valuesToCache[kvp.Key] = (kvp.Value.Value, _GetLocalExpiration(expiration));
             }
         }
 
-        // Batch upsert to L1 using DefaultLocalExpiration
-        if (valuesToCache.Count > 0)
+        foreach (var (key, (value, localExpiration)) in valuesToCache)
         {
-            var localExpiration = _GetLocalExpiration(null);
-            _logger.LogBatchSettingLocalCacheKeys(valuesToCache.Count, localExpiration);
-            await LocalCache.UpsertAllAsync(valuesToCache, localExpiration, cancellationToken).ConfigureAwait(false);
+            _logger.LogSettingLocalCacheKey(key, localExpiration);
+            await LocalCache.UpsertAsync(key, value, localExpiration, cancellationToken).ConfigureAwait(false);
         }
 
         return result;
@@ -1067,7 +1013,206 @@ public sealed class HybridCache(
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) == 1, this);
     }
 
-    private TimeSpan? _GetLocalExpiration(TimeSpan? expiration) => options.DefaultLocalExpiration ?? expiration;
+    async ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var now = _GetUtcNow();
+        CacheStoreEntry<T>? l1StaleCandidate = null;
+
+        if (LocalCache is IFactoryCacheStore l1Store)
+        {
+            var l1Entry = await l1Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+            if (l1Entry.IsFresh(now))
+            {
+                _logger.LogLocalCacheHit(key);
+                Interlocked.Increment(ref _localCacheHits);
+                return l1Entry;
+            }
+
+            if (l1Entry.IsPhysicallyPresent(now))
+            {
+                l1StaleCandidate = l1Entry;
+            }
+        }
+        else
+        {
+            var l1Value = await LocalCache.GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
+
+            if (l1Value.HasValue)
+            {
+                _logger.LogLocalCacheHit(key);
+                Interlocked.Increment(ref _localCacheHits);
+                return new CacheStoreEntry<T>(
+                    Found: true,
+                    IsNull: l1Value.IsNull,
+                    Value: l1Value.Value,
+                    LogicalExpiresAt: null,
+                    PhysicalExpiresAt: null
+                );
+            }
+        }
+
+        _logger.LogLocalCacheMiss(key);
+
+        if (l2Cache is not IFactoryCacheStore l2Store)
+        {
+            return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
+        }
+
+        CacheStoreEntry<T> l2Entry;
+
+        try
+        {
+            l2Entry = await l2Store.TryGetEntryAsync<T>(key, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+        {
+            _logger.LogFailedToReadFromL2Cache(exception, key);
+            return l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
+        }
+
+        // Only promote a logically-fresh L2 entry into L1. Promoting a stale (logically-expired) reserve on
+        // every fail-safe read amplifies L1 writes under stampede and can overwrite a newer L1 stale reserve.
+        // The coordinator still receives the returned l2Entry as its stale candidate, so fail-safe serving of
+        // an L2 reserve is unaffected — it simply is not re-cached into L1.
+        if (l2Entry.IsFresh(now) && LocalCache is IFactoryCacheStore l1StoreForPromotion)
+        {
+            await _SetLocalEntryAsync(l1StoreForPromotion, key, l2Entry, cancellationToken).ConfigureAwait(false);
+        }
+
+        return l2Entry.Found ? l2Entry : l1StaleCandidate ?? CacheStoreEntry<T>.NotFound;
+    }
+
+    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+        string key,
+        T? value,
+        bool isNull,
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        CancellationToken cancellationToken
+    )
+        where T : default
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (l2Cache is IFactoryCacheStore l2Store)
+        {
+            try
+            {
+                await l2Store
+                    .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
+        }
+        else
+        {
+            var expiresIn = physicalExpiresAt.Subtract(_GetUtcNow());
+
+            try
+            {
+                await l2Cache
+                    .UpsertAsync(key, isNull ? default : value, expiresIn, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
+        }
+
+        if (LocalCache is IFactoryCacheStore l1Store)
+        {
+            var entry = new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: isNull,
+                Value: isNull ? default : value,
+                LogicalExpiresAt: logicalExpiresAt,
+                PhysicalExpiresAt: physicalExpiresAt
+            );
+
+            await _SetLocalEntryAsync(l1Store, key, entry, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await LocalCache
+                .UpsertAsync(
+                    key,
+                    isNull ? default : value,
+                    _GetLocalExpiration(physicalExpiresAt.Subtract(_GetUtcNow())),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async ValueTask _SetLocalEntryAsync<T>(
+        IFactoryCacheStore l1Store,
+        string key,
+        CacheStoreEntry<T> entry,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!entry.Found)
+        {
+            return;
+        }
+
+        var now = _GetUtcNow();
+        var localCeiling = options.DefaultLocalExpiration.HasValue ? now.Add(options.DefaultLocalExpiration.Value) : (DateTime?)null;
+
+        // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local
+        // ceiling so they cannot pin process memory indefinitely; without a configured ceiling there is no finite
+        // bound to apply, so skip rather than cache a never-expiring entry locally.
+        if (!entry.LogicalExpiresAt.HasValue || !entry.PhysicalExpiresAt.HasValue)
+        {
+            if (!localCeiling.HasValue)
+            {
+                return;
+            }
+
+            await l1Store
+                .SetEntryAsync(key, entry.Value, entry.IsNull, localCeiling.Value, localCeiling.Value, cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        var logicalExpiresAt = localCeiling.HasValue ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
+        var physicalExpiresAt = localCeiling.HasValue ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
+
+        await l1Store
+            .SetEntryAsync(key, entry.Value, entry.IsNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
+
+    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+
+    private TimeSpan? _GetLocalExpiration(TimeSpan? expiration)
+    {
+        if (!options.DefaultLocalExpiration.HasValue)
+        {
+            return expiration;
+        }
+
+        return expiration.HasValue && expiration.Value < options.DefaultLocalExpiration.Value
+            ? expiration
+            : options.DefaultLocalExpiration;
+    }
 
     #endregion
 
@@ -1081,7 +1226,7 @@ public sealed class HybridCache(
             return ValueTask.CompletedTask;
         }
 
-        _keyedLock.Dispose();
+        _coordinator.Dispose();
         return ValueTask.CompletedTask;
     }
 

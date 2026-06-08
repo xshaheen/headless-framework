@@ -338,11 +338,14 @@ Stores membership in Redis using Lua scripts and Redis server time.
 - Incarnation allocation uses persistent `INCR` counters.
 - Heartbeat/read/leave/cleanup scripts use Redis `TIME`.
 - `:known` retains recently dead members so Dead is observable before cleanup.
+- `:known` also mirrors current node generations so snapshot reads do not issue one `GET` per member.
 - Generation counters are not purged by default.
 
 ### Design Notes
 
 Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies that can delete generation counters if stale-heartbeat rejection matters.
+
+**Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup sweeps a mirror field once its node has no surviving member payload (orphan prune); the durable generation key is never touched, so a restarting node re-mirrors on its next allocate or heartbeat.
 
 **Dead/Left retention divergence (intentional, plan KTD-16).** Redis retains Dead and Left descriptors in the `:known` hash for `RedisKnownNodeRetention` (default 7 days), so `GetLivenessSnapshotAsync` keeps surfacing them with `State = Dead` until that window elapses — consumers must filter by `NodeLivenessState`. The relational providers instead prune shortly after `DeadThreshold + DeadRetentionWindow` (tens of seconds). This is a documented behavioral difference, not a defaulting bug: lower `RedisKnownNodeRetention` to align Redis with relational pruning.
 

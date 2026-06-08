@@ -97,8 +97,9 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 | L2 write fails | Log warning, continue to populate L1 |
 | Publish fails | Log warning, other instances serve stale until TTL |
 | L1 write fails | Propagate exception (indicates serious issue) |
-| L2 read fails | Propagate exception |
-| `OperationCanceledException` | Always propagate |
+| L2 read fails | Treat as miss for `GetOrAddAsync`; serve any L1 fail-safe reserve if available |
+| Caller-token cancellation | Propagate; fail-safe is not activated |
+| Unrelated/downstream `OperationCanceledException` | Treated as a failure (by token identity); activates fail-safe and serves stale if available |
 
 ## Metrics
 

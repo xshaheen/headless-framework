@@ -32,7 +32,7 @@ public sealed class RedisCache(
     RedisCacheOptions options,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
     ILogger<RedisCache>? logger = null
-) : IRemoteCache, IDisposable
+) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
@@ -40,7 +40,7 @@ public sealed class RedisCache(
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
-    private readonly KeyedAsyncLock _keyedLock = new();
+    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger);
 
     private volatile bool _supportsMsetEx;
     private volatile bool _supportsMsetExChecked;
@@ -75,31 +75,9 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
 
-        var expiration = options.Duration;
-        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-
-        if (cacheValue.HasValue)
-        {
-            return cacheValue;
-        }
-
-        using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
-        {
-            // Double-check after acquiring lock
-            cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-            if (cacheValue.HasValue)
-            {
-                return cacheValue;
-            }
-
-            var value = await factory(cancellationToken).ConfigureAwait(false);
-            await UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
-
-            return new(value, hasValue: true);
-        }
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
     #region Update
@@ -644,7 +622,12 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyExistsAsync(_GetKey(key)).ConfigureAwait(false);
+        // Fetch the value rather than KeyExists: a fail-safe reserve keeps its Redis TTL aligned to PHYSICAL
+        // expiration, so the key can still exist after its LOGICAL expiration. A key-existence check would
+        // report such a logically-expired reserve as present; _RedisValueIsLogicallyPresent applies the same
+        // logical-expiry rule the read methods use.
+        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+        return _RedisValueIsLogicallyPresent(redisValue);
     }
 
     public async ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -707,7 +690,30 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return null;
+        }
+
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        if (!frame.IsFramed)
+        {
+            // Non-framed (legacy/raw) keys carry no logical metadata, so fall back to the server TTL. Only
+            // legacy keys pay this second round trip; framed keys return below from the decoded frame.
+            return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_IsExpired(frame.LogicalExpiresAt, now))
+        {
+            return null;
+        }
+
+        return frame.LogicalExpiresAt?.Subtract(now);
     }
 
     public async ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
@@ -1021,6 +1027,13 @@ public sealed class RedisCache(
 
             if (frame.IsFramed)
             {
+                var now = timeProvider.GetUtcNow().UtcDateTime;
+
+                if (_IsExpired(frame.PhysicalExpiresAt, now) || _IsExpired(frame.LogicalExpiresAt, now))
+                {
+                    return CacheValue<T>.NoValue;
+                }
+
                 if (frame.IsNull)
                 {
                     return CacheValue<T>.Null;
@@ -1106,6 +1119,115 @@ public sealed class RedisCache(
             physicalExpiresAt: expiresAt
         );
     }
+
+    ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return _TryGetEntryAsync<T>(key);
+    }
+
+    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+        string key,
+        T? value,
+        bool isNull,
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        CancellationToken cancellationToken
+    )
+        where T : default
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var expiresIn = physicalExpiresAt.Subtract(timeProvider.GetUtcNow().UtcDateTime);
+        var redisKey = _GetKey(key);
+
+        if (expiresIn <= TimeSpan.Zero)
+        {
+            await _database.KeyDeleteAsync(redisKey).ConfigureAwait(false);
+            return;
+        }
+
+        var valueSegment = isNull ? RedisValue.EmptyString : _ToRedisValue(value);
+        var redisValue = RedisCacheEntryFrame.Encode(valueSegment, isNull, logicalExpiresAt, physicalExpiresAt);
+
+        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+    }
+
+    private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(string key)
+    {
+        var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
+
+        if (!redisValue.HasValue)
+        {
+            return CacheStoreEntry<T>.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        if (frame.IsFramed)
+        {
+            if (_IsExpired(frame.PhysicalExpiresAt, now))
+            {
+                return CacheStoreEntry<T>.NotFound;
+            }
+
+            var value = frame.IsNull ? default : _DeserializeValueSegment<T>(frame.ValueSegment);
+
+            return new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: frame.IsNull,
+                Value: value,
+                LogicalExpiresAt: frame.LogicalExpiresAt,
+                PhysicalExpiresAt: frame.PhysicalExpiresAt
+            );
+        }
+
+        if (redisValue == _NullValue)
+        {
+            return new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: true,
+                Value: default,
+                LogicalExpiresAt: null,
+                PhysicalExpiresAt: null
+            );
+        }
+
+        return new CacheStoreEntry<T>(
+            Found: true,
+            IsNull: false,
+            Value: _FromRedisValue<T>(redisValue),
+            LogicalExpiresAt: null,
+            PhysicalExpiresAt: null
+        );
+    }
+
+    private bool _RedisValueIsLogicallyPresent(RedisValue redisValue)
+    {
+        if (!redisValue.HasValue)
+        {
+            return false;
+        }
+
+        var frame = RedisCacheEntryFrame.Decode(redisValue);
+
+        if (!frame.IsFramed)
+        {
+            return true;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        return !_IsExpired(frame.PhysicalExpiresAt, now) && !_IsExpired(frame.LogicalExpiresAt, now);
+    }
+
+    private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt.HasValue && expiresAt.Value <= now;
 
     private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
     {
@@ -1325,7 +1447,7 @@ public sealed class RedisCache(
     /// <inheritdoc />
     public void Dispose()
     {
-        _keyedLock.Dispose();
+        _coordinator.Dispose();
     }
 }
 
