@@ -29,6 +29,7 @@ internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefi
             })
 
             redis.call('zadd', @liveKey, hardExpiryMs, @member)
+            redis.call('hset', @knownKey, @generationField, tostring(@incarnation))
             redis.call('hset', @knownKey, @member, payload)
 
             return 1
@@ -43,6 +44,7 @@ internal readonly record struct HeartbeatParams(
     RedisKey liveKey,
     RedisKey knownKey,
     RedisKey genKey,
+    string generationField,
     string member,
     long incarnation,
     long hardMs,

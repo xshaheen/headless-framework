@@ -17,18 +17,27 @@ internal sealed class RedisMembershipCleanupScriptDefinition : RedisScriptDefini
             local nowSecMicro = redis.call('TIME')
             local nowMs = (tonumber(nowSecMicro[1]) * 1000) + math.floor(tonumber(nowSecMicro[2]) / 1000)
             local entries = redis.call('hgetall', @knownKey)
+            local generationFieldPrefixLength = string.len(@generationFieldPrefix)
             local removed = 0
+
+            local function isGenerationField(member, payloadText)
+              return string.sub(member, 1, generationFieldPrefixLength) == @generationFieldPrefix
+                and string.sub(payloadText, 1, 1) ~= '{'
+            end
 
             redis.call('zremrangebyscore', @liveKey, '-inf', nowMs)
 
             for i = 1, #entries, 2 do
               local member = entries[i]
-              local payload = cjson.decode(entries[i + 1])
-              local ageMs = nowMs - tonumber(payload['last_beat_ms'])
-              if ageMs >= tonumber(@pruneMs) then
-                redis.call('hdel', @knownKey, member)
-                redis.call('zrem', @liveKey, member)
-                removed = removed + 1
+              local payloadText = entries[i + 1]
+              if not isGenerationField(member, payloadText) then
+                local payload = cjson.decode(payloadText)
+                local ageMs = nowMs - tonumber(payload['last_beat_ms'])
+                if ageMs >= tonumber(@pruneMs) then
+                  redis.call('hdel', @knownKey, member)
+                  redis.call('zrem', @liveKey, member)
+                  removed = removed + 1
+                end
               end
             end
 
@@ -40,5 +49,10 @@ internal sealed class RedisMembershipCleanupScriptDefinition : RedisScriptDefini
 #pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
 /// <summary>Parameters for <see cref="RedisMembershipCleanupScriptDefinition"/>.</summary>
 [StructLayout(LayoutKind.Auto)]
-internal readonly record struct CleanupParams(RedisKey knownKey, RedisKey liveKey, long pruneMs);
+internal readonly record struct CleanupParams(
+    RedisKey knownKey,
+    RedisKey liveKey,
+    string generationFieldPrefix,
+    long pruneMs
+);
 #pragma warning restore IDE1006
