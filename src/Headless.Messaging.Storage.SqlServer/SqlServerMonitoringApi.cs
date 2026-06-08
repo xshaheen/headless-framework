@@ -329,8 +329,10 @@ public sealed class SqlServerMonitoringApi(
         // Use CONVERT instead of FORMAT to avoid CLR dependency (Azure SQL Edge doesn't support CLR)
         var sqlQuery = $"""
             WITH Aggr AS (
+            -- COUNT (int) not COUNT_BIG: the reader maps [Count] via GetInt32 into a Dictionary<string,int>, and
+            -- a single-hour bucket can never overflow int. SqlClient.GetInt32 rejects a bigint column outright.
             SELECT CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2) AS [Key],
-                COUNT_BIG(Id) [Count]
+                COUNT(Id) [Count]
             FROM  {tableName}
             WHERE StatusName = @StatusName AND Added >= @MinAdded AND Added <= @MaxAdded
             GROUP BY CONVERT(CHAR(10), Added, 120) + '-' + RIGHT('0' + CAST(DATEPART(HOUR, Added) AS VARCHAR(2)), 2)
