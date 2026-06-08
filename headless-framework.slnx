@@ -37,6 +37,10 @@
         <Project Path="tests\Headless.AuditLog.Storage.PostgreSql.Tests.Integration\Headless.AuditLog.Storage.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.SqlServer.Tests.Integration\Headless.AuditLog.Storage.SqlServer.Tests.Integration.csproj" />
     </Folder>
+    <Folder Name="/AmbientTransactions/">
+        <Project Path="src\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
+        <Project Path="tests\Headless.AmbientTransactions.Tests.Unit\Headless.AmbientTransactions.Tests.Unit.csproj" />
+    </Folder>
     <Folder Name="/Blobs/">
         <Project Path="demo\Headless.Tus.Demo\Headless.Tus.Demo.csproj" />
         <Project Path="src\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
