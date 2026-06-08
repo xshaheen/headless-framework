@@ -165,7 +165,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _OwnerParameterValue(lockedUntil) },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _nodeMembership.GetOwnerParameterValue(lockedUntil) },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
@@ -649,7 +649,7 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _OwnerParameterValue(lockedUntil) },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _nodeMembership.GetOwnerParameterValue(lockedUntil) },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
@@ -945,6 +945,4 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    private object _OwnerParameterValue(DateTime? lockedUntil) =>
-        lockedUntil is null ? DBNull.Value : _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value;
 }

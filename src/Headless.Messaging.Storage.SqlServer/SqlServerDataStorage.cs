@@ -965,6 +965,6 @@ public sealed class SqlServerDataStorage(
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
         new(name, SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
         {
-            Value = lockedUntil is null ? DBNull.Value : _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+            Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
         };
 }
