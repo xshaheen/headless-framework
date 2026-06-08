@@ -252,7 +252,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
                 "LockedUntil" TIMESTAMPTZ NULL,
-                "Owner" VARCHAR({DataStorageConstants.OwnerColumnMaxLength}) NULL,
+                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL,
                 "ExceptionInfo" text NULL
@@ -291,7 +291,7 @@ public sealed class PostgreSqlStorageInitializer(
                 "ExpiresAt" TIMESTAMPTZ NULL,
                 "NextRetryAt" TIMESTAMPTZ NULL,
                 "LockedUntil" TIMESTAMPTZ NULL,
-                "Owner" VARCHAR({DataStorageConstants.OwnerColumnMaxLength}) NULL,
+                "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL,
             	"StatusName" VARCHAR(50) NOT NULL,
                 "MessageId" VARCHAR(200) NOT NULL
             );
@@ -303,8 +303,8 @@ public sealed class PostgreSqlStorageInitializer(
             -- _EnsureRetryPickupIndexConcurrentlyAsync.
             CREATE INDEX IF NOT EXISTS "idx_published_delayed" ON {GetPublishedTableName()} ("StatusName","ExpiresAt") WHERE "StatusName" = 'Delayed';
 
-            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({DataStorageConstants.OwnerColumnMaxLength}) NULL;
-            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({DataStorageConstants.OwnerColumnMaxLength}) NULL;
+            ALTER TABLE {GetReceivedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
+            ALTER TABLE {GetPublishedTableName()} ADD COLUMN IF NOT EXISTS "Owner" VARCHAR({postgreSqlOptions.Value.OwnerColumnMaxLength}) NULL;
 
             """;
 

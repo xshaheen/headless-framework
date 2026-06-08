@@ -54,6 +54,8 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
                 "PostgreSQL messaging storage requires either a DataSource or ConnectionString. "
                     + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
             );
+
+        RuleFor(x => x.OwnerColumnMaxLength).GreaterThan(0);
     }
 }
 

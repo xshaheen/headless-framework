@@ -803,7 +803,7 @@ public sealed class SqlServerDataStorage(
             {
                 Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
             },
-            new SqlParameter("@Owner", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+            new SqlParameter("@Owner", SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
             {
                 Value = owner ?? (object)DBNull.Value,
             },
@@ -938,7 +938,7 @@ public sealed class SqlServerDataStorage(
             WHERE target.Owner IS NOT NULL
               AND NOT EXISTS (
                   SELECT 1
-                  FROM OPENJSON(@LiveOwners) WITH ([Owner] nvarchar({DataStorageConstants.OwnerColumnMaxLength}) '$') AS live
+                  FROM OPENJSON(@LiveOwners) WITH ([Owner] nvarchar({options.Value.OwnerColumnMaxLength}) '$') AS live
                   WHERE live.[Owner] = target.Owner
               )
               AND target.LockedUntil > @Now
@@ -963,7 +963,7 @@ public sealed class SqlServerDataStorage(
     }
 
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
-        new(name, SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+        new(name, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
         {
             Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
         };

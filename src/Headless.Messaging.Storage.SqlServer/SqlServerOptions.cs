@@ -26,6 +26,8 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
                 "SQL Server messaging storage requires either a DbContextType or ConnectionString. "
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
+
+        RuleFor(x => x.OwnerColumnMaxLength).GreaterThan(0);
     }
 }
 
