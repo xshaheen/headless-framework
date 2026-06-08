@@ -48,7 +48,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         var entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
         var now = _GetUtcNow();
 
-        if (_IsFresh(entry, now))
+        if (entry.IsFresh(now))
         {
             return _ToCacheValue(entry, isStale: false);
         }
@@ -60,7 +60,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
             now = _GetUtcNow();
 
-            if (_IsFresh(entry, now))
+            if (entry.IsFresh(now))
             {
                 return _ToCacheValue(entry, isStale: false);
             }
@@ -177,8 +177,6 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             ? new CacheValue<T>(default, hasValue: true, isStale)
             : new CacheValue<T>(entry.Value, hasValue: true, isStale);
     }
-
-    private static bool _IsFresh<T>(CacheStoreEntry<T> entry, DateTime now) => entry.IsFresh(now);
 
     // A fail-safe stale candidate must carry a non-null physical expiration. A genuine fail-safe reserve
     // always has one (the coordinator writes it); requiring it here closes the throttle hole where a
