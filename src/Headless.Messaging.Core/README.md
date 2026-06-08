@@ -502,7 +502,7 @@ Messaging registers its lock provider under an **internal keyed-DI key** so it n
 
 Without a real provider, only `NoOpDistributedLock` is active (the keyed-DI fallback). The bootstrapper logs **EventId 77 Warning** on startup when `UseStorageLock = true` but only the no-op provider is found under the messaging key. If a real provider is registered un-keyed at the app level but not flowed through `MessagingBuilder.UseDistributedLock(...)`, the bootstrapper instead emits **EventId 78 Warning** to disambiguate the misconfiguration.
 
-If `UseStorageLock = true` but only the default `NullNodeMembership` is registered, the bootstrapper logs **EventId 85 Information**. Retry recovery still works through `LockedUntil`; registering a Coordination provider enables faster dead-incarnation owner reclaim.
+If `UseStorageLock = true` but only the default `NullNodeMembership` is registered, the bootstrapper logs **EventId 88 Information**. Retry recovery still works through `LockedUntil`; registering a Coordination provider enables faster dead-incarnation owner reclaim.
 
 > **NoOp introspection contract:** when `NoOpDistributedLock` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
 
@@ -537,5 +537,9 @@ Retry-processor EventIds emitted when `UseStorageLock = true`:
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | Acquire threw on the received-retry path. | Investigate lock-store health if persistent. |
 | 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+| 88 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | `UseStorageLock = true` but only `NullNodeMembership` is registered. | Register a Coordination provider to accelerate dead-incarnation owner reclaim, or accept `LockedUntil`-floor-only recovery. |
+| 89 | `CoordinationMembershipQueryFailed` | Debug | `GetLiveNodesAsync` threw a transient exception; reclaim skipped for this tick. | Investigate Coordination store health if frequent; dispatch continues normally. |
+| 90 | `MessagingDeadOwnerReclaimFailed` | Warning | Dead-owner reclaim call threw; dispatch continues, reclaim retries next cycle. | Investigate storage health if persistent. |
+| 91 | `MessagingDeadOwnerRowsReclaimed` | Information | Dead-owner reclaim succeeded; N orphaned rows returned to the retry queue. | Informational — no action needed. |
 
 See [Distributed Lock Integration](../../docs/llms/messaging.md#distributed-lock-integration) for the two-layer correctness model and when to enable / skip.

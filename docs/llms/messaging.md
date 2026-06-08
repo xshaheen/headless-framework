@@ -586,7 +586,10 @@ Both names follow the literal pattern shown above. They are constructed internal
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
 | 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
-| 85 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | `UseStorageLock = true` but only `NullNodeMembership` is registered. | Register a Coordination provider to accelerate dead-incarnation retry recovery, or accept `LockedUntil`-floor-only recovery. |
+| 88 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | `UseStorageLock = true` but only `NullNodeMembership` is registered. | Register a Coordination provider to accelerate dead-incarnation retry recovery, or accept `LockedUntil`-floor-only recovery. |
+| 89 | `CoordinationMembershipQueryFailed` | Debug | `GetLiveNodesAsync` threw a transient exception; reclaim skipped for this tick. | Investigate Coordination store health if frequent; dispatch continues normally. |
+| 90 | `MessagingDeadOwnerReclaimFailed` | Warning | Dead-owner reclaim call threw; dispatch continues, reclaim retries next cycle. | Investigate storage health if persistent. |
+| 91 | `MessagingDeadOwnerRowsReclaimed` | Information | Dead-owner reclaim succeeded; N orphaned rows returned to the retry queue. | Informational — no action needed. |
 
 ### Pros and cons
 
