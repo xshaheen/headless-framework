@@ -55,7 +55,7 @@ options.UseSqlServer(config =>
 
 ## SQL Server Compatibility
 
-Dead-owner retry recovery serializes live Coordination owners through `OPENJSON`, so the database must run SQL Server 2016 or later with compatibility level 130 or higher. Older servers, or databases left at a lower compatibility level, should rely on the per-row `LockedUntil` floor until upgraded.
+Dead-owner retry recovery binds live Coordination owners as ordinary SQL parameters and does not require `OPENJSON` or SQL Server compatibility level 130. Older SQL Server-compatible engines still recover through the per-row `LockedUntil` floor if reclaim fails.
 
 ## Side Effects
 

@@ -583,7 +583,7 @@ Dead-incarnation retry recovery depends on both the coarse storage lock and memb
 | `UseStorageLock = false` and no Coordination membership | `LockedUntil` floor only; no distributed lock or owner reclaim. | None |
 | `UseStorageLock = false` with real Coordination membership | `LockedUntil` floor only; membership exists but owner reclaim is disabled. | EventId 92 Warning |
 | `UseStorageLock = true` with `NullNodeMembership` | Distributed lock reduces pickup contention; rows recover at the `LockedUntil` floor. | EventId 88 Information |
-| `UseStorageLock = true` with real Coordination membership | Distributed lock plus dead-owner reclaim. If membership query fails, reclaim skips for that tick while dispatch continues. | EventId 89 Debug on query failure |
+| `UseStorageLock = true` with real Coordination membership | Distributed lock plus dead-owner reclaim. If membership query fails, reclaim skips for that tick while dispatch continues. Configure Coordination's dead threshold no lower than the largest retry `DispatchTimeout`, so reclaim cannot shorten a valid in-flight lease. | EventId 89 Debug on transient query failure; EventId 93 Error after three consecutive failures |
 
 ### EventIds
 
@@ -602,6 +602,7 @@ Dead-incarnation retry recovery depends on both the coarse storage lock and memb
 | 90 | `MessagingDeadOwnerReclaimFailed` | Warning | Dead-owner reclaim call threw; dispatch continues, reclaim retries next cycle. | Investigate storage health if persistent. |
 | 91 | `MessagingDeadOwnerRowsReclaimed` | Information | Dead-owner reclaim succeeded; N orphaned rows returned to the retry queue. | Informational — no action needed. |
 | 92 | `MessagingRecoveryDisabledWithoutStorageLock` | Warning | Real Coordination membership registered while `UseStorageLock = false`. | Enable `UseStorageLock` through `MessagingBuilder.UseDistributedLock(...)`, or accept `LockedUntil`-floor-only recovery. |
+| 93 | `CoordinationMembershipQueryFailureEscalated` | Error | Three consecutive membership-query failures. | Investigate Coordination store health; retry dispatch continues and recovery falls back to `LockedUntil`. |
 
 ### Pros and cons
 

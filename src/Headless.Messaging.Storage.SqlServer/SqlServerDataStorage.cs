@@ -2,7 +2,6 @@
 
 using System.Data;
 using System.Data.Common;
-using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
@@ -929,27 +928,18 @@ public sealed class SqlServerDataStorage(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var liveOwnersJson = JsonSerializer.Serialize(liveOwners);
+        List<SqlParameter> sqlParams = [new("@Now", SqlDbType.DateTime2) { Value = now }];
+        var liveOwnerParams = _AddLiveOwnerParameters(liveOwners, sqlParams);
         var sql =
             $"""
             UPDATE target
             SET LockedUntil = @Now
             FROM {tableName} AS target
             WHERE target.Owner IS NOT NULL
-              AND NOT EXISTS (
-                  SELECT 1
-                  FROM OPENJSON(@LiveOwners) WITH ([Owner] nvarchar({options.Value.OwnerColumnMaxLength}) '$') AS live
-                  WHERE live.[Owner] = target.Owner
-              )
+              AND target.Owner NOT IN ({liveOwnerParams})
               AND target.LockedUntil > @Now
               AND {_TerminalRowGuardSimple};
             """;
-
-        List<SqlParameter> sqlParams =
-        [
-            new("@Now", SqlDbType.DateTime2) { Value = now },
-            new("@LiveOwners", SqlDbType.NVarChar, -1) { Value = liveOwnersJson },
-        ];
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -960,6 +950,24 @@ public sealed class SqlServerDataStorage(
                 cancellationToken: cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    private string _AddLiveOwnerParameters(IReadOnlyCollection<string> liveOwners, List<SqlParameter> sqlParams)
+    {
+        var parameterNames = new List<string>(liveOwners.Count);
+        var index = 0;
+
+        foreach (var owner in liveOwners.Distinct(StringComparer.Ordinal))
+        {
+            var parameterName = $"@LiveOwner{index++}";
+            parameterNames.Add(parameterName);
+            sqlParams.Add(new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+            {
+                Value = owner,
+            });
+        }
+
+        return string.Join(", ", parameterNames);
     }
 
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>

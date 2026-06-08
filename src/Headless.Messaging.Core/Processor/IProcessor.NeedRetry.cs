@@ -85,6 +85,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     // fire even when one side has been down for hours.
     private int _consecutivePublishedPickupFailures;
     private int _consecutiveReceivedPickupFailures;
+    private int _consecutiveMembershipQueryFailures;
 
     private const int _StoragePickupErrorEscalationThreshold = 3;
 
@@ -154,6 +155,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
         Interlocked.Exchange(ref _consecutivePublishedPickupFailures, 0);
         Interlocked.Exchange(ref _consecutiveReceivedPickupFailures, 0);
+        Interlocked.Exchange(ref _consecutiveMembershipQueryFailures, 0);
         Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 0);
         return ValueTask.CompletedTask;
     }
@@ -371,10 +373,16 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         // Membership is best-effort acceleration (see INodeMembership remarks): a Coordination outage
         // must degrade reclaim to the per-row LockedUntil floor, not take down the whole retry tick.
         // Returning null here skips reclaim for this tick while published/received dispatch proceeds.
+        //
+        // Correctness invariant: Coordination must not classify an owner dead before any in-flight
+        // dispatch lease can expire. Keep CoordinationOptions.DeadThreshold >= the largest configured
+        // RetryPolicyOptions.DispatchTimeout, or dead-owner reclaim can pull LockedUntil back while the
+        // previous owner is still doing legitimate work.
         IReadOnlyList<NodeIdentity> liveNodes;
         try
         {
             liveNodes = await _nodeMembership.GetLiveNodesAsync(ct).ConfigureAwait(false);
+            Interlocked.Exchange(ref _consecutiveMembershipQueryFailures, 0);
         }
         catch (OperationCanceledException)
         {
@@ -382,7 +390,16 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
         catch (Exception e)
         {
-            _logger.CoordinationMembershipQueryFailed(e);
+            var failureCount = Interlocked.Increment(ref _consecutiveMembershipQueryFailures);
+            if (failureCount >= _StoragePickupErrorEscalationThreshold)
+            {
+                _logger.CoordinationMembershipQueryFailureEscalated(e, failureCount);
+            }
+            else
+            {
+                _logger.CoordinationMembershipQueryFailed(e);
+            }
+
             return null;
         }
 
@@ -420,7 +437,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             var reclaimedRows = await reclaim(liveOwners).ConfigureAwait(false);
             if (reclaimedRows > 0 && _logger.IsEnabled(LogLevel.Information))
             {
-                _logger.MessagingDeadOwnerRowsReclaimed(_RetryKind(kind), reclaimedRows);
+                _logger.MessagingDeadOwnerRowsReclaimed(kind.ToString(), reclaimedRows);
             }
         }
         catch (OperationCanceledException)
@@ -431,18 +448,10 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             if (_logger.IsEnabled(LogLevel.Warning))
             {
-                _logger.MessagingDeadOwnerReclaimFailed(ex, _RetryKind(kind));
+                _logger.MessagingDeadOwnerReclaimFailed(ex, kind.ToString());
             }
         }
     }
-
-    private static string _RetryKind(StoragePickupKind kind) =>
-        kind switch
-        {
-            StoragePickupKind.Published => "Published",
-            StoragePickupKind.Received => "Received",
-            _ => throw new InvalidOperationException($"Unknown storage pickup kind: {kind}"),
-        };
 
     private sealed class LiveOwnersForReclaimCache(
         Func<CancellationToken, ValueTask<IReadOnlyCollection<string>?>> getLiveOwners,

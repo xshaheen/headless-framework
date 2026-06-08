@@ -917,6 +917,9 @@ public sealed class PostgreSqlDataStorage(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead
+        // node incarnations, then the normal version-filtered pickup path decides what this
+        // service version is allowed to dispatch.
         var sql =
             $"""
             UPDATE {tableName}

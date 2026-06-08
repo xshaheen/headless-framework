@@ -248,21 +248,22 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         using var context = _CreateContext(storage);
 
         await processor.ProcessAsync(context);
-        await Task.Delay(200, AbortToken);
-
-        await storage.Received(1).ReclaimDeadPublishedOwnersAsync(
-            Arg.Is<IReadOnlyCollection<string>>(owners =>
-                owners.Count == 2 && owners.Contains("node-a@7") && owners.Contains("node-b@3")
-            ),
-            Arg.Any<CancellationToken>()
-        );
-        await storage.Received(1).ReclaimDeadReceivedOwnersAsync(
-            Arg.Is<IReadOnlyCollection<string>>(owners =>
-                owners.Count == 2 && owners.Contains("node-a@7") && owners.Contains("node-b@3")
-            ),
-            Arg.Any<CancellationToken>()
-        );
-        membership.GetLiveNodesCallCount.Should().Be(1);
+        await _EventuallyAsync(async () =>
+        {
+            await storage.Received(1).ReclaimDeadPublishedOwnersAsync(
+                Arg.Is<IReadOnlyCollection<string>>(owners =>
+                    owners.Count == 2 && owners.Contains("node-a@7") && owners.Contains("node-b@3")
+                ),
+                Arg.Any<CancellationToken>()
+            );
+            await storage.Received(1).ReclaimDeadReceivedOwnersAsync(
+                Arg.Is<IReadOnlyCollection<string>>(owners =>
+                    owners.Count == 2 && owners.Contains("node-a@7") && owners.Contains("node-b@3")
+                ),
+                Arg.Any<CancellationToken>()
+            );
+            membership.GetLiveNodesCallCount.Should().Be(1);
+        });
     }
 
     [Fact]
@@ -348,6 +349,64 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         );
         await storage.Received(1).GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
         await storage.Received(1).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_escalate_membership_query_failures_after_three_consecutive_cycles()
+    {
+        var fakeLock = Substitute.For<IDistributedLease>();
+        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        var alwaysGranted = Substitute.For<IDistributedLock>();
+        alwaysGranted
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var membership = TestNodeMembership.ThrowingGetLiveNodes(
+            "node-a",
+            7,
+            new InvalidOperationException("membership unavailable")
+        );
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: alwaysGranted,
+            membership: membership,
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await _EventuallyAsync(() =>
+        {
+            membership.GetLiveNodesCallCount.Should().Be(1);
+            return Task.CompletedTask;
+        });
+        await processor.ProcessAsync(context);
+        await _EventuallyAsync(() =>
+        {
+            membership.GetLiveNodesCallCount.Should().Be(2);
+            return Task.CompletedTask;
+        });
+        await processor.ProcessAsync(context);
+        await _EventuallyAsync(() =>
+        {
+            membership.GetLiveNodesCallCount.Should().Be(3);
+            return Task.CompletedTask;
+        });
+
+        captured.Count(e => e.Level == LogLevel.Debug && e.Id == 89).Should().Be(2);
+        captured.Count(e => e.Level == LogLevel.Error && e.Id == 93).Should().Be(1);
     }
 
     [Fact]
@@ -690,84 +749,26 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new ProcessingContext(provider, TimeProvider.System, AbortToken);
     }
 
-    private sealed class TestNodeMembership(
-        NodeIdentity? identity,
-        IReadOnlyList<NodeIdentity> liveNodes,
-        Exception? getLiveNodesException = null
-    )
-        : INodeMembership
+    private async Task _EventuallyAsync(Func<Task> assertion)
     {
-        public static TestNodeMembership Active(string nodeId, long incarnation, params NodeIdentity[] additionalLiveNodes)
+        var timeoutAt = TimeProvider.System.GetUtcNow() + TimeSpan.FromSeconds(2);
+        Exception? lastFailure = null;
+
+        while (TimeProvider.System.GetUtcNow() < timeoutAt)
         {
-            var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
-            return new TestNodeMembership(identity, [identity, .. additionalLiveNodes]);
-        }
-
-        public static TestNodeMembership ThrowingGetLiveNodes(string nodeId, long incarnation, Exception exception)
-        {
-            var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
-            return new TestNodeMembership(identity, [identity], exception);
-        }
-
-        public NodeIdentity? Identity { get; } = identity;
-
-        public int GetLiveNodesCallCount { get; private set; }
-
-        public CancellationToken LocalMembershipLostToken => CancellationToken.None;
-
-        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(Identity!.Value);
-        }
-
-        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(Identity is not null);
-        }
-
-        public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(liveNodes.Contains(identity));
-        }
-
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            GetLiveNodesCallCount++;
-            if (getLiveNodesException is not null)
+            try
             {
-                return ValueTask.FromException<IReadOnlyList<NodeIdentity>>(getLiveNodesException);
+                await assertion();
+                return;
             }
-
-            return ValueTask.FromResult(liveNodes);
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastFailure = ex;
+                await Task.Delay(25, AbortToken);
+            }
         }
 
-        public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
-        }
-
-        public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default
-        )
-        {
-            await Task.CompletedTask;
-            cancellationToken.ThrowIfCancellationRequested();
-
-            yield break;
-        }
+        throw lastFailure ?? new TimeoutException("Timed out waiting for assertion to pass.");
     }
 
     private sealed class TrackingLockProvider(string resourceFilter) : IDistributedLock

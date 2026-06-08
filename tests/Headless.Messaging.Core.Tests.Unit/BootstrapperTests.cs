@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.DistributedLocks;
 using Headless.Coordination;
 using Headless.Messaging;

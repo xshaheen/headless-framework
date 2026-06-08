@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,7 +56,8 @@ internal sealed class PostgreSqlOptionsValidator : AbstractValidator<PostgreSqlO
                     + "Configure via UsePostgreSql(connectionString) or UsePostgreSql(options => options.ConnectionString = ...)"
             );
 
-        RuleFor(x => x.OwnerColumnMaxLength).GreaterThan(0);
+        RuleFor(x => x.OwnerColumnMaxLength)
+            .GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 

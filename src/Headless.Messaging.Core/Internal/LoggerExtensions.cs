@@ -621,6 +621,18 @@ internal static partial class LoggerExtensions
     public static partial void CoordinationMembershipQueryFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
+        EventId = 93,
+        EventName = "CoordinationMembershipQueryFailureEscalated",
+        Level = LogLevel.Error,
+        Message = "Coordination membership query has failed for {ConsecutiveFailures} consecutive cycles; dead-incarnation retry recovery is falling back to the per-row LockedUntil floor."
+    )]
+    public static partial void CoordinationMembershipQueryFailureEscalated(
+        this ILogger logger,
+        Exception exception,
+        int consecutiveFailures
+    );
+
+    [LoggerMessage(
         EventId = 90,
         EventName = "MessagingDeadOwnerReclaimFailed",
         Level = LogLevel.Warning,

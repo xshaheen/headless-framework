@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.CompilerServices;
 using Headless.Coordination;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -29,7 +28,7 @@ public sealed class SetupMessagingCoordinationTests
     {
         // given
         var services = new ServiceCollection();
-        var membership = new TestNodeMembership();
+        var membership = TestNodeMembership.Active("node-a", 7);
         services.AddSingleton<INodeMembership>(membership);
 
         // when
@@ -38,60 +37,5 @@ public sealed class SetupMessagingCoordinationTests
 
         // then
         provider.GetRequiredService<INodeMembership>().Should().BeSameAs(membership);
-    }
-
-    private sealed class TestNodeMembership : INodeMembership
-    {
-        public NodeIdentity? Identity { get; } = new(new NodeId("node-a"), new NodeIncarnation(7));
-
-        public CancellationToken LocalMembershipLostToken => CancellationToken.None;
-
-        public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(Identity!.Value);
-        }
-
-        public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(true);
-        }
-
-        public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.CompletedTask;
-        }
-
-        public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(identity == Identity);
-        }
-
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([Identity!.Value]);
-        }
-
-        public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
-            CancellationToken cancellationToken = default
-        )
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
-        }
-
-        public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
-            [EnumeratorCancellation] CancellationToken cancellationToken = default
-        )
-        {
-            await Task.CompletedTask;
-            cancellationToken.ThrowIfCancellationRequested();
-
-            yield break;
-        }
     }
 }

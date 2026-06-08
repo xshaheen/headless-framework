@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 
@@ -73,5 +74,23 @@ public sealed class SqlServerOptionsValidatorTests : TestBase
 
         // then
         result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_fail_when_owner_column_max_length_is_too_small_for_node_identity_tags()
+    {
+        // given
+        var options = new SqlServerOptions
+        {
+            ConnectionString = "Server=localhost",
+            OwnerColumnMaxLength = DataStorageConstants.MinimumOwnerColumnMaxLength - 1,
+        };
+
+        // when
+        var result = _validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(SqlServerOptions.OwnerColumnMaxLength));
     }
 }

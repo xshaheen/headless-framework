@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -27,7 +28,8 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
 
-        RuleFor(x => x.OwnerColumnMaxLength).GreaterThan(0);
+        RuleFor(x => x.OwnerColumnMaxLength)
+            .GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 
