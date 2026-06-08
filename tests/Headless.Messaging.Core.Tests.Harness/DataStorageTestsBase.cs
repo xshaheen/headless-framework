@@ -921,7 +921,7 @@ public abstract class DataStorageTestsBase : TestBase
             .NotContain(m => m.StorageId == received.StorageId);
     }
 
-    public virtual async Task should_be_inert_when_owner_is_null()
+    public virtual async Task should_be_inert_when_no_dead_owners_passed()
     {
         var storage = GetStorage();
         var published = await _StoreFailedPublishedMessageAsync("owner-null-published");
@@ -935,6 +935,27 @@ public abstract class DataStorageTestsBase : TestBase
             .NotContain(m => m.StorageId == published.StorageId);
 
         (await storage.ReclaimDeadReceivedOwnersAsync([], AbortToken)).Should().Be(0);
+        (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == received.StorageId);
+    }
+
+    public virtual async Task should_not_reclaim_rows_with_null_owner()
+    {
+        var storage = GetStorage();
+        // NodeMembership.Identity is null by default — rows get Owner=NULL when leased
+        var published = await _StoreFailedPublishedMessageAsync("null-owner-guard-published");
+        (await storage.LeasePublishAsync(published, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+        var received = await _StoreFailedReceivedMessageAsync("null-owner-guard-received", "null-owner-guard-group");
+        (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
+
+        // Non-empty list bypasses early-exit guard; WHERE Owner IS NOT NULL must filter null-Owner rows
+        (await storage.ReclaimDeadPublishedOwnersAsync(["dead-owner-x"], AbortToken)).Should().Be(0);
+        (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
+            .Should()
+            .NotContain(m => m.StorageId == published.StorageId);
+
+        (await storage.ReclaimDeadReceivedOwnersAsync(["dead-owner-x"], AbortToken)).Should().Be(0);
         (await storage.GetReceivedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == received.StorageId);
