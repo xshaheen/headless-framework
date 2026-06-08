@@ -1,11 +1,15 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.Caching.Distributed;
 
 namespace Headless.Jobs.Temps;
 
-internal class NoOpJobsRedisContext : IJobsRedisContext
+/// <summary>Default no-op caching context: no distributed cache, every lookup falls through to the factory.</summary>
+internal sealed class NoOpJobsCacheContext : IJobsCacheContext
 {
     public IDistributedCache DistributedCache => null!;
+
     public bool HasRedisConnection => false;
 
     public Task<TResult[]?> GetOrSetArrayAsync<TResult>(
@@ -17,15 +21,5 @@ internal class NoOpJobsRedisContext : IJobsRedisContext
         where TResult : class
     {
         return factory(cancellationToken);
-    }
-
-    public Task<string[]> GetDeadNodesAsync()
-    {
-        return Task.FromResult(Array.Empty<string>());
-    }
-
-    public Task NotifyNodeAliveAsync()
-    {
-        return Task.CompletedTask;
     }
 }

@@ -13,7 +13,7 @@ namespace Headless.Jobs;
 internal class JobsExecutionTaskHandler(
     IServiceProvider serviceProvider,
     TimeProvider timeProvider,
-    IJobsInstrumentation tickerQInstrumentation,
+    IJobsInstrumentation jobsInstrumentation,
     IInternalJobManager internalJobsManager
 )
 {
@@ -82,7 +82,7 @@ internal class JobsExecutionTaskHandler(
                     }
                     else
                     {
-                        tickerQInstrumentation.LogJobSkipped(
+                        jobsInstrumentation.LogJobSkipped(
                             child.JobId,
                             child.FunctionName,
                             $"Condition {child.RunCondition} not met (Parent status: {context.Status})"
@@ -121,7 +121,7 @@ internal class JobsExecutionTaskHandler(
     )
     {
         // Start OpenTelemetry activity for the entire job execution
-        using var jobActivity = tickerQInstrumentation.StartJobActivity(
+        using var jobActivity = jobsInstrumentation.StartJobActivity(
             $"job.execute.{context.Type.ToString().ToLowerInvariant()}",
             context
         );
@@ -131,7 +131,7 @@ internal class JobsExecutionTaskHandler(
         jobActivity?.SetTag("headless.job.is_child", isChild);
 
         // Log job enqueued/started (using the available method)
-        tickerQInstrumentation.LogJobEnqueued(
+        jobsInstrumentation.LogJobEnqueued(
             context.Type.ToString(),
             context.FunctionName,
             context.JobId,
@@ -227,7 +227,7 @@ internal class JobsExecutionTaskHandler(
                 jobActivity?.SetTag("headless.job.cancellation.reason", "Task was cancelled");
 
                 // Log job cancelled
-                tickerQInstrumentation.LogJobCancelled(context.JobId, context.FunctionName, "Task was cancelled");
+                jobsInstrumentation.LogJobCancelled(context.JobId, context.FunctionName, "Task was cancelled");
 
                 if (serviceProvider.GetService(typeof(IJobExceptionHandler)) is IJobExceptionHandler handler)
                 {
@@ -263,7 +263,7 @@ internal class JobsExecutionTaskHandler(
                 jobActivity?.SetTag("headless.job.final_status", context.Status.ToString());
 
                 // Log job skipped
-                tickerQInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
+                jobsInstrumentation.LogJobSkipped(context.JobId, context.FunctionName, ex.Message);
 
                 await internalJobsManager.UpdateTickerAsync(context, cancellationToken);
 
@@ -293,7 +293,7 @@ internal class JobsExecutionTaskHandler(
             jobActivity?.SetTag("headless.job.final_retry.count", context.RetryCount);
 
             // Log job completed successfully
-            tickerQInstrumentation.LogJobCompleted(
+            jobsInstrumentation.LogJobCompleted(
                 context.JobId,
                 context.FunctionName,
                 stopWatch.ElapsedMilliseconds,
@@ -314,8 +314,8 @@ internal class JobsExecutionTaskHandler(
             jobActivity?.SetTag("exception.type", lastException.GetType().Name);
 
             // Log job failed
-            tickerQInstrumentation.LogJobFailed(context.JobId, context.FunctionName, lastException, context.RetryCount);
-            tickerQInstrumentation.LogJobCompleted(
+            jobsInstrumentation.LogJobFailed(context.JobId, context.FunctionName, lastException, context.RetryCount);
+            jobsInstrumentation.LogJobCompleted(
                 context.JobId,
                 context.FunctionName,
                 stopWatch.ElapsedMilliseconds,

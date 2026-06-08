@@ -115,10 +115,6 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Exception handling: register a custom handler via `options.SetExceptionHandler<CustomJobExceptionHandler>()`.
 - For testing, call `options.DisableBackgroundServices()` to prevent the scheduler from running.
 
-## Error Handling and Retries
-
-Headless.Jobs ports the same error-handling concepts from TickerQ into Jobs-native APIs.
-
 ### Retry Configuration
 
 Configure retries when creating jobs:

@@ -91,10 +91,6 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-## Error Handling and Retries
-
-Headless.Jobs supports the same error-handling model as TickerQ, using Jobs-native APIs.
-
 ### Retry Configuration
 
 ```csharp

@@ -1,13 +1,15 @@
 using System.Diagnostics;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Instrumentation;
 
-public abstract partial class JobsBaseLoggerInstrumentation(ILogger logger, string instanceIdentifier)
+internal abstract partial class JobsBaseLoggerInstrumentation(ILogger logger, IJobsOwnerIdentity ownerIdentity)
 {
-    protected string InstanceIdentifier { get; } = instanceIdentifier;
+    // Live read so telemetry reflects the node@incarnation owner once registration completes (DisplayOwner never throws).
+    protected string InstanceIdentifier => ownerIdentity.DisplayOwner;
 
     public abstract Activity? StartJobActivity(string activityName, InternalFunctionContext context);
 
