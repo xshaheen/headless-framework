@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -329,8 +328,8 @@ internal sealed class Bootstrapper(
 
     private void _CheckMessageNameCollisions()
     {
-        var registry = serviceProvider.GetService<ConsumerRegistry>();
-        var consumers = registry?.GetAll() ?? [];
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+        var consumers = registry.GetAll();
         var nameToTypes = new Dictionary<string, HashSet<Type>>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var consumer in consumers)
@@ -338,7 +337,7 @@ internal sealed class Bootstrapper(
             _TrackMessageName(nameToTypes, consumer.MessageName, consumer.MessageType);
         }
 
-        var mappings = registry?.GetMessageNameMappings() ?? new Dictionary<Type, string>();
+        var mappings = registry.GetMessageNameMappings();
 
         foreach (var mapping in mappings)
         {
@@ -553,16 +552,7 @@ internal sealed class Bootstrapper(
 
     private void _DrainPendingMessageRegistrations()
     {
-        var services = serviceProvider.GetService<IServiceCollection>();
-        var registry = serviceProvider.GetService<ConsumerRegistry>();
-        var circuitBreakerRegistry = serviceProvider.GetService<ConsumerCircuitBreakerRegistry>();
-
-        if (services is null || registry is null || circuitBreakerRegistry is null)
-        {
-            return;
-        }
-
-        SetupMessaging.DiscoverMessageRegistrations(services, options.Value, registry, circuitBreakerRegistry);
+        SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, options.Value);
     }
 
     private void _StopProcessors()

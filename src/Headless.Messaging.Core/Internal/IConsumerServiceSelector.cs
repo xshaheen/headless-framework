@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Headless.Checks;
-using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
@@ -124,7 +123,7 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             return [];
         }
 
-        _DrainPendingMessageRegistrations(registry);
+        _DrainPendingMessageRegistrations();
 
         var results = new List<ConsumerExecutorDescriptor>();
         var metadata = registry.GetAll();
@@ -158,17 +157,9 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
         return results;
     }
 
-    private void _DrainPendingMessageRegistrations(ConsumerRegistry registry)
+    private void _DrainPendingMessageRegistrations()
     {
-        var services = _serviceProvider.GetService<IServiceCollection>();
-        var circuitBreakers = _serviceProvider.GetService<ConsumerCircuitBreakerRegistry>();
-
-        if (services is null || circuitBreakers is null)
-        {
-            return;
-        }
-
-        SetupMessaging.DiscoverMessageRegistrations(services, _messagingOptions, registry, circuitBreakers);
+        SetupMessaging.DrainPendingMessageRegistrations(_serviceProvider, _messagingOptions);
     }
 
     private string _GetGroupName(ConsumerMetadata metadata)

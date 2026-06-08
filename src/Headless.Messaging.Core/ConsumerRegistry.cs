@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
@@ -70,10 +71,10 @@ public sealed class ConsumerRegistry : IConsumerRegistry
     /// <summary>
     /// Registers a raw message-name mapping for a message type.
     /// </summary>
-    public void RegisterMessageName(Type messageType, string messageName)
+    internal void RegisterMessageName(Type messageType, string messageName)
     {
         Argument.IsNotNull(messageType);
-        _ValidateMessageName(messageName);
+        MessagingOptions.ValidateMessageName(messageName);
 
         lock (_lock)
         {
@@ -294,48 +295,6 @@ public sealed class ConsumerRegistry : IConsumerRegistry
             }
 
             MessageRegistrationsDrained = true;
-        }
-    }
-
-    private static void _ValidateMessageName(string messageName)
-    {
-        Argument.IsNotNullOrWhiteSpace(messageName);
-
-        const int maxMessageNameLength = 255;
-
-        if (messageName.Length > maxMessageNameLength)
-        {
-            throw new ArgumentException(
-                $"Message name '{messageName}' exceeds maximum length of {maxMessageNameLength} characters.",
-                nameof(messageName)
-            );
-        }
-
-        if (messageName.StartsWith('.') || messageName.EndsWith('.'))
-        {
-            throw new ArgumentException(
-                $@"Message name '{messageName}' cannot start or end with a dot.",
-                nameof(messageName)
-            );
-        }
-
-        if (messageName.Contains("..", StringComparison.Ordinal))
-        {
-            throw new ArgumentException(
-                $@"Message name '{messageName}' cannot contain consecutive dots.",
-                nameof(messageName)
-            );
-        }
-
-        foreach (var c in messageName)
-        {
-            if (!char.IsLetterOrDigit(c) && c != '.' && c != '-' && c != '_')
-            {
-                throw new ArgumentException(
-                    $@"Message name '{messageName}' contains invalid character '{c}'. Only alphanumeric characters, dots, hyphens, and underscores are allowed.",
-                    nameof(messageName)
-                );
-            }
         }
     }
 

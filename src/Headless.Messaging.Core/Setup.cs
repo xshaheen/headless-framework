@@ -376,8 +376,38 @@ public static class SetupMessaging
         }
     }
 
+    /// <summary>
+    /// Drains the deferred <see cref="MessageRegistration"/> singletons captured by <c>ForMessage&lt;T&gt;</c> into the
+    /// consumer registry. Order-independent: the registrations are resolved from the built provider, so it works whether
+    /// the <c>ForMessage</c> / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
+    /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
+    /// </summary>
+    internal static void DrainPendingMessageRegistrations(IServiceProvider provider, MessagingOptions options)
+    {
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
+
+        if (registry.HasCompletedMessageRegistrationDrain)
+        {
+            return;
+        }
+
+        var registrations = provider.GetServices<MessageRegistration>().ToList();
+
+        // Nothing was captured via ForMessage<T> — mark drained without touching the circuit-breaker
+        // registry, which is only registered once AddHeadlessMessaging's core wiring has run.
+        if (registrations.Count == 0)
+        {
+            registry.MarkMessageRegistrationDrainCompleted();
+            return;
+        }
+
+        var circuitBreakerRegistry = provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+
+        DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry);
+    }
+
     internal static void DiscoverMessageRegistrations(
-        IServiceCollection services,
+        IReadOnlyCollection<MessageRegistration> registrations,
         MessagingOptions options,
         ConsumerRegistry registry,
         ConsumerCircuitBreakerRegistry circuitBreakerRegistry
@@ -387,12 +417,6 @@ public static class SetupMessaging
         {
             return;
         }
-
-        var registrations = services
-            .Where(static d => d.ServiceType == typeof(MessageRegistration) && d.Lifetime == ServiceLifetime.Singleton)
-            .Select(static d => d.ImplementationInstance)
-            .OfType<MessageRegistration>()
-            .ToList();
 
         if (registrations.Count == 0)
         {
