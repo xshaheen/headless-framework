@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
+using Headless.AmbientTransactions;
 using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
@@ -13,11 +15,14 @@ internal sealed class OutboxMessageWriter(
     IDataStorage storage,
     IDispatcher dispatcher,
     IMessagePublishRequestFactory publishRequestFactory,
-    IOutboxTransactionAccessor transactionAccessor,
+    ICurrentAmbientTransaction currentAmbientTransaction,
+    IEnumerable<IMessageOutboxBufferObserver> bufferObservers,
     IPublishMiddlewarePipeline publishPipeline,
     TimeProvider timeProvider
 )
 {
+    private readonly ConditionalWeakTable<IAmbientTransaction, MessageOutboxBuffer> _buffers = new();
+
     // ReSharper disable once InconsistentNaming
     private static DiagnosticListener DiagnosticListener { get; } =
         new(MessageDiagnosticListenerNames.DiagnosticListenerName);
@@ -80,7 +85,7 @@ internal sealed class OutboxMessageWriter(
 
     private bool _IsNonAutoCommitTransactional()
     {
-        var currentTransaction = transactionAccessor.Current;
+        var currentTransaction = currentAmbientTransaction.Current;
         return currentTransaction?.DbTransaction is not null && !currentTransaction.AutoCommit;
     }
 
@@ -91,7 +96,7 @@ internal sealed class OutboxMessageWriter(
         {
             tracingTimestamp = _TracingBefore(publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-            var currentTransaction = transactionAccessor.Current;
+            var currentTransaction = currentAmbientTransaction.Current;
 
             if (currentTransaction?.DbTransaction == null)
             {
@@ -119,14 +124,6 @@ internal sealed class OutboxMessageWriter(
             }
             else
             {
-                if (currentTransaction is not IOutboxMessageBuffer transaction)
-                {
-                    throw new InvalidOperationException(
-                        $"Registered {nameof(IOutboxTransaction)} must implement {nameof(IOutboxMessageBuffer)} "
-                            + "when publishing with an ambient database transaction."
-                    );
-                }
-
                 var mediumMessage = await storage
                     .StoreMessageAsync(
                         publishRequest.MessageName,
@@ -138,7 +135,22 @@ internal sealed class OutboxMessageWriter(
 
                 _TracingAfter(tracingTimestamp, publishRequest.Message, publishRequest.IntentType, cancellationToken);
 
-                transaction.AddToSent(mediumMessage);
+                var buffer = _buffers.GetValue(
+                    currentTransaction,
+                    transaction =>
+                    {
+                        var messageBuffer = new MessageOutboxBuffer(dispatcher);
+                        transaction.RegisterCommitWork(messageBuffer.DrainAsync);
+                        return messageBuffer;
+                    }
+                );
+
+                buffer.Buffer(mediumMessage);
+
+                foreach (var observer in bufferObservers)
+                {
+                    observer.MessageBuffered(currentTransaction, mediumMessage);
+                }
 
                 if (currentTransaction.AutoCommit)
                 {

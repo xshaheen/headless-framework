@@ -1,7 +1,6 @@
+using Headless.AmbientTransactions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Transactions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -179,11 +178,17 @@ public sealed class TypeSafePublishApiTests
     }
 
     [Fact]
-    public async Task should_support_custom_outbox_transaction_buffers()
+    public async Task should_buffer_outbox_publish_with_ambient_transaction_commit_work()
     {
         // given
+        var currentAmbientTransaction = new TestCurrentAmbientTransaction();
+        var transaction = new TestAmbientTransaction { DbTransaction = new object() };
+        currentAmbientTransaction.Current = transaction;
+
         var services = new ServiceCollection();
         services.AddLogging();
+        services.AddSingleton<ICurrentAmbientTransaction>(currentAmbientTransaction);
+        services.AddSingleton<IAmbientTransaction>(transaction);
         services.AddHeadlessMessaging(opt =>
         {
             opt.WithMessageNameMapping<OrderCreated>("orders.created");
@@ -193,9 +198,6 @@ public sealed class TypeSafePublishApiTests
 
         await using var provider = services.BuildServiceProvider();
         var publisher = provider.GetRequiredService<IOutboxBus>();
-        var accessor = provider.GetRequiredService<IOutboxTransactionAccessor>();
-        var transaction = new TestOutboxTransaction { DbTransaction = new object() };
-        accessor.Current = transaction;
 
         try
         {
@@ -204,11 +206,11 @@ public sealed class TypeSafePublishApiTests
         }
         finally
         {
-            accessor.Current = null;
+            currentAmbientTransaction.Current = null;
         }
 
         // then
-        transaction.BufferedMessages.Should().ContainSingle();
+        transaction.CommitWork.Should().ContainSingle();
     }
 
     [UsedImplicitly]
@@ -220,13 +222,25 @@ public sealed class TypeSafePublishApiTests
         }
     }
 
-    private sealed class TestOutboxTransaction : IOutboxTransaction, IOutboxMessageBuffer
+    private sealed class TestCurrentAmbientTransaction : ICurrentAmbientTransaction
     {
-        public List<MediumMessage> BufferedMessages { get; } = [];
+        public IAmbientTransaction? Current { get; set; }
+    }
+
+    private sealed class TestAmbientTransaction : IAmbientTransaction
+    {
+        public List<Func<CancellationToken, ValueTask>> CommitWork { get; } = [];
 
         public bool AutoCommit { get; set; }
 
         public object? DbTransaction { get; set; }
+
+        public void RegisterCommitWork(Func<CancellationToken, ValueTask> drain)
+        {
+            CommitWork.Add(drain);
+        }
+
+        public void CompleteExternally() { }
 
         public void Commit() { }
 
@@ -235,11 +249,6 @@ public sealed class TypeSafePublishApiTests
         public void Rollback() { }
 
         public Task RollbackAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-
-        public void AddToSent(MediumMessage message)
-        {
-            BufferedMessages.Add(message);
-        }
 
         public void Dispose() { }
 

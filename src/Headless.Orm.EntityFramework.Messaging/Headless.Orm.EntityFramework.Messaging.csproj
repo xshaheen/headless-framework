@@ -4,6 +4,7 @@
     <RootNamespace>Headless.EntityFramework</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Orm.EntityFramework\Headless.Orm.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />

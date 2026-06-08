@@ -9,6 +9,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Headless.AmbientTransactions.PostgreSql\Headless.AmbientTransactions.PostgreSql.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
   </ItemGroup>
 </Project>

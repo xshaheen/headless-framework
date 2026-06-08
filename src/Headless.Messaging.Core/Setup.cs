@@ -2,6 +2,7 @@
 
 using System.Reflection;
 using Headless.Abstractions;
+using Headless.AmbientTransactions;
 using Headless.Checks;
 using Headless.Core;
 using Headless.DistributedLocks;
@@ -281,7 +282,7 @@ public static class SetupMessaging
         MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(services);
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
-        services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
+        services.TryAddSingleton<ICurrentAmbientTransaction, AsyncLocalCurrentAmbientTransaction>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
         // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
         // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real

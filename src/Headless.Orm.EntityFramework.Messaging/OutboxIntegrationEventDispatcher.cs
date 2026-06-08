@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Domain;
+using Headless.AmbientTransactions;
 using Headless.Messaging;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +42,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
         // A fresh transient outbox transaction per dispatch keeps the in-memory buffer scoped to this save
         // (no cross-save accumulation). Attaching the EF transaction sets the ambient accessor the outbox
         // writer reads; AutoCommit = false buffers the rows instead of dispatching to the broker in-band.
-        var outboxTransaction = serviceProvider.GetRequiredService<IOutboxTransaction>();
+        var outboxTransaction = serviceProvider.GetRequiredService<IAmbientTransaction>();
         outboxTransaction.DbTransaction = currentTransaction;
         outboxTransaction.AutoCommit = false;
 
@@ -58,7 +59,7 @@ internal sealed class OutboxIntegrationEventDispatcher(
         {
             // Detach WITHOUT disposing outboxTransaction here — this is deliberate, do not "fix" it with
             // `await using`/`Dispose`. On SQL Server the provider registers the same outboxTransaction instance
-            // in the diagnostic TransBuffer and the connection-commit diagnostic flushes + disposes it AFTER the
+            // in the diagnostic TransBuffer and the connection-commit diagnostic drains + disposes it AFTER the
             // EF transaction commits; disposing it now would tear it down before the post-commit flush and drop
             // the integration events. The EF pipeline owns currentTransaction's commit/dispose lifecycle, and the
             // transient outboxTransaction is released at DI scope end. Nulling DbTransaction also clears the

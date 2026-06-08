@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.AmbientTransactions;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
@@ -106,7 +107,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     public async Task dispatch_async_should_be_noop_for_empty_event_list()
     {
         // given — an empty list must short-circuit before resolving the outbox transaction, so a provider
-        // with no IOutboxTransaction registered must not throw.
+        // with no IAmbientTransaction registered must not throw.
         var bus = new RecordingOutboxBus();
         await using var services = new ServiceCollection().BuildServiceProvider();
         var dispatcher = new OutboxIntegrationEventDispatcher(services, bus, new IntegrationEventPublishInvokerCache());
@@ -124,7 +125,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
+        var outboxTransaction = Substitute.For<IAmbientTransaction>();
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddSingleton(outboxTransaction);
         await using var services = serviceCollection.BuildServiceProvider();
@@ -150,7 +151,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new ThrowingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
+        var outboxTransaction = Substitute.For<IAmbientTransaction>();
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddSingleton(outboxTransaction);
         await using var services = serviceCollection.BuildServiceProvider();
@@ -183,7 +184,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
         // ThrowIfCancellationRequested on the first iteration, so the OperationCanceledException must
         // propagate while the finally-block still detaches the outbox transaction (DbTransaction = null).
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
+        var outboxTransaction = Substitute.For<IAmbientTransaction>();
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddSingleton(outboxTransaction);
         await using var services = serviceCollection.BuildServiceProvider();
@@ -207,7 +208,7 @@ public sealed class OutboxIntegrationEventDispatcherTests
     {
         // given
         var bus = new RecordingOutboxBus();
-        var outboxTransaction = Substitute.For<IOutboxTransaction>();
+        var outboxTransaction = Substitute.For<IAmbientTransaction>();
         var serviceCollection = new ServiceCollection();
         serviceCollection.AddSingleton(outboxTransaction);
         using var services = serviceCollection.BuildServiceProvider();

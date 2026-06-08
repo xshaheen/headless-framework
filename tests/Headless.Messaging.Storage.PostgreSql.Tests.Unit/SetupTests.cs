@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
+using Headless.AmbientTransactions;
+using Headless.AmbientTransactions.PostgreSql;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
@@ -35,7 +37,7 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
         provider.GetRequiredService<IStorageInitializer>().Should().BeOfType<PostgreSqlStorageInitializer>();
         provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
-        provider.GetRequiredService<IOutboxTransaction>().Should().BeOfType<PostgreSqlOutboxTransaction>();
+        provider.GetRequiredService<IAmbientTransaction>().Should().BeOfType<PostgreSqlAmbientTransaction>();
 
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
         options.ConnectionString.Should().Be("Host=localhost;Database=test");

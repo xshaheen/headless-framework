@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using Headless.AmbientTransactions;
 
 namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 
@@ -20,7 +21,7 @@ public sealed class DiagnosticProcessorObserver : IObserver<DiagnosticListener>
     /// Thread-safe buffer mapping transaction IDs to their outbox transaction contexts.
     /// Used to correlate SQL transactions with pending outbox messages.
     /// </summary>
-    public ConcurrentDictionary<Guid, SqlServerOutboxTransaction> TransBuffer { get; } = new();
+    public ConcurrentDictionary<Guid, IAmbientTransaction> TransBuffer { get; } = new();
 
     public void OnCompleted() { }
 

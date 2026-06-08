@@ -5,6 +5,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer.Diagnostics;
+using Headless.Messaging.Transactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -72,8 +73,9 @@ public static class SetupSqlServerMessaging
         {
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
 
+            services.AddSqlServerAmbientTransactions();
             services.AddSingleton<DiagnosticProcessorObserver>();
-            services.AddTransient<IOutboxTransaction, SqlServerOutboxTransaction>();
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IMessageOutboxBufferObserver, SqlServerOutboxBufferObserver>());
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
             services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, DiagnosticRegister>());

@@ -2,13 +2,13 @@
 
 using System.Collections.Concurrent;
 using Headless.Abstractions;
+using Headless.AmbientTransactions;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
-using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -130,7 +130,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
         observed.Captured.Should().BeFalse();
     }
 
-    private static (OutboxMessageWriter publisher, TestOutboxTransaction? tx) _BuildOutboxMessageWriter(
+    private static (OutboxMessageWriter publisher, TestAmbientTransaction? tx) _BuildOutboxMessageWriter(
         IPublishMiddlewarePipeline pipeline,
         bool autoCommit,
         bool ambientTransaction
@@ -147,17 +147,17 @@ public sealed class IsTransactionalPropagationTests : TestBase
 
         var storage = Substitute.For<IDataStorage>();
         storage
-            .StoreMessageAsync(Arg.Any<string>(), Arg.Any<Message>(), Arg.Any<object?>(), Arg.Any<CancellationToken>())
+            .StoreMessageAsync(Arg.Any<string>(), Arg.Any<MediumMessage>(), Arg.Any<object?>(), Arg.Any<CancellationToken>())
             .Returns(call =>
             {
-                var content = (Message)call[1];
+                var content = (MediumMessage)call[1];
                 return ValueTask.FromResult(
                     new MediumMessage
                     {
                         StorageId = Guid.NewGuid(),
-                        Origin = content,
-                        Content = "{}",
-                        IntentType = IntentType.Bus,
+                        Origin = content.Origin,
+                        Content = content.Content,
+                        IntentType = content.IntentType,
                         Added = DateTime.UtcNow,
                     }
                 );
@@ -176,19 +176,20 @@ public sealed class IsTransactionalPropagationTests : TestBase
             )
             .Returns(Task.CompletedTask);
 
-        TestOutboxTransaction? tx = null;
-        var accessor = new InMemoryOutboxTransactionAccessor();
+        TestAmbientTransaction? tx = null;
+        var currentAmbientTransaction = new InMemoryCurrentAmbientTransaction();
         if (ambientTransaction)
         {
-            tx = new TestOutboxTransaction { DbTransaction = new object(), AutoCommit = autoCommit };
-            accessor.Current = tx;
+            tx = new TestAmbientTransaction { DbTransaction = new object(), AutoCommit = autoCommit };
+            currentAmbientTransaction.Current = tx;
         }
 
         var outbox = new OutboxMessageWriter(
             storage,
             dispatcher,
             publishRequestFactory,
-            accessor,
+            currentAmbientTransaction,
+            [],
             pipeline,
             TimeProvider.System
         );
@@ -234,22 +235,38 @@ internal sealed class RecordingTransport : IBusTransport
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 }
 
-internal sealed class InMemoryOutboxTransactionAccessor : IOutboxTransactionAccessor
+internal sealed class InMemoryCurrentAmbientTransaction : ICurrentAmbientTransaction
 {
-    public IOutboxTransaction? Current { get; set; }
+    public IAmbientTransaction? Current { get; set; }
 }
 
-internal sealed class TestOutboxTransaction : IOutboxTransaction, IOutboxMessageBuffer
+internal sealed class TestAmbientTransaction : IAmbientTransaction
 {
+    private readonly List<Func<CancellationToken, ValueTask>> _commitWork = [];
+
     public bool AutoCommit { get; set; }
 
     public object? DbTransaction { get; set; }
 
-    public void AddToSent(MediumMessage message) { }
+    public void RegisterCommitWork(Func<CancellationToken, ValueTask> drain)
+    {
+        _commitWork.Add(drain);
+    }
+
+    public void CompleteExternally()
+    {
+        Commit();
+    }
 
     public void Commit() { }
 
-    public Task CommitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        foreach (var drain in _commitWork)
+        {
+            await drain(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public void Rollback() { }
 

@@ -3,12 +3,12 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Runtime.CompilerServices;
-using Headless.Messaging.Internal;
+using Headless.AmbientTransactions;
 using Microsoft.Data.SqlClient;
 
 namespace Headless.Messaging.Storage.SqlServer.Diagnostics;
 
-internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOutboxTransaction> bufferTrans)
+internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, IAmbientTransaction> bufferTrans)
     : IObserver<KeyValuePair<string, object?>>
 {
     private static readonly ConditionalWeakTable<Type, ConcurrentDictionary<string, PropertyInfo?>> _PropertyCache = [];
@@ -50,8 +50,7 @@ internal sealed class DiagnosticObserver(ConcurrentDictionary<Guid, SqlServerOut
                         return;
                     }
 
-                    transaction.DbTransaction = new NoopTransaction();
-                    transaction.Commit();
+                    transaction.CompleteExternally();
                     transaction.Dispose();
                 }
 
