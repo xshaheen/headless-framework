@@ -53,6 +53,10 @@ options.UseSqlServer(config =>
 - `Headless.Messaging.Core`
 - `Microsoft.Data.SqlClient`
 
+## SQL Server Compatibility
+
+Dead-owner retry recovery serializes live Coordination owners through `OPENJSON`, so the database must run SQL Server 2016 or later with compatibility level 130 or higher. Older servers, or databases left at a lower compatibility level, should rely on the per-row `LockedUntil` floor until upgraded.
+
 ## Side Effects
 
 - Creates database tables in configured schema:

@@ -645,6 +645,14 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
+        EventId = 92,
+        EventName = "MessagingRecoveryDisabledWithoutStorageLock",
+        Level = LogLevel.Warning,
+        Message = "Messaging Coordination membership is registered but UseStorageLock is disabled. Dead-incarnation retry recovery is disabled; enable UseStorageLock through MessagingBuilder.UseDistributedLock(...) or rely on the per-row LockedUntil floor."
+    )]
+    public static partial void MessagingRecoveryDisabledWithoutStorageLock(this ILogger logger);
+
+    [LoggerMessage(
         EventId = 79,
         EventName = "ReceivedRetryLockOwnershipLost",
         Level = LogLevel.Warning,

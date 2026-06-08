@@ -795,7 +795,7 @@ public sealed class SqlServerDataStorage(
             + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _CurrentOwner();
+        var owner = _nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
@@ -962,11 +962,9 @@ public sealed class SqlServerDataStorage(
             .ConfigureAwait(false);
     }
 
-    private string? _CurrentOwner() => _nodeMembership.Identity?.ToString();
-
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
         new(name, SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
         {
-            Value = lockedUntil is null ? DBNull.Value : _CurrentOwner() ?? (object)DBNull.Value,
+            Value = lockedUntil is null ? DBNull.Value : _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
         };
 }

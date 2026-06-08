@@ -148,6 +148,29 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_warn_when_coordination_membership_is_registered_but_storage_lock_is_disabled()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = false,
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 92);
+    }
+
+    [Fact]
     public async Task should_warn_with_eventid_78_when_unkeyed_real_provider_exists_but_use_distributed_lock_not_called()
     {
         // Misconfiguration repro: user wired up a real IDistributedLock (e.g. via

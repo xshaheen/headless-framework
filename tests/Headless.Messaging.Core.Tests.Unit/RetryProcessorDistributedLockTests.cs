@@ -262,6 +262,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             ),
             Arg.Any<CancellationToken>()
         );
+        membership.GetLiveNodesCallCount.Should().Be(1);
     }
 
     [Fact]
@@ -295,6 +296,58 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             Arg.Any<IReadOnlyCollection<string>>(),
             Arg.Any<CancellationToken>()
         );
+    }
+
+    [Fact]
+    public async Task should_skip_reclaim_but_continue_dispatch_when_membership_query_fails()
+    {
+        var fakeLock = Substitute.For<IDistributedLease>();
+        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        var alwaysGranted = Substitute.For<IDistributedLock>();
+        alwaysGranted
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var membership = TestNodeMembership.ThrowingGetLiveNodes(
+            "node-a",
+            7,
+            new InvalidOperationException("membership unavailable")
+        );
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: alwaysGranted,
+            membership: membership,
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await Task.Delay(200, AbortToken);
+
+        membership.GetLiveNodesCallCount.Should().Be(1);
+        captured.Should().Contain(e => e.Level == LogLevel.Debug && e.Id == 89);
+        await storage.DidNotReceive().ReclaimDeadPublishedOwnersAsync(
+            Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<CancellationToken>()
+        );
+        await storage.DidNotReceive().ReclaimDeadReceivedOwnersAsync(
+            Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<CancellationToken>()
+        );
+        await storage.Received(1).GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage.Received(1).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -637,13 +690,23 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new ProcessingContext(provider, TimeProvider.System, AbortToken);
     }
 
-    private sealed class TestNodeMembership(NodeIdentity? identity, IReadOnlyList<NodeIdentity> liveNodes)
+    private sealed class TestNodeMembership(
+        NodeIdentity? identity,
+        IReadOnlyList<NodeIdentity> liveNodes,
+        Exception? getLiveNodesException = null
+    )
         : INodeMembership
     {
         public static TestNodeMembership Active(string nodeId, long incarnation, params NodeIdentity[] additionalLiveNodes)
         {
             var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
             return new TestNodeMembership(identity, [identity, .. additionalLiveNodes]);
+        }
+
+        public static TestNodeMembership ThrowingGetLiveNodes(string nodeId, long incarnation, Exception exception)
+        {
+            var identity = new NodeIdentity(new NodeId(nodeId), new NodeIncarnation(incarnation));
+            return new TestNodeMembership(identity, [identity], exception);
         }
 
         public NodeIdentity? Identity { get; } = identity;
@@ -680,6 +743,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             GetLiveNodesCallCount++;
+            if (getLiveNodesException is not null)
+            {
+                return ValueTask.FromException<IReadOnlyList<NodeIdentity>>(getLiveNodesException);
+            }
+
             return ValueTask.FromResult(liveNodes);
         }
 

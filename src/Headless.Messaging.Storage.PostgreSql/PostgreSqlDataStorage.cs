@@ -778,7 +778,7 @@ public sealed class PostgreSqlDataStorage(
             + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
-        var owner = _CurrentOwner();
+        var owner = _nodeMembership.GetOwnerTag();
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
@@ -850,7 +850,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@Version", messagingOptions.Value.Version),
             new NpgsqlParameter("@Now", now),
             new NpgsqlParameter("@NewLease", newLease),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _CurrentOwner() ?? (object)DBNull.Value },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
+            {
+                Value = _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value,
+            },
         ];
 
         await using var connection = postgreSqlOptions.Value.CreateConnection();
@@ -942,8 +945,6 @@ public sealed class PostgreSqlDataStorage(
             .ConfigureAwait(false);
     }
 
-    private string? _CurrentOwner() => _nodeMembership.Identity?.ToString();
-
     private object _OwnerParameterValue(DateTime? lockedUntil) =>
-        lockedUntil is null ? DBNull.Value : _CurrentOwner() ?? (object)DBNull.Value;
+        lockedUntil is null ? DBNull.Value : _nodeMembership.GetOwnerTag() ?? (object)DBNull.Value;
 }

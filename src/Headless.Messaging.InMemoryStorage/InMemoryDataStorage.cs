@@ -103,7 +103,7 @@ internal sealed class InMemoryDataStorage(
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
             current.LockedUntil = utcLockedUntil;
-            current.Owner = utcLockedUntil is null ? null : _CurrentOwner();
+            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             updated = true;
@@ -116,7 +116,7 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, timeProvider, _CurrentOwner(), cancellationToken);
+    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, timeProvider, nodeMembership.GetOwnerTag(), cancellationToken);
 
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -157,7 +157,7 @@ internal sealed class InMemoryDataStorage(
             current.ExpiresAt = message.ExpiresAt;
             current.NextRetryAt = utcNextRetryAt;
             current.LockedUntil = utcLockedUntil;
-            current.Owner = utcLockedUntil is null ? null : _CurrentOwner();
+            current.Owner = utcLockedUntil is null ? null : nodeMembership.GetOwnerTag();
             current.Retries = message.Retries;
             current.Content = serializer.Serialize(message.Origin);
             current.ExceptionInfo = message.ExceptionInfo;
@@ -171,7 +171,7 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, timeProvider, _CurrentOwner(), cancellationToken);
+    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, timeProvider, nodeMembership.GetOwnerTag(), cancellationToken);
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,
@@ -691,7 +691,7 @@ internal sealed class InMemoryDataStorage(
                 // rejected by the `NextRetryAt is null` guard). The redundant terminal-status
                 // block was unreachable and has been removed.
                 candidate.LockedUntil = newLease;
-                candidate.Owner = _CurrentOwner();
+                candidate.Owner = nodeMembership.GetOwnerTag();
                 claimed.Add(_ToSnapshot(candidate));
             }
         }
@@ -812,8 +812,6 @@ internal sealed class InMemoryDataStorage(
 
         return reclaimed;
     }
-
-    private string? _CurrentOwner() => nodeMembership.Identity?.ToString();
 
     public ValueTask<int> DeleteReceivedMessageAsync(Guid id, CancellationToken cancellationToken = default)
     {

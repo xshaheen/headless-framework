@@ -170,6 +170,9 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
+        var liveOwnersForReclaim = _options.Value.UseStorageLock
+            ? new LiveOwnersForReclaimCache(_GetLiveOwnersForReclaimAsync, context.CancellationToken)
+            : null;
 
         // Mirror the received-retry guard below: skip spawning a new published-retry task while
         // the previous one is still running under UseStorageLock to avoid concurrent lock-renewal
@@ -179,7 +182,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             _publishedRetryConsumeTask = Task
                 .Factory.StartNew(
-                    () => _ProcessPublishedAsync(storage, context),
+                    () => _ProcessPublishedAsync(storage, context, liveOwnersForReclaim),
                     CancellationToken.None,
                     TaskCreationOptions.DenyChildAttach,
                     TaskScheduler.Default
@@ -252,7 +255,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         _receivedRetryConsumeTask = Task
             .Factory.StartNew(
-                () => _ProcessReceivedAsync(storage, context),
+                () => _ProcessReceivedAsync(storage, context, liveOwnersForReclaim),
                 CancellationToken.None,
                 TaskCreationOptions.DenyChildAttach,
                 TaskScheduler.Default
@@ -280,7 +283,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         await context.WaitAsync(TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks))).ConfigureAwait(false);
     }
 
-    private async Task _ProcessPublishedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessPublishedAsync(
+        IDataStorage connection,
+        ProcessingContext context,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim
+    )
     {
         // Asymmetry note: unlike _ProcessReceivedAsync, the published path does NOT stash the
         // acquired handle into a cross-tick field. The published pickup is expected to complete
@@ -307,7 +314,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
         await _TryReclaimDeadOwnersAsync(
                 StoragePickupKind.Published,
-                context,
+                liveOwnersForReclaim!,
                 liveOwners => connection.ReclaimDeadPublishedOwnersAsync(liveOwners, context.CancellationToken)
             )
             .ConfigureAwait(false);
@@ -315,7 +322,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         await _ExecutePublishedWorkAsync(connection, context).ConfigureAwait(false);
     }
 
-    private async Task _ProcessReceivedAsync(IDataStorage connection, ProcessingContext context)
+    private async Task _ProcessReceivedAsync(
+        IDataStorage connection,
+        ProcessingContext context,
+        LiveOwnersForReclaimCache? liveOwnersForReclaim
+    )
     {
         context.ThrowIfStopping();
 
@@ -337,7 +348,7 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         {
             await _TryReclaimDeadOwnersAsync(
                     StoragePickupKind.Received,
-                    context,
+                    liveOwnersForReclaim!,
                     liveOwners => connection.ReclaimDeadReceivedOwnersAsync(liveOwners, context.CancellationToken)
                 )
                 .ConfigureAwait(false);
@@ -385,11 +396,11 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
 
     private async Task _TryReclaimDeadOwnersAsync(
         StoragePickupKind kind,
-        ProcessingContext context,
+        LiveOwnersForReclaimCache liveOwnersForReclaim,
         Func<IReadOnlyCollection<string>, ValueTask<int>> reclaim
     )
     {
-        var liveOwners = await _GetLiveOwnersForReclaimAsync(context.CancellationToken).ConfigureAwait(false);
+        var liveOwners = await liveOwnersForReclaim.GetAsync().ConfigureAwait(false);
         if (liveOwners is null)
         {
             return;
@@ -423,6 +434,30 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             StoragePickupKind.Received => "Received",
             _ => throw new InvalidOperationException($"Unknown storage pickup kind: {kind}"),
         };
+
+    private sealed class LiveOwnersForReclaimCache(
+        Func<CancellationToken, ValueTask<IReadOnlyCollection<string>?>> getLiveOwners,
+        CancellationToken cancellationToken
+    )
+    {
+        private readonly Lock _gate = new();
+        private Task<IReadOnlyCollection<string>?>? _task;
+
+        public async ValueTask<IReadOnlyCollection<string>?> GetAsync()
+        {
+            Task<IReadOnlyCollection<string>?> task;
+            lock (_gate)
+            {
+                _task ??= getLiveOwners(cancellationToken).AsTask();
+                task = _task;
+            }
+
+            // VSTHRD003 false positive: this helper creates and owns the cached task above.
+#pragma warning disable VSTHRD003
+            return await task.ConfigureAwait(false);
+#pragma warning restore VSTHRD003
+        }
+    }
 
     /// <summary>
     /// Attempts to acquire the published-retry or received-retry distributed lock, wrapping

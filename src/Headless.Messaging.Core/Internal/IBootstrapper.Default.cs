@@ -291,12 +291,17 @@ internal sealed class Bootstrapper(
 
     private void _WarnIfNullNodeMembership()
     {
+        var membership = serviceProvider.GetService<INodeMembership>();
         if (!options.Value.UseStorageLock)
         {
+            if (membership is not null and not NullNodeMembership)
+            {
+                logger.MessagingRecoveryDisabledWithoutStorageLock();
+            }
+
             return;
         }
 
-        var membership = serviceProvider.GetService<INodeMembership>();
         if (membership is NullNodeMembership)
         {
             logger.MessagingRecoveryUsingLockedUntilFloorOnly();
