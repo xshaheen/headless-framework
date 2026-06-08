@@ -22,8 +22,10 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         var knownKey = _KnownKey(cluster);
         var liveKey = _LiveKey(cluster);
         var genKey = _GenKey(cluster, firstIdentity.NodeId);
+        var generationField = _GenerationField(firstIdentity.NodeId);
 
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
         (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
 
         // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
@@ -32,6 +34,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         (await first.Membership.GetLivenessSnapshotAsync(AbortToken)).Should().BeEmpty();
 
         (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeFalse();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
         (await db.SortedSetScoreAsync(liveKey, firstIdentity.ToString())).Should().BeNull();
         (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
 
@@ -45,7 +48,122 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         secondIdentity.Incarnation.Value.Should().Be(2);
         staleAccepted.Should().BeFalse();
         live.Should().Equal([secondIdentity]);
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
         (await db.StringGetAsync(genKey)).ToString().Should().Be("2");
+    }
+
+    [Fact]
+    public async Task should_sweep_orphaned_generation_mirror_during_cleanup()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var knownKey = _KnownKey(cluster);
+        var genKey = _GenKey(cluster, identity.NodeId);
+        var generationField = _GenerationField(identity.NodeId);
+
+        (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
+        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+
+        // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
+        // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        await node.Services.GetRequiredService<RedisMembershipStore>().CleanupAsync(AbortToken);
+
+        (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeFalse();
+        (await db.HashExistsAsync(knownKey, generationField)).Should().BeFalse();
+        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+    }
+
+    [Fact]
+    public async Task should_retain_generation_mirror_when_a_newer_incarnation_is_still_active_during_cleanup()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+
+        // Incarnation 1 will be allowed to expire; incarnation 2 (same node-id) stays alive.
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        var knownKey = _KnownKey(cluster);
+        var generationField = _GenerationField(firstIdentity.NodeId);
+
+        secondIdentity.Incarnation.Value.Should().Be(2);
+        (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
+        (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+
+        // Expire incarnation 1's member payload, then refresh incarnation 2 so it survives the prune.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        (await second.Services.GetRequiredService<IMembershipStore>().HeartbeatAsync(secondIdentity, AbortToken))
+            .Should()
+            .BeTrue();
+
+        await second.Services.GetRequiredService<RedisMembershipStore>().CleanupAsync(AbortToken);
+
+        // Incarnation 1 is pruned, but the live incarnation 2 keeps the shared node-id's mirror in place.
+        (await db.HashExistsAsync(knownKey, firstIdentity.ToString()))
+            .Should()
+            .BeFalse();
+        (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+    }
+
+    [Fact]
+    public async Task should_not_return_retained_member_when_generation_mirror_advances_without_member_payload()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var knownKey = _KnownKey(cluster);
+        var genKey = _GenKey(cluster, identity.NodeId);
+        var generationField = _GenerationField(identity.NodeId);
+
+        _ = await db.StringIncrementAsync(genKey);
+        _ = await db.HashSetAsync(knownKey, generationField, "2");
+
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+        var staleAccepted = await node
+            .Services.GetRequiredService<IMembershipStore>()
+            .HeartbeatAsync(identity, AbortToken);
+
+        snapshot.Should().NotContain(x => x.Identity == identity);
+        staleAccepted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_repair_missing_generation_mirror_during_read()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var knownKey = _KnownKey(cluster);
+        var generationField = _GenerationField(identity.NodeId);
+
+        _ = await db.HashDeleteAsync(knownKey, generationField);
+
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
+    }
+
+    [Fact]
+    public async Task should_treat_generation_prefix_node_ids_as_members_when_payload_is_json()
+    {
+        var cluster = _Cluster();
+        await using var node = await fixture.CreateNodeAsync(cluster, "__gen:node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+
+        var snapshot = await node.Membership.GetLivenessSnapshotAsync(AbortToken);
+
+        snapshot.Should().ContainSingle(x => x.Identity == identity && x.State == NodeLivenessState.Alive);
     }
 
     [Fact]
@@ -58,6 +176,7 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
         await loader.LoadAsync(
             [
                 RedisMembershipHeartbeatScriptDefinition.Instance,
+                RedisMembershipAllocateIncarnationScriptDefinition.Instance,
                 RedisMembershipReadScriptDefinition.Instance,
                 RedisMembershipLeaveScriptDefinition.Instance,
                 RedisMembershipCleanupScriptDefinition.Instance,
@@ -100,6 +219,11 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
     private static RedisKey _GenKey(string cluster, NodeId nodeId)
     {
         return $"coordination:{{{cluster}}}:gen:{nodeId.Value}";
+    }
+
+    private static RedisValue _GenerationField(NodeId nodeId)
+    {
+        return "__gen:" + nodeId.Value;
     }
 
     // Stands in for an arbitrary non-coordination Redis script to prove the loader warms coordination
