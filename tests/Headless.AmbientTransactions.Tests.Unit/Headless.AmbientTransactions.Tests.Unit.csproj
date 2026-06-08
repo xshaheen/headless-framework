@@ -8,7 +8,9 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.AmbientTransactions.Tests.Harness\Headless.AmbientTransactions.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.AmbientTransactions.InMemory\Headless.AmbientTransactions.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

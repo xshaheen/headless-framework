@@ -1,0 +1,14 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Headless.AmbientTransactions.InMemory</RootNamespace>
+    <Description>In-process implementation of the Headless ambient transaction abstractions for tests and single-instance local flows.</Description>
+    <PackageTags>headless;ambient-transactions;in-memory;testing</PackageTags>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
+  </ItemGroup>
+</Project>
