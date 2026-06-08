@@ -44,6 +44,7 @@ internal sealed class RedisMembershipStore(
             )
             .ConfigureAwait(false);
 
+        // The allocate script returns redis.call('incr'), which is always an integer and never nil, so this cast is unconditionally safe.
         return new NodeIncarnation((long)value);
     }
 
@@ -132,6 +133,8 @@ internal sealed class RedisMembershipStore(
             .ConfigureAwait(false);
     }
 
+    // The read path performs opportunistic writes (stale-member prune and generation-mirror backfill) and
+    // therefore must target a writable Redis primary; routing it to a read-only replica will fail.
     public async ValueTask<IReadOnlyList<NodeLivenessSnapshot>> ReadLivenessAsync(
         CancellationToken cancellationToken = default
     )

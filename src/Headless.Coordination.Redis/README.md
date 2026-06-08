@@ -24,7 +24,7 @@ Redis keys use a cluster hash tag around `ClusterName`. Avoid eviction policies 
 
 **Generation counters are retained indefinitely (use stable node-ids).** Per-node generation (`INCR`) counters are never purged — they are required to reject stale incarnations after a node restarts. Prefer **stable** node-ids: ephemeral or randomly-generated node-ids cause generation keys to accumulate without bound, since each fresh id allocates a new permanent counter.
 
-**Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup skips these mirror fields; do not delete them unless the matching generation key is also intentionally reset for a test cluster.
+**Generation mirrors in `:known` are read-path projections, not authority.** The durable per-node generation key remains the heartbeat guard. Allocation and heartbeat scripts mirror the current value into a reserved `:known` hash field named `__gen:<node-id>`, so read Lua can classify retained member payloads from one `HGETALL` result instead of calling `GET` for every member. Cleanup sweeps a mirror field once its node has no surviving member payload (orphan prune); the durable generation key is never touched, so a restarting node re-mirrors on its next allocate or heartbeat.
 
 ## Installation
 

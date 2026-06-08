@@ -53,6 +53,67 @@ public sealed class RedisMembershipLuaTests(RedisMembershipFixture fixture) : Te
     }
 
     [Fact]
+    public async Task should_sweep_orphaned_generation_mirror_during_cleanup()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+        await using var node = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var identity = await node.Membership.RegisterAsync(AbortToken);
+        var knownKey = _KnownKey(cluster);
+        var genKey = _GenKey(cluster, identity.NodeId);
+        var generationField = _GenerationField(identity.NodeId);
+
+        (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("1");
+        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+
+        // The fixture's RedisKnownNodeRetention (600ms) is clamped up to at least the harness
+        // DeadThreshold + DeadRetentionWindow, so wait past the harness prune threshold for the :known prune.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        await node.Services.GetRequiredService<RedisMembershipStore>().CleanupAsync(AbortToken);
+
+        (await db.HashExistsAsync(knownKey, identity.ToString())).Should().BeFalse();
+        (await db.HashExistsAsync(knownKey, generationField)).Should().BeFalse();
+        (await db.StringGetAsync(genKey)).ToString().Should().Be("1");
+    }
+
+    [Fact]
+    public async Task should_retain_generation_mirror_when_a_newer_incarnation_is_still_active_during_cleanup()
+    {
+        var cluster = _Cluster();
+        var db = fixture.ConnectionMultiplexer.GetDatabase();
+
+        // Incarnation 1 will be allowed to expire; incarnation 2 (same node-id) stays alive.
+        await using var first = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var firstIdentity = await first.Membership.RegisterAsync(AbortToken);
+        await using var second = await fixture.CreateNodeAsync(cluster, "node-a", AbortToken);
+        var secondIdentity = await second.Membership.RegisterAsync(AbortToken);
+
+        var knownKey = _KnownKey(cluster);
+        var generationField = _GenerationField(firstIdentity.NodeId);
+
+        secondIdentity.Incarnation.Value.Should().Be(2);
+        (await db.HashExistsAsync(knownKey, firstIdentity.ToString())).Should().BeTrue();
+        (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+
+        // Expire incarnation 1's member payload, then refresh incarnation 2 so it survives the prune.
+        await TimeProvider.System.Delay(CoordinationFixtureExtensions.AfterPruneWait, AbortToken);
+        (await second.Services.GetRequiredService<IMembershipStore>().HeartbeatAsync(secondIdentity, AbortToken))
+            .Should()
+            .BeTrue();
+
+        await second.Services.GetRequiredService<RedisMembershipStore>().CleanupAsync(AbortToken);
+
+        // Incarnation 1 is pruned, but the live incarnation 2 keeps the shared node-id's mirror in place.
+        (await db.HashExistsAsync(knownKey, firstIdentity.ToString()))
+            .Should()
+            .BeFalse();
+        (await db.HashExistsAsync(knownKey, secondIdentity.ToString())).Should().BeTrue();
+        (await db.HashGetAsync(knownKey, generationField)).ToString().Should().Be("2");
+    }
+
+    [Fact]
     public async Task should_not_return_retained_member_when_generation_mirror_advances_without_member_payload()
     {
         var cluster = _Cluster();

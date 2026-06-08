@@ -15,6 +15,7 @@ internal sealed class RedisMembershipAllocateIncarnationScriptDefinition : Redis
         : base(
             """
             local incarnation = redis.call('incr', @genKey)
+            -- Mirror value is a bare decimal (not JSON); read/cleanup classification depends on it not starting with '{'.
             redis.call('hset', @knownKey, @generationField, tostring(incarnation))
             return incarnation
             """

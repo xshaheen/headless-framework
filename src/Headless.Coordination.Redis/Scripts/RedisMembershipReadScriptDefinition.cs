@@ -21,6 +21,11 @@ internal sealed class RedisMembershipReadScriptDefinition : RedisScriptDefinitio
             local currentByNode = {}
             local result = {}
 
+            -- isGenerationField: true for a reserved __gen:<node-id> mirror field, false for a member payload.
+            -- Mirror values are bare decimals written by tostring(incarnation) in the allocate/heartbeat
+            -- scripts; member payloads are cjson objects that always begin with '{'. BOTH checks are required
+            -- so a node-id that itself starts with __gen: is still classified as a member. Keep this predicate
+            -- byte-for-byte identical to its twin in RedisMembershipCleanupScriptDefinition.
             local function isGenerationField(member, payloadText)
               return string.sub(member, 1, generationFieldPrefixLength) == @generationFieldPrefix
                 and string.sub(payloadText, 1, 1) ~= '{'
