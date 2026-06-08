@@ -84,7 +84,9 @@ public static class SetupCoordinationCore
             services.AddHeadlessGuidGenerator();
             services.TryAddSingleton<INodeIdProvider, DefaultNodeIdProvider>();
             services.TryAddSingleton<MembershipEventSource>();
-            services.TryAddSingleton<IMembershipEventSource>(static sp => sp.GetRequiredService<MembershipEventSource>());
+            services.TryAddSingleton<IMembershipEventSource>(static sp =>
+                sp.GetRequiredService<MembershipEventSource>()
+            );
 
             services.TryAddSingleton<MembershipService>(sp => new MembershipService(
                 storeFactory(sp),
@@ -95,7 +97,11 @@ public static class SetupCoordinationCore
                 sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipService>>()
             ));
 
-            services.TryAddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
+            // AddSingleton (not TryAdd) so this real membership wins by last-registration even when a consumer
+            // package registered a NullNodeMembership fallback first (e.g. Headless.Messaging). Coordination is the
+            // stronger, explicit provider and should always replace the null default. A custom INodeMembership must
+            // therefore be registered AFTER AddHeadlessCoordination to take effect.
+            services.AddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
             services.TryAddSingleton<MembershipHeartbeatBackgroundService>();
 
             services.TryAddEnumerable(
