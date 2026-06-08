@@ -194,7 +194,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { CallbackName = "callbacks\r\nnext" };
@@ -251,7 +251,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = "msg\r\n1" };
@@ -332,7 +332,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -354,7 +354,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -517,7 +517,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "acme\r\ncorp" };

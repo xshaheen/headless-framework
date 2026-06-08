@@ -190,12 +190,14 @@ public sealed class ProviderHeaderContributionTests
 
     private static MessagePublishRequestFactory _CreateFactory(MessageRegistration registration)
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.message" } };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.message");
 
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry([registration])
         );
