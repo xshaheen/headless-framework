@@ -7,6 +7,7 @@ import { useFunctionNameStore } from '@/stores/functionNames'
 import { useDashboardStore } from '@/stores/dashboardStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
+import LiveNodesPanel from '@/components/LiveNodesPanel.vue'
 
 const getNextPlannedJob = jobsService.getNextPlannedJob()
 const getOptions = jobsService.getOptions()
@@ -506,6 +507,14 @@ const getVisiblePageNumbers = () => {
             <h2 class="card-title">
               <v-icon class="title-icon" color="primary">mdi-server-network</v-icon>
               Machines
+              <span class="title-info">
+                <v-icon size="x-small" class="title-info-icon">mdi-information-outline</v-icon>
+                <v-tooltip activator="parent" location="top" max-width="280">
+                  Who has <strong>run jobs</strong> — historical, derived from job ownership
+                  (lock holder). An instance stays listed by its job count even after it goes offline,
+                  unlike Live Nodes.
+                </v-tooltip>
+              </span>
             </h2>
             <p class="card-subtitle">{{ machineItems.length }} machine instances</p>
           </div>
@@ -574,6 +583,9 @@ const getVisiblePageNumbers = () => {
             </template>
           </div>
         </div>
+
+        <!-- Live Nodes (coordination membership) -->
+        <LiveNodesPanel />
 
         <!-- System Alerts -->
         <div class="content-card alerts-card">
@@ -846,6 +858,22 @@ const getVisiblePageNumbers = () => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.title-info {
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.title-info-icon {
+  color: #9e9e9e;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.title-info:hover .title-info-icon {
+  opacity: 1;
 }
 
 .title-icon {

@@ -1,6 +1,6 @@
 ---
 title: "feat: Migrate Headless.Jobs membership/recovery onto Headless.Coordination"
-status: active
+status: completed
 type: feat
 date: 2026-06-07
 origin: docs/specs/coordination-primitive.md

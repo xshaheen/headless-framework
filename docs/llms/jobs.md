@@ -36,6 +36,7 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [Use Host Application's Authentication](#use-host-applications-authentication)
     - [Use Host Authentication with Custom Policy](#use-host-authentication-with-custom-policy)
   - [🔧 Fluent API Methods](#-fluent-api-methods)
+  - [Live Nodes View](#live-nodes-view)
   - [🔒 How It Works](#-how-it-works)
   - [🌐 Frontend Integration](#-frontend-integration)
 - [Headless.Jobs.SourceGenerator](#headlessjobssourcegenerator)
@@ -72,6 +73,10 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
   - [Side Effects](#side-effects-2)
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
   - [📦 Installation](#-installation)
+  - [Quick Start](#quick-start-3)
+    - [Node Identity and Recovery Model](#node-identity-and-recovery-model)
+  - [Configuration](#configuration-3)
+  - [Side Effects](#side-effects-3)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, source-generated registration, and distributed coordination.
 
@@ -80,10 +85,12 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 Minimum setup: `Jobs.Core` + `Jobs.EntityFramework` (for persistence) + `Jobs.SourceGenerator` (for compile-time job registration).
 
 Additional packages:
-- `Jobs.Dashboard` -- monitoring UI with authentication (basic, API key, host auth)
-- `Jobs.Caching.Redis` -- multi-instance coordination via Redis (node registry, heartbeat, dead node detection)
+- `Jobs.Dashboard` -- monitoring UI with authentication (basic, API key, host auth) plus a live-nodes cluster view
+- `Jobs.Caching.Redis` -- cron-expression caching for multi-instance deployments (caching only; node liveness/membership comes from `Headless.Coordination`, not Redis)
 - `Jobs.OpenTelemetry` -- distributed tracing and structured logging
 - `Jobs.Abstractions` -- interfaces only (pulled in transitively by Core)
+
+Clustering: the durable operational-store path (`AddOperationalStore`) requires a `Headless.Coordination` provider. Register it with `AddHeadlessCoordination(...)` BEFORE `AddHeadlessJobs(...)`. Node identity on this path is `node@incarnation` (store-allocated), and dead-node recovery is driven by Coordination `NodeLeft` events plus a periodic reconcile -- backend-neutral, no Redis required. The in-memory single-process path (no `AddOperationalStore`) needs no coordination.
 
 Wiring:
 ```csharp
@@ -105,7 +112,10 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Do NOT use Hangfire or Quartz -- use Headless.Jobs (Jobs) for all background jobs in this framework.
 - Mark job methods with `[Jobs("cron-expression")]` attribute. Add `Headless.Jobs.SourceGenerator` to the project for compile-time job registration (eliminates reflection).
 - Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
-- Use `Jobs.Caching.Redis` for multi-instance deployments -- it provides node heartbeat, dead node detection, and distributed coordination.
+- For the durable operational store, register a coordination provider with `AddHeadlessCoordination(c => c.UsePostgreSql(conn))` (or another provider) BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(...))`. Without it, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`. The in-memory path (no `AddOperationalStore`) needs no coordination.
+- On the durable path, node identity is `node@incarnation` (store-allocated), not the machine name. Durable job rows are stamped with this owner.
+- Redis is caching-only for Jobs -- `Jobs.Caching.Redis` provides cron-expression caching only. Do NOT expect it to provide node liveness, heartbeat, or membership; that comes from `Headless.Coordination`.
+- No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
 - For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
 - For cron jobs, the `[Jobs]` attribute takes a cron expression and optional `Priority` parameter (`JobPriority.High`, `Normal`, `LongRunning`).
@@ -473,6 +483,15 @@ services.AddJobs<MyTimeJob, MyCronJob>(config =>
 - `SetBackendDomain(domain)` - Set backend API domain
 - `SetCorsPolicy(policy)` - Configure CORS
 
+## Live Nodes View
+
+The dashboard surfaces the cluster's live nodes (identity, role, state, last-beat) from the `Headless.Coordination` membership liveness snapshot:
+
+- `GET /api/nodes` returns the current node projection.
+- Membership changes (node joined, suspected, recovered, left) push live updates over the existing SignalR hub, so the nodes panel updates without polling.
+
+This replaces the former Redis-driven node feed; node liveness now comes from the coordination substrate.
+
 ## 🔒 How It Works
 
 The dashboard automatically detects your authentication method:
@@ -745,19 +764,17 @@ builder.Logging.AddNLog();
 ---
 # Headless.Jobs.Caching.Redis
 
-Redis-backed distributed coordination for Jobs with node heartbeat monitoring and dead node detection.
+Redis-backed cron-expression caching for Jobs in multi-instance deployments.
 
 ## Problem Solved
 
-Enables multi-instance Jobs deployments with Redis-based node registry, heartbeat monitoring, and automatic dead node cleanup for high availability job scheduling.
+Caches cron-expression lookups in Redis so multi-instance Jobs deployments avoid repeated database reads for the cron-expression set. This package is caching only -- node liveness, heartbeat, and membership are provided by `Headless.Coordination`, not Redis.
 
 ## Key Features
 
-- **Node Registry**: Track all Jobs nodes in Redis
-- **Heartbeat Monitoring**: Periodic node liveness checks
-- **Dead Node Detection**: Automatic cleanup of failed nodes
-- **Distributed Coordination**: Shared state across Jobs instances
-- **Dashboard Integration**: Real-time cluster visibility
+- **Cron-Expression Caching**: Shared Redis cache for the cron-expression set across instances
+- **Distributed Cache Access**: Exposes the underlying distributed cache to the EF persistence layer
+- **Connection Awareness**: Skips cache invalidation when no Redis connection is available
 
 ## Installation
 
@@ -769,14 +786,13 @@ dotnet add package Headless.Jobs.Caching.Redis
 
 ```csharp
 builder.Services
-    .AddJobs(options =>
+    .AddHeadlessJobs(options =>
     {
         options.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 10);
     })
     .AddStackExchangeRedis(redis =>
     {
         redis.Configuration = "localhost:6379";
-        redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
     });
 
 app.UseJobs();
@@ -786,22 +802,15 @@ app.UseJobs();
 
 ```csharp
 builder.Services
-    .AddJobs()
+    .AddHeadlessJobs()
     .AddStackExchangeRedis(redis =>
-{
-    redis.Configuration = "localhost:6379,ssl=true,password=secret";
-    redis.InstanceName = "jobs:";
-    redis.NodeHeartbeatInterval = TimeSpan.FromSeconds(30);
-});
-
-builder.Services.AddJobs(options =>
-{
-    options.ConfigureScheduler(scheduler =>
     {
-        scheduler.NodeIdentifier = "instance-1";
+        redis.Configuration = "localhost:6379,ssl=true,password=secret";
+        redis.InstanceName = "jobs:";
     });
-});
 ```
+
+`AddStackExchangeRedis` takes `JobsRedisOptionBuilder` (a `RedisCacheOptions`). There is no node-heartbeat option -- membership/liveness is configured through `AddHeadlessCoordination(...)`.
 
 ## Dependencies
 
@@ -810,16 +819,14 @@ builder.Services.AddJobs(options =>
 
 ## Side Effects
 
-- Stores node registry and heartbeats in Redis
-- Background service sends periodic heartbeats
-- Periodically scans for and removes dead nodes
-- Creates Redis keys: `nodes:registry`, `hb:{nodeId}`
+- Registers `IJobsCacheContext` backed by Redis for cron-expression caching
+- Stores cron-expression cache entries under the configured `InstanceName` prefix
 ---
 # Headless.Jobs.EntityFramework
 
 Entity Framework Core integration for Jobs, a high-performance background job scheduler for .NET.
 
-This package enables persistence of time-based and cron-based jobs using EF Core, allowing for robust tracking, retry logic, and job state management.
+This package enables persistence of time-based and cron-based jobs using EF Core, allowing for robust tracking, retry logic, and job state management. This is the durable operational-store path; it requires a `Headless.Coordination` provider for node identity and dead-node recovery.
 
 ---
 
@@ -828,3 +835,65 @@ This package enables persistence of time-based and cron-based jobs using EF Core
 ```bash
 dotnet add package Headless.Jobs.EntityFramework
 ```
+
+## Quick Start
+
+The durable operational store requires a coordination provider. Register `AddHeadlessCoordination(...)` BEFORE `AddHeadlessJobs(...)`:
+
+```csharp
+using Headless.Jobs.DbContextFactory;
+using Microsoft.EntityFrameworkCore;
+
+var conn = builder.Configuration.GetConnectionString("DefaultConnection");
+
+// 1. Coordination provider FIRST -- supplies node@incarnation identity + NodeLeft recovery.
+builder.Services.AddHeadlessCoordination(c => c.UseSqlServer(conn));
+
+// 2. Jobs durable operational store.
+builder.Services
+    .AddHeadlessJobs(options =>
+    {
+        options.ConfigureScheduler(scheduler => scheduler.SchedulerTimeZone = TimeZoneInfo.Utc);
+    })
+    .AddOperationalStore(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
+    });
+
+app.UseJobs();
+```
+
+Without a registered coordination provider, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`.
+
+### Node Identity and Recovery Model
+
+- **Owner identity is `node@incarnation`** (store-allocated incarnation), not the machine name. Each durable job row is stamped with the current node's `node@incarnation` owner.
+- **Recovery is event-driven and backend-neutral.** Dead-node reclaim is triggered by Coordination `NodeLeft` events plus a periodic liveness-snapshot reconcile, so it works on the EF/Postgres path WITHOUT Redis. Reclaim matches the dead `node@incarnation` exactly and never touches a restarted node's freshly-stamped rows or unowned-idle rows.
+- **Recovery latency trade-off.** On the no-Redis path, fast-restart recovery is TTL-bounded: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (previously the machine-name self-reclaim was immediate). Tune via the Coordination heartbeat/TTL and `DeadNodeReconcileInterval`.
+- **Fail-stop on membership loss.** If the local node loses membership, the durable scheduler stops processing rather than stamping a stale owner.
+
+## Configuration
+
+```csharp
+builder.Services
+    .AddHeadlessJobs(options =>
+    {
+        options.ConfigureScheduler(scheduler =>
+        {
+            // How often the durable path reconciles dead nodes from the liveness snapshot
+            // to catch any NodeLeft signal missed while not subscribed. Default: 1 minute.
+            scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1);
+        });
+    })
+    .AddOperationalStore(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
+    });
+```
+
+## Side Effects
+
+- Persists time-based and cron-based jobs in EF Core-mapped tables
+- Stamps the `node@incarnation` owner on durable job rows
+- Registers the membership-recovery bridge (NodeLeft + periodic reconcile) and a registration-before-start gate (scheduler processing starts only after coordination registration completes)
+- Requires a registered `Headless.Coordination` provider; fails fast at startup otherwise

@@ -1,18 +1,29 @@
+using Headless.Coordination;
+using Headless.Coordination.PostgreSql;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.DependencyInjection;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.EntityFrameworkCore;
 
+// Run a local Postgres first:
+// docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
+const string connectionString =
+    "User ID=postgres;Password=mysecretpassword;Host=127.0.0.1;Port=5432;Database=headless_jobs_api_demo;";
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Jobs setup with SQLite operational store (file-based)
+// The durable operational store now coordinates node membership through Headless.Coordination, so a coordination
+// provider must be registered BEFORE AddHeadlessJobs (the durable path fails fast otherwise).
+builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(connectionString));
+
+// Jobs setup with a PostgreSQL operational store.
 builder.Services.AddHeadlessJobs(options =>
 {
     options.AddOperationalStore(efOptions =>
     {
         efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
-            dbOptions.UseSqlite("Data Source=jobs-webapi.db", b => b.MigrationsAssembly("Headless.Jobs.Api.Demo"))
+            dbOptions.UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly("Headless.Jobs.Api.Demo"))
         );
     });
 
@@ -21,7 +32,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 var app = builder.Build();
 
-// Ensure Jobs operational store schema is applied
+// Apply the Jobs operational store migrations. The coordination provider creates its own tables during host start.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
