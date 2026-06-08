@@ -778,11 +778,12 @@ public sealed class PostgreSqlDataStorage(
             + "AND (\"LockedUntil\" IS NULL OR \"LockedUntil\" <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
+        var owner = _CurrentOwner();
         object[] sqlParams =
         [
             new NpgsqlParameter("@Id", message.StorageId),
             new NpgsqlParameter("@LockedUntil", ((DateTime?)lockedUntil).ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _CurrentOwner() ?? (object)DBNull.Value },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = owner ?? (object)DBNull.Value },
             new NpgsqlParameter("@Now", timeProvider.GetUtcNow().UtcDateTime),
         ];
 
@@ -799,7 +800,7 @@ public sealed class PostgreSqlDataStorage(
         if (affectedRows > 0)
         {
             message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            message.Owner = _CurrentOwner();
+            message.Owner = owner;
         }
 
         return affectedRows > 0;

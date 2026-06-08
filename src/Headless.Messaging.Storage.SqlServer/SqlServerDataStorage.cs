@@ -795,6 +795,7 @@ public sealed class SqlServerDataStorage(
             + "AND (LockedUntil IS NULL OR LockedUntil <= @Now) "
             + $"AND {_TerminalRowGuardSimple}";
 
+        var owner = _CurrentOwner();
         object[] sqlParams =
         [
             new SqlParameter("@Id", message.StorageId),
@@ -802,7 +803,10 @@ public sealed class SqlServerDataStorage(
             {
                 Value = ((DateTime?)lockedUntil).ToUtcParameterValue(),
             },
-            _OwnerParameter("@Owner", lockedUntil),
+            new SqlParameter("@Owner", SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
+            {
+                Value = owner ?? (object)DBNull.Value,
+            },
             new SqlParameter("@Now", SqlDbType.DateTime2) { Value = timeProvider.GetUtcNow().UtcDateTime },
         ];
 
@@ -819,7 +823,7 @@ public sealed class SqlServerDataStorage(
         if (affectedRows > 0)
         {
             message.LockedUntil = ((DateTime?)lockedUntil).ToUtcOrSelf();
-            message.Owner = _CurrentOwner();
+            message.Owner = owner;
         }
 
         return affectedRows > 0;
@@ -938,7 +942,7 @@ public sealed class SqlServerDataStorage(
                   WHERE live.[Owner] = target.Owner
               )
               AND target.LockedUntil > @Now
-              AND NOT (target.StatusName IN ('Succeeded','Failed') AND target.NextRetryAt IS NULL);
+              AND {_TerminalRowGuardSimple};
             """;
 
         List<SqlParameter> sqlParams =
