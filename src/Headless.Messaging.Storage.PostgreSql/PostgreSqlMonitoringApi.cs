@@ -336,11 +336,13 @@ public sealed class PostgreSqlMonitoringApi(
     {
         var sqlQuery = $"""
             WITH Aggr AS (
-                SELECT to_char("Added",'yyyy-MM-dd-HH') AS "Key",
+                -- HH24 (24-hour) matches the C# key built with DateTime.ToString("yyyy-MM-dd-HH"); Postgres 'HH'
+                -- is 12-hour, which silently mismatched buckets for hours 00 and 13-23.
+                SELECT to_char("Added",'yyyy-MM-dd-HH24') AS "Key",
                 COUNT("Id") AS "Count"
                 FROM {tableName}
                     WHERE "StatusName" = @StatusName AND "Added" >= @MinAdded AND "Added" <= @MaxAdded
-                GROUP BY to_char("Added", 'yyyy-MM-dd-HH')
+                GROUP BY to_char("Added", 'yyyy-MM-dd-HH24')
             )
             SELECT "Key","Count" from Aggr;
             """;
