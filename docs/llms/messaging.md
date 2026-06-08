@@ -437,7 +437,7 @@ services.AddHeadlessMessaging(setup =>
 
 ### Dependencies
 
-`Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`.
+`Headless.AmbientTransactions.Abstractions`, `Headless.Messaging.Abstractions`, `Headless.Messaging.Bus.Abstractions`, `Headless.Messaging.Queue.Abstractions`, `Headless.Hosting`, `Headless.Abstractions`, `Headless.Checks`.
 
 ### Side Effects
 
@@ -1132,11 +1132,11 @@ None.
 
 ### Dependencies
 
-`Headless.Messaging.Core`.
+`Headless.Messaging.Core`, `Headless.AmbientTransactions.InMemory`.
 
 ### Side Effects
 
-Registers in-memory storage and monitoring services. State is lost when the process exits.
+Registers in-memory storage, monitoring services, and the in-memory ambient transaction provider. State is lost when the process exits.
 
 ## Headless.Messaging.Kafka
 
@@ -1381,11 +1381,11 @@ Configure connection string, schema, table names, and provider-specific storage 
 
 ### Dependencies
 
-Npgsql, EF Core provider packages, `Headless.Messaging.Core`.
+Npgsql, EF Core provider packages, `Headless.Messaging.Core`, `Headless.AmbientTransactions.PostgreSql`.
 
 ### Side Effects
 
-Registers PostgreSQL storage, monitoring API, storage initializer, and transaction integration.
+Registers PostgreSQL storage, monitoring API, storage initializer, and the PostgreSQL ambient transaction provider.
 
 ## Headless.Messaging.Storage.SqlServer
 
@@ -1418,11 +1418,11 @@ Configure connection string, schema, table names, and provider-specific storage 
 
 ### Dependencies
 
-Microsoft.Data.SqlClient, EF Core provider packages, `Headless.Messaging.Core`.
+Microsoft.Data.SqlClient, EF Core provider packages, `Headless.Messaging.Core`, `Headless.AmbientTransactions.SqlServer`.
 
 ### Side Effects
 
-Registers SQL Server storage, monitoring API, storage initializer, and transaction integration.
+Registers SQL Server storage, monitoring API, storage initializer, SQL diagnostics for post-commit outbox drain, and the SQL Server ambient transaction provider.
 
 ## Headless.Messaging.Testing
 

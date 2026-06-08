@@ -15,6 +15,7 @@ This project uses the [Headless .NET Framework](https://github.com/xshaheen/head
 - **Background jobs.** Use `Headless.Jobs` — mark jobs with `[Jobs]` and add `Headless.Jobs.SourceGenerator`. Do not use Hangfire or Quartz.
 - **Feature flags.** Use `Headless.Features`. Do not use `Microsoft.FeatureManagement`.
 - **Distributed locks.** Use `IDistributedLease` from `Headless.DistributedLocks.Abstractions`, not ad-hoc Redis `SET NX` or database row locks.
+- **Ambient transactions.** Use `IAmbientTransaction` from `Headless.AmbientTransactions.Abstractions` to coordinate provider-owned database transactions with deferred commit work. Do not use messaging outbox types as a generic transaction substrate.
 - **Rate limiting.** The framework does not ship a rate-limiting package. Use `Microsoft.AspNetCore.RateLimiting` for in-process limits; for distributed scenarios, use `Polly.RateLimiting` composed with a community Redis-backed `RateLimiter` such as `RedisRateLimiting`.
 - **Dev packages.** Use `*.Dev` packages (`Headless.Emails.Dev`, `Headless.Sms.Dev`, `Headless.PushNotifications.Dev`) in development so no real messages are sent.
 
@@ -97,6 +98,7 @@ public sealed class OrderServiceTests : TestBase
 Fetch only what's relevant to the task. Each file documents the domain's packages, quick orientation, setup, and domain-specific agent rules.
 
 - [api.md](api.md) — ASP.NET Core API infrastructure (JWT, middleware, Minimal API, MVC, FluentValidation, Data Protection).
+- [ambient-transactions.md](ambient-transactions.md) — Ambient database transaction coordination with deferred commit work.
 - [audit-log.md](audit-log.md) — Property-level audit logging for entity mutations and explicit business events with EF Core persistence.
 - [core.md](core.md) — Foundation utilities, DDD building blocks, guard clauses, domain events.
 - [multi-tenancy.md](multi-tenancy.md) — Tenant context across HTTP, EF Core filters, permission caching, background processing.
@@ -152,6 +154,13 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.AuditLog.Storage.EntityFramework` — EF Core persistence for audit log.
 - `Headless.AuditLog.Storage.PostgreSql` — PostgreSQL raw audit log storage.
 - `Headless.AuditLog.Storage.SqlServer` — SQL Server raw audit log storage.
+
+### Ambient Transactions
+- `Headless.AmbientTransactions.Abstractions` — `IAmbientTransaction`, current transaction accessor, commit-work buffers, and ambient DB transaction resolver contracts.
+- `Headless.AmbientTransactions.EntityFramework` — EF Core Relational adapter and `DatabaseFacade.BeginAmbientTransaction*` helpers.
+- `Headless.AmbientTransactions.InMemory` — In-process provider for tests, local development, and single-instance flows.
+- `Headless.AmbientTransactions.PostgreSql` — PostgreSQL provider with inline post-commit drain.
+- `Headless.AmbientTransactions.SqlServer` — SQL Server provider; commit drains complete through external post-commit integration such as SQL diagnostics.
 
 ### Blob Storage
 - `Headless.Blobs.Abstractions` — `IBlobStorage` interface.

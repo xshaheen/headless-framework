@@ -70,11 +70,11 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 
 // Publish broadcast messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
+public sealed class OrderService(IOutboxBus bus, IAmbientTransaction transaction)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
+        await using (var dbTransaction = await dbContext.Database.BeginAmbientTransactionAsync(transaction, autoCommit: false, ct))
         {
             await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
             await dbContext.SaveChangesAsync(ct);
