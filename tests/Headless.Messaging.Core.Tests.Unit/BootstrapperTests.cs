@@ -213,7 +213,7 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().Contain(e => e.Level == LogLevel.Information && e.EventId.Id == 85);
+        captured.Should().Contain(e => e.Level == LogLevel.Information && e.EventId.Id == 88);
     }
 
     [Fact]
@@ -236,7 +236,7 @@ public sealed class BootstrapperTests : TestBase
 
         await bootstrapper.BootstrapAsync(AbortToken);
 
-        captured.Should().NotContain(e => e.EventId.Id == 85);
+        captured.Should().NotContain(e => e.EventId.Id == 88);
     }
 
     [Fact]

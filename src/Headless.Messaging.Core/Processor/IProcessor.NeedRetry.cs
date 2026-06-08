@@ -170,7 +170,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         }
 
         var storage = context.Provider.GetRequiredService<IDataStorage>();
-        var liveOwners = await _GetLiveOwnersForReclaimAsync(context.CancellationToken).ConfigureAwait(false);
+
+        // Dead-owner reclaim only runs after a storage lock is acquired (see _ProcessPublishedAsync /
+        // _ProcessReceivedAsync), so skip the per-tick membership query entirely when UseStorageLock is
+        // off — otherwise every tick pays a Coordination round-trip whose result is never used.
+        var liveOwners = _options.Value.UseStorageLock
+            ? await _GetLiveOwnersForReclaimAsync(context.CancellationToken).ConfigureAwait(false)
+            : null;
 
         // Mirror the received-retry guard below: skip spawning a new published-retry task while
         // the previous one is still running under UseStorageLock to avoid concurrent lock-renewal
@@ -363,7 +369,24 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
             return null;
         }
 
-        var liveNodes = await _nodeMembership.GetLiveNodesAsync(ct).ConfigureAwait(false);
+        // Membership is best-effort acceleration (see INodeMembership remarks): a Coordination outage
+        // must degrade reclaim to the per-row LockedUntil floor, not take down the whole retry tick.
+        // Returning null here skips reclaim for this tick while published/received dispatch proceeds.
+        IReadOnlyList<NodeIdentity> liveNodes;
+        try
+        {
+            liveNodes = await _nodeMembership.GetLiveNodesAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception e)
+        {
+            _logger.CoordinationMembershipQueryFailed(e);
+            return null;
+        }
+
         if (!liveNodes.Contains(ownIdentity))
         {
             return null;

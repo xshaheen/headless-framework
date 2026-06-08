@@ -605,12 +605,20 @@ internal static partial class LoggerExtensions
     public static partial void UseStorageLockWithNoOpProviderButRealUnkeyed(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 85,
+        EventId = 88,
         EventName = "MessagingRecoveryUsingLockedUntilFloorOnly",
         Level = LogLevel.Information,
         Message = "Messaging Coordination membership is not registered. Dead-incarnation retry recovery falls back to the per-row LockedUntil floor; register a Coordination provider to accelerate orphaned retry rows."
     )]
     public static partial void MessagingRecoveryUsingLockedUntilFloorOnly(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 89,
+        EventName = "CoordinationMembershipQueryFailed",
+        Level = LogLevel.Debug,
+        Message = "Coordination membership query failed; dead-incarnation retry recovery falls back to the per-row LockedUntil floor for this tick."
+    )]
+    public static partial void CoordinationMembershipQueryFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 79,

@@ -241,7 +241,10 @@ public interface IDataStorage
     /// <summary>
     /// Accelerates retry visibility for published rows leased by owners that are no longer live.
     /// </summary>
-    /// <param name="liveOwners">Serialized live node-incarnation owners.</param>
+    /// <param name="liveOwners">
+    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
+    /// <c>0</c> — it never reclaims all leased rows.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The number of rows reclaimed.</returns>
     ValueTask<int> ReclaimDeadPublishedOwnersAsync(
@@ -291,7 +294,10 @@ public interface IDataStorage
     /// <summary>
     /// Accelerates retry visibility for received rows leased by owners that are no longer live.
     /// </summary>
-    /// <param name="liveOwners">Serialized live node-incarnation owners.</param>
+    /// <param name="liveOwners">
+    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
+    /// <c>0</c> — it never reclaims all leased rows.
+    /// </param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The number of rows reclaimed.</returns>
     ValueTask<int> ReclaimDeadReceivedOwnersAsync(

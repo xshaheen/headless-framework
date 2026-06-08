@@ -903,6 +903,15 @@ public sealed class PostgreSqlDataStorage(
         CancellationToken cancellationToken
     )
     {
+        // Guard the empty-set case: PostgreSQL evaluates `x <> ALL(ARRAY[]::varchar[])` as vacuously
+        // TRUE, so an empty liveOwners would reclaim every leased owned row. Mirror the SqlServer guard
+        // and the IDataStorage contract (empty liveOwners is a no-op). The processor never passes an
+        // empty set (its self-check guarantees the local identity is present), but direct callers might.
+        if (liveOwners.Count == 0)
+        {
+            return 0;
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var sql =
             $"""

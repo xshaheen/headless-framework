@@ -770,7 +770,17 @@ internal sealed class InMemoryDataStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        var liveOwnerSet = liveOwners as ISet<string> ?? new HashSet<string>(liveOwners, StringComparer.Ordinal);
+        // Empty liveOwners is a no-op (IDataStorage contract) — an empty set would otherwise reclaim
+        // every leased owned row, matching the PostgreSQL/SqlServer guards.
+        if (liveOwners.Count == 0)
+        {
+            return 0;
+        }
+
+        // Always build an Ordinal HashSet so the owner comparison matches the PostgreSQL/SqlServer
+        // exact-string semantics. The previous `as ISet<string>` fast path was both dead (the sole
+        // caller passes a string[]) and a latent trap (a non-Ordinal ISet would silently diverge).
+        var liveOwnerSet = new HashSet<string>(liveOwners, StringComparer.Ordinal);
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var reclaimed = 0;
 
