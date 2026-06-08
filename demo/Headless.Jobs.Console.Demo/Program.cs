@@ -25,7 +25,12 @@ var host = Host.CreateDefaultBuilder(args)
             {
                 options.AddOperationalStore(efOptions =>
                 {
-                    efOptions.UseJobsDbContext<JobsDbContext>(dbOptions => dbOptions.UseNpgsql(connectionString));
+                    efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
+                        dbOptions.UseNpgsql(
+                            connectionString,
+                            npgsql => npgsql.MigrationsAssembly("Headless.Jobs.Console.Demo")
+                        )
+                    );
                 });
             });
 
@@ -34,12 +39,11 @@ var host = Host.CreateDefaultBuilder(args)
     )
     .Build();
 
-// Ensure the Jobs operational store schema exists. EnsureCreated provisions the dedicated demo database +
-// schema on first run; the coordination provider creates its own tables during host start.
+// Apply the Jobs operational store migrations. The coordination provider creates its own tables during host start.
 await using (var scope = host.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    await db.Database.MigrateAsync();
 }
 
 await host.RunAsync();

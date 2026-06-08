@@ -22,7 +22,9 @@ builder.Services.AddHeadlessJobs(options =>
 {
     options.AddOperationalStore(efOptions =>
     {
-        efOptions.UseJobsDbContext<JobsDbContext>(dbOptions => dbOptions.UseNpgsql(connectionString));
+        efOptions.UseJobsDbContext<JobsDbContext>(dbOptions =>
+            dbOptions.UseNpgsql(connectionString, npgsql => npgsql.MigrationsAssembly("Headless.Jobs.Api.Demo"))
+        );
     });
 
     options.AddDashboard(dashboard => dashboard.WithNoAuth());
@@ -30,12 +32,11 @@ builder.Services.AddHeadlessJobs(options =>
 
 var app = builder.Build();
 
-// Ensure the Jobs operational store schema exists. EnsureCreated provisions the dedicated demo database +
-// schema on first run; the coordination provider creates its own tables during host start.
+// Apply the Jobs operational store migrations. The coordination provider creates its own tables during host start.
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<JobsDbContext>();
-    await db.Database.EnsureCreatedAsync();
+    await db.Database.MigrateAsync();
 }
 
 // Minimal endpoint to schedule the sample job
