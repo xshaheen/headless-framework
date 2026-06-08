@@ -405,8 +405,15 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             return Task.CompletedTask;
         });
 
-        captured.Count(e => e.Level == LogLevel.Debug && e.Id == 89).Should().Be(2);
-        captured.Count(e => e.Level == LogLevel.Error && e.Id == 93).Should().Be(1);
+        // Poll the captured log rather than asserting once: the call-count increment and the
+        // logger write are separate steps, so GetLiveNodesCallCount == 3 does not guarantee the
+        // EventId-93 escalation log has been emitted yet.
+        await _EventuallyAsync(() =>
+        {
+            captured.Count(e => e.Level == LogLevel.Debug && e.Id == 89).Should().Be(2);
+            captured.Count(e => e.Level == LogLevel.Error && e.Id == 93).Should().Be(1);
+            return Task.CompletedTask;
+        });
     }
 
     [Fact]

@@ -957,6 +957,9 @@ public sealed class SqlServerDataStorage(
         var parameterNames = new List<string>(liveOwners.Count);
         var index = 0;
 
+        // Defensive de-dup: ReclaimDead* is a public IDataStorage contract method, so a direct
+        // caller may pass duplicate owner tags. The processor already de-dups its cached set, but
+        // this keeps the storage method self-sufficient and avoids emitting duplicate NOT IN params.
         foreach (var owner in liveOwners.Distinct(StringComparer.Ordinal))
         {
             var parameterName = $"@LiveOwner{index++}";
