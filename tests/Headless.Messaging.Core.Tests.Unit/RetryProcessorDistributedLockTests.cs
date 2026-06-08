@@ -13,6 +13,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -264,6 +265,125 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
+    public async Task should_not_query_membership_when_retry_locks_are_not_acquired()
+    {
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+
+        var storage = Substitute.For<IDataStorage>();
+        var membership = TestNodeMembership.Active("node-a", 7);
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: lockProvider,
+            membership: membership
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await Task.Delay(200, AbortToken);
+
+        membership.GetLiveNodesCallCount.Should().Be(0);
+        await storage.DidNotReceive().ReclaimDeadPublishedOwnersAsync(
+            Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<CancellationToken>()
+        );
+        await storage.DidNotReceive().ReclaimDeadReceivedOwnersAsync(
+            Arg.Any<IReadOnlyCollection<string>>(),
+            Arg.Any<CancellationToken>()
+        );
+    }
+
+    [Fact]
+    public async Task should_continue_dispatch_when_dead_owner_reclaim_fails()
+    {
+        var fakeLock = Substitute.For<IDistributedLease>();
+        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        var alwaysGranted = Substitute.For<IDistributedLock>();
+        alwaysGranted
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ReclaimDeadPublishedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<int>>(_ => throw new InvalidOperationException("reclaim failed"));
+        storage
+            .ReclaimDeadReceivedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<int>>(_ => throw new InvalidOperationException("reclaim failed"));
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: alwaysGranted,
+            membership: TestNodeMembership.Active("node-a", 7),
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await Task.Delay(200, AbortToken);
+
+        await storage.Received(1).GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage.Received(1).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 90);
+    }
+
+    [Fact]
+    public async Task should_log_reclaim_count_when_dead_owner_rows_are_recovered()
+    {
+        var fakeLock = Substitute.For<IDistributedLease>();
+        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
+        var alwaysGranted = Substitute.For<IDistributedLock>();
+        alwaysGranted
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .ReclaimDeadPublishedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(2));
+        storage
+            .ReclaimDeadReceivedOwnersAsync(Arg.Any<IReadOnlyCollection<string>>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(0));
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: alwaysGranted,
+            membership: TestNodeMembership.Active("node-a", 7),
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await Task.Delay(200, AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Information && e.Id == 91);
+    }
+
+    [Fact]
     public async Task should_skip_owner_reclaim_when_membership_is_inactive()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
@@ -470,7 +590,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         bool useStorageLock,
         IDistributedLock? lockProvider = null,
         IDispatcher? dispatcher = null,
-        INodeMembership? membership = null
+        INodeMembership? membership = null,
+        ILogger<MessageNeedToRetryProcessor>? logger = null
     )
     {
         var messagingOptions = Options.Create(
@@ -482,11 +603,30 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         return new MessageNeedToRetryProcessor(
             messagingOptions,
             retryOptions,
-            NullLogger<MessageNeedToRetryProcessor>.Instance,
+            logger ?? NullLogger<MessageNeedToRetryProcessor>.Instance,
             dispatcher ?? Substitute.For<IDispatcher>(),
             lockProvider ?? _realLockProvider,
             membership ?? new NullNodeMembership()
         );
+    }
+
+    private static ILogger<MessageNeedToRetryProcessor> _CreateCapturingLogger(List<(LogLevel Level, int Id)> captured)
+    {
+        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+
+        return logger;
     }
 
     private ProcessingContext _CreateContext(IDataStorage storage)
@@ -507,6 +647,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         }
 
         public NodeIdentity? Identity { get; } = identity;
+
+        public int GetLiveNodesCallCount { get; private set; }
 
         public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
@@ -537,6 +679,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            GetLiveNodesCallCount++;
             return ValueTask.FromResult(liveNodes);
         }
 

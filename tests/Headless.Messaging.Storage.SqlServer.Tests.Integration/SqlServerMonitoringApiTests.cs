@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -54,7 +55,8 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            _timeProvider
+            _timeProvider,
+            new NullNodeMembership()
         );
         _monitoringApi = _storage.GetMonitoringApi();
 

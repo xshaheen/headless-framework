@@ -621,6 +621,30 @@ internal static partial class LoggerExtensions
     public static partial void CoordinationMembershipQueryFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
+        EventId = 90,
+        EventName = "MessagingDeadOwnerReclaimFailed",
+        Level = LogLevel.Warning,
+        Message = "{RetryKind} retry dead-owner reclaim failed. Dispatch continues for this tick; reclaim will retry on the next cycle."
+    )]
+    public static partial void MessagingDeadOwnerReclaimFailed(
+        this ILogger logger,
+        Exception exception,
+        string retryKind
+    );
+
+    [LoggerMessage(
+        EventId = 91,
+        EventName = "MessagingDeadOwnerRowsReclaimed",
+        Level = LogLevel.Information,
+        Message = "{RetryKind} retry recovered {ReclaimedRows} orphaned rows from dead owners."
+    )]
+    public static partial void MessagingDeadOwnerRowsReclaimed(
+        this ILogger logger,
+        string retryKind,
+        int reclaimedRows
+    );
+
+    [LoggerMessage(
         EventId = 79,
         EventName = "ReceivedRetryLockOwnershipLost",
         Level = LogLevel.Warning,

@@ -26,8 +26,6 @@ namespace Microsoft.Extensions.DependencyInjection;
 [PublicAPI]
 public static class SetupMessaging
 {
-    internal const int OwnerColumnMaxLength = 512;
-
     extension(MessagingSetupBuilder setup)
     {
         /// <summary>

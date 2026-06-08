@@ -1,5 +1,6 @@
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -42,7 +43,8 @@ public sealed class SqlServerStorageConnectionTest(SqlServerTestFixture fixture)
             initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            TimeProvider.System
+            TimeProvider.System,
+            new NullNodeMembership()
         );
 
         await base.InitializeAsync();

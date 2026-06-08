@@ -2,6 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Configuration;
@@ -28,7 +29,7 @@ public sealed class SqlServerDataStorage(
     ISerializer serializer,
     [FromKeyedServices(SequentialGuidType.SqlServer)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership? nodeMembership = null
+    INodeMembership nodeMembership
 ) : IDataStorage
 {
     /// <summary>
@@ -67,7 +68,7 @@ public sealed class SqlServerDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership ?? new NullNodeMembership();
+    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     public async ValueTask ChangePublishStateToDelayedAsync(
         Guid[] storageIds,
@@ -924,31 +925,27 @@ public sealed class SqlServerDataStorage(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var ownerParameters = liveOwners.Select((_, index) => $"@Owner{index}").ToArray();
+        var liveOwnersJson = JsonSerializer.Serialize(liveOwners);
         var sql =
             $"""
-            UPDATE {tableName}
+            UPDATE target
             SET LockedUntil = @Now
-            WHERE Owner IS NOT NULL
-              AND Owner NOT IN ({string.Join(',', ownerParameters)})
-              AND LockedUntil > @Now
-              AND {_TerminalRowGuardSimple};
+            FROM {tableName} AS target
+            WHERE target.Owner IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM OPENJSON(@LiveOwners) WITH ([Owner] nvarchar({DataStorageConstants.OwnerColumnMaxLength}) '$') AS live
+                  WHERE live.[Owner] = target.Owner
+              )
+              AND target.LockedUntil > @Now
+              AND NOT (target.StatusName IN ('Succeeded','Failed') AND target.NextRetryAt IS NULL);
             """;
 
         List<SqlParameter> sqlParams =
         [
             new("@Now", SqlDbType.DateTime2) { Value = now },
+            new("@LiveOwners", SqlDbType.NVarChar, -1) { Value = liveOwnersJson },
         ];
-
-        var ownerIndex = 0;
-        foreach (var owner in liveOwners)
-        {
-            sqlParams.Add(new SqlParameter($"@Owner{ownerIndex}", SqlDbType.NVarChar, SetupMessaging.OwnerColumnMaxLength)
-            {
-                Value = owner,
-            });
-            ownerIndex++;
-        }
 
         await using var connection = new SqlConnection(options.Value.ConnectionString);
         return await connection
@@ -964,7 +961,7 @@ public sealed class SqlServerDataStorage(
     private string? _CurrentOwner() => _nodeMembership.Identity?.ToString();
 
     private SqlParameter _OwnerParameter(string name, DateTime? lockedUntil) =>
-        new(name, SqlDbType.NVarChar, SetupMessaging.OwnerColumnMaxLength)
+        new(name, SqlDbType.NVarChar, DataStorageConstants.OwnerColumnMaxLength)
         {
             Value = lockedUntil is null ? DBNull.Value : _CurrentOwner() ?? (object)DBNull.Value,
         };

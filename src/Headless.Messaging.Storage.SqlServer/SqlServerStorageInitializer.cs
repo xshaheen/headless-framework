@@ -108,7 +108,7 @@ public sealed class SqlServerStorageInitializer(
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
                         [LockedUntil] [datetime2](7) NULL,
-                        [Owner] [nvarchar]({SetupMessaging.OwnerColumnMaxLength}) NULL,
+                        [Owner] [nvarchar]({DataStorageConstants.OwnerColumnMaxLength}) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         [ExceptionInfo] [nvarchar](max) NULL,
@@ -155,10 +155,10 @@ public sealed class SqlServerStorageInitializer(
 
             BEGIN TRY
                 IF COL_LENGTH(N'{GetReceivedTableName()}', N'Owner') IS NULL
-                    ALTER TABLE {GetReceivedTableName()} ADD [Owner] [nvarchar]({SetupMessaging.OwnerColumnMaxLength}) NULL;
+                    ALTER TABLE {GetReceivedTableName()} ADD [Owner] [nvarchar]({DataStorageConstants.OwnerColumnMaxLength}) NULL;
             END TRY
             BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
             END CATCH;
 
             BEGIN TRY
@@ -183,7 +183,7 @@ public sealed class SqlServerStorageInitializer(
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
                         [LockedUntil] [datetime2](7) NULL,
-                        [Owner] [nvarchar]({SetupMessaging.OwnerColumnMaxLength}) NULL,
+                        [Owner] [nvarchar]({DataStorageConstants.OwnerColumnMaxLength}) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
@@ -221,10 +221,10 @@ public sealed class SqlServerStorageInitializer(
 
             BEGIN TRY
                 IF COL_LENGTH(N'{GetPublishedTableName()}', N'Owner') IS NULL
-                    ALTER TABLE {GetPublishedTableName()} ADD [Owner] [nvarchar]({SetupMessaging.OwnerColumnMaxLength}) NULL;
+                    ALTER TABLE {GetPublishedTableName()} ADD [Owner] [nvarchar]({DataStorageConstants.OwnerColumnMaxLength}) NULL;
             END TRY
             BEGIN CATCH
-                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
             END CATCH;
 
             BEGIN TRY

@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
@@ -410,7 +411,8 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             _initializer,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
-            TimeProvider.System
+            TimeProvider.System,
+            new NullNodeMembership()
         );
     }
 }

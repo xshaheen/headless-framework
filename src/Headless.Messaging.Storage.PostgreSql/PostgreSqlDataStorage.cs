@@ -29,7 +29,7 @@ public sealed class PostgreSqlDataStorage(
     // PostgreSQL stores message ids as native uuid (big-endian byte sort) -> Version7 keeps the PK sequential.
     [FromKeyedServices(SequentialGuidType.Version7)] IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
-    INodeMembership? nodeMembership = null
+    INodeMembership nodeMembership
 ) : IDataStorage
 {
     /// <summary>
@@ -69,7 +69,7 @@ public sealed class PostgreSqlDataStorage(
 
     private readonly string _publishedTable = initializer.GetPublishedTableName();
     private readonly string _receivedTable = initializer.GetReceivedTableName();
-    private readonly INodeMembership _nodeMembership = nodeMembership ?? new NullNodeMembership();
+    private readonly INodeMembership _nodeMembership = nodeMembership;
 
     public IMonitoringApi GetMonitoringApi()
     {
