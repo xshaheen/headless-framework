@@ -35,13 +35,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Argument.IsNotNull(store);
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
-        Argument.IsPositive(options.Duration);
-
-        if (options.IsFailSafeEnabled)
-        {
-            Argument.IsPositive(options.FailSafeMaxDuration);
-            Argument.IsPositive(options.FailSafeThrottleDuration);
-        }
+        _ValidateOptions(options);
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -217,6 +211,43 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private static TimeSpan _Max(TimeSpan left, TimeSpan right) => left >= right ? left : right;
 
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
+
+    private static void _ValidateOptions(CacheEntryOptions options)
+    {
+        Argument.IsPositive(options.Duration);
+
+        if (options.IsFailSafeEnabled)
+        {
+            Argument.IsPositive(options.FailSafeMaxDuration);
+            Argument.IsPositive(options.FailSafeThrottleDuration);
+        }
+
+        _ValidateOptionalTimeout(options.FactorySoftTimeout, nameof(options.FactorySoftTimeout));
+        _ValidateOptionalTimeout(options.FactoryHardTimeout, nameof(options.FactoryHardTimeout));
+        Argument.IsPositive(options.BackgroundFactoryCeiling, paramName: nameof(options.BackgroundFactoryCeiling));
+
+        if (
+            options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
+            && options.FactoryHardTimeout != Timeout.InfiniteTimeSpan
+            && options.FactoryHardTimeout <= options.FactorySoftTimeout
+        )
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                "FactoryHardTimeout must be greater than FactorySoftTimeout when both are finite."
+            );
+        }
+    }
+
+    private static void _ValidateOptionalTimeout(TimeSpan timeout, string paramName)
+    {
+        if (timeout == Timeout.InfiniteTimeSpan)
+        {
+            return;
+        }
+
+        Argument.IsPositive(timeout, paramName: paramName);
+    }
 }
 
 internal static partial class FactoryCacheCoordinatorLog

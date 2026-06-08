@@ -10,7 +10,7 @@ namespace Headless.Caching;
 /// This type is the extension point for factory-backed cache behaviors. <see cref="Duration"/>
 /// controls logical freshness. When fail-safe is enabled, the factory coordinator keeps the entry
 /// physically resident for <c>max(Duration, FailSafeMaxDuration)</c> so <c>GetOrAddAsync</c> can serve
-/// the last-known-good value after a factory failure.
+/// the last-known-good value after a factory failure or timeout.
 /// </remarks>
 [PublicAPI]
 public readonly record struct CacheEntryOptions
@@ -21,11 +21,17 @@ public readonly record struct CacheEntryOptions
     /// <summary>Default duration used to throttle factory retries after fail-safe activates.</summary>
     public static readonly TimeSpan DefaultFailSafeThrottleDuration = TimeSpan.FromSeconds(30);
 
+    /// <summary>Default runaway guard for detached background factory completion.</summary>
+    public static readonly TimeSpan DefaultBackgroundFactoryCeiling = TimeSpan.FromMinutes(2);
+
     /// <summary>Initializes a new instance of the <see cref="CacheEntryOptions"/> struct.</summary>
     public CacheEntryOptions()
     {
         FailSafeMaxDuration = DefaultFailSafeMaxDuration;
         FailSafeThrottleDuration = DefaultFailSafeThrottleDuration;
+        FactorySoftTimeout = Timeout.InfiniteTimeSpan;
+        FactoryHardTimeout = Timeout.InfiniteTimeSpan;
+        BackgroundFactoryCeiling = DefaultBackgroundFactoryCeiling;
     }
 
     /// <summary>
@@ -52,6 +58,24 @@ public readonly record struct CacheEntryOptions
     /// clamps this value to the remaining physical lifetime and never extends physical retention.
     /// </summary>
     public TimeSpan FailSafeThrottleDuration { get; init; } = DefaultFailSafeThrottleDuration;
+
+    /// <summary>
+    /// Gets how long a factory-backed read waits before returning a stale value and letting the factory
+    /// continue in the background. Applies only when fail-safe is enabled and a stale reserve exists.
+    /// </summary>
+    public TimeSpan FactorySoftTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Gets the absolute factory timeout. When this timeout fires, the coordinator cancels the factory and
+    /// either serves a stale value or throws <see cref="CacheFactoryTimeoutException"/>.
+    /// </summary>
+    public TimeSpan FactoryHardTimeout { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Gets the runaway guard for a detached background factory after a soft timeout. This value must be
+    /// finite and positive.
+    /// </summary>
+    public TimeSpan BackgroundFactoryCeiling { get; init; } = DefaultBackgroundFactoryCeiling;
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>

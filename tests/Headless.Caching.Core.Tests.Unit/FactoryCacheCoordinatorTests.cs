@@ -24,6 +24,144 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public void should_default_factory_timeouts_to_infinite_and_background_ceiling_to_two_minutes()
+    {
+        // when
+        var options = new CacheEntryOptions();
+
+        // then
+        options.FactorySoftTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+        options.FactoryHardTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+        options.BackgroundFactoryCeiling.Should().Be(TimeSpan.FromMinutes(2));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_factory_soft_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(factorySoftTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "soft-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_factory_hard_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(factoryHardTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "hard-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(-2)]
+    public async Task should_throw_when_background_factory_ceiling_is_non_positive_or_infinite(int milliseconds)
+    {
+        // given
+        var ceiling = milliseconds == -1 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(milliseconds);
+        var options = _CreateOptions(backgroundFactoryCeiling: ceiling);
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    "background-ceiling-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_factory_hard_timeout_is_not_greater_than_soft_timeout()
+    {
+        // given
+        var options = _CreateOptions(
+            factorySoftTimeout: TimeSpan.FromSeconds(2),
+            factoryHardTimeout: TimeSpan.FromSeconds(2)
+        );
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "timeout-order-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_allow_one_factory_timeout_to_be_infinite(bool hardIsInfinite)
+    {
+        // given
+        var options = hardIsInfinite
+            ? _CreateOptions(factorySoftTimeout: TimeSpan.FromSeconds(1), factoryHardTimeout: Timeout.InfiniteTimeSpan)
+            : _CreateOptions(factorySoftTimeout: Timeout.InfiniteTimeSpan, factoryHardTimeout: TimeSpan.FromSeconds(1));
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        result.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_allow_soft_timeout_without_failsafe()
+    {
+        // given
+        var options = _CreateOptions(isFailSafeEnabled: false, factorySoftTimeout: TimeSpan.FromSeconds(1));
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        result.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public void should_create_cache_factory_timeout_exception_as_timeout_exception()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+
+        // when
+        var exception = new CacheFactoryTimeoutException(key, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
+
+        // then
+        exception.Should().BeAssignableTo<TimeoutException>();
+        exception.Key.Should().Be(key);
+        exception.Elapsed.Should().Be(TimeSpan.FromSeconds(3));
+        exception.Limit.Should().Be(TimeSpan.FromSeconds(2));
+        exception.Message.Should().Contain(key);
+    }
+
+    [Fact]
     public async Task should_return_fresh_hit_without_invoking_factory()
     {
         // given
@@ -507,7 +645,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? duration = null,
         bool isFailSafeEnabled = false,
         TimeSpan? maxDuration = null,
-        TimeSpan? throttleDuration = null
+        TimeSpan? throttleDuration = null,
+        TimeSpan? factorySoftTimeout = null,
+        TimeSpan? factoryHardTimeout = null,
+        TimeSpan? backgroundFactoryCeiling = null
     ) =>
         new()
         {
@@ -515,5 +656,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             IsFailSafeEnabled = isFailSafeEnabled,
             FailSafeMaxDuration = maxDuration ?? TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(10),
+            FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
+            FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
+            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? TimeSpan.FromMinutes(2),
         };
+
+    private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value) =>
+        _ => ValueTask.FromResult<string?>(value);
 }
