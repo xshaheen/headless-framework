@@ -39,6 +39,7 @@
     </Folder>
     <Folder Name="/AmbientTransactions/">
         <Project Path="src\Headless.AmbientTransactions.Abstractions\Headless.AmbientTransactions.Abstractions.csproj" />
+        <Project Path="tests\Headless.AmbientTransactions.Tests.Harness\Headless.AmbientTransactions.Tests.Harness.csproj" />
         <Project Path="tests\Headless.AmbientTransactions.Tests.Unit\Headless.AmbientTransactions.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Blobs/">
