@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.AuditLog;
+using Headless.AmbientTransactions;
 using Headless.Checks;
 using Headless.Core;
 using Headless.Domain;
@@ -112,7 +113,7 @@ public static class SetupEntityFramework
             services.TryAddScoped<HeadlessDbContextServices>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             services.TryAddScoped<IHeadlessAuditPersistence, HeadlessAuditPersistence>();
-            services.TryAddSingleton<IAmbientDbTransactionAccessor, EfAmbientDbTransactionAccessor>();
+            services.TryAddSingleton<IAmbientDbTransactionResolver, EfAmbientDbTransactionResolver>();
             // EF change-capture lives alongside the SaveChanges pipeline so any HeadlessDbContext-based
             // consumer gets it wired regardless of which IAuditLogStore (EF/PG/SqlServer) they pick.
             services.TryAddScoped<IAuditChangeCapture, EfAuditChangeCapture>();

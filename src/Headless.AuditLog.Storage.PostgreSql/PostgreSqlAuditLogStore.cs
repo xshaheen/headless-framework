@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.AuditLog;
+using Headless.AmbientTransactions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -10,7 +11,7 @@ namespace Headless.AuditLog.PostgreSql;
 
 internal sealed partial class PostgreSqlAuditLogStore(
     PostgreSqlAuditLogWriter writer,
-    IAmbientDbTransactionAccessor? ambientTransactionAccessor = null,
+    IAmbientDbTransactionResolver? ambientTransactionResolver = null,
     ILogger<PostgreSqlAuditLogStore>? logger = null
 ) : IAuditLogStore
 {
@@ -49,12 +50,12 @@ internal sealed partial class PostgreSqlAuditLogStore(
 
     private (NpgsqlConnection? Connection, NpgsqlTransaction? Transaction) _TryResolveShared(object savingContext)
     {
-        if (ambientTransactionAccessor is null)
+        if (ambientTransactionResolver is null)
         {
             return (null, null);
         }
 
-        var (connection, transaction) = ambientTransactionAccessor.TryResolve(savingContext);
+        var (connection, transaction) = ambientTransactionResolver.TryResolve(savingContext);
 
         if (connection is null || transaction is null)
         {

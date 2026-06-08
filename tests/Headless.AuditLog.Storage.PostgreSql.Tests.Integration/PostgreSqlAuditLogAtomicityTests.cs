@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.AuditLog;
+using Headless.AmbientTransactions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Npgsql;
@@ -134,7 +135,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         rowCount.Should().Be(1);
     }
 
-    private IHost _CreateHost(IAmbientDbTransactionAccessor accessor)
+    private IHost _CreateHost(IAmbientDbTransactionResolver accessor)
     {
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddHeadlessAuditLog(setup =>
@@ -184,7 +185,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
     }
 
-    private sealed class TestAmbientAccessor : IAmbientDbTransactionAccessor
+    private sealed class TestAmbientAccessor : IAmbientDbTransactionResolver
     {
         public DbConnection? Connection { get; set; }
         public DbTransaction? Transaction { get; set; }

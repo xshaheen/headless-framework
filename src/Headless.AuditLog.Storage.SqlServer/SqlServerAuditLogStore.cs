@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.AuditLog;
+using Headless.AmbientTransactions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -10,7 +11,7 @@ namespace Headless.AuditLog.SqlServer;
 
 internal sealed partial class SqlServerAuditLogStore(
     SqlServerAuditLogWriter writer,
-    IAmbientDbTransactionAccessor? ambientTransactionAccessor = null,
+    IAmbientDbTransactionResolver? ambientTransactionResolver = null,
     ILogger<SqlServerAuditLogStore>? logger = null
 ) : IAuditLogStore
 {
@@ -49,12 +50,12 @@ internal sealed partial class SqlServerAuditLogStore(
 
     private (SqlConnection? Connection, SqlTransaction? Transaction) _TryResolveShared(object savingContext)
     {
-        if (ambientTransactionAccessor is null)
+        if (ambientTransactionResolver is null)
         {
             return (null, null);
         }
 
-        var (connection, transaction) = ambientTransactionAccessor.TryResolve(savingContext);
+        var (connection, transaction) = ambientTransactionResolver.TryResolve(savingContext);
 
         if (connection is null || transaction is null)
         {

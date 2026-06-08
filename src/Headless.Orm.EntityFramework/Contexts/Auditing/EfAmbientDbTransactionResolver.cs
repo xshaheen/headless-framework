@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.AuditLog;
+using Headless.AmbientTransactions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -9,7 +9,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// EF Core implementation of <see cref="IAmbientDbTransactionAccessor"/>. Returns the
+/// EF Core implementation of <see cref="IAmbientDbTransactionResolver"/>. Returns the
 /// <see cref="DbConnection"/> and <see cref="DbTransaction"/> backing the
 /// <see cref="DbContext"/>'s current <see cref="IDbContextTransaction"/>, when one is active.
 /// </summary>
@@ -17,7 +17,7 @@ namespace Headless.EntityFramework;
 /// Registered as singleton from <c>AddHeadlessDbContextServices</c> so any audit storage
 /// implementation can opt into transaction enrollment without depending on EF Core.
 /// </remarks>
-internal sealed class EfAmbientDbTransactionAccessor : IAmbientDbTransactionAccessor
+internal sealed class EfAmbientDbTransactionResolver : IAmbientDbTransactionResolver
 {
     public (DbConnection? Connection, DbTransaction? Transaction) TryResolve(object savingContext)
     {
