@@ -849,8 +849,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Third cycle: EventId 82 (Error) fires exactly once.
         captured.Count(e => e.Id == 82 && e.Level == LogLevel.Error).Should().Be(1);
 
-        // Fourth cycle: lock acquire succeeds → counter resets via the unified counter (storage-pickup
-        // / lock-acquire share _CounterRef). Drive one more cycle to verify no further escalation.
+        // Fourth cycle: lock acquire succeeds → _TryAcquireLockAsync resets the lock-specific counter
+        // (_LockCounterRef) only; storage-pickup failures use a separate counter (_CounterRef). Drive
+        // one more cycle to verify no further escalation.
         captured.Clear();
         await sut.ProcessAsync(context);
         await Task.Delay(100, AbortToken);
