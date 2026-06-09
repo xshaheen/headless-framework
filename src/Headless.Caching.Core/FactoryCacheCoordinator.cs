@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
@@ -649,9 +650,11 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Hard,
     }
 
-    private sealed record FactoryTimeoutSelection(FactoryTimeoutKind Kind, TimeSpan Timeout);
+    [StructLayout(LayoutKind.Auto)]
+    private readonly record struct FactoryTimeoutSelection(FactoryTimeoutKind Kind, TimeSpan Timeout);
 
-    private sealed class FactoryRunResult<T>
+    [StructLayout(LayoutKind.Auto)]
+    private readonly struct FactoryRunResult<T>
     {
         private FactoryRunResult(T? value, Task<T?>? runningTask, CancellationTokenSource? internalCancellationTokenSource)
         {
