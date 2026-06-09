@@ -85,4 +85,33 @@ public sealed class RedisCacheSlidingTests(RedisCacheFixture fixture) : RedisCac
 
         capped.HasValue.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task should_not_rearm_ttl_on_value_read_below_threshold()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMilliseconds(900),
+            SlidingExpiration = TimeSpan.FromMilliseconds(300),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        // Read well within the first half of the 300ms window (re-arm threshold = 150ms), so the throttle must
+        // suppress the re-arm: the key's TTL keeps counting down rather than being bumped back toward 300ms.
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+
+        var ttlBefore = await Fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(key);
+        var read = await cache.GetAsync<string>(key, AbortToken);
+        var ttlAfter = await Fixture.ConnectionMultiplexer.GetDatabase().KeyTimeToLiveAsync(key);
+
+        read.Value.Should().Be("value");
+        ttlBefore.Should().NotBeNull();
+        ttlAfter.Should().NotBeNull();
+        // A re-arm would push the TTL back up above ttlBefore; below the threshold it only ever decreases.
+        ttlAfter!.Value.Should().BeLessThanOrEqualTo(ttlBefore!.Value);
+    }
 }

@@ -94,6 +94,51 @@ public sealed class HybridCacheSlidingTests : TestBase
         l1Entry.SlidingExpiration.Should().Be(slidingExpiration);
     }
 
+    [Fact]
+    public async Task should_serve_sliding_l1_hit_when_l2_is_physically_expired()
+    {
+        // given - both tiers hold the sliding entry; L1's local ceiling outlives L2's absolute cap.
+        var localExpiration = TimeSpan.FromSeconds(5);
+        var duration = TimeSpan.FromSeconds(2);
+        var slidingExpiration = TimeSpan.FromMilliseconds(500);
+        var (cache, l1, l2) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = localExpiration });
+        await using var _ = cache;
+
+        var key = Faker.Random.AlphaNumeric(10);
+        var value = Faker.Random.Int();
+        var options = new CacheEntryOptions { Duration = duration, SlidingExpiration = slidingExpiration };
+        await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(value), options, AbortToken);
+
+        // Simulate L2 physical expiry while L1 stays fresh: drop the L2 copy. A subsequent read is a fresh
+        // sliding L1 hit that must fall through to the (now-empty) L2 and still serve the L1 value.
+        (await l2.RemoveAsync(key, AbortToken)).Should().BeTrue();
+
+        var factoryCalls = 0;
+
+        // when
+        var result = await cache.GetOrAddAsync(
+            key,
+            _ =>
+            {
+                factoryCalls++;
+                return new ValueTask<int?>(Faker.Random.Int());
+            },
+            options,
+            AbortToken
+        );
+
+        // then - the value comes from L1 without re-invoking the factory, and the fallthrough does not
+        // repopulate L2 (the served entry has its sliding metadata stripped, so no re-arm fires).
+        result.Value.Should().Be(value);
+        factoryCalls.Should().Be(0);
+
+        var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
+        var l2Entry = await ((IFactoryCacheStore)l2).TryGetEntryAsync<int>(key, AbortToken);
+        l1Entry.Found.Should().BeTrue();
+        l1Entry.Value.Should().Be(value);
+        l2Entry.Found.Should().BeFalse();
+    }
+
     private (HybridCache Cache, IInMemoryCache L1, IRemoteCache L2) _CreateCache(HybridCacheOptions options)
     {
         var l1 = new InMemoryCache(_timeProvider, new InMemoryCacheOptions { CloneValues = true });

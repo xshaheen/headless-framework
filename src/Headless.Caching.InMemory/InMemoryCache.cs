@@ -14,8 +14,6 @@ namespace Headless.Caching;
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
 public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposable
 {
-    private const double _SlidingRearmThreshold = 0.5d;
-
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly PriorityQueue<string, long> _expirationQueue = new();
     private readonly Lock _expirationLock = new();
@@ -1127,7 +1125,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         try
         {
             var value = existingEntry.GetValue<T>();
-            _TryRearmSlidingEntry(key, existingEntry);
+            _TryRearmSlidingEntry(key, existingEntry, _timeProvider.GetUtcNow().UtcDateTime);
 
             return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
         }
@@ -1658,6 +1656,32 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         await _SetInternalAsync(key, entry).ConfigureAwait(false);
     }
 
+    ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        // The live entry carries the authoritative sliding/physical/logical metadata, so re-arm against it
+        // directly. _TryRearmSlidingEntry applies the same throttle + value-equality TryUpdate the direct
+        // GetAsync path uses; the slidingExpiration/physicalExpiresAt parameters are needed only by stores
+        // (Redis) whose metadata is not co-located with the value.
+        if (_memory.TryGetValue(key, out var existingEntry))
+        {
+            _TryRearmSlidingEntry(key, existingEntry, now);
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
     private void _ThrowIfDisposed()
     {
         Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
@@ -1711,7 +1735,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         }
     }
 
-    private void _TryRearmSlidingEntry(string key, CacheEntry entry)
+    private void _TryRearmSlidingEntry(string key, CacheEntry entry, DateTime now)
     {
         if (
             entry.SlidingExpiration is not { } slidingExpiration
@@ -1722,15 +1746,14 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             return;
         }
 
-        var now = _timeProvider.GetUtcNow().UtcDateTime;
-
         if (physicalExpiresAt <= now)
         {
             return;
         }
 
         var remaining = logicalExpiresAt - now;
-        var rearmThreshold = TimeSpan.FromTicks((long)(slidingExpiration.Ticks * _SlidingRearmThreshold));
+        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
+        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
 
         if (remaining > rearmThreshold)
         {

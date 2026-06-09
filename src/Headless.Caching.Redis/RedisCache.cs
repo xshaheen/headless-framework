@@ -37,7 +37,6 @@ public sealed class RedisCache(
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
-    private const double _SlidingRearmThreshold = 0.5d;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
@@ -554,7 +553,11 @@ public sealed class RedisCache(
 
                 for (var i = 0; i < pairs.Length; i++)
                 {
-                    result[pairs[i].Original] = await _RedisValueToCacheValueAsync<T>(pairs[i].Redis, values[i])
+                    result[pairs[i].Original] = await _RedisValueToCacheValueAsync<T>(
+                            pairs[i].Redis,
+                            values[i],
+                            rearm: false
+                        )
                         .ConfigureAwait(false);
                 }
             }
@@ -568,7 +571,7 @@ public sealed class RedisCache(
 
             for (var i = 0; i < originalKeys.Count; i++)
             {
-                result[originalKeys[i]] = await _RedisValueToCacheValueAsync<T>(redisKeys[i], values[i])
+                result[originalKeys[i]] = await _RedisValueToCacheValueAsync<T>(redisKeys[i], values[i], rearm: false)
                     .ConfigureAwait(false);
             }
 
@@ -1027,7 +1030,11 @@ public sealed class RedisCache(
         return serializer.Deserialize<T>((byte[])redisValue!);
     }
 
-    private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(RedisKey redisKey, RedisValue redisValue)
+    private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(
+        RedisKey redisKey,
+        RedisValue redisValue,
+        bool rearm = true
+    )
     {
         if (!redisValue.HasValue)
         {
@@ -1050,7 +1057,13 @@ public sealed class RedisCache(
                     return CacheValue<T>.NoValue;
                 }
 
-                await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+                // Bulk reads (GetAllAsync) skip re-arm: re-arming here issues one KeyTimeToLive + KeyExpire per
+                // sliding key, turning a single batched StringGet into N sequential round trips. Single-key reads
+                // still re-arm so idle-window semantics hold on the hot path.
+                if (rearm)
+                {
+                    await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+                }
 
                 if (frame.IsNull)
                 {
@@ -1186,6 +1199,23 @@ public sealed class RedisCache(
         await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
     }
 
+    async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // No embedded logical lower bound on this path (the coordinator drops it for sliding entries, since it
+        // goes stale after a metadata-only re-arm), so the throttle reads the live key TTL.
+        await _RearmSlidingTtlAsync(_GetKey(key), slidingExpiration, physicalExpiresAt, now, embeddedLogicalExpiresAt: null)
+            .ConfigureAwait(false);
+    }
+
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(string key)
     {
         var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
@@ -1211,7 +1241,12 @@ public sealed class RedisCache(
                 Found: true,
                 IsNull: frame.IsNull,
                 Value: value,
-                LogicalExpiresAt: frame.LogicalExpiresAt,
+                // For sliding entries the embedded logical timestamp goes stale after a metadata-only re-arm
+                // (KeyExpire bumps the key TTL but does not rewrite the frame), so reporting it would make the
+                // coordinator treat a live, recently-touched key as logically expired and spuriously re-run the
+                // factory. Drop it and let freshness rely on key existence + the physical cap, mirroring the
+                // other sliding read paths (_RedisValueToCacheValueAsync, _RedisValueIsLogicallyPresent).
+                LogicalExpiresAt: frame.SlidingExpiration.HasValue ? null : frame.LogicalExpiresAt,
                 PhysicalExpiresAt: frame.PhysicalExpiresAt,
                 SlidingExpiration: frame.SlidingExpiration
             );
@@ -1258,13 +1293,27 @@ public sealed class RedisCache(
             && (frame.SlidingExpiration.HasValue || !_IsExpired(frame.LogicalExpiresAt, now));
     }
 
-    private async ValueTask _TryRearmSlidingEntryAsync(RedisKey redisKey, RedisCacheEntryFrame.DecodedFrame frame, DateTime now)
+    private ValueTask _TryRearmSlidingEntryAsync(RedisKey redisKey, RedisCacheEntryFrame.DecodedFrame frame, DateTime now)
     {
         if (frame.SlidingExpiration is not { } slidingExpiration || frame.PhysicalExpiresAt is not { } physicalExpiresAt)
         {
-            return;
+            return ValueTask.CompletedTask;
         }
 
+        // The frame's embedded logical is a lower bound on the live key TTL (a metadata-only re-arm only ever
+        // pushes the TTL out, never the frame), so the shared helper can use it to skip the KeyTimeToLive probe
+        // when at least half the window still remains.
+        return _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, frame.LogicalExpiresAt);
+    }
+
+    private async ValueTask _RearmSlidingTtlAsync(
+        RedisKey redisKey,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        DateTime? embeddedLogicalExpiresAt
+    )
+    {
         var remainingToCap = physicalExpiresAt - now;
 
         if (remainingToCap <= TimeSpan.Zero)
@@ -1272,18 +1321,29 @@ public sealed class RedisCache(
             return;
         }
 
-        var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
-        var rearmThreshold = TimeSpan.FromTicks((long)(slidingExpiration.Ticks * _SlidingRearmThreshold));
+        // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
+        var rearmThreshold = TimeSpan.FromTicks(slidingExpiration.Ticks / 2);
 
-        if (ttl.HasValue && ttl.Value > rearmThreshold)
+        // Fast path: when the (lower-bound) embedded logical already proves more than half the window remains,
+        // the live TTL — which can only be larger — does too, so skip both the re-arm and its round trip.
+        if (embeddedLogicalExpiresAt is { } embeddedLogical && embeddedLogical - now > rearmThreshold)
         {
             return;
         }
 
-        var expiresIn = _Min(slidingExpiration, remainingToCap);
-
         try
         {
+            // The TTL probe is part of the best-effort re-arm: keep it inside the catch so a transient Redis
+            // error during the probe degrades to "skip the re-arm" instead of failing a value read that the
+            // caller has already satisfied.
+            var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+
+            if (ttl.HasValue && ttl.Value > rearmThreshold)
+            {
+                return;
+            }
+
+            var expiresIn = _Min(slidingExpiration, remainingToCap);
             await _database.KeyExpireAsync(redisKey, expiresIn).ConfigureAwait(false);
         }
         catch (Exception exception)

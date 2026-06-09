@@ -41,13 +41,15 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             Argument.IsPositive(configuredSlidingExpiration);
 
-            if (options.IsFailSafeEnabled)
-            {
-                throw new ArgumentException(
-                    "Sliding expiration and fail-safe are not supported together in this version.",
-                    nameof(options)
-                );
-            }
+            // Redis encodes the idle window as whole milliseconds; a sub-millisecond span floors to 0 and the
+            // frame then decodes as unframed (silent value loss), while in-memory would keep it natively. Reject
+            // it at the single sliding write choke point so every provider behaves identically.
+            Argument.IsGreaterThanOrEqualTo(configuredSlidingExpiration, TimeSpan.FromMilliseconds(1));
+
+            Ensure.False(
+                options.IsFailSafeEnabled,
+                "Sliding expiration and fail-safe are not supported together in this version."
+            );
         }
 
         if (options.IsFailSafeEnabled)
@@ -191,25 +193,22 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             return;
         }
 
-        var logicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
-
-        if (entry.LogicalExpiresAt.HasValue && entry.LogicalExpiresAt.Value >= logicalExpiresAt)
+        // Nothing left to extend once the physical cap has passed.
+        if (physicalExpiresAt <= now)
         {
             return;
         }
 
         try
         {
+            // Delegate to the provider's metadata-only, throttled primitive instead of rewriting the whole value.
+            // The throttle and the "only extend" / physical-cap rules live in the store, which is the only layer
+            // that cheaply knows the entry's true remaining lifetime (Redis key TTL / in-memory logical deadline);
+            // after a metadata-only re-arm the coordinator's embedded logical is no longer authoritative, so the
+            // decision cannot be made here. CancellationToken.None: a caller cancellation must not abort the
+            // best-effort re-arm of a value read that already succeeded.
             await store
-                .SetEntryAsync(
-                    key,
-                    entry.Value,
-                    entry.IsNull,
-                    logicalExpiresAt,
-                    physicalExpiresAt,
-                    slidingExpiration,
-                    CancellationToken.None
-                )
+                .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, CancellationToken.None)
                 .ConfigureAwait(false);
         }
         catch (Exception exception)

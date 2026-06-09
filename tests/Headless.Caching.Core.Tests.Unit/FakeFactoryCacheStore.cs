@@ -13,9 +13,13 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public int SetEntryCalls { get; private set; }
 
+    public int RearmCalls { get; private set; }
+
     public Func<Exception>? TryGetEntryFault { get; set; }
 
     public Func<Exception>? SetEntryFault { get; set; }
+
+    public Func<Exception>? RearmFault { get; set; }
 
     public Func<string, int, Entry?>? TryGetEntryOverride { get; set; }
 
@@ -111,6 +115,61 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 PhysicalExpiresAt: physicalExpiresAt,
                 SlidingExpiration: slidingExpiration
             );
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RearmCalls++;
+
+        if (RearmFault is not null)
+        {
+            throw RearmFault();
+        }
+
+        lock (_lock)
+        {
+            // Models a metadata-only re-arm: extend the stored entry's logical deadline in place, keeping the
+            // value, physical cap, and sliding window. Mirrors the throttle the real stores apply (re-arm only
+            // once at least half the idle window has elapsed) so coordinator throttle behavior is observable.
+            if (
+                !_entries.TryGetValue(key, out var entry)
+                || entry.SlidingExpiration is null
+                || physicalExpiresAt <= now
+            )
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var remaining = entry.LogicalExpiresAt - now;
+
+            if (remaining > TimeSpan.FromTicks(slidingExpiration.Ticks / 2))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var rearmed = now.Add(slidingExpiration);
+
+            if (rearmed > physicalExpiresAt)
+            {
+                rearmed = physicalExpiresAt;
+            }
+
+            if (rearmed <= entry.LogicalExpiresAt)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            _entries[key] = entry with { LogicalExpiresAt = rearmed };
         }
 
         return ValueTask.CompletedTask;

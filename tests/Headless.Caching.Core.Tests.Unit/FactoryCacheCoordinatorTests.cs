@@ -82,7 +82,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         result.Value.Should().Be("cached");
         result.IsStale.Should().BeFalse();
         factoryCalls.Should().Be(0);
-        _store.SetEntryCalls.Should().Be(1);
+        // Re-arm is now a metadata-only TTL bump via TryRearmSlidingAsync, not a full SetEntry rewrite.
+        _store.RearmCalls.Should().Be(1);
+        _store.SetEntryCalls.Should().Be(0);
         entry.Should().NotBeNull();
         entry!.LogicalExpiresAt.Should().Be(now.Add(slidingExpiration));
         entry.PhysicalExpiresAt.Should().Be(physicalExpiresAt);
@@ -425,7 +427,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var entry = _store.GetEntry(key);
         result.Value.Should().Be("concurrent");
         factoryCalls.Should().Be(0);
-        _store.SetEntryCalls.Should().Be(1);
+        _store.RearmCalls.Should().Be(1);
+        _store.SetEntryCalls.Should().Be(0);
         entry.Should().NotBeNull();
         entry!.LogicalExpiresAt.Should().Be(now.Add(slidingExpiration));
         entry.PhysicalExpiresAt.Should().Be(physicalExpiresAt);
@@ -439,7 +442,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         var slidingExpiration = TimeSpan.FromSeconds(1);
         _store.SetEntry(key, "cached", now.AddMilliseconds(100), now.AddSeconds(5), slidingExpiration);
-        _store.SetEntryFault = () => new InvalidOperationException("store write failed");
+        _store.RearmFault = () => new InvalidOperationException("store re-arm failed");
 
         // when
         var result = await _CreateCoordinator()
@@ -549,7 +552,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
                 );
 
         // then
-        await act.Should().ThrowAsync<ArgumentException>().WithParameterName("options");
+        // Sliding + fail-safe is an unsupported combination, guarded via Headless.Checks' Ensure.False
+        // (InvalidOperationException) rather than a hand-rolled ArgumentException.
+        await act.Should().ThrowAsync<InvalidOperationException>();
         factoryCalls.Should().Be(0);
         _store.SetEntryCalls.Should().Be(0);
     }

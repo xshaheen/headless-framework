@@ -1181,6 +1181,43 @@ public sealed class HybridCache(
         }
     }
 
+    async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Re-arm both tiers (KTD-8). L2 carries the authoritative physical cap; L1's own re-arm bounds the new
+        // logical deadline by its locally-capped entry metadata, so passing the L2 cap is safe. L2 is best-effort
+        // (a remote hiccup must not fail the read); L1 is in-process and effectively infallible.
+        if (l2Cache is IFactoryCacheStore l2Store)
+        {
+            try
+            {
+                await l2Store
+                    .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
+        }
+
+        if (LocalCache is IFactoryCacheStore l1Store)
+        {
+            await l1Store
+                .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     private async ValueTask _SetLocalEntryAsync<T>(
         IFactoryCacheStore l1Store,
         string key,

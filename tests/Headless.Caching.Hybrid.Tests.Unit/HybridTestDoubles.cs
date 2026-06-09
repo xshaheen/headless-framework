@@ -29,6 +29,16 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         ((IFactoryCacheStore)cache)
             .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, slidingExpiration, cancellationToken);
 
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) =>
+        ((IFactoryCacheStore)cache)
+            .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken);
+
     public ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
@@ -198,6 +208,16 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         // No-op: writes are silently dropped (non-fatal in HybridCache.SetEntryAsync)
         ValueTask.CompletedTask;
 
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) =>
+        // No-op: best-effort re-arm on a down store is silently dropped.
+        ValueTask.CompletedTask;
+
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
@@ -315,6 +335,14 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
         TimeSpan? slidingExpiration,
+        CancellationToken cancellationToken
+    ) => ValueTask.CompletedTask;
+
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
         CancellationToken cancellationToken
     ) => ValueTask.CompletedTask;
 
