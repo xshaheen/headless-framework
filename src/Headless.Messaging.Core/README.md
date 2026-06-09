@@ -69,17 +69,21 @@ builder.Services.AddHeadlessMessaging(setup =>
 
 });
 
-// Publish broadcast messages with outbox (reliable delivery)
-public sealed class OrderService(IOutboxBus bus, IOutboxTransaction transaction)
+// Publish broadcast messages with the transactional outbox (reliable delivery).
+// EnlistCommitCoordination (from Headless.CommitCoordination.EntityFramework) makes the open transaction the
+// ambient commit coordinator, so the outbox writer stores rows INSIDE it; the EF transaction interceptor
+// dispatches them post-commit and discards them on rollback. The enlist is synchronous on purpose — it must
+// run in the caller's frame so the ambient scope flows to the publish below.
+public sealed class OrderService(IOutboxBus bus, AppDbContext dbContext, IServiceProvider services)
 {
     public async Task PlaceOrderAsync(Order order, CancellationToken ct)
     {
-        await using (var dbTransaction = await dbContext.Database.BeginTransactionAsync(transaction, autoCommit: false, ct))
-        {
-            await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
-            await dbContext.SaveChangesAsync(ct);
-            await dbTransaction.CommitAsync(ct);
-        }
+        await using var tx = await dbContext.Database.BeginTransactionAsync(ct);
+        await using var _ = dbContext.Database.EnlistCommitCoordination(tx, services);
+
+        await bus.PublishAsync(order, new PublishOptions { MessageName = "orders.placed" }, ct);
+        await dbContext.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
     }
 }
 

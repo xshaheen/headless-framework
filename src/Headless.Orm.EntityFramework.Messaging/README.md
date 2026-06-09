@@ -15,9 +15,9 @@ Bridge package that ships the real `IHeadlessOutboxDispatcher` so integration ev
 
 ## Design Notes
 
-- **Option A enlistment.** The dispatcher attaches the EF `IDbContextTransaction` to a fresh transient `IOutboxTransaction` with `AutoCommit = false`, publishes (rows are buffered and written inside the transaction rather than sent to the broker in-band), and detaches in `finally` without disposing — the EF pipeline owns the transaction's commit and dispose lifecycle. Outbox rows therefore commit atomically with the business data.
-- **Post-commit delivery differs by provider.** On SQL Server the rows flush to the broker via the connection-commit ADO.NET diagnostic. On PostgreSQL the background relay dispatches them, which adds latency bounded by the relay interval. Pick the storage provider on `AddHeadlessMessaging` with that trade-off in mind.
-- **Dependency isolation.** Keeping the implementation here leaves `Headless.Orm.EntityFramework` free of any messaging dependency — this bridge is the only messaging-aware seam between the two domains.
+- **Commit-coordinated enlistment.** The save pipeline opens its transaction and synchronously enlists it in commit coordination (`DatabaseFacade.EnlistCommitCoordination`), so the ambient commit coordinator carries the live transaction. The dispatcher just publishes each integration event; the outbox writer writes the rows **inside** the transaction (buffered, not sent to the broker in-band). The registered EF `IDbTransactionInterceptor` drains the buffered dispatch on commit and discards it on rollback, so outbox rows commit atomically with the business data.
+- **Post-commit delivery.** The interceptor triggers the buffered dispatch on commit; the background relay also sweeps committed rows independently for crash recovery (on PostgreSQL the relay is the primary latency-bounded path). Pick the storage provider on `AddHeadlessMessaging` with that trade-off in mind.
+- **Dependency isolation.** This bridge stays the only messaging-aware seam between the two domains. `Headless.Orm.EntityFramework` takes a dependency on `Headless.CommitCoordination.EntityFramework` (generic, datastore-agnostic transaction coordination — not messaging) to own the coordinated save scope.
 - **CDC alternative.** Change Data Capture (for example, Debezium reading the database transaction log) is an advanced alternative deployment for capturing integration events outside the application process; it bypasses this dispatcher entirely and is a host-infrastructure decision, not a package option.
 
 ## Installation
