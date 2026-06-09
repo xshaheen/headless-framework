@@ -27,6 +27,7 @@ public interface IFactoryCacheStore
     /// <param name="isNull">Whether the stored value is the cache null sentinel.</param>
     /// <param name="logicalExpiresAt">The logical expiration timestamp.</param>
     /// <param name="physicalExpiresAt">The physical expiration timestamp.</param>
+    /// <param name="slidingExpiration">The optional idle window used to re-arm logical expiration.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask SetEntryAsync<T>(
         string key,
@@ -34,6 +35,7 @@ public interface IFactoryCacheStore
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     );
 }

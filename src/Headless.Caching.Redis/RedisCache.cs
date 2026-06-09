@@ -37,6 +37,7 @@ public sealed class RedisCache(
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
+    private const double _SlidingRearmThreshold = 0.5d;
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
@@ -511,7 +512,7 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         var redisValue = await _database.StringGetAsync(_GetKey(key), options.ReadMode).ConfigureAwait(false);
-        return _RedisValueToCacheValue<T>(redisValue);
+        return await _RedisValueToCacheValueAsync<T>(_GetKey(key), redisValue).ConfigureAwait(false);
     }
 
     public async ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
@@ -553,7 +554,8 @@ public sealed class RedisCache(
 
                 for (var i = 0; i < pairs.Length; i++)
                 {
-                    result[pairs[i].Original] = _RedisValueToCacheValue<T>(values[i]);
+                    result[pairs[i].Original] = await _RedisValueToCacheValueAsync<T>(pairs[i].Redis, values[i])
+                        .ConfigureAwait(false);
                 }
             }
 
@@ -566,7 +568,8 @@ public sealed class RedisCache(
 
             for (var i = 0; i < originalKeys.Count; i++)
             {
-                result[originalKeys[i]] = _RedisValueToCacheValue<T>(values[i]);
+                result[originalKeys[i]] = await _RedisValueToCacheValueAsync<T>(redisKeys[i], values[i])
+                    .ConfigureAwait(false);
             }
 
             return result.AsReadOnly();
@@ -707,6 +710,16 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        if (_IsExpired(frame.PhysicalExpiresAt, now))
+        {
+            return null;
+        }
+
+        if (frame.SlidingExpiration.HasValue)
+        {
+            return await _database.KeyTimeToLiveAsync(_GetKey(key)).ConfigureAwait(false);
+        }
 
         if (_IsExpired(frame.LogicalExpiresAt, now))
         {
@@ -1014,7 +1027,7 @@ public sealed class RedisCache(
         return serializer.Deserialize<T>((byte[])redisValue!);
     }
 
-    private CacheValue<T> _RedisValueToCacheValue<T>(RedisValue redisValue)
+    private async ValueTask<CacheValue<T>> _RedisValueToCacheValueAsync<T>(RedisKey redisKey, RedisValue redisValue)
     {
         if (!redisValue.HasValue)
         {
@@ -1029,10 +1042,15 @@ public sealed class RedisCache(
             {
                 var now = timeProvider.GetUtcNow().UtcDateTime;
 
-                if (_IsExpired(frame.PhysicalExpiresAt, now) || _IsExpired(frame.LogicalExpiresAt, now))
+                if (
+                    _IsExpired(frame.PhysicalExpiresAt, now)
+                    || (!frame.SlidingExpiration.HasValue && _IsExpired(frame.LogicalExpiresAt, now))
+                )
                 {
                     return CacheValue<T>.NoValue;
                 }
+
+                await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
 
                 if (frame.IsNull)
                 {
@@ -1116,7 +1134,8 @@ public sealed class RedisCache(
             valueSegment,
             isNull: value is null,
             logicalExpiresAt: expiresAt,
-            physicalExpiresAt: expiresAt
+            physicalExpiresAt: expiresAt,
+            slidingExpiration: null
         );
     }
 
@@ -1137,6 +1156,7 @@ public sealed class RedisCache(
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1144,7 +1164,8 @@ public sealed class RedisCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var expiresIn = physicalExpiresAt.Subtract(timeProvider.GetUtcNow().UtcDateTime);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var expiresIn = (slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt).Subtract(now);
         var redisKey = _GetKey(key);
 
         if (expiresIn <= TimeSpan.Zero)
@@ -1154,7 +1175,13 @@ public sealed class RedisCache(
         }
 
         var valueSegment = isNull ? RedisValue.EmptyString : _ToRedisValue(value);
-        var redisValue = RedisCacheEntryFrame.Encode(valueSegment, isNull, logicalExpiresAt, physicalExpiresAt);
+        var redisValue = RedisCacheEntryFrame.Encode(
+            valueSegment,
+            isNull,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            slidingExpiration
+        );
 
         await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
     }
@@ -1185,7 +1212,8 @@ public sealed class RedisCache(
                 IsNull: frame.IsNull,
                 Value: value,
                 LogicalExpiresAt: frame.LogicalExpiresAt,
-                PhysicalExpiresAt: frame.PhysicalExpiresAt
+                PhysicalExpiresAt: frame.PhysicalExpiresAt,
+                SlidingExpiration: frame.SlidingExpiration
             );
         }
 
@@ -1196,7 +1224,8 @@ public sealed class RedisCache(
                 IsNull: true,
                 Value: default,
                 LogicalExpiresAt: null,
-                PhysicalExpiresAt: null
+                PhysicalExpiresAt: null,
+                SlidingExpiration: null
             );
         }
 
@@ -1205,7 +1234,8 @@ public sealed class RedisCache(
             IsNull: false,
             Value: _FromRedisValue<T>(redisValue),
             LogicalExpiresAt: null,
-            PhysicalExpiresAt: null
+            PhysicalExpiresAt: null,
+            SlidingExpiration: null
         );
     }
 
@@ -1224,10 +1254,50 @@ public sealed class RedisCache(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        return !_IsExpired(frame.PhysicalExpiresAt, now) && !_IsExpired(frame.LogicalExpiresAt, now);
+        return !_IsExpired(frame.PhysicalExpiresAt, now)
+            && (frame.SlidingExpiration.HasValue || !_IsExpired(frame.LogicalExpiresAt, now));
+    }
+
+    private async ValueTask _TryRearmSlidingEntryAsync(RedisKey redisKey, RedisCacheEntryFrame.DecodedFrame frame, DateTime now)
+    {
+        if (frame.SlidingExpiration is not { } slidingExpiration || frame.PhysicalExpiresAt is not { } physicalExpiresAt)
+        {
+            return;
+        }
+
+        var remainingToCap = physicalExpiresAt - now;
+
+        if (remainingToCap <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+        var rearmThreshold = TimeSpan.FromTicks((long)(slidingExpiration.Ticks * _SlidingRearmThreshold));
+
+        if (ttl.HasValue && ttl.Value > rearmThreshold)
+        {
+            return;
+        }
+
+        var expiresIn = _Min(slidingExpiration, remainingToCap);
+
+        try
+        {
+            await _database.KeyExpireAsync(redisKey, expiresIn).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            if (_logger.IsEnabled(LogLevel.Debug))
+            {
+                _logger.LogSlidingExpirationRearmFailed(exception, redisKey.ToString());
+            }
+        }
     }
 
     private static bool _IsExpired(DateTime? expiresAt, DateTime now) => expiresAt.HasValue && expiresAt.Value <= now;
+
+    private static TimeSpan _Min(TimeSpan left, TimeSpan right) => left <= right ? left : right;
 
     private T? _DeserializeValueSegment<T>(ReadOnlyMemory<byte> segment)
     {
@@ -1506,4 +1576,12 @@ internal static partial class RedisCacheLog
         Message = "Removed {ExpiredValues} expired values for key: {Key}"
     )]
     public static partial void LogExpiredValuesRemoved(this ILogger logger, long expiredValues, string key);
+
+    [LoggerMessage(
+        EventId = 6,
+        EventName = "SlidingExpirationRearmFailed",
+        Level = LogLevel.Debug,
+        Message = "Unable to re-arm sliding expiration for cache key {Key}; the value will still be returned."
+    )]
+    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
 }

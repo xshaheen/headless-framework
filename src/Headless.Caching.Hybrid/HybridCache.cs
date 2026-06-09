@@ -1024,6 +1024,7 @@ public sealed class HybridCache(
 
         var now = _GetUtcNow();
         CacheStoreEntry<T>? l1StaleCandidate = null;
+        var l1SlidingHit = false;
 
         if (LocalCache is IFactoryCacheStore l1Store)
         {
@@ -1033,10 +1034,18 @@ public sealed class HybridCache(
             {
                 _logger.LogLocalCacheHit(key);
                 Interlocked.Increment(ref _localCacheHits);
-                return l1Entry;
-            }
 
-            if (l1Entry.IsPhysicallyPresent(now))
+                if (!l1Entry.SlidingExpiration.HasValue)
+                {
+                    return l1Entry;
+                }
+
+                // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
+                // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
+                l1SlidingHit = true;
+                l1StaleCandidate = l1Entry with { SlidingExpiration = null };
+            }
+            else if (l1Entry.IsPhysicallyPresent(now))
             {
                 l1StaleCandidate = l1Entry;
             }
@@ -1054,12 +1063,16 @@ public sealed class HybridCache(
                     IsNull: l1Value.IsNull,
                     Value: l1Value.Value,
                     LogicalExpiresAt: null,
-                    PhysicalExpiresAt: null
+                    PhysicalExpiresAt: null,
+                    SlidingExpiration: null
                 );
             }
         }
 
-        _logger.LogLocalCacheMiss(key);
+        if (!l1SlidingHit)
+        {
+            _logger.LogLocalCacheMiss(key);
+        }
 
         if (l2Cache is not IFactoryCacheStore l2Store)
         {
@@ -1096,6 +1109,7 @@ public sealed class HybridCache(
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1109,7 +1123,15 @@ public sealed class HybridCache(
             try
             {
                 await l2Store
-                    .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                    .SetEntryAsync(
+                        key,
+                        value,
+                        isNull,
+                        logicalExpiresAt,
+                        physicalExpiresAt,
+                        slidingExpiration,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
             catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -1119,7 +1141,7 @@ public sealed class HybridCache(
         }
         else
         {
-            var expiresIn = physicalExpiresAt.Subtract(_GetUtcNow());
+            var expiresIn = (slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt).Subtract(_GetUtcNow());
 
             try
             {
@@ -1140,7 +1162,8 @@ public sealed class HybridCache(
                 IsNull: isNull,
                 Value: isNull ? default : value,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
 
             await _SetLocalEntryAsync(l1Store, key, entry, cancellationToken).ConfigureAwait(false);
@@ -1184,7 +1207,15 @@ public sealed class HybridCache(
             }
 
             await l1Store
-                .SetEntryAsync(key, entry.Value, entry.IsNull, localCeiling.Value, localCeiling.Value, cancellationToken)
+                .SetEntryAsync(
+                    key,
+                    entry.Value,
+                    entry.IsNull,
+                    localCeiling.Value,
+                    localCeiling.Value,
+                    slidingExpiration: null,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return;
@@ -1194,7 +1225,15 @@ public sealed class HybridCache(
         var physicalExpiresAt = localCeiling.HasValue ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
 
         await l1Store
-            .SetEntryAsync(key, entry.Value, entry.IsNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+            .SetEntryAsync(
+                key,
+                entry.Value,
+                entry.IsNull,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                entry.SlidingExpiration,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 

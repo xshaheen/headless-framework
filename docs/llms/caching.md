@@ -83,6 +83,8 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - For hybrid caching, register memory cache as non-default (`AddInMemoryCache(isDefault: false)`), then register Redis cache, then call `AddHybridCache()`. The hybrid cache becomes the default `ICache`.
 - Always check `CacheValue<T>.HasValue` before accessing `.Value` — cache misses return `HasValue = false`, not null.
 - `GetOrAddAsync` takes `CacheEntryOptions`. Passing a `TimeSpan` still works through implicit conversion when only duration is needed.
+- Set `CacheEntryOptions.SlidingExpiration` when a factory-backed entry should expire after an idle window while still respecting `Duration` as the absolute cap. Value reads re-arm; metadata reads such as `GetExpirationAsync` do not.
+- Do not combine sliding expiration and fail-safe in the same `CacheEntryOptions`; the coordinator rejects that combination.
 - Enable fail-safe per factory-backed entry with `CacheEntryOptions.IsFailSafeEnabled = true`. When the factory throws and a logically-expired value is still physically retained, `GetOrAddAsync` serves that value and returns `CacheValue<T>.IsStale = true`.
 - Fail-safe retention is bounded by `max(Duration, FailSafeMaxDuration)` from entry creation. `FailSafeThrottleDuration` restamps logical expiration to avoid hammering a failing factory, but never extends physical retention.
 - Normal value reads (`GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`) use logical expiration. A fail-safe reserve is only consumed by `GetOrAddAsync`.
@@ -92,10 +94,10 @@ Use `CacheValue<T>` return type — check `.HasValue` before accessing `.Value`.
 - StackExchange.Redis does not support `CancellationToken` — timeouts are configured via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`. Cancellation is checked at the start of operations only.
 - For Redis, SCAN-based operations (`RemoveByPrefixAsync`, `GetAllKeysByPrefixAsync`) are cancellable during iteration; single-key and batch operations complete atomically once started.
 - Redis scalar entries use a versioned binary envelope. Do not parse Redis string bytes as the application payload directly; strip the envelope first unless the key is a raw counter.
-- Redis key TTL follows physical expiration, not logical expiration, when fail-safe is enabled.
+- Redis key TTL follows physical expiration when fail-safe is enabled and follows the sliding idle deadline when sliding expiration is enabled.
 - Use `options.KeyPrefix` to namespace cache keys per application or module.
 - Memory cache supports `CloneValues = true` for value isolation between callers — useful when cached objects are mutated after retrieval.
-- Hybrid cache `DefaultLocalExpiration` controls L1 TTL independently of L2. Set to shorter durations than L2 for freshness.
+- Hybrid cache `DefaultLocalExpiration` controls L1 TTL independently of L2. Set to shorter durations than L2 for freshness; sliding factory entries still use the L2 physical cap as the absolute duration authority.
 
 ---
 
@@ -119,11 +121,13 @@ Provides a provider-agnostic caching API, enabling seamless switching between me
 - `IRemoteCache` - Marker interface for remote implementations
 - `ICache<T>` - Strongly-typed cache wrapper
 - `CacheValue<T>` - Cache result with `HasValue` semantics and an `IsStale` flag when fail-safe serves a stale value.
-- `CacheEntryOptions` - Factory-backed entry options: `Duration`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, and `FailSafeThrottleDuration`.
+- `CacheEntryOptions` - Factory-backed entry options: `Duration`, `SlidingExpiration`, `IsFailSafeEnabled`, `FailSafeMaxDuration`, and `FailSafeThrottleDuration`.
 
 ## Design Notes
 
 `GetOrAddAsync` accepts `CacheEntryOptions` so factory-backed cache entries have a stable extension point for fail-safe, factory timeout, refresh, and tagging features. A `TimeSpan` converts implicitly to `CacheEntryOptions`, so positional duration-only call sites keep their shorthand while explicit options are available when a caller wants to name the duration. This is a greenfield public API break for named arguments: callers using `expiration: ...` on `GetOrAddAsync` must rename that argument to `options: ...`.
+
+`SlidingExpiration` is an optional idle window for factory-backed entries. `Duration` remains the absolute cap from entry creation, and value-returning reads re-arm the logical deadline to `min(now + SlidingExpiration, createdAt + Duration)`. Metadata reads do not re-arm. Sliding expiration and fail-safe are rejected together in this version.
 
 Fail-safe is opt-in and only applies to `GetOrAddAsync`. Direct writes keep the `TimeSpan?` API and write logical expiration equal to physical expiration. A stale value served by fail-safe returns `CacheValue<T>.IsStale = true` only for the activating call; reads during the throttle window are logical hits and return `IsStale = false`.
 
@@ -202,14 +206,14 @@ Centralizes the `GetOrAddAsync` state machine so memory, Redis, and hybrid provi
 
 - `FactoryCacheCoordinator` - shared factory orchestration engine.
 - `IFactoryCacheStore` - provider primitive for metadata-aware entry reads and writes.
-- `CacheStoreEntry<T>` - logical and physical expiration snapshot used by the coordinator.
+- `CacheStoreEntry<T>` - logical, physical, and optional sliding expiration snapshot used by the coordinator.
 - `CacheStoreEntryExtensions` - shared `IsFresh`/`IsPhysicallyPresent` predicates so every provider and the coordinator agree on the expiration boundary (an entry is expired at the exact tick, `expiresAt <= now`).
 - `FactoryCacheCoordinator.IsCallerCancellation` - shared predicate provider composites use so caller cancellation propagates while an unrelated/downstream `OperationCanceledException` activates fail-safe consistently.
 - Fail-safe activation log when stale data is served.
 
 ### Design Notes
 
-Providers construct the coordinator directly with their `TimeProvider` and logger; the Core package has no DI setup. Store read failures are treated as misses, and fail-safe restamp writes are best-effort so a stale value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe.
+Providers construct the coordinator directly with their `TimeProvider` and logger; the Core package has no DI setup. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration and fail-safe are rejected together because one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve.
 
 ### Installation
 
@@ -254,9 +258,9 @@ Provides high-performance in-memory caching using the unified `ICache` abstracti
 
 ## Design Notes
 
-Memory cache stores entries in an internal envelope with logical expiration and physical expiration. Direct writes set both timestamps equal. Fail-safe `GetOrAddAsync` can make physical expiration outlive logical expiration so a stale reserve stays in memory after normal value reads miss. Physical expiration still drives eviction, LRU maintenance, size compaction, `GetCountAsync`, and key listing. Logical expiration drives `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`, and `GetExpirationAsync`.
+Memory cache stores entries in an internal envelope with logical expiration, physical expiration, and optional sliding expiration. Direct writes set logical and physical timestamps equal. Fail-safe `GetOrAddAsync` can make physical expiration outlive logical expiration so a stale reserve stays in memory after normal value reads miss. Sliding `GetOrAddAsync` keeps physical expiration as the absolute cap and re-arms logical expiration on value reads only; `GetExpirationAsync`, `ExistsAsync`, key listing, and count operations do not extend the idle window. Physical expiration still drives eviction, LRU maintenance, size compaction, `GetCountAsync`, and key listing. Logical expiration drives `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`, and `GetExpirationAsync`.
 
-Long `FailSafeMaxDuration` values can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments.
+Long `FailSafeMaxDuration` values and long sliding absolute caps can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments.
 
 ## Installation
 
@@ -328,7 +332,7 @@ Provides distributed caching using Redis via the unified `ICache` abstraction, e
 
 ## Design Notes
 
-Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte header followed by the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is mapped to the Redis key TTL; when fail-safe is enabled, Redis retains the key until physical expiration even after logical expiration has passed. Logical expiration rides in the payload so normal value reads can miss while `GetOrAddAsync` still has a fail-safe reserve. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
+Scalar write operations (`UpsertAsync`, `TryInsertAsync`, `TryReplaceAsync`, `TryReplaceIfEqualAsync`, `UpsertAllAsync`) store entries as a versioned binary envelope: a 19-byte base header followed by an optional 8-byte sliding-expiration field and the raw value segment produced by the cache value codec. The header starts with magic/version bytes `0xFF 0x01`, then flags, then logical and physical expiration timestamps encoded as little-endian Unix milliseconds. Physical expiration is mapped to the Redis key TTL when fail-safe is enabled, so Redis retains the key until physical expiration even after logical expiration has passed. Sliding expiration maps the key TTL to the idle deadline and keeps physical expiration in the envelope as the absolute cap. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) bypass framing and write raw Redis-native numeric strings (see below).
 
 The envelope byte layout is:
 
@@ -336,10 +340,11 @@ The envelope byte layout is:
 | --- | --- | --- |
 | 0 | Magic | `0xFF` — marks a framed entry |
 | 1 | Version | `0x01` — current envelope version |
-| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt` |
+| 2 | Flags | bit0 = `isNull`, bit1 = `hasLogicalExpiresAt`, bit2 = `hasPhysicalExpiresAt`, bit3 = `hasSlidingExpiration` |
 | 3–10 | LogicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit1 is set) |
 | 11–18 | PhysicalExpiresAt | `Int64` little-endian Unix milliseconds (present only when bit2 is set) |
-| 19+ | ValueSegment | raw codec bytes; empty when `isNull` is set |
+| 19–26 | SlidingExpiration | `Int64` little-endian milliseconds (present only when bit3 is set) |
+| 19+ or 27+ | ValueSegment | raw codec bytes; offset is 27 when bit3 is set, otherwise 19; empty when `isNull` is set |
 
 Null scalar values are represented by a header flag with an empty value segment. The literal string `"@@NULL"` is now a normal cacheable string when written through Redis cache APIs. Raw legacy keys containing `"@@NULL"` still read as null. Atomic counters (`Increment`, `SetIfHigher`, `SetIfLower`) remain raw Redis-native numeric strings so Redis can perform native atomic arithmetic; their read path falls back to the raw value codec.
 
@@ -497,6 +502,8 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 | `KeyPrefix`              | `""`           | Prefix for all cache keys                        |
 | `DefaultLocalExpiration` | `5 minutes`    | Default L1 TTL (uses L2 TTL if null)             |
 | `InstanceId`             | Auto-generated | Unique ID for filtering self-originated messages |
+
+For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy only. Hybrid revalidates sliding L1 hits against L2 before re-arm so L2 keeps the original `Duration` as the absolute cap. If L2 is unavailable, a fresh L1 sliding value can still be returned, but the read is not re-armed.
 
 ## Exception Handling
 

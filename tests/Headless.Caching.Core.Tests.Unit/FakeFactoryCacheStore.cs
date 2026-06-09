@@ -17,6 +17,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public Func<Exception>? SetEntryFault { get; set; }
 
+    public Func<string, int, Entry?>? TryGetEntryOverride { get; set; }
+
     public Entry? GetEntry(string key)
     {
         lock (_lock)
@@ -25,7 +27,13 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         }
     }
 
-    public void SetEntry<T>(string key, T? value, DateTime logicalExpiresAt, DateTime physicalExpiresAt)
+    public void SetEntry<T>(
+        string key,
+        T? value,
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration = null
+    )
     {
         lock (_lock)
         {
@@ -33,7 +41,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 Value: value,
                 IsNull: value is null,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
         }
     }
@@ -48,8 +57,15 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
             throw TryGetEntryFault();
         }
 
+        var overrideEntry = TryGetEntryOverride?.Invoke(key, TryGetEntryCalls);
+
         lock (_lock)
         {
+            if (overrideEntry is not null)
+            {
+                _entries[key] = overrideEntry;
+            }
+
             if (!_entries.TryGetValue(key, out var entry))
             {
                 return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
@@ -61,7 +77,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     IsNull: entry.IsNull,
                     Value: (T?)entry.Value,
                     LogicalExpiresAt: entry.LogicalExpiresAt,
-                    PhysicalExpiresAt: entry.PhysicalExpiresAt
+                    PhysicalExpiresAt: entry.PhysicalExpiresAt,
+                    SlidingExpiration: entry.SlidingExpiration
                 )
             );
         }
@@ -73,6 +90,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
     {
@@ -90,12 +108,19 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 Value: value,
                 IsNull: isNull,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
         }
 
         return ValueTask.CompletedTask;
     }
 
-    internal sealed record Entry(object? Value, bool IsNull, DateTime LogicalExpiresAt, DateTime PhysicalExpiresAt);
+    internal sealed record Entry(
+        object? Value,
+        bool IsNull,
+        DateTime LogicalExpiresAt,
+        DateTime PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration
+    );
 }

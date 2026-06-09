@@ -90,6 +90,8 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 | `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL (uses L2 TTL if null) |
 | `InstanceId` | Auto-generated | Unique ID for filtering self-originated messages |
 
+For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy only. Hybrid revalidates sliding L1 hits against L2 before re-arm so L2 keeps the original `Duration` as the absolute cap. If L2 is unavailable, a fresh L1 sliding value can still be returned, but the read is not re-armed.
+
 ## Exception Handling
 
 | Scenario | Behavior |

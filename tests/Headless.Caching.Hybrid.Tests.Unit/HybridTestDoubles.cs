@@ -23,10 +23,11 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     ) =>
         ((IFactoryCacheStore)cache)
-            .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken);
+            .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, slidingExpiration, cancellationToken);
 
     public ValueTask<bool> UpsertAsync<T>(
         string key,
@@ -191,6 +192,7 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     ) =>
         // No-op: writes are silently dropped (non-fatal in HybridCache.SetEntryAsync)
@@ -300,7 +302,8 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
             IsNull: false,
             Value: typedValue,
             LogicalExpiresAt: null,
-            PhysicalExpiresAt: null
+            PhysicalExpiresAt: null,
+            SlidingExpiration: null
         );
         return new ValueTask<CacheStoreEntry<T>>(entry);
     }
@@ -311,6 +314,7 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     ) => ValueTask.CompletedTask;
 

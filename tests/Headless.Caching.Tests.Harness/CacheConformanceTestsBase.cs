@@ -333,6 +333,86 @@ public abstract class CacheConformanceTestsBase : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    public virtual async Task should_keep_sliding_entry_alive_when_read_within_idle_window()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateSlidingOptions();
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(options.SlidingExpiration!.Value - TimeSpan.FromMilliseconds(25));
+
+        var firstRead = await cache.GetAsync<string>(key, AbortToken);
+
+        await AdvanceAsync(options.SlidingExpiration.Value - TimeSpan.FromMilliseconds(25));
+        var secondRead = await cache.GetAsync<string>(key, AbortToken);
+
+        await AdvanceAsync(options.SlidingExpiration.Value + TimeSpan.FromMilliseconds(75));
+        var idleRead = await cache.GetAsync<string>(key, AbortToken);
+
+        firstRead.Value.Should().Be("value");
+        secondRead.Value.Should().Be("value");
+        idleRead.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_expire_sliding_entry_at_absolute_duration_cap()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateSlidingOptions(duration: TimeSpan.FromMilliseconds(450), sliding: TimeSpan.FromMilliseconds(150));
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        for (var i = 0; i < 3; i++)
+        {
+            await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+            (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
+        }
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(180));
+        var capped = await cache.GetAsync<string>(key, AbortToken);
+
+        capped.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_not_rearm_sliding_entry_when_metadata_is_read()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateSlidingOptions(sliding: TimeSpan.FromMilliseconds(150));
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+
+        (await cache.ExistsAsync(key, AbortToken)).Should().BeTrue();
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(90));
+        var expired = await cache.GetAsync<string>(key, AbortToken);
+
+        expired.HasValue.Should().BeFalse();
+    }
+
+    public virtual async Task should_not_rearm_non_sliding_entry()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions { Duration = TimeSpan.FromMilliseconds(180) };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(120));
+
+        (await cache.GetAsync<string>(key, AbortToken)).HasValue.Should().BeTrue();
+
+        await AdvanceAsync(TimeSpan.FromMilliseconds(100));
+        var expired = await cache.GetAsync<string>(key, AbortToken);
+
+        expired.HasValue.Should().BeFalse();
+    }
+
     private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null) =>
         new()
         {
@@ -340,6 +420,13 @@ public abstract class CacheConformanceTestsBase : TestBase
             IsFailSafeEnabled = true,
             FailSafeMaxDuration = TimeSpan.FromMilliseconds(900),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromMilliseconds(200),
+        };
+
+    private static CacheEntryOptions _CreateSlidingOptions(TimeSpan? duration = null, TimeSpan? sliding = null) =>
+        new()
+        {
+            Duration = duration ?? TimeSpan.FromMilliseconds(700),
+            SlidingExpiration = sliding ?? TimeSpan.FromMilliseconds(200),
         };
 
     protected sealed record CacheConformanceObject(Guid Id, string Name);

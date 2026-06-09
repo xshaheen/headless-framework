@@ -37,6 +37,19 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Argument.IsNotNull(factory);
         Argument.IsPositive(options.Duration);
 
+        if (options.SlidingExpiration is { } configuredSlidingExpiration)
+        {
+            Argument.IsPositive(configuredSlidingExpiration);
+
+            if (options.IsFailSafeEnabled)
+            {
+                throw new ArgumentException(
+                    "Sliding expiration and fail-safe are not supported together in this version.",
+                    nameof(options)
+                );
+            }
+        }
+
         if (options.IsFailSafeEnabled)
         {
             Argument.IsPositive(options.FailSafeMaxDuration);
@@ -50,6 +63,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         if (entry.IsFresh(now))
         {
+            await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
             return _ToCacheValue(entry, isStale: false);
         }
 
@@ -62,6 +76,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (entry.IsFresh(now))
             {
+                await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                 return _ToCacheValue(entry, isStale: false);
             }
 
@@ -99,9 +114,23 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 ? _Max(options.Duration, options.FailSafeMaxDuration)
                 : options.Duration;
             var physicalExpiresAt = now.Add(physicalDuration);
+            var slidingExpiration = options.SlidingExpiration;
+
+            if (slidingExpiration.HasValue)
+            {
+                logicalExpiresAt = _Min(now.Add(slidingExpiration.Value), physicalExpiresAt);
+            }
 
             await store
-                .SetEntryAsync(key, value, isNull: value is null, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                .SetEntryAsync(
+                    key,
+                    value,
+                    isNull: value is null,
+                    logicalExpiresAt,
+                    physicalExpiresAt,
+                    slidingExpiration,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return new CacheValue<T>(value, hasValue: true);
@@ -138,6 +167,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     staleCandidate.IsNull,
                     logicalExpiresAt,
                     physicalExpiresAt,
+                    slidingExpiration: null,
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
@@ -146,6 +176,45 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             // Swallow all exceptions (including cancellation): the stale value must always be returned.
             _logger.LogFailSafeRestampFailed(exception, key);
+        }
+    }
+
+    private async ValueTask _TryRearmSlidingEntryAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        CacheStoreEntry<T> entry,
+        DateTime now
+    )
+    {
+        if (entry.SlidingExpiration is not { } slidingExpiration || entry.PhysicalExpiresAt is not { } physicalExpiresAt)
+        {
+            return;
+        }
+
+        var logicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
+
+        if (entry.LogicalExpiresAt.HasValue && entry.LogicalExpiresAt.Value >= logicalExpiresAt)
+        {
+            return;
+        }
+
+        try
+        {
+            await store
+                .SetEntryAsync(
+                    key,
+                    entry.Value,
+                    entry.IsNull,
+                    logicalExpiresAt,
+                    physicalExpiresAt,
+                    slidingExpiration,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogSlidingExpirationRearmFailed(exception, key);
         }
     }
 
@@ -245,4 +314,12 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache store read failed for key {Key}; treating it as a cache miss."
     )]
     public static partial void LogCacheStoreReadFailed(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "CacheSlidingExpirationRearmFailed",
+        Level = LogLevel.Debug,
+        Message = "Cache sliding-expiration re-arm failed for key {Key}; the cached value will still be returned."
+    )]
+    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
 }

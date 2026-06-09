@@ -78,4 +78,19 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_not_serve_stale_when_caller_cancels() =>
         base.should_not_serve_stale_when_caller_cancels();
+
+    [Fact]
+    public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
+        base.should_keep_sliding_entry_alive_when_read_within_idle_window();
+
+    [Fact]
+    public override Task should_expire_sliding_entry_at_absolute_duration_cap() =>
+        base.should_expire_sliding_entry_at_absolute_duration_cap();
+
+    [Fact]
+    public override Task should_not_rearm_sliding_entry_when_metadata_is_read() =>
+        base.should_not_rearm_sliding_entry_when_metadata_is_read();
+
+    [Fact]
+    public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
 }

@@ -69,6 +69,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -112,6 +113,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -166,6 +168,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -213,6 +216,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
                 isNull: false,
                 logicalExpiresAt: now.AddMinutes(-1),
                 physicalExpiresAt: now.AddHours(1),
+                slidingExpiration: null,
                 AbortToken
             );
 
@@ -414,6 +418,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -452,6 +457,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
                 isNull: false,
                 logicalExpiresAt: now.Add(logicalTtl),
                 physicalExpiresAt: now.AddHours(1),
+                slidingExpiration: null,
                 AbortToken
             );
 
@@ -495,6 +501,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 

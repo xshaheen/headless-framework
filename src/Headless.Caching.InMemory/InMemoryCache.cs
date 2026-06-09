@@ -14,6 +14,8 @@ namespace Headless.Caching;
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
 public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposable
 {
+    private const double _SlidingRearmThreshold = 0.5d;
+
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly PriorityQueue<string, long> _expirationQueue = new();
     private readonly Lock _expirationLock = new();
@@ -1108,18 +1110,25 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         if (existingEntry.IsExpired)
         {
-            _RemoveExpiredKey(key);
+            _TryRemoveExpiredEntry(key, existingEntry);
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
         if (existingEntry.IsLogicallyExpired)
         {
+            if (existingEntry.SlidingExpiration.HasValue)
+            {
+                _TryRemoveExpiredEntry(key, existingEntry);
+            }
+
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
         try
         {
             var value = existingEntry.GetValue<T>();
+            _TryRearmSlidingEntry(key, existingEntry);
+
             return new ValueTask<CacheValue<T>>(new CacheValue<T>(value, hasValue: true));
         }
         catch (Exception ex) when (!_shouldThrowOnSerializationError)
@@ -1606,7 +1615,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 IsNull: value is null,
                 Value: value,
                 LogicalExpiresAt: existingEntry.LogicalExpiresAt,
-                PhysicalExpiresAt: existingEntry.PhysicalExpiresAt
+                PhysicalExpiresAt: existingEntry.PhysicalExpiresAt,
+                SlidingExpiration: existingEntry.SlidingExpiration
             )
         );
     }
@@ -1617,6 +1627,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1637,6 +1648,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             isNull ? default : value,
             logicalExpiresAt,
             physicalExpiresAt,
+            slidingExpiration,
             _timeProvider,
             _shouldClone,
             _shouldThrowOnSerializationError,
@@ -1688,6 +1700,56 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         if (_memory.TryRemove(key, out var removedEntry))
         {
             Interlocked.Add(ref _currentMemorySize, -removedEntry.Size);
+        }
+    }
+
+    private void _TryRemoveExpiredEntry(string key, CacheEntry entry)
+    {
+        if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
+        {
+            Interlocked.Add(ref _currentMemorySize, -entry.Size);
+        }
+    }
+
+    private void _TryRearmSlidingEntry(string key, CacheEntry entry)
+    {
+        if (
+            entry.SlidingExpiration is not { } slidingExpiration
+            || entry.LogicalExpiresAt is not { } logicalExpiresAt
+            || entry.PhysicalExpiresAt is not { } physicalExpiresAt
+        )
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+
+        if (physicalExpiresAt <= now)
+        {
+            return;
+        }
+
+        var remaining = logicalExpiresAt - now;
+        var rearmThreshold = TimeSpan.FromTicks((long)(slidingExpiration.Ticks * _SlidingRearmThreshold));
+
+        if (remaining > rearmThreshold)
+        {
+            return;
+        }
+
+        var rearmedLogicalExpiresAt = _Min(now.Add(slidingExpiration), physicalExpiresAt);
+
+        if (rearmedLogicalExpiresAt <= logicalExpiresAt)
+        {
+            return;
+        }
+
+        var rearmedEntry = entry.WithLogicalExpiration(rearmedLogicalExpiresAt);
+
+        if (_memory.TryUpdate(key, rearmedEntry, entry))
+        {
+            _TrackUpdate(key, rearmedEntry.TrackedExpiresAt);
+            _ = _StartMaintenanceAsync();
         }
     }
 
@@ -1750,7 +1812,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         if (wasUpdated)
         {
-            _TrackUpdate(key, entry.PhysicalExpiresAt);
+            _TrackUpdate(key, entry.TrackedExpiresAt);
         }
 
         await _StartMaintenanceAsync(ShouldCompact).ConfigureAwait(false);
@@ -1960,7 +2022,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
                     if (key is not null && _memory.TryGetValue(key, out var entry))
                     {
-                        if (entry.PhysicalExpiresAt.HasValue && entry.PhysicalExpiresAt.Value.Ticks <= expiresAtTicks)
+                        if (entry.ShouldRemoveAt(expiresAtTicks))
                         {
                             if (_memory.TryRemove(new KeyValuePair<string, CacheEntry>(key, entry)))
                             {
@@ -2074,6 +2136,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
                 value,
                 logicalExpiresAt: expiresAt,
                 physicalExpiresAt: expiresAt,
+                slidingExpiration: null,
                 timeProvider,
                 shouldClone,
                 shouldThrowOnSerializationError,
@@ -2084,6 +2147,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             object? value,
             DateTime? logicalExpiresAt,
             DateTime? physicalExpiresAt,
+            TimeSpan? slidingExpiration,
             TimeProvider timeProvider,
             bool shouldClone,
             bool shouldThrowOnSerializationError = true,
@@ -2101,6 +2165,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _lastAccessTicks = utcNow.Ticks;
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
+            SlidingExpiration = slidingExpiration;
             LastFactoryError = lastFactoryError;
             Tags = tags is { Count: > 0 } ? tags.ToFrozenSet(StringComparer.Ordinal) : null;
             Size = size;
@@ -2109,7 +2174,12 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         /// <summary>Private constructor used by <see cref="WithExpiration"/> to share the already-cloned
         /// value without re-cloning.</summary>
-        private CacheEntry(CacheEntry prototype, DateTime? logicalExpiresAt, DateTime? physicalExpiresAt)
+        private CacheEntry(
+            CacheEntry prototype,
+            DateTime? logicalExpiresAt,
+            DateTime? physicalExpiresAt,
+            TimeSpan? slidingExpiration
+        )
         {
             _timeProvider = prototype._timeProvider;
             _shouldClone = prototype._shouldClone;
@@ -2118,6 +2188,7 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
             _lastAccessTicks = _timeProvider.GetUtcNow().Ticks;
             LogicalExpiresAt = logicalExpiresAt;
             PhysicalExpiresAt = physicalExpiresAt;
+            SlidingExpiration = slidingExpiration;
             LastFactoryError = prototype.LastFactoryError;
             Tags = prototype.Tags;
             Size = prototype.Size;
@@ -2129,6 +2200,10 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         internal DateTime? LogicalExpiresAt { get; }
 
         internal DateTime? PhysicalExpiresAt { get; }
+
+        internal TimeSpan? SlidingExpiration { get; }
+
+        internal DateTime? TrackedExpiresAt => SlidingExpiration.HasValue ? LogicalExpiresAt : PhysicalExpiresAt;
 
         internal LastFactoryError? LastFactoryError { get; }
 
@@ -2142,6 +2217,18 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         internal bool IsLogicallyExpired =>
             LogicalExpiresAt.HasValue && LogicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
+
+        internal bool ShouldRemoveAt(long expiresAtTicks)
+        {
+            if (PhysicalExpiresAt.HasValue && PhysicalExpiresAt.Value.Ticks <= expiresAtTicks)
+            {
+                return true;
+            }
+
+            return SlidingExpiration.HasValue
+                && LogicalExpiresAt.HasValue
+                && LogicalExpiresAt.Value.Ticks <= expiresAtTicks;
+        }
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 
@@ -2167,7 +2254,11 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
         internal CacheEntry WithExpiration(DateTime? expiresAt) =>
-            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt);
+            new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt, slidingExpiration: null);
+
+        /// <summary>Returns a new entry that shares this entry's value but only moves logical expiration.</summary>
+        internal CacheEntry WithLogicalExpiration(DateTime logicalExpiresAt) =>
+            new(this, logicalExpiresAt, PhysicalExpiresAt, SlidingExpiration);
 
         public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
 
@@ -2310,6 +2401,8 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
 
         return hasInfinite ? null : max;
     }
+
+    private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
     #endregion
 }

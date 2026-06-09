@@ -114,7 +114,15 @@ public sealed class HybridCacheTests : TestBase
         var freshValue = Faker.Random.Int(101, 200);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         await ((IFactoryCacheStore)l1)
-            .SetEntryAsync(key, staleValue, isNull: false, now.AddMinutes(-1), now.AddMinutes(5), AbortToken);
+            .SetEntryAsync(
+                key,
+                staleValue,
+                isNull: false,
+                now.AddMinutes(-1),
+                now.AddMinutes(5),
+                slidingExpiration: null,
+                AbortToken
+            );
         await l2.UpsertAsync(key, freshValue, TimeSpan.FromMinutes(5), AbortToken);
         var factoryCalled = false;
 
