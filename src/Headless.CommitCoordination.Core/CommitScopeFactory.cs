@@ -47,7 +47,7 @@ public sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoo
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        var coordinator = new CommitCoordinator(capabilities);
+        var coordinator = new CommitCoordinator(capabilities, _logger);
 
         return _CreateScope(coordinator, services);
     }

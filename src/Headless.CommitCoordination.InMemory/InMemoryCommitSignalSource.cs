@@ -16,6 +16,6 @@ public sealed class InMemoryCommitSignalSource(CommitScopeFactory scopeFactory) 
         ArgumentNullException.ThrowIfNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
-        return scopeFactory.Begin(bindings.Services);
+        return scopeFactory.Begin(bindings.Services, bindings.Capabilities);
     }
 }
