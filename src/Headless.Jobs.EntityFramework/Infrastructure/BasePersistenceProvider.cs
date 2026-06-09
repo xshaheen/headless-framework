@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -11,7 +12,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    IJobsCacheContext cacheContext
+    ICache? cache
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -25,7 +26,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
-    protected IJobsCacheContext CacheContext { get; } = cacheContext;
+    private const string CronExpressionsCacheKey = "cron:expressions";
+
+    private static readonly CacheEntryOptions CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
+
+    protected ICache? Cache { get; } = cache;
 
     #region Core_Time_Ticker_Methods
     public async IAsyncEnumerable<TimeJobEntity> QueueTimeJobs(
@@ -464,26 +469,83 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<CronJobEntity[]> GetAllCronJobExpressions(CancellationToken cancellationToken = default)
     {
-        // Finding 5.1: return the get-or-set result. The factory already reads the DB on a cache miss, so a
-        // cache hit must skip the DB entirely — the previous code populated the cache then ignored it and
-        // re-queried on every call, making the cache dead weight.
-        var result = await CacheContext.GetOrSetArrayAsync(
-            cacheKey: "cron:expressions",
-            factory: async (ct) =>
-            {
-                await using var dbContext = await DbContextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-                return await dbContext
-                    .Set<TCronJob>()
-                    .AsNoTracking()
-                    .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
-                    .ToArrayAsync(ct)
-                    .ConfigureAwait(false);
-            },
-            expiration: TimeSpan.FromMinutes(10),
-            cancellationToken: cancellationToken
-        );
+        if (Cache is null)
+        {
+            return await _LoadCronJobExpressionsAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-        return result ?? [];
+        CronJobEntity[]? loaded = null;
+        var factoryFailed = false;
+
+        try
+        {
+            var result = await Cache
+                .GetOrAddAsync<CronJobEntity[]>(
+                    CronExpressionsCacheKey,
+                    async ct =>
+                    {
+                        try
+                        {
+                            loaded = await _LoadCronJobExpressionsAsync(ct).ConfigureAwait(false);
+
+                            return loaded;
+                        }
+                        catch
+                        {
+                            factoryFailed = true;
+
+                            throw;
+                        }
+                    },
+                    CronExpressionsCacheOptions,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return result.HasValue ? result.Value ?? [] : [];
+        }
+#pragma warning disable ERP022, RCS1075
+        catch (Exception exception)
+            when (!factoryFailed && exception is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            // Cache read/write failures are non-authoritative for Jobs; the database remains the source of truth.
+            return loaded ?? await _LoadCronJobExpressionsAsync(cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning restore ERP022, RCS1075
+    }
+
+    protected async Task InvalidateCronExpressionsCacheAsync(CancellationToken cancellationToken)
+    {
+        if (Cache is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await Cache.RemoveAsync(CronExpressionsCacheKey, cancellationToken).ConfigureAwait(false);
+        }
+#pragma warning disable ERP022, RCS1075
+        catch (Exception exception)
+            when (exception is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            // Cache invalidation is best-effort; cron writes have already committed to the durable store.
+        }
+#pragma warning restore ERP022, RCS1075
+    }
+
+    private async Task<CronJobEntity[]> _LoadCronJobExpressionsAsync(CancellationToken cancellationToken)
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await dbContext
+            .Set<TCronJob>()
+            .AsNoTracking()
+            .Select(MappingExtensions.ForCronJobExpressions<CronJobEntity>())
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
     #endregion
 

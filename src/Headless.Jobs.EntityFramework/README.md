@@ -46,6 +46,23 @@ Without a registered coordination provider, the durable path throws `InvalidOper
 - **Recovery latency trade-off.** On the no-Redis path, fast-restart recovery is TTL-bounded: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (previously the machine-name self-reclaim was immediate). Tune via the Coordination heartbeat/TTL and `DeadNodeReconcileInterval`.
 - **Fail-stop on membership loss.** If the local node loses membership, the durable scheduler stops processing rather than stamping a stale owner.
 
+### Cron-Expression Caching
+
+Jobs cron-expression caching uses the host application's optional default `Headless.Caching.ICache`. Register a cache provider such as `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` before or alongside Jobs:
+
+```csharp
+builder.Services.AddRedisCache(redis => redis.ConnectionString = "localhost:6379");
+
+builder.Services
+    .AddHeadlessJobs()
+    .AddOperationalStore(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
+    });
+```
+
+When no `ICache` is registered, cron-expression reads fall through to the database and invalidation after cron-job writes is skipped. Cache read/write/remove failures are fail-open for Jobs; caller cancellation still propagates.
+
 ## Configuration
 
 ```csharp
@@ -69,6 +86,7 @@ builder.Services
 
 - Persists time-based and cron-based jobs in EF Core-mapped tables
 - Stamps the `node@incarnation` owner on durable job rows
+- Uses the optional default `Headless.Caching.ICache` for cron-expression caching when one is registered
 - Registers the membership-recovery bridge (NodeLeft + periodic reconcile) and a registration-before-start gate (scheduler processing starts only after coordination registration completes)
 - Requires a registered `Headless.Coordination` provider; fails fast at startup otherwise
 

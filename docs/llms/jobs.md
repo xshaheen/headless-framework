@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.Caching.Redis, Jobs.EntityFramework
+packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.OpenTelemetry, Jobs.EntityFramework
 ---
 
 # Jobs (Background Jobs)
@@ -63,20 +63,13 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
     - [NLog](#nlog)
   - [Performance Impact](#performance-impact)
   - [Requirements](#requirements)
-- [Headless.Jobs.Caching.Redis](#headlessjobscachingredis)
-  - [Problem Solved](#problem-solved-2)
-  - [Key Features](#key-features-2)
-  - [Installation](#installation-5)
-  - [Quick Start](#quick-start-2)
-  - [Configuration](#configuration-2)
-  - [Dependencies](#dependencies-2)
-  - [Side Effects](#side-effects-2)
 - [Headless.Jobs.EntityFramework](#headlessjobsentityframework)
   - [📦 Installation](#-installation)
-  - [Quick Start](#quick-start-3)
+  - [Quick Start](#quick-start-2)
     - [Node Identity and Recovery Model](#node-identity-and-recovery-model)
-  - [Configuration](#configuration-3)
-  - [Side Effects](#side-effects-3)
+    - [Cron-Expression Caching](#cron-expression-caching)
+  - [Configuration](#configuration-2)
+  - [Side Effects](#side-effects-2)
 
 > High-performance background job scheduler for .NET with cron expressions, time-based scheduling, source-generated registration, and distributed coordination.
 
@@ -86,11 +79,12 @@ Minimum setup: `Jobs.Core` + `Jobs.EntityFramework` (for persistence) + `Jobs.So
 
 Additional packages:
 - `Jobs.Dashboard` -- monitoring UI with authentication (basic, API key, host auth) plus a live-nodes cluster view
-- `Jobs.Caching.Redis` -- cron-expression caching for multi-instance deployments (caching only; node liveness/membership comes from `Headless.Coordination`, not Redis)
 - `Jobs.OpenTelemetry` -- distributed tracing and structured logging
 - `Jobs.Abstractions` -- interfaces only (pulled in transitively by Core)
 
 Clustering: the durable operational-store path (`AddOperationalStore`) requires a `Headless.Coordination` provider. Register it with `AddHeadlessCoordination(...)` BEFORE `AddHeadlessJobs(...)`. Node identity on this path is `node@incarnation` (store-allocated), and dead-node recovery is driven by Coordination `NodeLeft` events plus a periodic reconcile -- backend-neutral, no Redis required. The in-memory single-process path (no `AddOperationalStore`) needs no coordination.
+
+Cron-expression caching: Jobs reads the optional default `ICache` registered by the host application. Register `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` when cron-expression caching is desired. Without an `ICache`, Jobs reads cron expressions from the durable store and cache invalidation is a no-op.
 
 Wiring:
 ```csharp
@@ -114,7 +108,7 @@ Mark job classes with `[Jobs("cron-expression")]` and add the SourceGenerator pa
 - Use `Jobs.EntityFramework` for job persistence. Without it, jobs are in-memory only and lost on restart.
 - For the durable operational store, register a coordination provider with `AddHeadlessCoordination(c => c.UsePostgreSql(conn))` (or another provider) BEFORE `AddHeadlessJobs(o => o.AddOperationalStore(...))`. Without it, the durable path throws `InvalidOperationException` naming `AddHeadlessCoordination`. The in-memory path (no `AddOperationalStore`) needs no coordination.
 - On the durable path, node identity is `node@incarnation` (store-allocated), not the machine name. Durable job rows are stamped with this owner.
-- Redis is caching-only for Jobs -- `Jobs.Caching.Redis` provides cron-expression caching only. Do NOT expect it to provide node liveness, heartbeat, or membership; that comes from `Headless.Coordination`.
+- Do NOT install a Jobs-specific Redis cache package. Jobs cron-expression caching uses the host application's default `Headless.Caching.ICache`; pick `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` based on deployment needs.
 - No-Redis dead-node recovery is TTL-bounded, not immediate: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (plus a periodic reconcile backstop). Tune via the Coordination heartbeat/TTL and `SchedulerOptionsBuilder.DeadNodeReconcileInterval`.
 - Call `app.UseJobs()` after `builder.Build()` to start the scheduler. Use `JobsStartMode.Manual` if you need delayed startup.
 - For time-based (one-off) jobs, inject `ITimeJobManager<TimeJobEntity>` and call `AddAsync()`.
@@ -761,66 +755,7 @@ builder.Logging.AddNLog();
 - .NET 8.0 or later
 - OpenTelemetry 1.7.0 or later
 - Headless.Jobs.Abstractions (automatically included)
----
-# Headless.Jobs.Caching.Redis
 
-Redis-backed cron-expression caching for Jobs in multi-instance deployments.
-
-## Problem Solved
-
-Caches cron-expression lookups in Redis so multi-instance Jobs deployments avoid repeated database reads for the cron-expression set. This package is caching only -- node liveness, heartbeat, and membership are provided by `Headless.Coordination`, not Redis.
-
-## Key Features
-
-- **Cron-Expression Caching**: Shared Redis cache for the cron-expression set across instances
-- **Distributed Cache Access**: Exposes the underlying distributed cache to the EF persistence layer
-- **Connection Awareness**: Skips cache invalidation when no Redis connection is available
-
-## Installation
-
-```bash
-dotnet add package Headless.Jobs.Caching.Redis
-```
-
-## Quick Start
-
-```csharp
-builder.Services
-    .AddHeadlessJobs(options =>
-    {
-        options.ConfigureScheduler(scheduler => scheduler.MaxConcurrency = 10);
-    })
-    .AddStackExchangeRedis(redis =>
-    {
-        redis.Configuration = "localhost:6379";
-    });
-
-app.UseJobs();
-```
-
-## Configuration
-
-```csharp
-builder.Services
-    .AddHeadlessJobs()
-    .AddStackExchangeRedis(redis =>
-    {
-        redis.Configuration = "localhost:6379,ssl=true,password=secret";
-        redis.InstanceName = "jobs:";
-    });
-```
-
-`AddStackExchangeRedis` takes `JobsRedisOptionBuilder` (a `RedisCacheOptions`). There is no node-heartbeat option -- membership/liveness is configured through `AddHeadlessCoordination(...)`.
-
-## Dependencies
-
-- `Headless.Jobs.Abstractions`
-- `Microsoft.Extensions.Caching.StackExchangeRedis`
-
-## Side Effects
-
-- Registers `IJobsCacheContext` backed by Redis for cron-expression caching
-- Stores cron-expression cache entries under the configured `InstanceName` prefix
 ---
 # Headless.Jobs.EntityFramework
 
@@ -872,6 +807,24 @@ Without a registered coordination provider, the durable path throws `InvalidOper
 - **Recovery latency trade-off.** On the no-Redis path, fast-restart recovery is TTL-bounded: a predecessor incarnation is reclaimed only after its heartbeat expires and `NodeLeft` fires (previously the machine-name self-reclaim was immediate). Tune via the Coordination heartbeat/TTL and `DeadNodeReconcileInterval`.
 - **Fail-stop on membership loss.** If the local node loses membership, the durable scheduler stops processing rather than stamping a stale owner.
 
+### Cron-Expression Caching
+
+Jobs cron-expression caching is provider-neutral. `Headless.Jobs.EntityFramework` uses the host application's optional default `ICache` from `Headless.Caching.Abstractions`:
+
+```csharp
+// Choose one cache provider before or alongside Jobs.
+builder.Services.AddRedisCache(redis => redis.ConnectionString = "localhost:6379");
+
+builder.Services
+    .AddHeadlessJobs()
+    .AddOperationalStore(ef =>
+    {
+        ef.UseJobsDbContext<JobsDbContext>(db => db.UseSqlServer(conn));
+    });
+```
+
+When no `ICache` is registered, cron-expression reads fall through to the database and invalidation after cron-job writes is skipped. Cache read/write/remove failures are fail-open for Jobs; caller cancellation still propagates.
+
 ## Configuration
 
 ```csharp
@@ -895,5 +848,6 @@ builder.Services
 
 - Persists time-based and cron-based jobs in EF Core-mapped tables
 - Stamps the `node@incarnation` owner on durable job rows
+- Uses the optional default `Headless.Caching.ICache` for cron-expression caching when one is registered
 - Registers the membership-recovery bridge (NodeLeft + periodic reconcile) and a registration-before-start gate (scheduler processing starts only after coordination registration completes)
 - Requires a registered `Headless.Coordination` provider; fails fast at startup otherwise

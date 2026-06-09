@@ -1,3 +1,4 @@
+using Headless.Caching;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
@@ -71,10 +72,14 @@ public static class ServiceBuilder
                 return new PooledDbContextFactory<TContext>(options, builder.PoolSize);
             });
 
-            services.AddSingleton<
-                IJobPersistenceProvider<TTimeJob, TCronJob>,
-                JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>
-            >();
+            services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
+                new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
+                    provider.GetRequiredService<IDbContextFactory<TContext>>(),
+                    provider.GetRequiredService<TimeProvider>(),
+                    provider.GetRequiredService<IJobsOwnerIdentity>(),
+                    provider.GetService<ICache>()
+                )
+            );
         };
     }
 
@@ -96,10 +101,14 @@ public static class ServiceBuilder
                 optionsBuilder.UseApplicationServiceProvider(sp);
                 return new PooledDbContextFactory<TContext>(optionsBuilder.Options, builder.PoolSize);
             });
-            services.AddSingleton<
-                IJobPersistenceProvider<TTimeJob, TCronJob>,
-                JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>
-            >();
+            services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
+                new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
+                    provider.GetRequiredService<IDbContextFactory<TContext>>(),
+                    provider.GetRequiredService<TimeProvider>(),
+                    provider.GetRequiredService<IJobsOwnerIdentity>(),
+                    provider.GetService<ICache>()
+                )
+            );
         };
     }
 

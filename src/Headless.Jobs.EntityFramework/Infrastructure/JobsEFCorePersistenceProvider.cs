@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Headless.Caching;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
@@ -11,13 +12,13 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    IJobsCacheContext cacheContext
+    ICache? cache
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
-        cacheContext
+        cache
     ),
         IJobPersistenceProvider<TTimeJob, TCronJob>
     where TDbContext : DbContext
@@ -200,12 +201,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (CacheContext.HasRedisConnection)
-        {
-            await CacheContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -220,12 +216,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (CacheContext.HasRedisConnection)
-        {
-            await CacheContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }
@@ -241,12 +232,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (CacheContext.HasRedisConnection)
-        {
-            await CacheContext
-                .DistributedCache.RemoveAsync("cron:expressions", cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
 
         return result;
     }
