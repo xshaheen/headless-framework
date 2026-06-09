@@ -134,6 +134,15 @@ own ceiling. *Bonus:* an OCE from the internal token can never match the caller'
 special-casing.
 
 ### KTD-4b — Background completion is bounded by a *raced* ceiling (review round 2: adversarial F1)
+
+> **Post-review change (shipped default supersedes the 2 min references below).** `BackgroundFactoryCeiling`
+> ships **opt-in**, defaulting to `Timeout.InfiniteTimeSpan` (no ceiling) — matching FusionCache/Caffeine, where
+> a detached factory runs to completion unless the operator configures a finite guard. Consequently
+> `Timeout.InfiniteTimeSpan` **is** an accepted value (it means "no ceiling"); a *finite* `BackgroundFactoryCeiling`
+> must still be `> TimeSpan.Zero`. Wherever this section and §10/§Deferred say "default 2min" or
+> "`Timeout.InfiniteTimeSpan` is not an accepted value", read the shipped behavior instead. `CacheEntryOptions`
+> XML docs, `docs/llms/caching.md`, and the solution doc reflect the final behavior.
+
 Because the lock is handed off (KTD-3), a background factory that never completes would pin that key's
 semaphore — a permanent per-key availability leak. The fix is **not** "cancel the internal token and `await`
 the factory": a CPU-bound or otherwise **non-cooperative** factory ignores its token, so `await runningTask`
