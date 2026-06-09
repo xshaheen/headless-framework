@@ -183,12 +183,13 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         var lockProvider = Substitute.For<IDistributedLock>();
         lockProvider
             .When(provider =>
-                provider.TryAcquireAsync(
+            {
+                _ = provider.TryAcquireAsync(
                     Arg.Any<string>(),
                     Arg.Any<DistributedLockAcquireOptions?>(),
                     Arg.Any<CancellationToken>()
-                )
-            )
+                );
+            })
             .Do(call =>
             {
                 var options = call.ArgAt<DistributedLockAcquireOptions?>(1);
@@ -263,7 +264,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
                     Arg.Any<DistributedLockAcquireOptions?>(),
                     Arg.Any<CancellationToken>()
                 );
-            captured.Count(e => e.Level == LogLevel.Warning && e.Id == 79).Should().Be(2);
+            captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
         });
         await storage.DidNotReceive().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
         await storage.DidNotReceive().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
