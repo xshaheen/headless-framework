@@ -32,7 +32,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     protected TimeProvider TimeProvider { get; } = timeProvider;
 
-    private const string CronExpressionsCacheKey = "cron:expressions";
+    // Feature-namespaced (jobs:) so the cron entry never collides with another feature's key when the host shares
+    // one default ICache across features — matches the permissions:/features:/settings: convention.
+    private const string CronExpressionsCacheKey = "jobs:cron:expressions";
 
     private static readonly CacheEntryOptions CronExpressionsCacheOptions = TimeSpan.FromMinutes(10);
 

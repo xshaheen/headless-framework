@@ -44,7 +44,7 @@ public sealed class CronExpressionCacheTests
         result.Should().ContainSingle().Which.Function.Should().Be("cached");
         cache.GetOrAddCalls.Should().Be(1);
         cache.FactoryCalls.Should().Be(0);
-        cache.LastKey.Should().Be("cron:expressions");
+        cache.LastKey.Should().Be("jobs:cron:expressions");
         cache.LastOptions.Duration.Should().Be(TimeSpan.FromMinutes(10));
     }
 
@@ -88,6 +88,57 @@ public sealed class CronExpressionCacheTests
         var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
 
         result.Should().ContainSingle().Which.Function.Should().Be("db");
+        cache.FactoryCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetAllCronJobExpressions_cache_hit_with_no_value_returns_empty_without_database()
+    {
+        await using var fixture = await CronCacheFixture.CreateAsync();
+        await fixture.SeedCronJobsAsync(_Cron("db", "0 9 * * *"));
+        var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNoValue };
+        var sut = fixture.CreateProvider(cache);
+
+        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+
+        // Contract (#6): a cache hit is authoritative. A NoValue hit collapses to [] and never re-queries the DB,
+        // even though the DB has rows — providers must never persist a no-value cron entry.
+        result.Should().BeEmpty();
+        cache.FactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetAllCronJobExpressions_cache_hit_with_null_value_returns_empty_without_database()
+    {
+        await using var fixture = await CronCacheFixture.CreateAsync();
+        await fixture.SeedCronJobsAsync(_Cron("db", "0 10 * * *"));
+        var cache = new RecordingCache { Behavior = CacheBehavior.ReturnNullValue };
+        var sut = fixture.CreateProvider(cache);
+
+        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+
+        // Contract (#6): HasValue=true with Value=null also collapses to [] with no DB revalidation.
+        result.Should().BeEmpty();
+        cache.FactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetAllCronJobExpressions_factory_failure_propagates_without_fallback()
+    {
+        var cache = new RecordingCache { Behavior = CacheBehavior.InvokeFactory };
+        // The factory (DB load) itself throwing is a real load failure, not a cache-layer failure: factoryFailed
+        // suppresses the fail-open path so the error surfaces rather than being masked as an empty cron set.
+        var sut = new JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity>(
+            new ThrowingDbContextFactory(),
+            TimeProvider.System,
+            new TestOwnerIdentity(),
+            cache,
+            NullLogger.Instance
+        );
+
+        var act = () => sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
         cache.FactoryCalls.Should().Be(1);
     }
 
@@ -144,7 +195,7 @@ public sealed class CronExpressionCacheTests
         await sut.UpdateCronJobs([cronJob], TestContext.Current.CancellationToken);
         await sut.RemoveCronJobs([cronJob.Id], TestContext.Current.CancellationToken);
 
-        cache.RemovedKeys.Should().Equal("cron:expressions", "cron:expressions", "cron:expressions");
+        cache.RemovedKeys.Should().Equal("jobs:cron:expressions", "jobs:cron:expressions", "jobs:cron:expressions");
     }
 
     [Fact]
@@ -242,6 +293,11 @@ public sealed class CronExpressionCacheTests
         public JobsDbContext CreateDbContext() => new(options);
     }
 
+    private sealed class ThrowingDbContextFactory : IDbContextFactory<JobsDbContext>
+    {
+        public JobsDbContext CreateDbContext() => throw new InvalidOperationException("database unavailable");
+    }
+
     private sealed class TestOwnerIdentity : IJobsOwnerIdentity
     {
         public string DisplayOwner => "test-node";
@@ -262,6 +318,8 @@ public sealed class CronExpressionCacheTests
         InvokeFactory,
         ThrowBeforeFactory,
         ThrowAfterFactory,
+        ReturnNoValue,
+        ReturnNullValue,
     }
 
     private sealed class RecordingCache : ICache
@@ -302,6 +360,16 @@ public sealed class CronExpressionCacheTests
             if (Behavior == CacheBehavior.ReturnCached)
             {
                 return new CacheValue<T>((T?)(object?)CachedCronExpressions, hasValue: true);
+            }
+
+            if (Behavior == CacheBehavior.ReturnNoValue)
+            {
+                return CacheValue<T>.NoValue;
+            }
+
+            if (Behavior == CacheBehavior.ReturnNullValue)
+            {
+                return CacheValue<T>.Null;
             }
 
             if (Behavior == CacheBehavior.ThrowBeforeFactory)
