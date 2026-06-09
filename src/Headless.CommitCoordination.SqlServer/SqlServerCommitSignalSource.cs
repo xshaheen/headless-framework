@@ -2,18 +2,16 @@
 
 using System.Collections.Concurrent;
 using Headless.CommitCoordination;
-using Microsoft.Extensions.Logging;
 
 namespace Headless.CommitCoordination.SqlServer;
 
 /// <summary>
-/// Correlates SQL Server diagnostic commit signals to commit coordination scopes.
+/// Correlates SQL Server diagnostic commit signals to commit coordination scopes, keyed by the connection's
+/// <c>ClientConnectionId</c>. The out-of-band <see cref="SqlServerCommitDiagnosticObserver" /> turns the native
+/// SqlClient commit/rollback edge into a signal here.
 /// </summary>
 [PublicAPI]
-public sealed partial class SqlServerCommitSignalSource(
-    CommitScopeFactory scopeFactory,
-    ILogger<SqlServerCommitSignalSource> logger
-) : ICommitSignalSource
+public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory) : ICommitSignalSource
 {
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
@@ -43,7 +41,11 @@ public sealed partial class SqlServerCommitSignalSource(
     /// <summary>
     /// Signals a commit for a previously attached provider transaction key.
     /// </summary>
-    /// <param name="providerTransactionKey">The provider transaction key.</param>
+    /// <remarks>
+    /// The diagnostic observer fires for every SqlClient transaction edge, most of which are not coordinated; an
+    /// absent key is the normal case and is silently ignored (never a warning).
+    /// </remarks>
+    /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
@@ -52,7 +54,6 @@ public sealed partial class SqlServerCommitSignalSource(
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
-            LogMissingScope(logger, providerTransactionKey);
             return;
         }
 
@@ -63,7 +64,7 @@ public sealed partial class SqlServerCommitSignalSource(
     /// <summary>
     /// Signals a rollback for a previously attached provider transaction key.
     /// </summary>
-    /// <param name="providerTransactionKey">The provider transaction key.</param>
+    /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
@@ -72,18 +73,10 @@ public sealed partial class SqlServerCommitSignalSource(
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
-            LogMissingScope(logger, providerTransactionKey);
             return;
         }
 
         await using var ownedScope = scope;
         await ownedScope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
     }
-
-    [LoggerMessage(
-        EventId = 1,
-        Level = LogLevel.Warning,
-        Message = "No commit coordination scope is attached for SQL Server transaction key {ProviderTransactionKey}."
-    )]
-    private static partial void LogMissingScope(ILogger logger, object providerTransactionKey);
 }

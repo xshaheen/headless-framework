@@ -3,6 +3,7 @@
 using Headless.CommitCoordination;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 
 namespace Headless.CommitCoordination.SqlServer;
 
@@ -22,6 +23,14 @@ public static class SetupSqlServerCommitCoordination
         {
             services.AddCommitCoordination();
             services.TryAddSingleton<SqlServerCommitSignalSource>();
+            services.TryAddSingleton<SqlServerCommitDiagnosticObserver>();
+            services.TryAddSingleton<SqlServerCommitDiagnosticListenerObserver>();
+
+            // The hosted service owns the SqlClientDiagnosticListener subscription lifetime (subscribe on start,
+            // dispose on stop), so the out-of-band commit/rollback detection observes real provider edges.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IHostedService, SqlServerCommitDiagnosticHostedService>()
+            );
 
             return services;
         }

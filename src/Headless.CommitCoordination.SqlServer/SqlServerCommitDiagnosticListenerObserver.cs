@@ -1,0 +1,34 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics;
+
+namespace Headless.CommitCoordination.SqlServer;
+
+/// <summary>
+/// Subscribes the <see cref="SqlServerCommitDiagnosticObserver" /> to the <c>SqlClientDiagnosticListener</c> as soon
+/// as it appears in <see cref="DiagnosticListener.AllListeners" />.
+/// </summary>
+[PublicAPI]
+public sealed class SqlServerCommitDiagnosticListenerObserver(SqlServerCommitDiagnosticObserver observer)
+    : IObserver<DiagnosticListener>
+{
+    /// <summary>The name of the SqlClient diagnostic listener.</summary>
+    public const string DiagnosticListenerName = "SqlClientDiagnosticListener";
+
+    /// <inheritdoc />
+    public void OnCompleted() { }
+
+    /// <inheritdoc />
+    public void OnError(Exception error) { }
+
+    /// <inheritdoc />
+    public void OnNext(DiagnosticListener listener)
+    {
+        ArgumentNullException.ThrowIfNull(listener);
+
+        if (string.Equals(listener.Name, DiagnosticListenerName, StringComparison.Ordinal))
+        {
+            listener.Subscribe(observer);
+        }
+    }
+}
