@@ -1050,6 +1050,86 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         observed.Should().BeTrue("the fault observer attached to the abandoned factory must log its failure");
     }
 
+    [Fact]
+    public async Task should_log_failure_when_abandoned_factory_faults_after_hard_timeout()
+    {
+        // given: cold cache, hard timeout, a token-ignoring factory that keeps running and later faults
+        var key = Faker.Random.AlphaNumeric(8);
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(isFailSafeEnabled: false, factoryHardTimeout: TimeSpan.FromSeconds(1));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Ignore cancellation: the factory keeps running past the hard timeout, then faults.
+            return await abandonedFactoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // hard timeout -> factory abandoned, throws (cold cache)
+        var act = async () => await resultTask;
+        await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+        abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
+
+        // then: the abandoned task's fault is observed and logged, not lost.
+        var observed = false;
+        for (var attempt = 0; attempt < 200 && !observed; attempt++)
+        {
+            observed = logger
+                .ReceivedCalls()
+                .Any(call =>
+                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
+                );
+
+            if (!observed)
+            {
+                await Task.Delay(25, AbortToken);
+            }
+        }
+
+        observed.Should().BeTrue("the fault observer attached to the abandoned hard-timeout factory must log its failure");
+    }
+
+    [Fact]
+    public async Task should_warn_once_per_key_when_soft_timeout_is_inert()
+    {
+        // given: a finite soft timeout with fail-safe disabled makes the soft timeout inert (EventId 7)
+        var key = Faker.Random.AlphaNumeric(8);
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var options = _CreateOptions(
+            duration: TimeSpan.FromSeconds(1),
+            isFailSafeEnabled: false,
+            factorySoftTimeout: TimeSpan.FromSeconds(1)
+        );
+
+        // when: two factory misses on the same key (expire the entry between them so both reach the timeout
+        // selection, which is where the inert warning is emitted and deduplicated)
+        await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("first"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("second"), options, AbortToken);
+
+        // then: the inert warning is emitted exactly once for the key (deduplicated)
+        var inertWarnings = logger
+            .ReceivedCalls()
+            .Count(call =>
+                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                && call.GetArguments()[1] is EventId { Id: 7, Name: "CacheSoftTimeoutInert" }
+            );
+
+        inertWarnings.Should().Be(1);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-2)]
