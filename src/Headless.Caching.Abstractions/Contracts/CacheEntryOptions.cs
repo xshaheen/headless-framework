@@ -21,9 +21,6 @@ public readonly record struct CacheEntryOptions
     /// <summary>Default duration used to throttle factory retries after fail-safe activates.</summary>
     public static readonly TimeSpan DefaultFailSafeThrottleDuration = TimeSpan.FromSeconds(30);
 
-    /// <summary>Default runaway guard for detached background factory completion.</summary>
-    public static readonly TimeSpan DefaultBackgroundFactoryCeiling = TimeSpan.FromMinutes(2);
-
     /// <summary>Initializes a new instance of the <see cref="CacheEntryOptions"/> struct.</summary>
     public CacheEntryOptions()
     {
@@ -31,7 +28,7 @@ public readonly record struct CacheEntryOptions
         FailSafeThrottleDuration = DefaultFailSafeThrottleDuration;
         FactorySoftTimeout = Timeout.InfiniteTimeSpan;
         FactoryHardTimeout = Timeout.InfiniteTimeSpan;
-        BackgroundFactoryCeiling = DefaultBackgroundFactoryCeiling;
+        BackgroundFactoryCeiling = Timeout.InfiniteTimeSpan;
     }
 
     /// <summary>
@@ -54,8 +51,11 @@ public readonly record struct CacheEntryOptions
     public TimeSpan FailSafeMaxDuration { get; init; } = DefaultFailSafeMaxDuration;
 
     /// <summary>
-    /// Gets the duration used to throttle factory retries after fail-safe activates. The coordinator
-    /// clamps this value to the remaining physical lifetime and never extends physical retention.
+    /// Gets the throttle window applied after fail-safe activates. The coordinator re-stamps the stale
+    /// reserve with a fresh logical lifetime of this duration, clamped to the entry's remaining physical
+    /// lifetime (<c>min(now + FailSafeThrottleDuration, physicalExpiresAt)</c>). Within that window reads
+    /// are served the last-known-good value as fresh, so the failing factory is not re-invoked until the
+    /// window lapses. The clamp ensures the throttle never extends physical retention.
     /// </summary>
     public TimeSpan FailSafeThrottleDuration { get; init; } = DefaultFailSafeThrottleDuration;
 
@@ -72,10 +72,13 @@ public readonly record struct CacheEntryOptions
     public TimeSpan FactoryHardTimeout { get; init; } = Timeout.InfiniteTimeSpan;
 
     /// <summary>
-    /// Gets the runaway guard for a detached background factory after a soft timeout. This value must be
-    /// finite and positive.
+    /// Gets the runaway guard for a detached background factory after a soft timeout. Defaults to
+    /// <see cref="Timeout.InfiniteTimeSpan"/> (no ceiling): a detached factory runs to completion, matching
+    /// the behavior of comparable caches. Provide a finite, positive value to bound how long a detached
+    /// factory may hold the per-key lock; when the ceiling fires, the coordinator cancels the internal token,
+    /// releases the lock, and best-effort re-stamps the stale reserve.
     /// </summary>
-    public TimeSpan BackgroundFactoryCeiling { get; init; } = DefaultBackgroundFactoryCeiling;
+    public TimeSpan BackgroundFactoryCeiling { get; init; } = Timeout.InfiniteTimeSpan;
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>

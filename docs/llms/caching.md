@@ -84,7 +84,7 @@ Install `Headless.Caching.Abstractions` plus one provider. Code against `ICache`
 - Use `FactorySoftTimeout` only with fail-safe and a stale reserve. When it fires, the caller gets stale data and the factory continues in the background under a detached internal token.
 - Do not capture request-scoped disposables in a soft-timeout factory. The background refresh can outlive the request token; create a fresh scope inside the factory when scoped services are needed.
 - Use `FactoryHardTimeout` to bound cold-cache factory waits. When it fires with no stale fallback, `GetOrAddAsync` throws `CacheFactoryTimeoutException`; when stale data exists, it serves stale.
-- `BackgroundFactoryCeiling` defaults to 2 minutes and must be finite and positive. It bounds how long a detached background refresh can hold the per-key lock.
+- `BackgroundFactoryCeiling` defaults to `Timeout.InfiniteTimeSpan` (no ceiling); a detached background refresh runs to completion. Set a finite, positive value to bound how long it can hold the per-key lock.
 - Caller cancellation never serves stale: if the `CancellationToken` passed to `GetOrAddAsync` is cancelled, the exception propagates and fail-safe/background completion does not activate from that cancellation.
 - StackExchange.Redis does not support `CancellationToken` on its operations. Configure Redis operation timeouts via `ConfigurationOptions.SyncTimeout` and `AsyncTimeout`; factory timeouts are separate coordinator behavior.
 - Redis scalar entries use a versioned binary envelope. Do not parse Redis string bytes as the application payload directly; strip the envelope first unless the key is a raw counter.
@@ -157,7 +157,7 @@ Factory soft timeouts are useful only when fail-safe is enabled and a stale rese
 
 Background completion uses a detached coordinator-owned cancellation token, not the caller token. A request token may be cancelled after the stale response is returned and the background refresh can still finish. Factories used with soft timeouts must not capture request-scoped disposables; create a fresh dependency scope inside the factory when scoped services are required after the request path returns.
 
-`BackgroundFactoryCeiling` defaults to 2 minutes and bounds how long a detached background factory can hold the per-key lock. Cooperative factories stop when the coordinator cancels the internal token. Non-cooperative factories may continue running untracked after the ceiling, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
+`BackgroundFactoryCeiling` defaults to `Timeout.InfiniteTimeSpan` (no ceiling): a detached background factory runs to completion, matching the behavior of comparable caches (FusionCache, Caffeine, sturdyc). Set a finite, positive value to bound how long a detached factory may hold the per-key lock. When the ceiling fires, the coordinator cancels the internal token and releases the lock: cooperative factories stop, while non-cooperative factories may continue running untracked, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
 
 ### Installation
 

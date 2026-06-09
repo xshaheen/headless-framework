@@ -20,7 +20,7 @@ Provides process-local caching through the unified `ICache` abstraction, suitabl
 
 Memory cache stores entries in an internal envelope with logical expiration and physical expiration. Direct writes set both timestamps equal. Fail-safe `GetOrAddAsync` can make physical expiration outlive logical expiration so a stale reserve stays in memory after normal value reads miss. Physical expiration still drives eviction, LRU maintenance, size compaction, `GetCountAsync`, and key listing. Logical expiration drives `GetAsync`, `GetAllAsync`, `GetByPrefixAsync`, `GetSetAsync`, `ExistsAsync`, and `GetExpirationAsync`.
 
-Long `FailSafeMaxDuration` values can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` bounds how long a cooperative refresh keeps the per-key lock.
+Long `FailSafeMaxDuration` values can retain more entries in process memory. Use `MaxItems`, `MaxMemorySize`, and LRU compaction to bound direct in-memory deployments. Soft-timeout background refreshes also hold values in process while the detached factory runs; `BackgroundFactoryCeiling` (infinite by default) optionally bounds how long a cooperative refresh keeps the per-key lock when set to a finite value.
 
 `Memory` in Headless caching docs means this package, `Headless.Caching.InMemory`, not `Microsoft.Extensions.Caching.Memory`.
 

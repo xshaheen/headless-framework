@@ -206,53 +206,72 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         IDisposable releaser
     )
     {
-        using var ceilingCts = new CancellationTokenSource();
-        var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
-        BackgroundCompletionCeilingTimerRegistered?.Invoke();
-
+#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
         try
         {
-#pragma warning disable VSTHRD003 // The background continuation intentionally races the transferred factory task.
+            // No ceiling configured: let the detached factory run to completion, matching comparable caches.
+            if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
+            {
+                await _ObserveBackgroundFactoryAsync(store, key, factoryTask, internalCts, staleCandidate, options)
+                    .ConfigureAwait(false);
+
+                return;
+            }
+
+            using var ceilingCts = new CancellationTokenSource();
+            var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
+            BackgroundCompletionCeilingTimerRegistered?.Invoke();
+
             var winner = await Task.WhenAny(factoryTask, ceilingTask).ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
             if (winner == factoryTask)
             {
                 await ceilingCts.CancelAsync().ConfigureAwait(false);
-
-#pragma warning disable VSTHRD003 // This continuation deliberately observes the transferred background factory task.
-                try
-                {
-                    var value = await factoryTask.ConfigureAwait(false);
-
-                    if (!internalCts.IsCancellationRequested)
-                    {
-                        await _SetFreshEntryAsync(store, key, value, options, CancellationToken.None)
-                            .ConfigureAwait(false);
-
-                        _logger.LogCacheBackgroundCompletionSucceeded(key);
-                    }
-                }
-                catch (Exception exception)
-                {
-                    _logger.LogCacheBackgroundCompletionFailed(exception, key, exception.GetType().Name);
-                    await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
-                }
+                await _ObserveBackgroundFactoryAsync(store, key, factoryTask, internalCts, staleCandidate, options)
+                    .ConfigureAwait(false);
 
                 return;
-#pragma warning restore VSTHRD003
             }
 
             await internalCts.CancelAsync().ConfigureAwait(false);
             _logger.LogCacheFactoryTimedOut(key, "background-ceiling", options.BackgroundFactoryCeiling);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
+#pragma warning restore VSTHRD003
         finally
         {
             internalCts.Dispose();
             releaser.Dispose();
             BackgroundCompletionFinished?.Invoke();
         }
+    }
+
+    private async Task _ObserveBackgroundFactoryAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Task<T?> factoryTask,
+        CancellationTokenSource internalCts,
+        CacheStoreEntry<T> staleCandidate,
+        CacheEntryOptions options
+    )
+    {
+#pragma warning disable VSTHRD003 // This continuation deliberately observes the transferred background factory task.
+        try
+        {
+            var value = await factoryTask.ConfigureAwait(false);
+
+            if (!internalCts.IsCancellationRequested)
+            {
+                await _SetFreshEntryAsync(store, key, value, options, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogCacheBackgroundCompletionSucceeded(key);
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCacheBackgroundCompletionFailed(exception, key, exception.GetType().Name);
+            await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
+        }
+#pragma warning restore VSTHRD003
     }
 
     private async ValueTask _TryRestampStaleWithCeilingAsync<T>(
@@ -262,6 +281,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CacheEntryOptions options
     )
     {
+        if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
+        {
+            await _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow()).ConfigureAwait(false);
+            return;
+        }
+
         using var ceilingCts = new CancellationTokenSource();
         var restampTask = _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow()).AsTask();
         var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
@@ -533,7 +558,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         _ValidateOptionalTimeout(options.FactorySoftTimeout, nameof(options.FactorySoftTimeout));
         _ValidateOptionalTimeout(options.FactoryHardTimeout, nameof(options.FactoryHardTimeout));
-        Argument.IsPositive(options.BackgroundFactoryCeiling, paramName: nameof(options.BackgroundFactoryCeiling));
+        _ValidateOptionalTimeout(options.BackgroundFactoryCeiling, nameof(options.BackgroundFactoryCeiling));
 
         if (
             options.FactorySoftTimeout != Timeout.InfiniteTimeSpan

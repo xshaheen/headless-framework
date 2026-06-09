@@ -31,7 +31,7 @@ Factory soft timeouts are useful only when fail-safe is enabled and a stale rese
 
 Background completion uses a detached coordinator-owned cancellation token, not the caller token. A request token may be cancelled after the stale response is returned and the background refresh can still finish. Factories used with soft timeouts must not capture request-scoped disposables; create a fresh dependency scope inside the factory when scoped services are required after the request path returns.
 
-`BackgroundFactoryCeiling` defaults to 2 minutes and bounds how long a detached background factory can hold the per-key lock. Cooperative factories stop when the coordinator cancels the internal token. Non-cooperative factories may continue running untracked after the ceiling, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
+`BackgroundFactoryCeiling` defaults to `Timeout.InfiniteTimeSpan` (no ceiling): a detached background factory runs to completion, matching the behavior of comparable caches (FusionCache, Caffeine, sturdyc). Set a finite, positive value to bound how long a detached factory may hold the per-key lock. When the ceiling fires, the coordinator cancels the internal token and releases the lock: cooperative factories stop, while non-cooperative factories may continue running untracked, but the coordinator gates late success writes so an abandoned factory cannot clobber a newer cache value through the timeout path.
 
 ## Installation
 

@@ -24,7 +24,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
-    public void should_default_factory_timeouts_to_infinite_and_background_ceiling_to_two_minutes()
+    public void should_default_factory_timeouts_and_background_ceiling_to_infinite()
     {
         // when
         var options = new CacheEntryOptions();
@@ -32,7 +32,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         options.FactorySoftTimeout.Should().Be(Timeout.InfiniteTimeSpan);
         options.FactoryHardTimeout.Should().Be(Timeout.InfiniteTimeSpan);
-        options.BackgroundFactoryCeiling.Should().Be(TimeSpan.FromMinutes(2));
+        options.BackgroundFactoryCeiling.Should().Be(Timeout.InfiniteTimeSpan);
     }
 
     [Theory]
@@ -71,13 +71,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
     [Theory]
     [InlineData(0)]
-    [InlineData(-1)]
     [InlineData(-2)]
-    public async Task should_throw_when_background_factory_ceiling_is_non_positive_or_infinite(int milliseconds)
+    public async Task should_throw_when_background_factory_ceiling_is_non_positive_finite(int milliseconds)
     {
         // given
-        var ceiling = milliseconds == -1 ? Timeout.InfiniteTimeSpan : TimeSpan.FromMilliseconds(milliseconds);
-        var options = _CreateOptions(backgroundFactoryCeiling: ceiling);
+        var options = _CreateOptions(backgroundFactoryCeiling: TimeSpan.FromMilliseconds(milliseconds));
 
         // when
         var act = async () =>
@@ -895,6 +893,50 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         second.Value.Should().Be("B");
         _store.GetEntry(key)!.Value.Should().Be("B");
+    }
+
+    [Fact]
+    public async Task should_run_background_factory_to_completion_without_ceiling_when_ceiling_is_infinite()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddHours(1));
+        var coordinator = _CreateCoordinator();
+        var ceilingTimerRegistered = false;
+        coordinator.BackgroundCompletionCeilingTimerRegistered = () => ceilingTimerRegistered = true;
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: Timeout.InfiniteTimeSpan
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — soft timeout returns stale, factory keeps running detached
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await resultTask).IsStale.Should().BeTrue();
+
+        // advance well past any plausible ceiling to prove the detached factory is never cancelled
+        _timeProvider.Advance(TimeSpan.FromMinutes(10));
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then
+        ceilingTimerRegistered.Should().BeFalse("no ceiling timer is armed when the ceiling is infinite");
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
     }
 
     [Fact]
