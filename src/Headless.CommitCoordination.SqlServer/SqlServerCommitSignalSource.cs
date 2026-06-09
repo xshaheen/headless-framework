@@ -25,7 +25,10 @@ public sealed partial class SqlServerCommitSignalSource(
 
         var capabilities = bindings.Connection is null
             ? []
-            : new ICommitCapability[] { new RelationalCommitContext(() => bindings.Connection, () => null) };
+            : new ICommitCapability[]
+            {
+                new RelationalCommitContext(() => bindings.Connection, () => bindings.Transaction),
+            };
 
         var scope = scopeFactory.Begin(bindings.Services, capabilities);
 

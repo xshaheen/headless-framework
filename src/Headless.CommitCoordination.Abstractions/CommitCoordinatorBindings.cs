@@ -21,6 +21,12 @@ public sealed class CommitCoordinatorBindings
     public DbConnection? Connection { get; init; }
 
     /// <summary>
+    /// Gets the live transaction surfaced through <see cref="IRelationalCommitContext" /> so participants can
+    /// write durable rows inside the unit-of-work at enlist time. Null for non-relational or detached flows.
+    /// </summary>
+    public DbTransaction? Transaction { get; init; }
+
+    /// <summary>
     /// Gets the provider-specific transaction correlation key when available.
     /// </summary>
     public object? ProviderTransactionKey { get; init; }

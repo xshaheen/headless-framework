@@ -18,7 +18,10 @@ public sealed class PostgreSqlCommitSignalSource(CommitScopeFactory scopeFactory
 
         var capabilities = bindings.Connection is null
             ? []
-            : new ICommitCapability[] { new RelationalCommitContext(() => bindings.Connection, () => null) };
+            : new ICommitCapability[]
+            {
+                new RelationalCommitContext(() => bindings.Connection, () => bindings.Transaction),
+            };
 
         return scopeFactory.Begin(bindings.Services, capabilities);
     }
