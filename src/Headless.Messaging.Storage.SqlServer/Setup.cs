@@ -2,12 +2,9 @@
 
 using Headless.Checks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Storage.SqlServer.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -72,11 +69,8 @@ public static class SetupSqlServerMessaging
         {
             services.AddSingleton(new MessageStorageMarkerService("SqlServer"));
 
-            services.AddSingleton<DiagnosticProcessorObserver>();
-            services.AddTransient<IOutboxTransaction, SqlServerOutboxTransaction>();
             services.AddSingleton<IDataStorage, SqlServerDataStorage>();
             services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
-            services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, DiagnosticRegister>());
 
             services.Configure<SqlServerOptions, SqlServerOptionsValidator>(configure);
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions>();

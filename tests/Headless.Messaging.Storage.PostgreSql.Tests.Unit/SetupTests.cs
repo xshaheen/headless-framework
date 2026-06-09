@@ -35,7 +35,6 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<MessageStorageMarkerService>().Name.Should().Be("PostgreSql");
         provider.GetRequiredService<IStorageInitializer>().Should().BeOfType<PostgreSqlStorageInitializer>();
         provider.GetRequiredService<IDataStorage>().Should().BeOfType<PostgreSqlDataStorage>();
-        provider.GetRequiredService<IOutboxTransaction>().Should().BeOfType<PostgreSqlOutboxTransaction>();
 
         var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
         options.ConnectionString.Should().Be("Host=localhost;Database=test");

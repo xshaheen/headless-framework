@@ -4,28 +4,31 @@ using Headless.Checks;
 using Headless.Domain;
 using Headless.Messaging;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
 /// <summary>
 /// Default <see cref="IHeadlessOutboxDispatcher"/>: writes integration events to the messaging outbox enlisted
-/// in the EF save transaction, so outbox rows persist atomically with the business data. The events are buffered
-/// (not published to the broker) inside the dispatch; the EF pipeline commits the transaction and the outbox
-/// relay — or, on SQL Server, the connection-commit diagnostic — dispatches the rows post-commit.
+/// in the EF save transaction, so outbox rows persist atomically with the business data.
 /// </summary>
 /// <remarks>
+/// The save pipeline opens a coordinated EF transaction before this dispatcher runs, so a commit coordinator is
+/// already ambient. Publishing each event through <see cref="IOutboxBus"/> lets the outbox writer enlist the
+/// stored rows on that coordinator; the registered EF transaction interceptor dispatches them to the broker
+/// post-commit and discards them on rollback. This dispatcher therefore only fans the events out to the bus.
 /// Register via <c>AddHeadlessDbContextServices(...).AddIntegrationEventOutbox()</c>. Requires a messaging
 /// setup (<c>AddHeadlessMessaging</c>) with an outbox storage provider.
 /// </remarks>
 internal sealed class OutboxIntegrationEventDispatcher(
-    IServiceProvider serviceProvider,
     IOutboxBus outboxBus,
     IntegrationEventPublishInvokerCache invokerCache
 ) : IHeadlessOutboxDispatcher
 {
     public async Task DispatchAsync(
         IReadOnlyList<IIntegrationEvent> integrationEvents,
+        // currentTransaction is unused — the coordinated transaction the pipeline opened makes the commit
+        // coordinator ambient, so the outbox writer enlists without this dispatcher touching the transaction.
+        // The parameter stays for the IHeadlessOutboxDispatcher contract.
         IDbContextTransaction currentTransaction,
         CancellationToken cancellationToken
     )
@@ -38,32 +41,11 @@ internal sealed class OutboxIntegrationEventDispatcher(
             return;
         }
 
-        // A fresh transient outbox transaction per dispatch keeps the in-memory buffer scoped to this save
-        // (no cross-save accumulation). Attaching the EF transaction sets the ambient accessor the outbox
-        // writer reads; AutoCommit = false buffers the rows instead of dispatching to the broker in-band.
-        var outboxTransaction = serviceProvider.GetRequiredService<IOutboxTransaction>();
-        outboxTransaction.DbTransaction = currentTransaction;
-        outboxTransaction.AutoCommit = false;
-
-        try
+        foreach (var integrationEvent in integrationEvents)
         {
-            foreach (var integrationEvent in integrationEvents)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var publish = invokerCache.GetPublishInvoker(integrationEvent.GetType());
-                await publish(outboxBus, integrationEvent, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            // Detach WITHOUT disposing outboxTransaction here — this is deliberate, do not "fix" it with
-            // `await using`/`Dispose`. On SQL Server the provider registers the same outboxTransaction instance
-            // in the diagnostic TransBuffer and the connection-commit diagnostic flushes + disposes it AFTER the
-            // EF transaction commits; disposing it now would tear it down before the post-commit flush and drop
-            // the integration events. The EF pipeline owns currentTransaction's commit/dispose lifecycle, and the
-            // transient outboxTransaction is released at DI scope end. Nulling DbTransaction also clears the
-            // ambient accessor so it never points at a committed transaction after this dispatch returns.
-            outboxTransaction.DbTransaction = null;
+            cancellationToken.ThrowIfCancellationRequested();
+            var publish = invokerCache.GetPublishInvoker(integrationEvent.GetType());
+            await publish(outboxBus, integrationEvent, cancellationToken).ConfigureAwait(false);
         }
     }
 

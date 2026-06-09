@@ -3,18 +3,11 @@ using Demo.Controllers;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Storage.PostgreSql;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure services
-builder.Services.AddDbContext<AppDbContext>(
-    (_, opt) =>
-    {
-        opt.UseNpgsql(AppConstants.DbConnectionString)
-            .ReplaceService<IRelationalConnection, MessagingNpgsqlRelationalConnection>();
-    }
-);
+builder.Services.AddDbContext<AppDbContext>((_, opt) => opt.UseNpgsql(AppConstants.DbConnectionString));
 
 builder.Services.AddHeadlessMessaging(setup =>
 {

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
+using Headless.CommitCoordination.EntityFramework;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
@@ -113,52 +114,118 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
     }
 
     [Fact]
-    public async Task rolled_back_save_should_leave_no_outbox_rows()
+    public async Task save_under_consumer_opened_plain_transaction_falls_back_to_immediate_dispatch()
     {
-        // given
-        const string marker = "evt-rollback";
+        // given — the pipeline owns the coordinated-transaction scope (Option 1). When a CONSUMER opens its
+        // own PLAIN EF transaction (BeginTransactionAsync) WITHOUT calling EnlistCommitCoordination, the pipeline
+        // reuses it via the current-transaction branch, but no commit coordinator is ambient, so the outbox writer
+        // falls back to immediate dispatch: the outbox row is written on its own autonomous connection, NOT
+        // enlisted in the consumer's transaction. This is the documented fallback (see the
+        // HeadlessSaveChangesPipeline / OutboxMessageWriter contract) — atomic enlistment requires either the
+        // pipeline-owned save or an explicit DatabaseFacade.EnlistCommitCoordination on the open transaction (see
+        // the enlisted_publish_* tests).
+        const string marker = "evt-consumer-plain";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        var order = new OrderEntity { Name = "rollback" };
+        var order = new OrderEntity { Name = "consumer-plain" };
         order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
 
-        // when — save writes outbox rows inside the ambient transaction (pipeline does not commit it),
-        // then the caller rolls back. Outbox rows must die with the business data.
+        // when — save (consumer reuses its plain transaction), then the consumer rolls it back.
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
         await transaction.RollbackAsync(TestContext.Current.CancellationToken);
 
-        // then
+        // then — the outbox row was written on an autonomous connection and survives the rollback (fallback).
         (await _CountPublishedContainingAsync(marker))
             .Should()
-            .Be(0);
+            .Be(1);
     }
 
     [Fact]
-    public async Task outbox_rows_should_be_invisible_to_other_connections_until_commit()
+    public async Task pipeline_owned_save_writes_business_and_outbox_rows_atomically_on_commit()
     {
-        // given
-        const string marker = "evt-isolation";
+        // given — no ambient transaction: the pipeline opens its OWN coordinated transaction (Option 1). The
+        // outbox row is enlisted in it and drains post-commit. This asserts the atomic-COMMIT half of the
+        // contract: a successful save persists exactly one business row AND one outbox row together. The
+        // rollback-DISCARD half (the pipeline's coordinated transaction rolling back drops the enlisted outbox
+        // work) is covered at the seam by the commit-coordination conformance / EF interceptor tests.
+        const string marker = "evt-pipeline-atomic";
         await using var provider = await _BuildProviderAsync();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
-        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
-        var order = new OrderEntity { Name = "iso" };
+        var order = new OrderEntity { Name = "pipeline-atomic" };
         order.AddIntegrationEvent(new OrderShipped($"{marker}-1"));
         db.Orders.Add(order);
+
+        // when — pipeline opens the coordinated transaction, writes business + outbox rows, commits atomically.
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // when — a separate connection cannot see the uncommitted outbox row (proves it was written on the
-        // EF save transaction, not a second autonomous connection).
-        var beforeCommit = await _CountPublishedContainingAsync(marker);
-        await transaction.CommitAsync(TestContext.Current.CancellationToken);
-        var afterCommit = await _CountPublishedContainingAsync(marker);
+        // then — the outbox row is durable post-commit, alongside the committed business row.
+        (await _CountPublishedContainingAsync(marker))
+            .Should()
+            .Be(1);
+        (await _CountOrdersAsync()).Should().Be(1);
+    }
 
-        // then
-        beforeCommit.Should().Be(0);
-        afterCommit.Should().Be(1);
+    [Fact]
+    public async Task enlisted_publish_rolled_back_should_discard_the_outbox_row()
+    {
+        // given — the consumer enlist seam (DatabaseFacade.EnlistCommitCoordination) pushes the ambient coordinator
+        // SYNCHRONOUSLY in this frame, so the outbox writer stores the row INSIDE the transaction (not on an
+        // autonomous connection). This is the decisive proof that ICurrentCommitCoordinator.Current flowed: if the
+        // ambient scope were stranded (the AsyncLocal-set-inside-an-async-method bug), the writer would fall back to
+        // an autonomous write and the row would SURVIVE the rollback. It must instead be discarded with the tx.
+        const string marker = "evt-enlist-rollback";
+        await using var provider = await _BuildProviderAsync();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var outboxBus = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
+
+        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        {
+            // when — publish enlists the row inside the transaction, then the consumer rolls back.
+            await outboxBus.PublishAsync(
+                new OrderShipped($"{marker}-1"),
+                cancellationToken: TestContext.Current.CancellationToken
+            );
+
+            await transaction.RollbackAsync(TestContext.Current.CancellationToken);
+        }
+
+        // then — the enlisted row rolled back with the transaction.
+        (await _CountPublishedContainingAsync(marker)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task enlisted_publish_committed_should_persist_the_outbox_row_atomically()
+    {
+        // given — same enlist seam, but commit. Proves the in-tx write path (not the autonomous fallback): the row
+        // is only visible after commit and survives. Paired with the rollback test, this pins atomic enlistment.
+        const string marker = "evt-enlist-commit";
+        await using var provider = await _BuildProviderAsync();
+        await using var scope = provider.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
+        var outboxBus = scope.ServiceProvider.GetRequiredService<IOutboxBus>();
+
+        await using var transaction = await db.Database.BeginTransactionAsync(TestContext.Current.CancellationToken);
+
+        await using (db.Database.EnlistCommitCoordination(transaction, scope.ServiceProvider))
+        {
+            await outboxBus.PublishAsync(
+                new OrderShipped($"{marker}-1"),
+                cancellationToken: TestContext.Current.CancellationToken
+            );
+
+            // when — commit the enlisting transaction.
+            await transaction.CommitAsync(TestContext.Current.CancellationToken);
+        }
+
+        // then — the enlisted row committed atomically with the transaction.
+        (await _CountPublishedContainingAsync(marker)).Should().Be(1);
     }
 
     #region Setup
@@ -215,6 +282,18 @@ public sealed class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture fixture
         parameter.ParameterName = "marker";
         parameter.Value = $"%{marker}%";
         command.Parameters.Add(parameter);
+
+        var result = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        return Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int> _CountOrdersAsync()
+    {
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync(TestContext.Current.CancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = """SELECT COUNT(*) FROM "Orders" """;
 
         var result = await command.ExecuteScalarAsync(TestContext.Current.CancellationToken);
         return Convert.ToInt32(result, CultureInfo.InvariantCulture);

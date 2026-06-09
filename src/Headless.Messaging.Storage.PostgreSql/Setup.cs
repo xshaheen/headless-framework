@@ -93,7 +93,6 @@ public static class SetupPostgreSqlMessaging
             services.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(configure);
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions>();
 
-            services.AddTransient<IOutboxTransaction, PostgreSqlOutboxTransaction>();
             services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
             services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
         }

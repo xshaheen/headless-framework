@@ -66,7 +66,6 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
                 dispatcher,
                 _CreatePublishRequestFactory(),
                 stack,
-                new InMemoryOutboxTransactionAccessor(),
                 new NoopPublishMiddlewarePipeline(),
                 TimeProvider.System
             );
@@ -106,11 +105,6 @@ public sealed class CommitCoordinatorOutboxTests : TestBase
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
-    }
-
-    private sealed class InMemoryOutboxTransactionAccessor : IOutboxTransactionAccessor
-    {
-        public IOutboxTransaction? Current { get; set; }
     }
 
     private sealed class NoopPublishMiddlewarePipeline : IPublishMiddlewarePipeline

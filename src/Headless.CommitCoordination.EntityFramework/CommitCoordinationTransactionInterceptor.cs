@@ -7,8 +7,8 @@ namespace Headless.CommitCoordination.EntityFramework;
 
 /// <summary>
 /// Bridges EF Core's true post-commit/rollback transaction edges to the commit coordinator. Registered on the
-/// DbContext so a coordinated transaction opened via <c>BeginCoordinatedTransaction[Async]</c> drains its
-/// enlisted work when the EF transaction commits, and discards it when the transaction rolls back.
+/// DbContext so a transaction enlisted via <c>DatabaseFacade.EnlistCommitCoordination</c> drains its enlisted
+/// work when the EF transaction commits, and discards it when the transaction rolls back.
 /// </summary>
 /// <remarks>
 /// Keyed off <see cref="IDbTransactionInterceptor.TransactionCommitted" /> (true post-commit on explicit

@@ -282,7 +282,6 @@ public static class SetupMessaging
         services.AddHeadlessGuidGenerator();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<Headless.CommitCoordination.ICurrentCommitCoordinator, NullCurrentCommitCoordinator>();
-        services.TryAddSingleton<IOutboxTransactionAccessor, AsyncLocalOutboxTransactionAccessor>();
         // Tenant context primitives shared across packages — the AsyncLocal accessor + AddOrReplaceFallbackSingleton
         // wire CurrentTenant (AsyncLocal-backed) as the framework default while letting Headless.Api / EF / consumer
         // overrides supply a real implementation. NullCurrentTenant remains the fallback that's stripped when a real
