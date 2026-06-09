@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.DistributedLocks.Postgres;
 using Headless.Testing.Tests;
 using Npgsql;
@@ -207,6 +208,36 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
     }
 
     [Fact]
+    public async Task should_acquire_when_strategy_uses_internally_owned_transaction()
+    {
+        var resourceName = _CreateResourceName();
+        var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing: true);
+
+        await using (var databaseConnection = new PostgresDatabaseConnection(
+            fixture.ConnectionString,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        ))
+        {
+            await databaseConnection.OpenAsync(AbortToken);
+            await databaseConnection.BeginTransactionAsync(AbortToken);
+
+            var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+            var cookie = await strategy.TryAcquireAsync(
+                databaseConnection,
+                resourceName,
+                TimeSpan.Zero,
+                AbortToken
+            );
+
+            cookie.Should().NotBeNull();
+            (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
+        }
+
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_propagate_failed_transaction_when_strategy_uses_invisible_external_transaction()
     {
         var resourceName = _CreateResourceName();
@@ -231,6 +262,30 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
 
         await transaction.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_propagate_failed_transaction_when_savepoint_definition_fails()
+    {
+        var resourceName = _CreateResourceName();
+
+        await using var databaseConnection = new PostgresDatabaseConnection(
+            fixture.ConnectionString,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        );
+        await databaseConnection.OpenAsync(AbortToken);
+        await databaseConnection.BeginTransactionAsync(AbortToken);
+        await _CauseTransactionFailureAsync(databaseConnection);
+
+        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+        var act = async () =>
+            await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
+
+        await act
+            .Should()
+            .ThrowAsync<PostgresException>()
+            .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
     }
 
     private async Task<NpgsqlConnection> _OpenAsync()
@@ -266,6 +321,17 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private static async Task _ExecuteAsync(
+        DatabaseConnection connection,
+        string commandText,
+        CancellationToken cancellationToken
+    )
+    {
+        using var command = connection.CreateCommand();
+        command.SetCommandText(commandText);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     private async Task _CauseTransactionFailureAsync(NpgsqlConnection connection)
     {
         await using var command = connection.CreateCommand();
@@ -274,6 +340,20 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         try
         {
             await command.ExecuteNonQueryAsync(AbortToken);
+        }
+        catch (PostgresException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("The test setup query should have failed the active transaction.");
+    }
+
+    private async Task _CauseTransactionFailureAsync(DatabaseConnection connection)
+    {
+        try
+        {
+            await _ExecuteAsync(connection, "SELECT 1 / 0", AbortToken);
         }
         catch (PostgresException)
         {

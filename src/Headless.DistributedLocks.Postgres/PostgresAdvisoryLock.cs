@@ -87,7 +87,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         // The acquire command uses SET LOCAL to set statement/lock timeouts; inside a transaction those persist to the
         // end of the transaction, so we wrap in a savepoint we can roll back (except on a transaction-scoped success,
         // where rolling back would release the lock).
-        var savePointDefined = await _TryDefineSavePointAsync(connection, savePointName, cancellationToken)
+        var savePointDefined = await _DefineSavePointIfNeededAsync(connection, savePointName, cancellationToken)
             .ConfigureAwait(false);
 
         using var acquireCommand = _CreateAcquireCommand(connection, key, timeout);
@@ -302,13 +302,14 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
         }
     }
 
-    private static async ValueTask<bool> _TryDefineSavePointAsync(
+    private static async ValueTask<bool> _DefineSavePointIfNeededAsync(
         DatabaseConnection connection,
         string savePointName,
         CancellationToken cancellationToken
     )
     {
-        // Internally-owned: a savepoint is only needed when a transaction has been opened.
+        // For internally-owned connections, HasTransaction is authoritative; without one,
+        // SET LOCAL cannot escape the acquire command.
         if (!connection.IsExternallyOwned && !connection.HasTransaction)
         {
             return false;
@@ -326,6 +327,7 @@ internal sealed partial class PostgresAdvisoryLock : IDbSynchronizationStrategy<
 
         // Npgsql does not expose a public read-only flag for an externally-owned connection's active transaction.
         // SAVEPOINT is the exact boundary we need, so classify only PostgreSQL's "no active transaction" state.
+        // Cancellation before this returns is clean: no savepoint or SET LOCAL state has been established yet.
         try
         {
             await setSavePointCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);

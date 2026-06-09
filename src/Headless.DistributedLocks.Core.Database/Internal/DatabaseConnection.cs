@@ -156,8 +156,6 @@ internal abstract class DatabaseConnection : IAsyncDisposable
         }
     }
 
-    public ValueTask DisposeTransactionAsync() => _DisposeTransactionAsync(isClosingOrDisposingConnection: false);
-
     private async ValueTask _DisposeTransactionAsync(bool isClosingOrDisposingConnection)
     {
         var transaction = _transaction;
