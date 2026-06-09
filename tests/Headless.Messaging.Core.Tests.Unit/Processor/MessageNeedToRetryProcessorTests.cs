@@ -92,6 +92,25 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         return new ProcessingContext(provider, TimeProvider.System, CancellationToken.None);
     }
 
+    private static ILogger<MessageNeedToRetryProcessor> _CreateCapturingLogger(List<(LogLevel Level, int Id)> captured)
+    {
+        var logger = Substitute.For<ILogger<MessageNeedToRetryProcessor>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        logger
+            .When(l =>
+                l.Log(
+                    Arg.Any<LogLevel>(),
+                    Arg.Any<EventId>(),
+                    Arg.Any<object>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<object, Exception?, string>>()
+                )
+            )
+            .Do(ci => captured.Add((ci.Arg<LogLevel>(), ci.Arg<EventId>().Id)));
+
+        return logger;
+    }
+
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
         dataStorage
@@ -764,6 +783,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         // Assert — EventId 81 (PublishedRetryLockAcquireFailed) fired at Warning.
         captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 81);
+        sut.CurrentPollingInterval.Should().Be(TimeSpan.FromMilliseconds(2));
         // And the Error escalation EventId 82 did NOT fire (only one failure so far).
         captured.Should().NotContain(e => e.Id == 82);
     }
@@ -859,6 +879,167 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         captured
             .Should()
             .NotContain(e => e.Id == 82, "successful acquire (returning a handle) does not emit further escalation");
+    }
+
+    [Fact]
+    public async Task should_log_warning_eventid_83_when_received_retry_lock_acquire_throws()
+    {
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLease?>>(_ => throw new InvalidOperationException("lock store down"));
+
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider, new NullNodeMembership());
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 83);
+        captured.Should().NotContain(e => e.Id == 84);
+    }
+
+    [Fact]
+    public async Task should_escalate_to_error_eventid_84_after_three_consecutive_received_retry_lock_acquire_throws()
+    {
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+
+        var lockProvider = Substitute.For<IDistributedLock>();
+        var receivedCallCount = 0;
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLease?>>(_ =>
+            {
+                var n = Interlocked.Increment(ref receivedCallCount);
+
+                if (n <= 3)
+                {
+                    throw new InvalidOperationException("lock store down");
+                }
+
+                return Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>());
+            });
+
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider, new NullNodeMembership());
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        var beforeThird = captured.ToList();
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        beforeThird.Count(e => e.Id == 83 && e.Level == LogLevel.Warning).Should().Be(2);
+        beforeThird.Should().NotContain(e => e.Id == 84);
+        captured.Count(e => e.Id == 84 && e.Level == LogLevel.Error).Should().Be(1);
+
+        captured.Clear();
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        captured
+            .Should()
+            .NotContain(e => e.Id == 84, "successful acquire (returning a handle) does not emit further escalation");
+    }
+
+    [Fact]
+    public async Task should_escalate_published_lock_acquire_failures_when_received_storage_pickup_succeeds_between_cycles()
+    {
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLease?>>(_ => throw new InvalidOperationException("lock store down"));
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>()));
+
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider, new NullNodeMembership());
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        captured.Count(e => e.Id == 82 && e.Level == LogLevel.Error).Should().Be(1);
+        await dataStorage.Received(3).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
     }
 
     // -------------------------------------------------------------------------

@@ -637,6 +637,8 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
     {
         var failureCount = Interlocked.Increment(ref _LockCounterRef(kind));
         Interlocked.Exchange(ref _storagePickupFailureSinceLastAdaptiveAdjustment, 1);
+        Interlocked.Exchange(ref _consecutiveCleanCycles, 0);
+        Interlocked.Exchange(ref _consecutiveHealthyCycles, 0);
         _CompareExchangeDouble();
 
         switch (kind)

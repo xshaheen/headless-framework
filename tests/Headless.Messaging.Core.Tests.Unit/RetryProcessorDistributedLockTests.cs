@@ -336,7 +336,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     {
         // Arrange — substitute that always hands back a non-null lock
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -366,7 +365,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_reclaim_dead_owners_when_retry_locks_are_acquired_and_membership_is_active()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -452,7 +450,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_skip_reclaim_but_continue_dispatch_when_membership_query_fails()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -504,7 +501,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_escalate_membership_query_failures_after_three_consecutive_cycles()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -569,7 +565,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_continue_dispatch_when_dead_owner_reclaim_fails()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -613,7 +608,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_log_reclaim_count_when_dead_owner_rows_are_recovered()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -768,7 +762,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // before the second tick. The in-progress guard at IProcessor.NeedRetry.cs:172 must skip
         // spawning a new task while the previous one is still running under UseStorageLock.
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
