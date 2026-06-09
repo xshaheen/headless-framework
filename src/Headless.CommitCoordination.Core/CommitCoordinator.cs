@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Threading;
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -62,7 +63,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// <inheritdoc />
     public IDisposable OnCommit(Func<CommitContext, CancellationToken, ValueTask> work)
     {
-        ArgumentNullException.ThrowIfNull(work);
+        Argument.IsNotNull(work);
 
         if (_parent is not null)
         {
@@ -77,7 +78,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     /// <inheritdoc />
     public IDisposable OnRollback(Func<CommitContext, CancellationToken, ValueTask> work)
     {
-        ArgumentNullException.ThrowIfNull(work);
+        Argument.IsNotNull(work);
 
         if (_parent is not null)
         {
@@ -93,7 +94,7 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
     public TBuffer GetOrAdd<TBuffer>(Func<ICommitCoordinator, TBuffer> factory)
         where TBuffer : class, ICommitWorkBuffer
     {
-        ArgumentNullException.ThrowIfNull(factory);
+        Argument.IsNotNull(factory);
 
         if (_parent is not null)
         {
@@ -202,8 +203,14 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
             }
         }
 
-        await _DisposeBuffersAsync(buffers).ConfigureAwait(false);
-        Volatile.Write(ref _state, (int)terminalState);
+        try
+        {
+            await _DisposeBuffersAsync(buffers, exceptions).ConfigureAwait(false);
+        }
+        finally
+        {
+            Volatile.Write(ref _state, (int)terminalState);
+        }
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -303,19 +310,29 @@ public sealed partial class CommitCoordinator : ICommitCoordinator
         return map;
     }
 
-    private static async ValueTask _DisposeBuffersAsync(List<ICommitWorkBuffer> buffers)
+    private static async ValueTask _DisposeBuffersAsync(
+        List<ICommitWorkBuffer> buffers,
+        List<Exception> exceptions
+    )
     {
         foreach (var buffer in buffers)
         {
-            switch (buffer)
+            try
             {
-                case IAsyncDisposable asyncDisposable:
-                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                    break;
+                switch (buffer)
+                {
+                    case IAsyncDisposable asyncDisposable:
+                        await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                        break;
 
-                case IDisposable disposable:
-                    disposable.Dispose();
-                    break;
+                    case IDisposable disposable:
+                        disposable.Dispose();
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                exceptions.Add(ex);
             }
         }
     }

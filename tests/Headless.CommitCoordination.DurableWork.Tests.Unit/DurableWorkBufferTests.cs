@@ -2,6 +2,7 @@
 
 using Headless.CommitCoordination;
 using Headless.CommitCoordination.DurableWork;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -23,20 +24,24 @@ public sealed class DurableWorkBufferTests
     [Fact]
     public async Task should_allow_explicit_warn_fallback_when_relational_context_is_missing()
     {
+        var logger = new RecordingLogger();
         var buffer = new RecordingDurableWorkBuffer(
             new CommitCoordinator(),
-            DurableWorkProviderMismatchPolicy.Warn
+            DurableWorkProviderMismatchPolicy.Warn,
+            logger
         );
 
         await buffer.EnlistAsync("job-1", CancellationToken.None);
 
         buffer.FallbackRows.Should().Equal(["job-1"]);
+        logger.Warnings.Should().ContainSingle();
     }
 
     private sealed class RecordingDurableWorkBuffer(
         ICommitCoordinator coordinator,
-        DurableWorkProviderMismatchPolicy policy = DurableWorkProviderMismatchPolicy.Throw
-    ) : DurableWorkBuffer<string>(coordinator, policy)
+        DurableWorkProviderMismatchPolicy policy = DurableWorkProviderMismatchPolicy.Throw,
+        ILogger? logger = null
+    ) : DurableWorkBuffer<string>(coordinator, policy, logger)
     {
         public List<string> FallbackRows { get; } = [];
 
@@ -57,6 +62,33 @@ public sealed class DurableWorkBufferTests
             FallbackRows.Add(row);
 
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingLogger : ILogger
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull
+        {
+            return null;
+        }
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter
+        )
+        {
+            if (logLevel == LogLevel.Warning)
+            {
+                Warnings.Add(formatter(state, exception));
+            }
         }
     }
 }

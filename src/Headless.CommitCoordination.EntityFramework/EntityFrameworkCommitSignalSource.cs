@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.CommitCoordination;
+using Headless.Checks;
 
 namespace Headless.CommitCoordination.EntityFramework;
 
@@ -16,7 +17,7 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
     /// <inheritdoc />
     public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(bindings);
+        Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
         var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
@@ -41,7 +42,7 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
     /// <returns>The signal task.</returns>
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(providerTransactionKey);
+        Argument.IsNotNull(providerTransactionKey);
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
@@ -60,7 +61,7 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
     /// <returns>The signal task.</returns>
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(providerTransactionKey);
+        Argument.IsNotNull(providerTransactionKey);
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {

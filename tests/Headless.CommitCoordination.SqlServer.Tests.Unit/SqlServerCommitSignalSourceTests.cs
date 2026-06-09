@@ -14,7 +14,10 @@ public sealed class SqlServerCommitSignalSourceTests
     [Fact]
     public async Task should_signal_attached_scope_by_provider_key()
     {
-        var source = new SqlServerCommitSignalSource(new CommitScopeFactory(new CommitScopeStack()));
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
         var calls = 0;
         var key = new object();
         var scope = source.Attach(
@@ -45,7 +48,10 @@ public sealed class SqlServerCommitSignalSourceTests
     [Fact]
     public async Task should_ignore_signal_for_unattached_key_silently()
     {
-        var source = new SqlServerCommitSignalSource(new CommitScopeFactory(new CommitScopeStack()));
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
 
         // No scope attached for this key — the diagnostic fires for every connection, so an absent key is the
         // normal case and must be a silent no-op (no throw).
@@ -56,7 +62,10 @@ public sealed class SqlServerCommitSignalSourceTests
     [Fact]
     public async Task diagnostic_observer_should_drain_the_scope_correlated_by_client_connection_id_on_commit()
     {
-        var source = new SqlServerCommitSignalSource(new CommitScopeFactory(new CommitScopeStack()));
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
         var observer = new SqlServerCommitDiagnosticObserver(
             source,
             NullLogger<SqlServerCommitDiagnosticObserver>.Instance
@@ -100,7 +109,10 @@ public sealed class SqlServerCommitSignalSourceTests
     [Fact]
     public void diagnostic_observer_should_ignore_an_event_without_a_sql_connection()
     {
-        var source = new SqlServerCommitSignalSource(new CommitScopeFactory(new CommitScopeStack()));
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
         var observer = new SqlServerCommitDiagnosticObserver(
             source,
             NullLogger<SqlServerCommitDiagnosticObserver>.Instance
@@ -113,6 +125,38 @@ public sealed class SqlServerCommitSignalSourceTests
                 new { Operation = "Commit" }
             )
         );
+    }
+
+    [Fact]
+    public void should_throw_when_provider_key_already_has_active_scope()
+    {
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
+        var key = new object();
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        using var scope = source.Attach(
+            new CommitCoordinatorBindings
+            {
+                Services = provider,
+                ProviderTransactionKey = key,
+            },
+            CancellationToken.None
+        );
+
+        source
+            .Invoking(x => x.Attach(
+                new CommitCoordinatorBindings
+                {
+                    Services = provider,
+                    ProviderTransactionKey = key,
+                },
+                CancellationToken.None
+            ))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("A SQL Server commit coordination scope is already attached for this provider transaction key.");
     }
 
     private sealed record DiagnosticPayload(SqlConnection Connection, string Operation);

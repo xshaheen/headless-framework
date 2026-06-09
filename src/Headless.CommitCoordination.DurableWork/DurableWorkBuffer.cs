@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination.DurableWork;
 
@@ -9,11 +11,14 @@ namespace Headless.CommitCoordination.DurableWork;
 /// </summary>
 /// <typeparam name="TRow">The durable row type.</typeparam>
 [PublicAPI]
-public abstract class DurableWorkBuffer<TRow>(
+public abstract partial class DurableWorkBuffer<TRow>(
     ICommitCoordinator coordinator,
-    DurableWorkProviderMismatchPolicy onProviderMismatch = DurableWorkProviderMismatchPolicy.Throw
+    DurableWorkProviderMismatchPolicy onProviderMismatch = DurableWorkProviderMismatchPolicy.Throw,
+    ILogger? logger = null
 ) : ICommitWorkBuffer
 {
+    private readonly ILogger _logger = logger ?? NullLogger.Instance;
+
     /// <summary>
     /// Enlists a row by writing it through the current relational capability.
     /// </summary>
@@ -29,6 +34,11 @@ public abstract class DurableWorkBuffer<TRow>(
                 throw new InvalidOperationException(
                     $"Durable commit work requires {nameof(IRelationalCommitContext)}."
                 );
+            }
+
+            if (onProviderMismatch == DurableWorkProviderMismatchPolicy.Warn)
+            {
+                LogProviderMismatch(_logger, typeof(TRow).Name);
             }
 
             await EnlistWithoutRelationalContextAsync(row, cancellationToken).ConfigureAwait(false);
@@ -61,4 +71,11 @@ public abstract class DurableWorkBuffer<TRow>(
     {
         return ValueTask.CompletedTask;
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "Durable commit work row {RowType} was enlisted without a relational commit context."
+    )]
+    private static partial void LogProviderMismatch(ILogger logger, string rowType);
 }

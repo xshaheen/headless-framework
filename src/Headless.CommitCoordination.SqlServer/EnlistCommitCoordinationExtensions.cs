@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Headless.Checks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -44,8 +45,8 @@ public static class EnlistCommitCoordinationExtensions
         /// <returns>The coordinated scope; dispose it (after the transaction completes) to tear down.</returns>
         public ICommitScope EnlistCommitCoordination(SqlTransaction transaction, IServiceProvider services)
         {
-            ArgumentNullException.ThrowIfNull(transaction);
-            ArgumentNullException.ThrowIfNull(services);
+            Argument.IsNotNull(transaction);
+            Argument.IsNotNull(services);
 
             var signalSource = services.GetRequiredService<SqlServerCommitSignalSource>();
 

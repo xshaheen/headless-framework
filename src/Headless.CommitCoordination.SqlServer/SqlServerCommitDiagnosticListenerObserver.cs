@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Checks;
 
 namespace Headless.CommitCoordination.SqlServer;
 
@@ -24,7 +25,7 @@ public sealed class SqlServerCommitDiagnosticListenerObserver(SqlServerCommitDia
     /// <inheritdoc />
     public void OnNext(DiagnosticListener listener)
     {
-        ArgumentNullException.ThrowIfNull(listener);
+        Argument.IsNotNull(listener);
 
         if (string.Equals(listener.Name, DiagnosticListenerName, StringComparison.Ordinal))
         {

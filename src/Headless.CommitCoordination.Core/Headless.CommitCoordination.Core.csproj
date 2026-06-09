@@ -17,5 +17,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.CommitCoordination.Abstractions\Headless.CommitCoordination.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
   </ItemGroup>
 </Project>

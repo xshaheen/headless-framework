@@ -32,7 +32,7 @@ internal sealed class CommitScope(
 
         if (Volatile.Read(ref _signaled) == 0)
         {
-            coordinator.MarkRolledBack();
+            SignalAsync(CommitOutcome.RolledBack, CancellationToken.None).AsTask().GetAwaiter().GetResult();
         }
 
         coordinator.DisposePromotedRegistrations();

@@ -123,6 +123,21 @@ public sealed class CommitCoordinatorTests
     }
 
     [Fact]
+    public async Task should_reach_terminal_state_when_buffer_disposal_fails()
+    {
+        var coordinator = new CommitCoordinator();
+        coordinator.GetOrAdd(_ => new ThrowingDisposableBuffer());
+        coordinator.OnCommit((_, _) => throw new NotSupportedException("callback"));
+
+        var act = () => coordinator.SignalAsync(CommitOutcome.Committed, new EmptyServiceProvider(), CancellationToken.None).AsTask();
+
+        var exception = await act.Should().ThrowAsync<AggregateException>();
+        exception.Which.InnerExceptions.Should().ContainSingle(x => x.Message == "callback");
+        exception.Which.InnerExceptions.Should().ContainSingle(x => x.Message == "dispose");
+        coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+    }
+
+    [Fact]
     public void should_resolve_capability_by_contract()
     {
         var capability = new TestCapability();
@@ -141,6 +156,14 @@ public sealed class CommitCoordinatorTests
         public void Dispose()
         {
             IsDisposed = true;
+        }
+    }
+
+    private sealed class ThrowingDisposableBuffer : ICommitWorkBuffer, IDisposable
+    {
+        public void Dispose()
+        {
+            throw new InvalidOperationException("dispose");
         }
     }
 

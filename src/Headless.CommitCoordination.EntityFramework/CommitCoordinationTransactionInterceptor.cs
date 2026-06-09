@@ -23,7 +23,9 @@ public sealed class CommitCoordinationTransactionInterceptor(EntityFrameworkComm
     /// <inheritdoc />
     public override void TransactionCommitted(DbTransaction transaction, TransactionEndEventData eventData)
     {
-        signalSource.SignalCommittedAsync(transaction, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+        Task.Run(() => signalSource.SignalCommittedAsync(transaction, CancellationToken.None).AsTask())
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <inheritdoc />
@@ -39,7 +41,9 @@ public sealed class CommitCoordinationTransactionInterceptor(EntityFrameworkComm
     /// <inheritdoc />
     public override void TransactionRolledBack(DbTransaction transaction, TransactionEndEventData eventData)
     {
-        signalSource.SignalRolledBackAsync(transaction, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+        Task.Run(() => signalSource.SignalRolledBackAsync(transaction, CancellationToken.None).AsTask())
+            .GetAwaiter()
+            .GetResult();
     }
 
     /// <inheritdoc />

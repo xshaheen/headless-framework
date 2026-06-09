@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Headless.Checks;
 
 namespace Headless.CommitCoordination.InMemory;
 
@@ -13,7 +14,7 @@ public sealed class InMemoryCommitSignalSource(CommitScopeFactory scopeFactory) 
     /// <inheritdoc />
     public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(bindings);
+        Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
         return scopeFactory.Begin(bindings.Services, bindings.Capabilities);

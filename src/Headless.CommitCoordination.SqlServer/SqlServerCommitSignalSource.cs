@@ -2,6 +2,9 @@
 
 using System.Collections.Concurrent;
 using Headless.CommitCoordination;
+using Headless.Checks;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination.SqlServer;
 
@@ -11,21 +14,37 @@ namespace Headless.CommitCoordination.SqlServer;
 /// SqlClient commit/rollback edge into a signal here.
 /// </summary>
 [PublicAPI]
-public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory) : ICommitSignalSource
+public sealed partial class SqlServerCommitSignalSource(
+    CommitScopeFactory scopeFactory,
+    ILogger<SqlServerCommitSignalSource>? logger = null
+) : ICommitSignalSource
 {
+    private readonly ILogger _logger = logger ?? NullLogger<SqlServerCommitSignalSource>.Instance;
     private readonly ConcurrentDictionary<object, ICommitScope> _scopes = new();
 
     /// <inheritdoc />
     public ICommitScope Attach(CommitCoordinatorBindings bindings, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(bindings);
+        Argument.IsNotNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
         var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
 
         if (bindings.ProviderTransactionKey is not null)
         {
-            _scopes[bindings.ProviderTransactionKey] = scope;
+            var trackedScope = new TrackedCommitScope(scope, () => _scopes.TryRemove(bindings.ProviderTransactionKey, out _));
+
+            if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
+            {
+                trackedScope.Dispose();
+                LogDuplicateScope(_logger, bindings.ProviderTransactionKey);
+
+                throw new InvalidOperationException(
+                    "A SQL Server commit coordination scope is already attached for this provider transaction key."
+                );
+            }
+
+            scope = trackedScope;
         }
 
         return scope;
@@ -43,7 +62,7 @@ public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory)
     /// <returns>The signal task.</returns>
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(providerTransactionKey);
+        Argument.IsNotNull(providerTransactionKey);
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
@@ -62,7 +81,7 @@ public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory)
     /// <returns>The signal task.</returns>
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(providerTransactionKey);
+        Argument.IsNotNull(providerTransactionKey);
 
         if (!_scopes.TryRemove(providerTransactionKey, out var scope))
         {
@@ -71,5 +90,58 @@ public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory)
 
         await using var ownedScope = scope;
         await ownedScope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+    }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Error,
+        Message = "A SQL Server commit coordination scope is already attached for provider transaction key {ProviderTransactionKey}."
+    )]
+    private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
+
+    private sealed class TrackedCommitScope(ICommitScope inner, Action detach) : ICommitScope
+    {
+        private int _disposed;
+
+        public ICommitCoordinator Coordinator => inner.Coordinator;
+
+        public async ValueTask SignalAsync(CommitOutcome outcome, CancellationToken cancellationToken)
+        {
+            await inner.SignalAsync(outcome, cancellationToken).ConfigureAwait(false);
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                inner.Dispose();
+            }
+            finally
+            {
+                detach();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 1)
+            {
+                return;
+            }
+
+            try
+            {
+                await inner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                detach();
+            }
+        }
     }
 }

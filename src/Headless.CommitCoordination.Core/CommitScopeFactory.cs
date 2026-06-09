@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -25,7 +26,7 @@ public sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoo
         IEnumerable<ICommitCapability>? capabilities = null
     )
     {
-        ArgumentNullException.ThrowIfNull(services);
+        Argument.IsNotNull(services);
 
         var coordinator = stack.CurrentCore is { } current
             ? current.CreateChild()
@@ -45,7 +46,7 @@ public sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoo
         IEnumerable<ICommitCapability>? capabilities = null
     )
     {
-        ArgumentNullException.ThrowIfNull(services);
+        Argument.IsNotNull(services);
 
         var coordinator = new CommitCoordinator(capabilities, _logger);
 

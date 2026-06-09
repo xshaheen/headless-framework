@@ -100,6 +100,28 @@ public sealed class CommitScopeFactoryTests
         calls.Should().Be(0);
     }
 
+    [Fact]
+    public void should_run_rollback_callbacks_when_sync_scope_is_disposed_without_signal()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+        var calls = 0;
+
+        using (var scope = factory.Begin(services))
+        {
+            scope.Coordinator.OnRollback((_, _) =>
+            {
+                calls++;
+
+                return ValueTask.CompletedTask;
+            });
+        }
+
+        calls.Should().Be(1);
+        stack.Current.Should().BeNull();
+    }
+
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.CommitCoordination;
+using Headless.Checks;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
@@ -42,8 +43,8 @@ public static class EnlistCommitCoordinationExtensions
         /// <returns>The coordinated scope; signal or dispose it after the transaction completes.</returns>
         public ICommitScope EnlistCommitCoordination(NpgsqlTransaction transaction, IServiceProvider services)
         {
-            ArgumentNullException.ThrowIfNull(transaction);
-            ArgumentNullException.ThrowIfNull(services);
+            Argument.IsNotNull(transaction);
+            Argument.IsNotNull(services);
 
             var signalSource = services.GetRequiredService<PostgreSqlCommitSignalSource>();
 
