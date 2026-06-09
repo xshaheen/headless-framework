@@ -36,6 +36,17 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         options.LockTimeout.Should().Be(Timeout.InfiniteTimeSpan);
     }
 
+    [Fact]
+    public void should_dispose_keyed_lock_without_throwing()
+    {
+        // given
+        var coordinator = _CreateCoordinator();
+
+        // when / then
+        var act = coordinator.Dispose;
+        act.Should().NotThrow();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-2)]
@@ -937,6 +948,123 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // then
         ceilingTimerRegistered.Should().BeFalse("no ceiling timer is armed when the ceiling is infinite");
         _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_write_fresh_when_background_factory_completes_before_ceiling()
+    {
+        // given: a finite ceiling is armed, but the background factory finishes before it fires
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
+        (await first).IsStale.Should().BeTrue();
+        await ceilingRegistered;
+        factoryGate.SetResult("fresh"); // factory wins the race against the 3s ceiling (only 1s elapsed)
+        await backgroundFinished;
+
+        // then: the fresh value is written and the ceiling never had to cancel the factory
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_log_failure_when_abandoned_factory_faults_after_background_ceiling()
+    {
+        // given: the ceiling abandons a token-ignoring factory that later faults
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Ignore cancellation: the factory keeps running past the ceiling, then faults.
+            return await abandonedFactoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
+        (await first).IsStale.Should().BeTrue();
+        await ceilingRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(3)); // ceiling fires -> factory abandoned
+        await backgroundFinished;
+        abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
+
+        // then: the abandoned task's fault is observed and logged, not lost (the #4 fix).
+        var observed = false;
+        for (var attempt = 0; attempt < 200 && !observed; attempt++)
+        {
+            observed = logger
+                .ReceivedCalls()
+                .Any(call =>
+                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
+                );
+
+            if (!observed)
+            {
+                await Task.Delay(25, AbortToken);
+            }
+        }
+
+        observed.Should().BeTrue("the fault observer attached to the abandoned factory must log its failure");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_lock_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(lockTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "lock-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
     }
 
     [Fact]
