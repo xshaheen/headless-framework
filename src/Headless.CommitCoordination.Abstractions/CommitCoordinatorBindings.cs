@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data.Common;
-
 namespace Headless.CommitCoordination;
 
 /// <summary>
@@ -16,18 +14,16 @@ public sealed class CommitCoordinatorBindings
     public required IServiceProvider Services { get; init; }
 
     /// <summary>
-    /// Gets the physical connection used for correlation when available.
+    /// Gets the opaque provider capabilities attached to the new coordinator. The scope owner builds these
+    /// (for example a relational owner supplies an <see cref="IRelationalCommitContext" />); the signal source
+    /// forwards them untouched. Null or empty for flows that expose no capability. This keeps the binding
+    /// datastore-agnostic — no relational handle is hard-coded on the contract itself.
     /// </summary>
-    public DbConnection? Connection { get; init; }
+    public IReadOnlyCollection<ICommitCapability>? Capabilities { get; init; }
 
     /// <summary>
-    /// Gets the live transaction surfaced through <see cref="IRelationalCommitContext" /> so participants can
-    /// write durable rows inside the unit-of-work at enlist time. Null for non-relational or detached flows.
-    /// </summary>
-    public DbTransaction? Transaction { get; init; }
-
-    /// <summary>
-    /// Gets the provider-specific transaction correlation key when available.
+    /// Gets the provider-specific transaction correlation key when available. This is a correlation key only —
+    /// not a transport for capability handles.
     /// </summary>
     public object? ProviderTransactionKey { get; init; }
 }

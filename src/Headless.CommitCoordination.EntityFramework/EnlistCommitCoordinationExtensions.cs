@@ -46,14 +46,14 @@ public static class EnlistCommitCoordinationExtensions
             ArgumentNullException.ThrowIfNull(services);
 
             var signalSource = services.GetRequiredService<EntityFrameworkCommitSignalSource>();
+            var dbConnection = database.GetDbConnection();
             var dbTransaction = transaction.GetDbTransaction();
 
             return signalSource.Attach(
                 new CommitCoordinatorBindings
                 {
                     Services = services,
-                    Connection = database.GetDbConnection(),
-                    Transaction = dbTransaction,
+                    Capabilities = [new RelationalCommitContext(() => dbConnection, () => dbTransaction)],
                     ProviderTransactionKey = dbTransaction,
                 },
                 CancellationToken.None

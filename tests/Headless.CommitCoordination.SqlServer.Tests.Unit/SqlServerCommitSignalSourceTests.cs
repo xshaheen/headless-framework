@@ -69,7 +69,6 @@ public sealed class SqlServerCommitSignalSourceTests
             new CommitCoordinatorBindings
             {
                 Services = new ServiceCollection().BuildServiceProvider(),
-                Connection = connection,
                 ProviderTransactionKey = connection.ClientConnectionId,
             },
             CancellationToken.None

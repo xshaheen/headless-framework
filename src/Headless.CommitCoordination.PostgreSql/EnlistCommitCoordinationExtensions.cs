@@ -51,8 +51,7 @@ public static class EnlistCommitCoordinationExtensions
                 new CommitCoordinatorBindings
                 {
                     Services = services,
-                    Connection = connection,
-                    Transaction = transaction,
+                    Capabilities = [new RelationalCommitContext(() => connection, () => transaction)],
                     ProviderTransactionKey = transaction,
                 },
                 CancellationToken.None

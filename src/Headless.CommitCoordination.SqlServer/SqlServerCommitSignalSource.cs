@@ -21,14 +21,7 @@ public sealed class SqlServerCommitSignalSource(CommitScopeFactory scopeFactory)
         ArgumentNullException.ThrowIfNull(bindings);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var capabilities = bindings.Connection is null
-            ? []
-            : new ICommitCapability[]
-            {
-                new RelationalCommitContext(() => bindings.Connection, () => bindings.Transaction),
-            };
-
-        var scope = scopeFactory.Begin(bindings.Services, capabilities);
+        var scope = scopeFactory.Begin(bindings.Services, bindings.Capabilities);
 
         if (bindings.ProviderTransactionKey is not null)
         {
