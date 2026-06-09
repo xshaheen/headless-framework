@@ -4,6 +4,8 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.ExceptionServices;
 using System.Threading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination;
 
@@ -11,12 +13,13 @@ namespace Headless.CommitCoordination;
 /// Default in-process implementation of <see cref="ICommitCoordinator" />.
 /// </summary>
 [PublicAPI]
-public sealed class CommitCoordinator : ICommitCoordinator
+public sealed partial class CommitCoordinator : ICommitCoordinator
 {
     private readonly Lock _gate = new();
     private readonly Dictionary<Type, ICommitWorkBuffer> _buffers = [];
     private readonly Dictionary<Type, ICommitCapability> _capabilities;
     private readonly CommitCoordinator? _parent;
+    private readonly ILogger _logger;
     private readonly ConcurrentBag<IDisposable> _promotedRegistrations = [];
     private List<CommitCallbackRegistration> _commitCallbacks = [];
     private List<CommitCallbackRegistration> _rollbackCallbacks = [];
@@ -26,10 +29,12 @@ public sealed class CommitCoordinator : ICommitCoordinator
     /// Initializes a new root coordinator.
     /// </summary>
     /// <param name="capabilities">The immutable provider capabilities.</param>
-    public CommitCoordinator(IEnumerable<ICommitCapability>? capabilities = null)
+    /// <param name="logger">The logger used to surface ignored racing terminal signals.</param>
+    public CommitCoordinator(IEnumerable<ICommitCapability>? capabilities = null, ILogger? logger = null)
     {
         Root = this;
         _capabilities = _CreateCapabilityMap(capabilities);
+        _logger = logger ?? NullLogger.Instance;
     }
 
     private CommitCoordinator(CommitCoordinator parent)
@@ -37,6 +42,7 @@ public sealed class CommitCoordinator : ICommitCoordinator
         _parent = parent;
         Root = parent.Root;
         _capabilities = parent._capabilities;
+        _logger = parent._logger;
     }
 
     internal CommitCoordinator Root { get; }
@@ -151,6 +157,11 @@ public sealed class CommitCoordinator : ICommitCoordinator
 
         if (Interlocked.CompareExchange(ref _state, (int)CommitCoordinatorState.Draining, (int)CommitCoordinatorState.Active) != (int)CommitCoordinatorState.Active)
         {
+            // First terminal signal already won (D10): a second signal — e.g. EF TransactionCommitted racing the
+            // SqlClient diagnostic, or a Dispose racing a Rollback — is an ignored no-op, surfaced so provider
+            // double-signal bugs stay diagnosable instead of silent.
+            LogIgnoredRacingSignal(_logger, State, outcome);
+
             return;
         }
 
@@ -255,6 +266,12 @@ public sealed class CommitCoordinator : ICommitCoordinator
 
         if (state is CommitCoordinatorState.Committed or CommitCoordinatorState.RolledBack)
         {
+            LogIgnoredRacingSignal(
+                _logger,
+                state,
+                terminalState == CommitCoordinatorState.Committed ? CommitOutcome.Committed : CommitOutcome.RolledBack
+            );
+
             return;
         }
 
@@ -317,4 +334,15 @@ public sealed class CommitCoordinator : ICommitCoordinator
             Volatile.Write(ref _disposed, 1);
         }
     }
+
+    [LoggerMessage(
+        EventId = 1,
+        Level = LogLevel.Warning,
+        Message = "Commit scope already {State}; ignoring {Signal} signal."
+    )]
+    private static partial void LogIgnoredRacingSignal(
+        ILogger logger,
+        CommitCoordinatorState state,
+        CommitOutcome signal
+    );
 }

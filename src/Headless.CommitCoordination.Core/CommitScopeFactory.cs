@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.CommitCoordination;
 
@@ -8,8 +10,10 @@ namespace Headless.CommitCoordination;
 /// Opens ambient commit coordination scopes.
 /// </summary>
 [PublicAPI]
-public sealed class CommitScopeFactory(CommitScopeStack stack)
+public sealed class CommitScopeFactory(CommitScopeStack stack, ILogger<CommitCoordinator>? logger = null)
 {
+    private readonly ILogger _logger = logger ?? NullLogger<CommitCoordinator>.Instance;
+
     /// <summary>
     /// Opens a scope, joining the current root coordinator when one exists.
     /// </summary>
@@ -25,7 +29,7 @@ public sealed class CommitScopeFactory(CommitScopeStack stack)
 
         var coordinator = stack.CurrentCore is { } current
             ? current.CreateChild()
-            : new CommitCoordinator(capabilities);
+            : new CommitCoordinator(capabilities, _logger);
 
         return _CreateScope(coordinator, services);
     }
