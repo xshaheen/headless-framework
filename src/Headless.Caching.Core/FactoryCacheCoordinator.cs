@@ -234,6 +234,9 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             }
 
             await internalCts.CancelAsync().ConfigureAwait(false);
+            // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
+            // later fault is logged rather than lost, mirroring the hard-timeout abandonment path.
+            _ObserveAbandonedFactory(factoryTask, key);
             _logger.LogCacheFactoryTimedOut(key, "background-ceiling", options.BackgroundFactoryCeiling);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
