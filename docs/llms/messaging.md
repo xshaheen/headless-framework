@@ -542,29 +542,29 @@ var info = new FailedInfo
 
 ## Distributed Lock Integration
 
-`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLockProvider`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
+`MessagingOptions.UseStorageLock` (default `false`) enables `IDistributedLock`-backed mutual exclusion in `MessageNeedToRetryProcessor`. When `true`, the retry processor acquires a named distributed lock before each publish-retry and receive-retry pickup, gating the entire retry-pickup tick.
 
 Use `MessagingBuilder.UseDistributedLock(...)` to wire the provider. Calling this method implicitly sets `UseStorageLock = true`:
 
 ```csharp
-// Instance overload — when you already have an IDistributedLockProvider
-var lockProvider = new MyDistributedLockProvider(...);
+// Instance overload — when you already have an IDistributedLock
+var lockProvider = new MyDistributedLock(...);
 builder.Services.AddHeadlessMessaging(setup => { ... })
     .UseDistributedLock(lockProvider);
 
 // Factory overload — when the provider depends on other DI services
 builder.Services.AddHeadlessMessaging(setup => { ... })
-    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLockProvider>());
+    .UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>());
 ```
 
-Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLockProvider` registered at the application level for other purposes.
+Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless.messaging"`) so it never conflicts with any `IDistributedLock` registered at the application level for other purposes.
 
 ### What this is and isn't (correctness vs coordination)
 
 - Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
 - Coordination membership is an **acceleration primitive**. With a real `INodeMembership`, retry pickup reconciles live `node@incarnation` owners and pulls `LockedUntil` back to now for rows still leased by dead incarnations. Without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
 - The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
-- Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If renewal of an in-flight lock fails (EventId 79), the handle is cleared but the consume task keeps running — the per-row `LockedUntil` lease takes over as the correctness boundary.
+- Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If an acquired retry lock's `LostToken` fires (EventId 79), no new pickup starts under an already-lost lease; any in-flight dispatch remains governed by the per-row `LockedUntil` lease.
 
 ### When to enable
 
@@ -581,10 +581,10 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### Requirements
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddHeadlessDistributedLocks(setup => setup.UseRedis())`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
+- Without a real provider, only `NoOpDistributedLock` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddHeadlessDistributedLocks(setup => setup.UseRedis())`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
 - `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
 
-**NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
+**NoOp introspection contract:** when `NoOpDistributedLock` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
 
 ### Lock names
 
@@ -593,9 +593,9 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 
 Both names follow the literal pattern shown above. They are constructed internally by `Headless.Messaging.Core`; downstream consumers must not depend on the internal helper that builds them — register a real provider exclusively via `MessagingBuilder.UseDistributedLock(...)` and let messaging resolve its own keyed-DI slot.
 
-`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
+`{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once), a finite lease window equal to the current polling interval, and `Monitoring = LockMonitoringMode.AutoExtend`; when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
-**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required. If a real Coordination membership provider is registered while `UseStorageLock = false`, startup emits EventId 92 because dead-incarnation owner reclaim is disabled in that configuration.
+**When `UseStorageLock = false`** (default): `IDistributedLock` is never called and distributed lock wiring is not required. If a real Coordination membership provider is registered while `UseStorageLock = false`, startup emits EventId 92 because dead-incarnation owner reclaim is disabled in that configuration.
 
 ### Coordination recovery decision tree
 
@@ -614,8 +614,7 @@ Dead-incarnation retry recovery depends on both the coarse storage lock and memb
 | --- | --- | --- | --- | --- |
 | 77 | `UseStorageLockWithNoOpProvider` | Warning | `UseStorageLock = true` but no real provider is registered under any key. | Wire a real provider via `MessagingBuilder.UseDistributedLock(...)`, or set `UseStorageLock = false`. |
 | 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | `UseStorageLock = true`, real provider registered un-keyed, but not flowed through `MessagingBuilder.UseDistributedLock(...)`. | Re-register the provider via `MessagingBuilder.UseDistributedLock(...)` so it lands under messaging's keyed slot. |
-| 79 | `ReceivedRetryLockOwnershipLost` | Warning | `RenewAsync` returned `false`; the coarse lock was lost. Per-row `LockedUntil` takes over for the in-flight consume task. | Investigate lock-store TTLs and clock skew if frequent; not a correctness issue. |
-| 80 | `ReceivedRetryLockRenewalFailed` | Warning | `RenewAsync` threw a non-cancellation exception. | Investigate lock-store health if frequent; the in-flight task continues. |
+| 79 | `RetryLockLeaseLost` | Warning | The acquired published- or received-retry lease's `LostToken` was already canceled before pickup, or fired while pickup was in flight. | Investigate lock-store TTLs, clock skew, and auto-extension health if frequent; per-row `LockedUntil` remains the correctness boundary. |
 | 81 | `PublishedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the published-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
@@ -630,7 +629,7 @@ Dead-incarnation retry recovery depends on both the coarse storage lock and memb
 ### Pros and cons
 
 - **Pros:** less wasted pickup work, cleaner logs at scale, halves backlog scan load per added replica.
-- **Cons:** extra lock-store round trip per tick, extra dependency, more EventIds to monitor (79/80 for renewal, 81-84 for acquire failures).
+- **Cons:** extra lock-store round trip per tick, extra dependency, more EventIds to monitor (79 for lease loss, 81-84 for acquire failures).
 
 ---
 
