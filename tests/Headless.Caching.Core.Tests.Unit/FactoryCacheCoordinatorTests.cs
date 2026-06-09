@@ -719,8 +719,10 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _timeProvider.Advance(TimeSpan.FromSeconds(1));
         var act = async () => await resultTask;
 
-        // then
-        await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+        // then: the thrown exception carries the key and the configured hard-timeout limit
+        var thrown = await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+        thrown.Which.Key.Should().Be(key);
+        thrown.Which.Limit.Should().Be(options.FactoryHardTimeout);
     }
 
     [Fact]
