@@ -10,5 +10,6 @@
 # core.hooksPath here, so this runs in every clone and worktree. Bypass with `git push --no-verify`.
 set -eu
 
+printf '\033[36m[pre-push]\033[0m format-check + clean build (~1-2 min; skip with --no-verify)...\n'
 make format-check
 make rebuild
