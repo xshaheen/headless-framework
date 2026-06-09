@@ -1,0 +1,109 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data;
+using System.Data.Common;
+using Headless.CommitCoordination;
+using Headless.CommitCoordination.EntityFramework;
+
+namespace Tests;
+
+public sealed class CommitCoordinationTransactionInterceptorTests
+{
+    [Fact]
+    public void should_not_deadlock_when_sync_commit_override_drains_under_a_synchronization_context()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var signalSource = new EntityFrameworkCommitSignalSource(factory);
+        var transaction = new FakeDbTransaction();
+        var ran = false;
+
+        var scope = signalSource.Attach(
+            new CommitCoordinatorBindings
+            {
+                Services = new EmptyServiceProvider(),
+                ProviderTransactionKey = transaction,
+            },
+            CancellationToken.None
+        );
+
+        scope.Coordinator.OnCommit(async (_, _) =>
+        {
+            // Posts the continuation back to the captured SynchronizationContext; the sync interceptor override
+            // would deadlock here unless it offloads the drain off the committing thread.
+            await Task.Yield();
+            ran = true;
+        });
+
+        var interceptor = new CommitCoordinationTransactionInterceptor(signalSource);
+
+        var completed = SingleThreadSynchronizationContext.Run(
+            () => interceptor.TransactionCommitted(transaction, null!),
+            TimeSpan.FromSeconds(10)
+        );
+
+        completed.Should().BeTrue("the sync TransactionCommitted override must offload the drain off the captured SynchronizationContext");
+        ran.Should().BeTrue();
+    }
+
+    private sealed class FakeDbTransaction : DbTransaction
+    {
+        public override IsolationLevel IsolationLevel => IsolationLevel.ReadCommitted;
+
+        protected override DbConnection? DbConnection => null;
+
+        public override void Commit() { }
+
+        public override void Rollback() { }
+    }
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public object? GetService(Type serviceType) => null;
+    }
+
+    /// <summary>
+    /// Runs an action on a dedicated thread carrying a single-threaded <see cref="SynchronizationContext" /> whose
+    /// posted continuations are only pumped after the action returns. If the action blocks on an async continuation
+    /// posted to this context, the thread deadlocks and <see cref="Run" /> reports a timeout.
+    /// </summary>
+    private sealed class SingleThreadSynchronizationContext : SynchronizationContext
+    {
+        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
+
+        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+
+        public static bool Run(Action action, TimeSpan timeout)
+        {
+            using var completed = new ManualResetEventSlim(false);
+            var context = new SingleThreadSynchronizationContext();
+
+            var thread = new Thread(() =>
+            {
+                SetSynchronizationContext(context);
+
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    completed.Set();
+                    context._queue.CompleteAdding();
+                }
+
+                foreach (var (callback, state) in context._queue.GetConsumingEnumerable())
+                {
+                    callback(state);
+                }
+            })
+            {
+                IsBackground = true,
+            };
+
+            thread.Start();
+
+            return completed.Wait(timeout);
+        }
+    }
+}

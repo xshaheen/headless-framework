@@ -32,7 +32,12 @@ public sealed partial class SqlServerCommitSignalSource(
 
         if (bindings.ProviderTransactionKey is not null)
         {
-            var trackedScope = new TrackedCommitScope(scope, () => _scopes.TryRemove(bindings.ProviderTransactionKey, out _));
+            // Remove-if-equal: a tracked scope only ever evicts its OWN entry. After a commit drain removes the
+            // entry and a later transaction reuses the same key, this scope's disposal must not evict the successor.
+            var trackedScope = new TrackedCommitScope(
+                scope,
+                self => _scopes.TryRemove(new KeyValuePair<object, ICommitScope>(bindings.ProviderTransactionKey, self))
+            );
 
             if (!_scopes.TryAdd(bindings.ProviderTransactionKey, trackedScope))
             {
@@ -99,7 +104,7 @@ public sealed partial class SqlServerCommitSignalSource(
     )]
     private static partial void LogDuplicateScope(ILogger logger, object providerTransactionKey);
 
-    private sealed class TrackedCommitScope(ICommitScope inner, Action detach) : ICommitScope
+    private sealed class TrackedCommitScope(ICommitScope inner, Action<ICommitScope> detach) : ICommitScope
     {
         private int _disposed;
 
@@ -123,7 +128,7 @@ public sealed partial class SqlServerCommitSignalSource(
             }
             finally
             {
-                detach();
+                detach(this);
             }
         }
 
@@ -140,7 +145,7 @@ public sealed partial class SqlServerCommitSignalSource(
             }
             finally
             {
-                detach();
+                detach(this);
             }
         }
     }

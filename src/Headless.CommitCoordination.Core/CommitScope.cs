@@ -32,7 +32,12 @@ internal sealed class CommitScope(
 
         if (Volatile.Read(ref _signaled) == 0)
         {
-            SignalAsync(CommitOutcome.RolledBack, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            // Offload the rollback drain to the thread pool so a caller disposing on a thread that carries a
+            // SynchronizationContext cannot deadlock when a rollback callback resumes onto that captured context
+            // (mirrors the EF interceptor's sync overrides).
+            Task.Run(() => SignalAsync(CommitOutcome.RolledBack, CancellationToken.None).AsTask())
+                .GetAwaiter()
+                .GetResult();
         }
 
         coordinator.DisposePromotedRegistrations();

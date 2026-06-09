@@ -122,8 +122,81 @@ public sealed class CommitScopeFactoryTests
         stack.Current.Should().BeNull();
     }
 
+    [Fact]
+    public void should_not_deadlock_when_sync_dispose_drains_rollback_under_a_synchronization_context()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+        var ran = false;
+
+        var completed = SingleThreadSynchronizationContext.Run(
+            () =>
+            {
+                using var scope = factory.Begin(services);
+
+                scope.Coordinator.OnRollback(async (_, _) =>
+                {
+                    // Posts the continuation back to the captured SynchronizationContext; a sync-over-async drain
+                    // on the disposing thread would deadlock here unless the drain is offloaded.
+                    await Task.Yield();
+                    ran = true;
+                });
+            },
+            TimeSpan.FromSeconds(10)
+        );
+
+        completed.Should().BeTrue("sync Dispose must offload the rollback drain off the captured SynchronizationContext");
+        ran.Should().BeTrue();
+    }
+
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;
+    }
+
+    /// <summary>
+    /// Runs an action on a dedicated thread carrying a single-threaded <see cref="SynchronizationContext" /> whose
+    /// posted continuations are only pumped after the action returns. If the action blocks on an async continuation
+    /// posted to this context, the thread deadlocks and <see cref="Run" /> reports a timeout.
+    /// </summary>
+    private sealed class SingleThreadSynchronizationContext : SynchronizationContext
+    {
+        private readonly System.Collections.Concurrent.BlockingCollection<(SendOrPostCallback Callback, object? State)> _queue = [];
+
+        public override void Post(SendOrPostCallback d, object? state) => _queue.Add((d, state));
+
+        public static bool Run(Action action, TimeSpan timeout)
+        {
+            using var completed = new ManualResetEventSlim(false);
+            var context = new SingleThreadSynchronizationContext();
+
+            var thread = new Thread(() =>
+            {
+                SetSynchronizationContext(context);
+
+                try
+                {
+                    action();
+                }
+                finally
+                {
+                    completed.Set();
+                    context._queue.CompleteAdding();
+                }
+
+                foreach (var (callback, state) in context._queue.GetConsumingEnumerable())
+                {
+                    callback(state);
+                }
+            })
+            {
+                IsBackground = true,
+            };
+
+            thread.Start();
+
+            return completed.Wait(timeout);
+        }
     }
 }
