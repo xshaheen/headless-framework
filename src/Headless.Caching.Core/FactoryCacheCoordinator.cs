@@ -69,7 +69,9 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         if (releaser is null)
         {
-            _logger.LogCacheFactoryTimedOut(key, "lock-soft", lockTimeout);
+            // With a stale reserve the wait is the soft timeout and we serve stale; without one it is LockTimeout
+            // and _ToCacheValue(NotFound) degrades to a miss (NoValue).
+            _logger.LogCacheFactoryTimedOut(key, staleCandidate.Found ? "lock-soft" : "lock-timeout", lockTimeout);
             return _ToCacheValue(staleCandidate, isStale: true);
         }
 
@@ -394,12 +396,16 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private static bool _IsStaleCandidate<T>(CacheStoreEntry<T> entry, DateTime now) =>
         entry.IsPhysicallyPresent(now) && entry.PhysicalExpiresAt.HasValue;
 
+    // Soft timeout governs the waiter wait only when a stale reserve can be served on elapse; otherwise the
+    // waiter is bounded by LockTimeout (default Timeout.InfiniteTimeSpan), and on elapse with no stale reserve
+    // the waiter degrades to a miss. This mirrors FusionCache's GetAppropriateMemoryLockTimeout: a stale + fail-safe
+    // + finite-soft caller waits FactorySoftTimeout, every other caller waits the base LockTimeout.
     private static TimeSpan _SelectLockTimeout<T>(CacheEntryOptions options, CacheStoreEntry<T> staleCandidate, DateTime now) =>
         options.IsFailSafeEnabled
         && _IsStaleCandidate(staleCandidate, now)
         && options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
             ? options.FactorySoftTimeout
-            : Timeout.InfiniteTimeSpan;
+            : options.LockTimeout;
 
     private FactoryTimeoutSelection _SelectFactoryTimeout<T>(
         CacheEntryOptions options,
@@ -562,6 +568,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         _ValidateOptionalTimeout(options.FactorySoftTimeout, nameof(options.FactorySoftTimeout));
         _ValidateOptionalTimeout(options.FactoryHardTimeout, nameof(options.FactoryHardTimeout));
         _ValidateOptionalTimeout(options.BackgroundFactoryCeiling, nameof(options.BackgroundFactoryCeiling));
+        _ValidateOptionalTimeout(options.LockTimeout, nameof(options.LockTimeout));
 
         if (
             options.FactorySoftTimeout != Timeout.InfiniteTimeSpan

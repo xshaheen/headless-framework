@@ -33,6 +33,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         options.FactorySoftTimeout.Should().Be(Timeout.InfiniteTimeSpan);
         options.FactoryHardTimeout.Should().Be(Timeout.InfiniteTimeSpan);
         options.BackgroundFactoryCeiling.Should().Be(Timeout.InfiniteTimeSpan);
+        options.LockTimeout.Should().Be(Timeout.InfiniteTimeSpan);
     }
 
     [Theory]
@@ -988,6 +989,44 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_miss_when_waiter_times_out_acquiring_lock_without_stale()
+    {
+        // given: no stale reserve exists and a hanging factory holds the per-key lock; a finite LockTimeout bounds
+        // the waiter so it degrades to a miss instead of blocking on the in-flight factory.
+        var key = Faker.Random.AlphaNumeric(8);
+        var coordinator = _CreateCoordinator();
+        var firstFactoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFactoryCalls = 0;
+        var options = _CreateOptions(lockTimeout: TimeSpan.FromSeconds(2));
+
+        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        {
+            firstFactoryStarted.SetResult();
+            return await firstFactoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        ValueTask<string?> SecondFactory(CancellationToken _)
+        {
+            secondFactoryCalls++;
+            return ValueTask.FromResult<string?>("second");
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, FirstFactory, options, AbortToken).AsTask();
+        await firstFactoryStarted.Task;
+        var second = coordinator.GetOrAddAsync(_store, key, SecondFactory, options, AbortToken).AsTask();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var secondResult = await second;
+        firstFactoryGate.SetResult("first");
+        await first;
+
+        // then
+        secondResult.HasValue.Should().BeFalse();
+        secondFactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_escape_same_key_reentrancy_with_stale_value_when_lock_timeout_applies()
     {
         // given
@@ -1141,7 +1180,8 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? throttleDuration = null,
         TimeSpan? factorySoftTimeout = null,
         TimeSpan? factoryHardTimeout = null,
-        TimeSpan? backgroundFactoryCeiling = null
+        TimeSpan? backgroundFactoryCeiling = null,
+        TimeSpan? lockTimeout = null
     ) =>
         new()
         {
@@ -1152,6 +1192,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
             FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
             BackgroundFactoryCeiling = backgroundFactoryCeiling ?? TimeSpan.FromMinutes(2),
+            LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
         };
 
     private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value) =>

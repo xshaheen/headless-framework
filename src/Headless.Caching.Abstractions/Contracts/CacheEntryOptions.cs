@@ -29,6 +29,7 @@ public readonly record struct CacheEntryOptions
         FactorySoftTimeout = Timeout.InfiniteTimeSpan;
         FactoryHardTimeout = Timeout.InfiniteTimeSpan;
         BackgroundFactoryCeiling = Timeout.InfiniteTimeSpan;
+        LockTimeout = Timeout.InfiniteTimeSpan;
     }
 
     /// <summary>
@@ -79,6 +80,17 @@ public readonly record struct CacheEntryOptions
     /// releases the lock, and best-effort re-stamps the stale reserve.
     /// </summary>
     public TimeSpan BackgroundFactoryCeiling { get; init; } = Timeout.InfiniteTimeSpan;
+
+    /// <summary>
+    /// Gets how long a factory-backed read waits to acquire the per-key factory lock when no stale reserve is
+    /// available to serve. Defaults to <see cref="Timeout.InfiniteTimeSpan"/> (wait until the in-flight factory
+    /// releases the lock, matching the behavior of comparable caches). Provide a finite, positive value so a caller
+    /// that cannot acquire the lock in time degrades to a miss (<c>CacheValue&lt;T&gt;.NoValue</c>) instead of
+    /// blocking, bounding tail latency when an in-flight factory is slow and no fail-safe reserve exists. When a
+    /// stale reserve does exist and <see cref="FactorySoftTimeout"/> is finite, that soft timeout governs the wait
+    /// instead and the caller is served the stale value on elapse.
+    /// </summary>
+    public TimeSpan LockTimeout { get; init; } = Timeout.InfiniteTimeSpan;
 
     /// <summary>Creates cache entry options from a cache duration.</summary>
     /// <param name="duration">The cache entry duration.</param>
