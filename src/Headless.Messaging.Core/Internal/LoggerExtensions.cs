@@ -666,19 +666,11 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 79,
-        EventName = "ReceivedRetryLockOwnershipLost",
+        EventName = "RetryLockLeaseLost",
         Level = LogLevel.Warning,
-        Message = "Received-retry lock renewal returned false; ownership has been lost. Clearing the cached handle so the next cycle re-acquires from scratch."
+        Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by per-row LockedUntil."
     )]
-    public static partial void ReceivedRetryLockOwnershipLost(this ILogger logger);
-
-    [LoggerMessage(
-        EventId = 80,
-        EventName = "ReceivedRetryLockRenewalFailed",
-        Level = LogLevel.Warning,
-        Message = "Received-retry lock renewal threw an exception. Treating as transient; the in-flight consume task continues under per-row LockedUntil, the handle has been cleared, and the next cycle will re-acquire fresh."
-    )]
-    public static partial void ReceivedRetryLockRenewalFailed(this ILogger logger, Exception ex);
+    public static partial void RetryLockLeaseLost(this ILogger logger, string retryKind, string resource, string leaseId);
 
     [LoggerMessage(
         EventId = 81,

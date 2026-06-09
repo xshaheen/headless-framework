@@ -507,6 +507,8 @@ If `UseStorageLock = true` but only the default `NullNodeMembership` is register
 
 > **NoOp introspection contract:** when `NoOpDistributedLock` is active, the introspection-style methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) always return empty/false/null and cannot be used to verify lock state. The EventId 77 / 78 warnings are the only operational signal that the no-op is in play — treat introspection results as "unknown", not "no locks held".
 
+Retry locks use non-blocking acquire (`AcquireTimeout = TimeSpan.Zero`), a finite lease window equal to the current polling interval, and `LockMonitoringMode.AutoExtend`. If a lease's `LostToken` fires, the processor logs EventId 79 and does not start new pickup under an already-lost lease; in-flight dispatch remains guarded by per-row `LockedUntil`.
+
 When `UseStorageLock = false` (default), `IDistributedLock` is never called; skip this for single-replica deployments or when the storage provider natively prevents duplicate retry pickup. If a real Coordination membership provider is registered while `UseStorageLock = false`, startup logs **EventId 92 Warning** because dead-incarnation owner reclaim is disabled in that configuration.
 
 ### Coordination Recovery
@@ -549,8 +551,7 @@ Retry-processor EventIds emitted when `UseStorageLock = true`:
 | --- | --- | --- | --- | --- |
 | 77 | `UseStorageLockWithNoOpProvider` | Warning | No real provider registered under any key. | Wire `MessagingBuilder.UseDistributedLock(...)` or set `UseStorageLock = false`. |
 | 78 | `UseStorageLockWithNoOpProviderButRealUnkeyed` | Warning | Real provider registered un-keyed but not flowed through `UseDistributedLock(...)`. | Re-register via `MessagingBuilder.UseDistributedLock(...)`. |
-| 79 | `ReceivedRetryLockOwnershipLost` | Warning | Renewal returned `false`; coarse lock lost. Per-row `LockedUntil` takes over. | Investigate lock-store TTLs / clock skew if frequent. |
-| 80 | `ReceivedRetryLockRenewalFailed` | Warning | Renewal threw a non-cancellation exception. | Investigate lock-store health if frequent. |
+| 79 | `RetryLockLeaseLost` | Warning | The acquired published- or received-retry lease's `LostToken` was already canceled before pickup, or fired while pickup was in flight. | Investigate lock-store TTLs, clock skew, and auto-extension health if frequent; per-row `LockedUntil` remains the correctness boundary. |
 | 81 | `PublishedRetryLockAcquireFailed` | Warning | Acquire threw on the published-retry path. | Investigate lock-store health if persistent. |
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | Acquire threw on the received-retry path. | Investigate lock-store health if persistent. |
