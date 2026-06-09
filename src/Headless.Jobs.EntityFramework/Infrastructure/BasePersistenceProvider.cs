@@ -7,6 +7,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Infrastructure;
 
@@ -14,13 +15,16 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    ICache? cache
+    ICache? cache,
+    ILogger logger
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
     protected IDbContextFactory<TDbContext> DbContextFactory { get; } = dbContextFactory;
+
+    protected ILogger Logger { get; } = logger;
 
     // Runtime owner accessor. Stamp/acquire sites read the current node@incarnation via TryGetStampOwner
     // and refuse to touch rows when membership is not established (registration pending or membership lost).
@@ -504,16 +508,39 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 )
                 .ConfigureAwait(false);
 
+            // Contract: the registered ICache must never persist a null or empty cron-expressions entry. A hit of
+            // CacheValue.Null (HasValue=true, Value=null) or NoValue collapses to [] here and is read as a genuinely
+            // empty cron table — the factory does not re-run on a hit, so a misbehaving provider that cached a
+            // null/empty value would silently suppress all cron scheduling until the entry's TTL elapses. Providers
+            // must cache only the real DB result; Jobs intentionally trusts HasValue/Value rather than re-querying.
             return result.HasValue ? result.Value ?? [] : [];
         }
 #pragma warning disable ERP022, RCS1075
         catch (Exception exception)
-            when (!factoryFailed && exception is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            when (!factoryFailed && !_IsCallerCancellation(exception, cancellationToken))
         {
             // Cache read/write failures are non-authoritative for Jobs; the database remains the source of truth.
+            // A cache-layer OperationCanceledException bound to a foreign/internal token (e.g. a Redis command
+            // timeout) is an infrastructure failure and falls open to the DB; only genuine caller cancellation
+            // propagates (see _IsCallerCancellation), matching FactoryCacheCoordinator's token-identity semantics.
             return loaded ?? await _LoadCronJobExpressionsAsync(cancellationToken).ConfigureAwait(false);
         }
 #pragma warning restore ERP022, RCS1075
+    }
+
+    private static bool _IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
+    {
+        // Mirrors FactoryCacheCoordinator.IsCallerCancellation (Headless.Caching.Core, not a dependency here):
+        // a cancellation is the caller's only when the caller token requested it or the OCE is bound to that exact
+        // token. An OCE carrying a different/None token is a downstream timeout, not caller cancellation.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return true;
+        }
+
+        return cancellationToken.CanBeCanceled
+            && exception is OperationCanceledException operationCanceled
+            && operationCanceled.CancellationToken == cancellationToken;
     }
 
     protected async Task InvalidateCronExpressionsCacheAsync()
@@ -531,9 +558,12 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             await Cache.RemoveAsync(CronExpressionsCacheKey, CancellationToken.None).ConfigureAwait(false);
         }
 #pragma warning disable ERP022, RCS1075
-        catch (Exception)
+        catch (Exception exception)
         {
-            // Cache invalidation is best-effort; cron writes have already committed to the durable store.
+            // Cache invalidation is best-effort; cron writes have already committed to the durable store. Log at
+            // Warning so a recurring cache outage on the durable scheduler path (which would otherwise serve stale
+            // cron expressions cluster-wide until the TTL elapses) is observable rather than silent.
+            Logger.LogCronExpressionsCacheInvalidationFailed(exception, CronExpressionsCacheKey);
         }
 #pragma warning restore ERP022, RCS1075
     }
@@ -882,4 +912,19 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     #endregion
+}
+
+internal static partial class BasePersistenceProviderLog
+{
+    [LoggerMessage(
+        EventId = 3000,
+        Level = LogLevel.Warning,
+        Message = "Cron-expressions cache invalidation failed for key '{Key}'; stale cron expressions may be served "
+            + "until the cache entry's TTL elapses. Cache is fail-open and the database remains authoritative."
+    )]
+    public static partial void LogCronExpressionsCacheInvalidationFailed(
+        this ILogger logger,
+        Exception exception,
+        string key
+    );
 }

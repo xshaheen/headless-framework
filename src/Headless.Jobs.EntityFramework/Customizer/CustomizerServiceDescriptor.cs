@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Customizer;
 
@@ -112,7 +113,8 @@ public static class ServiceBuilder
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),
-                provider.GetService<ICache>()
+                provider.GetService<ICache>(),
+                provider.GetRequiredService<ILogger<JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>>>()
             )
         );
     }

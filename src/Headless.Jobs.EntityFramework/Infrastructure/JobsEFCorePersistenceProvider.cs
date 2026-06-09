@@ -7,6 +7,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Infrastructure;
 
@@ -14,13 +15,15 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     IDbContextFactory<TDbContext> dbContextFactory,
     TimeProvider timeProvider,
     IJobsOwnerIdentity ownerIdentity,
-    ICache? cache
+    ICache? cache,
+    ILogger logger
 )
     : BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         dbContextFactory,
         timeProvider,
         ownerIdentity,
-        cache
+        cache,
+        logger
     ),
         IJobPersistenceProvider<TTimeJob, TCronJob>
     where TDbContext : DbContext

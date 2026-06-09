@@ -10,6 +10,7 @@ using Headless.Jobs.Interfaces;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Caching;
 
@@ -91,17 +92,40 @@ public sealed class CronExpressionCacheTests
     }
 
     [Fact]
-    public async Task GetAllCronJobExpressions_cache_cancellation_propagates()
+    public async Task GetAllCronJobExpressions_foreign_token_cache_cancellation_falls_back_to_database()
+    {
+        await using var fixture = await CronCacheFixture.CreateAsync();
+        await fixture.SeedCronJobsAsync(_Cron("db", "0 3 * * *"));
+        // An OperationCanceledException bound to a foreign/internal token (e.g. a Redis command timeout), not the
+        // caller's token, is a cache-layer failure and must fail open to the DB rather than propagate.
+        var cache = new RecordingCache
+        {
+            Behavior = CacheBehavior.ThrowBeforeFactory,
+            ReadException = new OperationCanceledException("cache store timeout"),
+        };
+        var sut = fixture.CreateProvider(cache);
+
+        var result = await sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+
+        result.Should().ContainSingle().Which.Function.Should().Be("db");
+        cache.FactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetAllCronJobExpressions_caller_cancellation_propagates()
     {
         await using var fixture = await CronCacheFixture.CreateAsync();
         var cache = new RecordingCache
         {
             Behavior = CacheBehavior.ThrowBeforeFactory,
-            ReadException = new OperationCanceledException("cache cancelled"),
+            ReadException = new OperationCanceledException("caller cancelled"),
         };
         var sut = fixture.CreateProvider(cache);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
 
-        var act = () => sut.GetAllCronJobExpressions(TestContext.Current.CancellationToken);
+        // The caller's own token is cancelled, so the cancellation is genuine and must propagate (no DB fallback).
+        var act = () => sut.GetAllCronJobExpressions(cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
@@ -187,7 +211,14 @@ public sealed class CronExpressionCacheTests
 
         public JobsEfCorePersistenceProvider<JobsDbContext, TimeJobEntity, CronJobEntity> CreateProvider(
             ICache? cache = null
-        ) => new(new TestDbContextFactory(_options), TimeProvider.System, new TestOwnerIdentity(), cache);
+        ) =>
+            new(
+                new TestDbContextFactory(_options),
+                TimeProvider.System,
+                new TestOwnerIdentity(),
+                cache,
+                NullLogger.Instance
+            );
 
         public async Task SeedCronJobsAsync(params CronJobEntity[] cronJobs)
         {
