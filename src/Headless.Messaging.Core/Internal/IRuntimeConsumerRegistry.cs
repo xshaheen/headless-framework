@@ -95,6 +95,7 @@ internal sealed record RuntimeConsumerRegistration(
 
 internal sealed class RuntimeConsumerRegistry(
     IOptions<MessagingOptions> options,
+    IConsumerRegistry consumerRegistry,
     ILogger<RuntimeConsumerRegistry> logger
 ) : IRuntimeConsumerRegistry
 {
@@ -228,7 +229,7 @@ internal sealed class RuntimeConsumerRegistry(
             return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 
-        if (_options.MessageNameMappings.TryGetValue(messageType, out var mappedMessageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, out var mappedMessageName))
         {
             return _options.ApplyMessageNamePrefix(mappedMessageName);
         }

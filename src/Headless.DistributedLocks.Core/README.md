@@ -22,7 +22,7 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 ## Design Notes
 
 - `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
-- When messaging is present, call `AddHeadlessDistributedLocks(...)` before `AddHeadlessMessaging(...)` so the consumer registry drains the auto-registered release wake-up consumer.
+- When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
@@ -96,4 +96,4 @@ await using var lease = await lockProvider.AcquireAsync(
 - Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
 - PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
-- Auto-registers the `DistributedLockReleased` consumer descriptor; call `AddHeadlessDistributedLocks(...)` before `AddHeadlessMessaging(...)` when release-message wake-ups are needed.
+- Auto-registers the shared `DistributedLockReleased` messaging consumer. The descriptor is inert when messaging is absent; waiters still use polling.

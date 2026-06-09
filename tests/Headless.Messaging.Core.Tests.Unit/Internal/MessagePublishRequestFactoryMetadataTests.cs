@@ -14,8 +14,9 @@ public sealed class MessagePublishRequestFactoryMetadataTests
     public void should_use_resolved_metadata_type_for_default_message_name_and_type_header()
     {
         // given
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(IOrderEvent)] = "orders.event" } };
-        var factory = _CreateFactory(options, typeof(IOrderEvent));
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(IOrderEvent), "orders.event");
+        var factory = _CreateFactory(registry, typeof(IOrderEvent));
 
         // when
         var prepared = factory.Create(new ConcreteOrderEvent("order-1"));
@@ -30,15 +31,10 @@ public sealed class MessagePublishRequestFactoryMetadataTests
     public void should_prefer_explicit_message_type_over_resolved_metadata_type()
     {
         // given
-        var options = new MessagingOptions
-        {
-            MessageNameMappings =
-            {
-                [typeof(IOrderEvent)] = "orders.event",
-                [typeof(ConcreteOrderEvent)] = "orders.concrete",
-            },
-        };
-        var factory = _CreateFactory(options, typeof(IOrderEvent));
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(IOrderEvent), "orders.event");
+        registry.RegisterMessageName(typeof(ConcreteOrderEvent), "orders.concrete");
+        var factory = _CreateFactory(registry, typeof(IOrderEvent));
 
         // when
         var prepared = factory.Create(
@@ -55,8 +51,9 @@ public sealed class MessagePublishRequestFactoryMetadataTests
     public void should_prefer_explicit_message_name_over_resolved_metadata_name()
     {
         // given
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(IOrderEvent)] = "orders.event" } };
-        var factory = _CreateFactory(options, typeof(IOrderEvent));
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(IOrderEvent), "orders.event");
+        var factory = _CreateFactory(registry, typeof(IOrderEvent));
 
         // when
         var prepared = factory.Create(
@@ -70,7 +67,7 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         prepared.Message.Headers[Headers.Type].Should().Be(nameof(IOrderEvent));
     }
 
-    private static MessagePublishRequestFactory _CreateFactory(MessagingOptions options, Type metadataType)
+    private static MessagePublishRequestFactory _CreateFactory(ConsumerRegistry registry, Type metadataType)
     {
         var registrations = new[]
         {
@@ -80,7 +77,8 @@ public sealed class MessagePublishRequestFactoryMetadataTests
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry(registrations)
         );

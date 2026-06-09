@@ -758,6 +758,80 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.Should().BeAssignableTo<IConsumerRegistry>();
     }
 
+    [Fact]
+    public void should_register_and_lookup_raw_message_name_mapping()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+
+        // when
+        registry.RegisterMessageName(typeof(TestMessage), "orders.created");
+
+        // then
+        registry.TryGetRawMessageName(typeof(TestMessage), out var messageName).Should().BeTrue();
+        messageName.Should().Be("orders.created");
+    }
+
+    [Fact]
+    public void should_reject_conflicting_message_name_mapping_for_same_type()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "orders.created");
+
+        // when
+        var act = () => registry.RegisterMessageName(typeof(TestMessage), "orders.renamed");
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*orders.created*orders.renamed*");
+    }
+
+    [Fact]
+    public void should_allow_identical_message_name_mapping_for_same_type()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "orders.created");
+
+        // when
+        var act = () => registry.RegisterMessageName(typeof(TestMessage), "orders.created");
+
+        // then
+        act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_return_false_when_message_name_mapping_is_missing()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+
+        // when
+        var found = registry.TryGetRawMessageName(typeof(TestMessage), out var messageName);
+
+        // then
+        found.Should().BeFalse();
+        messageName.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_reject_message_name_mapping_after_freeze()
+    {
+        // given
+        var registry = new ConsumerRegistry();
+        _ = registry.GetAll();
+
+        // when
+        var act = () => registry.RegisterMessageName(typeof(TestMessage), "orders.created");
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*Cannot register message-name mappings after the registry has been frozen*");
+    }
+
     private sealed class OtherMessage;
 
     private sealed class OtherMessageConsumer : IConsume<OtherMessage>

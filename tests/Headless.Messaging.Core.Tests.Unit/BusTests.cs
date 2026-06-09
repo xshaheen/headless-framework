@@ -25,7 +25,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -38,13 +38,30 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
+    public async Task should_resolve_publish_message_name_from_registry_mapping()
+    {
+        // given — registry maps TestMessage to a domain-specific name; publish path must agree
+        await using var testTransport = new TestTransport();
+        var options = new MessagingOptions();
+
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: "orders.placed");
+
+        // when
+        await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
+
+        // then — transport message name must equal the registry-sourced mapping, not a convention-derived fallback
+        testTransport.SentMessages.Should().HaveCount(1);
+        testTransport.SentMessages[0].GetName().Should().Be("orders.placed");
+    }
+
+    [Fact]
     public async Task should_resolve_topic_from_conventions_when_no_explicit_mapping()
     {
         // given
         await using var testTransport = new TestTransport();
         var options = new MessagingOptions { Conventions = { MessageNaming = MessageNamingConvention.KebabCase } };
 
-        var publisher = _CreateBus(testTransport, options);
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: null);
 
         // when
         await publisher.PublishAsync(new TestMessage("test-value"), cancellationToken: AbortToken);
@@ -60,7 +77,7 @@ public sealed class BusTests : TestBase
         // given
         await using var testTransport = new TestTransport();
         var options = new MessagingOptions();
-        var publisher = _CreateBus(testTransport, options);
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: null);
 
         // when
         await publisher.PublishAsync(new UnmappedMessage(42), cancellationToken: AbortToken);
@@ -75,9 +92,9 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
-        var publisher = _CreateBus(testTransport, options);
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: "events");
 
         // when
         await publisher.PublishAsync<TestMessage>(null, cancellationToken: AbortToken);
@@ -92,13 +109,9 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions
-        {
-            MessageNamePrefix = "myapp",
-            MessageNameMappings = { [typeof(TestMessage)] = "events" },
-        };
+        var options = new MessagingOptions { MessageNamePrefix = "myapp" };
 
-        var publisher = _CreateBus(testTransport, options);
+        var publisher = _CreateBus(testTransport, options, mappedMessageName: "events");
 
         // when
         await publisher.PublishAsync(new TestMessage("test"), cancellationToken: AbortToken);
@@ -113,7 +126,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport { ShouldFail = true };
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -133,7 +146,7 @@ public sealed class BusTests : TestBase
             ExceptionToThrow = new InvalidOperationException("Transport unavailable"),
         };
 
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -149,7 +162,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -171,7 +184,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -198,7 +211,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { CallbackName = "callbacks\r\nnext" };
@@ -217,7 +230,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = new string('m', MessageOptions.MessageIdMaxLength) };
@@ -235,7 +248,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = new string('m', MessageOptions.MessageIdMaxLength + 1) };
@@ -255,7 +268,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { MessageId = "msg\r\n1" };
@@ -312,7 +325,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -336,7 +349,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -356,7 +369,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -376,7 +389,7 @@ public sealed class BusTests : TestBase
     {
         // given (case a: typed-only)
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "acme" };
@@ -394,7 +407,7 @@ public sealed class BusTests : TestBase
     {
         // given (case c: both set, equal)
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -416,7 +429,7 @@ public sealed class BusTests : TestBase
     {
         // given (case b: raw-only — the typed property must be the source of truth)
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -439,7 +452,7 @@ public sealed class BusTests : TestBase
     {
         // given (case d: both set, disagree)
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -461,7 +474,7 @@ public sealed class BusTests : TestBase
     {
         // given (case: neither set)
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -478,7 +491,7 @@ public sealed class BusTests : TestBase
     {
         // given: whitespace raw header with no typed property — symmetric with consume-side leniency
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions
@@ -499,7 +512,7 @@ public sealed class BusTests : TestBase
     {
         // given: whitespace typed value — must throw because TenantId has no auto-generated default
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "   " };
@@ -517,7 +530,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = "acme\r\ncorp" };
@@ -537,7 +550,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var publishOptions = new PublishOptions { TenantId = new string('t', MessageOptions.TenantIdMaxLength + 1) };
@@ -558,7 +571,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
         var maxTenantId = new string('t', MessageOptions.TenantIdMaxLength);
@@ -577,7 +590,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -596,7 +609,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -617,7 +630,7 @@ public sealed class BusTests : TestBase
     {
         // given
         await using var testTransport = new TestTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
 
         var publisher = _CreateBus(testTransport, options);
 
@@ -679,7 +692,7 @@ public sealed class BusTests : TestBase
             .SerializeToTransportMessageAsync(Arg.Any<Message>())
             .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
 
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
         var publisher = _CreateBusWithSerializer(serializer, options);
 
         // when
@@ -692,14 +705,17 @@ public sealed class BusTests : TestBase
     private static IBus _CreateBusWithSerializer(
         ISerializer serializer,
         MessagingOptions options,
-        IBusTransport? transport = null
+        IBusTransport? transport = null,
+        string? mappedMessageName = "test.messageName"
     )
     {
         var optionsAccessor = Options.Create(options);
+        var registry = _CreateRegistry(mappedMessageName);
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
+            registry,
             new NullCurrentTenant()
         );
         var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
@@ -716,21 +732,35 @@ public sealed class BusTests : TestBase
     private static Bus _CreateBus(
         IBusTransport transport,
         MessagingOptions options,
-        ICurrentTenant? currentTenant = null
+        ICurrentTenant? currentTenant = null,
+        string? mappedMessageName = "test.messageName"
     )
     {
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
+        var registry = _CreateRegistry(mappedMessageName);
 
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
+            registry,
             currentTenant ?? new NullCurrentTenant()
         );
 
         var pipeline = new PublishMiddlewarePipeline(new ServiceCollection().BuildServiceProvider());
         return new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
+    }
+
+    private static ConsumerRegistry _CreateRegistry(string? mappedMessageName)
+    {
+        var registry = new ConsumerRegistry();
+        if (mappedMessageName is not null)
+        {
+            registry.RegisterMessageName(typeof(TestMessage), mappedMessageName);
+        }
+
+        return registry;
     }
 
     /// <summary>

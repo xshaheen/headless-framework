@@ -3,6 +3,7 @@
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Tests.Helpers;
 
 namespace Tests.Registration;
 
@@ -138,7 +139,7 @@ public sealed class ProviderConfigBagTests
         );
 
         using var provider = services.BuildServiceProvider();
-        var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
+        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
 
         // then
         metadata.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(consumerConfig);
@@ -150,8 +151,9 @@ public sealed class ProviderConfigBagTests
         // given
         var services = new ServiceCollection();
 
-        // when
+        // when — the conflicting-config guard fires during the startup drain, so build + drain inside the act
         var action = () =>
+        {
             services.AddHeadlessMessaging(setup =>
             {
                 setup.ForMessage<TestMessage>(message =>
@@ -169,6 +171,9 @@ public sealed class ProviderConfigBagTests
                     )
                 );
             });
+            using var provider = services.BuildServiceProvider();
+            provider.GetDrainedConsumerRegistry().GetAll();
+        };
 
         // then
         action.Should().Throw<InvalidOperationException>().WithMessage("*conflicting settings*");

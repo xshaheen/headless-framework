@@ -36,13 +36,15 @@ public sealed class IsTransactionalPropagationTests : TestBase
         var pipeline = _BuildPublishPipeline(services);
 
         var transport = new RecordingTransport();
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
+        var registry = _CreateRegistry();
         var optionsAccessor = Options.Create(options);
         var serializer = new JsonUtf8Serializer(optionsAccessor);
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
+            registry,
             new NullCurrentTenant()
         );
         var publisher = new Bus(serializer, transport, publishRequestFactory, pipeline, TimeProvider.System);
@@ -136,12 +138,14 @@ public sealed class IsTransactionalPropagationTests : TestBase
         bool ambientTransaction
     )
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.messageName" } };
+        var options = new MessagingOptions();
+        var registry = _CreateRegistry();
         var optionsAccessor = Options.Create(options);
         var publishRequestFactory = new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             optionsAccessor,
+            registry,
             new NullCurrentTenant()
         );
 
@@ -193,6 +197,14 @@ public sealed class IsTransactionalPropagationTests : TestBase
             TimeProvider.System
         );
         return (outbox, tx);
+    }
+
+    private static ConsumerRegistry _CreateRegistry()
+    {
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.messageName");
+
+        return registry;
     }
 
     private static PublishMiddlewarePipeline _BuildPublishPipeline(ServiceCollection services)

@@ -179,7 +179,8 @@ public sealed class CorrelationPrecedenceTests
         IConsumeContextAccessor? accessor = null
     )
     {
-        var options = new MessagingOptions { MessageNameMappings = { [typeof(TestMessage)] = "test.message" } };
+        var registry = new ConsumerRegistry();
+        registry.RegisterMessageName(typeof(TestMessage), "test.message");
         var registrations = selector is null
             ? Array.Empty<MessageRegistration>()
             :
@@ -196,7 +197,8 @@ public sealed class CorrelationPrecedenceTests
         return new MessagePublishRequestFactory(
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
-            Options.Create(options),
+            Options.Create(new MessagingOptions()),
+            registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry(registrations),
             accessor
