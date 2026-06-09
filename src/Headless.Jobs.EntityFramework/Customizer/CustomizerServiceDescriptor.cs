@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.Caching;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
@@ -72,14 +74,7 @@ public static class ServiceBuilder
                 return new PooledDbContextFactory<TContext>(options, builder.PoolSize);
             });
 
-            services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
-                new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
-                    provider.GetRequiredService<IDbContextFactory<TContext>>(),
-                    provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<IJobsOwnerIdentity>(),
-                    provider.GetService<ICache>()
-                )
-            );
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services);
         };
     }
 
@@ -101,15 +96,25 @@ public static class ServiceBuilder
                 optionsBuilder.UseApplicationServiceProvider(sp);
                 return new PooledDbContextFactory<TContext>(optionsBuilder.Options, builder.PoolSize);
             });
-            services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
-                new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
-                    provider.GetRequiredService<IDbContextFactory<TContext>>(),
-                    provider.GetRequiredService<TimeProvider>(),
-                    provider.GetRequiredService<IJobsOwnerIdentity>(),
-                    provider.GetService<ICache>()
-                )
-            );
+            _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(services);
         };
+    }
+
+    private static void _AddPersistenceProviderCore<TContext, TTimeJob, TCronJob>(IServiceCollection services)
+        where TContext : DbContext
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+        where TCronJob : CronJobEntity, new()
+    {
+        // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
+        // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.
+        services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
+            new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
+                provider.GetRequiredService<IDbContextFactory<TContext>>(),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<IJobsOwnerIdentity>(),
+                provider.GetService<ICache>()
+            )
+        );
     }
 
     private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Linq.Expressions;
 using Headless.Caching;
 using Headless.Jobs.Entities;
@@ -201,7 +203,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -216,7 +218,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }
@@ -232,7 +234,7 @@ internal class JobsEfCorePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ExecuteDeleteAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        await InvalidateCronExpressionsCacheAsync(cancellationToken).ConfigureAwait(false);
+        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
         return result;
     }

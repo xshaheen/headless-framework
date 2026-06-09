@@ -813,7 +813,8 @@ Jobs cron-expression caching is provider-neutral. `Headless.Jobs.EntityFramework
 
 ```csharp
 // Choose one cache provider before or alongside Jobs.
-builder.Services.AddRedisCache(redis => redis.ConnectionString = "localhost:6379");
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 
 builder.Services
     .AddHeadlessJobs()

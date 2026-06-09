@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Runtime.CompilerServices;
 using Headless.Caching;
 using Headless.Jobs.Entities;
@@ -514,7 +516,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 #pragma warning restore ERP022, RCS1075
     }
 
-    protected async Task InvalidateCronExpressionsCacheAsync(CancellationToken cancellationToken)
+    protected async Task InvalidateCronExpressionsCacheAsync()
     {
         if (Cache is null)
         {
@@ -523,11 +525,13 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         try
         {
-            await Cache.RemoveAsync(CronExpressionsCacheKey, cancellationToken).ConfigureAwait(false);
+            // Best-effort housekeeping AFTER the cron write has committed: decoupled from the caller token so a
+            // cancellation racing the commit-to-invalidate window cannot leave the cache stale for the full TTL.
+            // Mirrors FactoryCacheCoordinator's restamp, which uses CancellationToken.None for the same reason.
+            await Cache.RemoveAsync(CronExpressionsCacheKey, CancellationToken.None).ConfigureAwait(false);
         }
 #pragma warning disable ERP022, RCS1075
-        catch (Exception exception)
-            when (exception is not OperationCanceledException && !cancellationToken.IsCancellationRequested)
+        catch (Exception)
         {
             // Cache invalidation is best-effort; cron writes have already committed to the durable store.
         }

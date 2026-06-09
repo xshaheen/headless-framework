@@ -51,7 +51,8 @@ Without a registered coordination provider, the durable path throws `InvalidOper
 Jobs cron-expression caching uses the host application's optional default `Headless.Caching.ICache`. Register a cache provider such as `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` before or alongside Jobs:
 
 ```csharp
-builder.Services.AddRedisCache(redis => redis.ConnectionString = "localhost:6379");
+var redis = ConnectionMultiplexer.Connect("localhost:6379");
+builder.Services.AddRedisCache(options => options.ConnectionMultiplexer = redis);
 
 builder.Services
     .AddHeadlessJobs()
