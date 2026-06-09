@@ -9,6 +9,8 @@ namespace Tests;
 [Collection<PostgresDistributedLockFixture>]
 public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture fixture) : TestBase
 {
+    private const int _MonitoringCommandTimeoutSeconds = 30;
+
     [Fact]
     public async Task should_release_transaction_lock_when_transaction_commits()
     {
@@ -100,12 +102,185 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
+    [Fact]
+    public async Task should_restore_timeout_settings_when_strategy_uses_visible_transaction()
+    {
+        var resourceName = _CreateResourceName();
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var databaseConnection = new PostgresDatabaseConnection(
+            transaction,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        );
+
+        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = 1234", AbortToken);
+        var expectedLockTimeout = await _CurrentSettingAsync(connection, "lock_timeout", AbortToken);
+
+        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+
+        var cookie = await strategy.TryAcquireAsync(
+            databaseConnection,
+            resourceName,
+            TimeSpan.Zero,
+            AbortToken
+        );
+
+        cookie.Should().NotBeNull();
+        (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be(expectedLockTimeout);
+
+        await transaction.RollbackAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_restore_timeout_settings_when_strategy_uses_invisible_external_transaction()
+    {
+        var resourceName = _CreateResourceName();
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var databaseConnection = new PostgresDatabaseConnection(
+            connection,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        );
+
+        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = 1234", AbortToken);
+        var expectedLockTimeout = await _CurrentSettingAsync(connection, "lock_timeout", AbortToken);
+
+        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+        var cookie = await strategy.TryAcquireAsync(
+            databaseConnection,
+            resourceName,
+            TimeSpan.Zero,
+            AbortToken
+        );
+
+        try
+        {
+            cookie.Should().NotBeNull();
+            (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be(expectedLockTimeout);
+        }
+        finally
+        {
+            if (cookie is not null)
+            {
+                await strategy.ReleaseAsync(databaseConnection, resourceName, cookie);
+            }
+
+            await transaction.RollbackAsync(AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_acquire_when_strategy_uses_external_connection_without_transaction()
+    {
+        var resourceName = _CreateResourceName();
+
+        await using var connection = await _OpenAsync();
+        await using var databaseConnection = new PostgresDatabaseConnection(
+            connection,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        );
+
+        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+        var cookie = await strategy.TryAcquireAsync(
+            databaseConnection,
+            resourceName,
+            TimeSpan.Zero,
+            AbortToken
+        );
+
+        try
+        {
+            cookie.Should().NotBeNull();
+        }
+        finally
+        {
+            if (cookie is not null)
+            {
+                await strategy.ReleaseAsync(databaseConnection, resourceName, cookie);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task should_propagate_failed_transaction_when_strategy_uses_invisible_external_transaction()
+    {
+        var resourceName = _CreateResourceName();
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await using var databaseConnection = new PostgresDatabaseConnection(
+            connection,
+            TimeProvider.System,
+            _MonitoringCommandTimeoutSeconds
+        );
+
+        await _CauseTransactionFailureAsync(connection);
+
+        var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
+        var act = async () =>
+            await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
+
+        await act
+            .Should()
+            .ThrowAsync<PostgresException>()
+            .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
+
+        await transaction.DisposeAsync();
+    }
+
     private async Task<NpgsqlConnection> _OpenAsync()
     {
         var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         return connection;
+    }
+
+    private string _CreateResourceName() => "postgres-transaction-lock-tests:" + Faker.Random.Guid();
+
+    private static async Task<string> _CurrentSettingAsync(
+        NpgsqlConnection connection,
+        string settingName,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT current_setting('{settingName}')";
+
+        return (string)(await command.ExecuteScalarAsync(cancellationToken) ?? string.Empty);
+    }
+
+    private static async Task _ExecuteAsync(
+        NpgsqlConnection connection,
+        string commandText,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = commandText;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task _CauseTransactionFailureAsync(NpgsqlConnection connection)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 / 0";
+
+        try
+        {
+            await command.ExecuteNonQueryAsync(AbortToken);
+        }
+        catch (PostgresException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException("The test setup query should have failed the active transaction.");
     }
 
     private async Task<long> _CountAdvisoryLocksAsync(PostgresAdvisoryLockKey key)
