@@ -22,8 +22,7 @@ namespace Headless.EntityFramework.Contexts.Runtime;
 /// the DbContext is constructed so the navigation-change tracker can attach to
 /// <see cref="DbContext.ChangeTracker"/>.
 /// </remarks>
-[PublicAPI]
-public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services) : IAsyncDisposable
+internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services) : IAsyncDisposable
 {
     private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
         nameof(_ConfigureQueryFilters),
@@ -148,7 +147,7 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
         }
     }
 
-    public virtual void ConfigureConventions(ModelConfigurationBuilder builder)
+    public static void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
     }
