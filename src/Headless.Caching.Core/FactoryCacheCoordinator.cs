@@ -19,6 +19,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
+    private const int _MaxInertWarningKeys = 1024;
     private readonly ConcurrentDictionary<string, byte> _softTimeoutInertWarnings = new(StringComparer.Ordinal);
 
     /// <summary>Signals test code that a detached background completion has registered its ceiling timer.</summary>
@@ -122,7 +123,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (factoryResult.IsTimedOut)
             {
-                _logger.LogCacheFactoryTimedOut(key, timeoutSelection.Kind.ToString(), timeoutSelection.Timeout);
+                _logger.LogCacheFactoryTimedOut(key, _TimeoutKindLabel(timeoutSelection.Kind), timeoutSelection.Timeout);
 
                 if (timeoutSelection.Kind == FactoryTimeoutKind.Soft)
                 {
@@ -140,7 +141,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     return _ToCacheValue(staleCandidate, isStale: true);
                 }
 
-                _ObserveAbandonedFactory(factoryResult.RunningTask!, key);
+                _ObserveFaultedTask(factoryResult.RunningTask!, key);
 
                 now = _GetUtcNow();
 
@@ -152,7 +153,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     return _ToCacheValue(staleCandidate, isStale: true);
                 }
 
-                throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout, timeoutSelection.Timeout);
+                throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout);
             }
 
             await _SetFreshEntryAsync(store, key, factoryResult.Value, options, cancellationToken)
@@ -195,7 +196,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             releaser
         );
 
-        _ObserveBackgroundCompletion(backgroundTask, key);
+        _ObserveFaultedTask(backgroundTask, key);
     }
 
     private async Task _CompleteFactoryInBackgroundAsync<T>(
@@ -238,7 +239,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             await internalCts.CancelAsync().ConfigureAwait(false);
             // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
             // later fault is logged rather than lost, mirroring the hard-timeout abandonment path.
-            _ObserveAbandonedFactory(factoryTask, key);
+            _ObserveFaultedTask(factoryTask, key);
             _logger.LogCacheFactoryTimedOut(key, "background-ceiling", options.BackgroundFactoryCeiling);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
@@ -417,6 +418,10 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         if (
             options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
             && !options.IsFailSafeEnabled
+            // Cap the per-key dedup set so a high-cardinality key space under this misconfiguration cannot grow
+            // memory without bound; the Count check before TryAdd may overshoot slightly under concurrency, which
+            // is harmless for a warn-once notice.
+            && _softTimeoutInertWarnings.Count < _MaxInertWarningKeys
             && _softTimeoutInertWarnings.TryAdd(key, 0)
         )
         {
@@ -535,17 +540,19 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
     private static DateTime _Min(DateTime left, DateTime right) => left <= right ? left : right;
 
-    private void _ObserveAbandonedFactory<T>(Task<T?> factoryTask, string key)
-    {
-        _ = factoryTask.ContinueWith(
-            task => _logger.LogCacheBackgroundCompletionFailed(task.Exception!, key, task.Exception!.GetType().Name),
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted,
-            TaskScheduler.Default
-        );
-    }
+    // Keep the structured TimeoutKind log value consistent (kebab/lower) with the other LogCacheFactoryTimedOut
+    // call sites (lock-soft, lock-timeout, background-ceiling) so log-based monitoring can match on one shape.
+    private static string _TimeoutKindLabel(FactoryTimeoutKind kind) =>
+        kind switch
+        {
+            FactoryTimeoutKind.Soft => "soft",
+            FactoryTimeoutKind.Hard => "hard",
+            _ => "none",
+        };
 
-    private void _ObserveBackgroundCompletion(Task task, string key)
+    // Attach a fault-only observer to a detached task (an abandoned factory or a background completion) so its
+    // exception is logged rather than lost. Task<T?> upcasts to Task, so both call shapes share this one observer.
+    private void _ObserveFaultedTask(Task task, string key)
     {
         _ = task.ContinueWith(
             faulted => _logger.LogCacheBackgroundCompletionFailed(faulted.Exception!, key, faulted.Exception!.GetType().Name),
@@ -573,12 +580,13 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         if (
             options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
             && options.FactoryHardTimeout != Timeout.InfiniteTimeSpan
-            && options.FactoryHardTimeout <= options.FactorySoftTimeout
         )
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(options),
-                "FactoryHardTimeout must be greater than FactorySoftTimeout when both are finite."
+            Argument.IsGreaterThan(
+                options.FactoryHardTimeout,
+                options.FactorySoftTimeout,
+                message: "FactoryHardTimeout must be greater than FactorySoftTimeout when both are finite.",
+                paramName: nameof(options.FactoryHardTimeout)
             );
         }
     }

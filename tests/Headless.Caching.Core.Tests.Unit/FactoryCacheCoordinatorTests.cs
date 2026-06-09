@@ -150,12 +150,11 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var key = Faker.Random.AlphaNumeric(8);
 
         // when
-        var exception = new CacheFactoryTimeoutException(key, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(2));
+        var exception = new CacheFactoryTimeoutException(key, TimeSpan.FromSeconds(2));
 
         // then
         exception.Should().BeAssignableTo<TimeoutException>();
         exception.Key.Should().Be(key);
-        exception.Elapsed.Should().Be(TimeSpan.FromSeconds(3));
         exception.Limit.Should().Be(TimeSpan.FromSeconds(2));
         exception.Message.Should().Contain(key);
     }
@@ -1191,7 +1190,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(10),
             FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
             FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
-            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? TimeSpan.FromMinutes(2),
+            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
             LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
         };
 
