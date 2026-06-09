@@ -63,14 +63,18 @@ internal sealed class SqlServerMembershipStore(
 
         await using var connection = options.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                .ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql, transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", nodeId.Value);
 
-        var value = Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false), CultureInfo.InvariantCulture);
+        var value = Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+            CultureInfo.InvariantCulture
+        );
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         return new NodeIncarnation(value);
@@ -158,9 +162,10 @@ internal sealed class SqlServerMembershipStore(
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                .ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql, transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", descriptor.Identity.NodeId.Value);
@@ -227,9 +232,10 @@ internal sealed class SqlServerMembershipStore(
 
         await using var connection = providerOptions.Value.CreateConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = (SqlTransaction)await connection
-            .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
-            .ConfigureAwait(false);
+        await using var transaction = (SqlTransaction)
+            await connection
+                .BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken)
+                .ConfigureAwait(false);
         await using var command = _CreateCommand(connection, sql, transaction);
         command.Parameters.AddWithValue("ClusterName", clusterName);
         command.Parameters.AddWithValue("NodeId", identity.NodeId.Value);

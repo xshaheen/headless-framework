@@ -8,6 +8,8 @@ internal static class DatabaseAdoHelpers
     /// <summary>Converts a command-timeout <see cref="TimeSpan"/> into the whole-seconds value ADO.NET expects.</summary>
     public static int GetCommandTimeoutSeconds(TimeSpan timeout)
     {
-        return timeout.TotalSeconds >= int.MaxValue ? int.MaxValue : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
+        return timeout.TotalSeconds >= int.MaxValue
+            ? int.MaxValue
+            : Math.Max(1, (int)Math.Ceiling(timeout.TotalSeconds));
     }
 }

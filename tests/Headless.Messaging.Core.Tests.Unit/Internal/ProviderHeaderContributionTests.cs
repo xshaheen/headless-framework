@@ -216,13 +216,13 @@ public sealed class ProviderHeaderContributionTests
         : IProviderHeaderContributions
     {
         public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
+        [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
     }
 
     private sealed class OtherProviderConfig(string headerName, Func<TestMessage, string?> selector)
         : IProviderHeaderContributions
     {
         public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
+        [new ProviderHeaderContribution(headerName, message => selector((TestMessage)message))];
     }
 }

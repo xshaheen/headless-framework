@@ -12,9 +12,9 @@ public sealed class MessageMetadataRegistryTests
     {
         // given
         var config = new FakeProviderConfig("value");
-        var registry = new MessageMetadataRegistry(
-            [new MessageRegistration(typeof(TestMessage), null, null, _Configs(config), [])]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(TestMessage), null, null, _Configs(config), []),
+        ]);
 
         // when
         var found = registry.TryGet(typeof(TestMessage), out var metadata);
@@ -43,9 +43,9 @@ public sealed class MessageMetadataRegistryTests
     {
         // given
         var config = new FakeProviderConfig("interface");
-        var registry = new MessageMetadataRegistry(
-            [new MessageRegistration(typeof(ITestEvent), null, null, _Configs(config), [])]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(ITestEvent), null, null, _Configs(config), []),
+        ]);
 
         // when
         var found = registry.TryGet(typeof(TestMessage), out var metadata);
@@ -59,18 +59,18 @@ public sealed class MessageMetadataRegistryTests
     public void should_throw_when_assignable_metadata_resolution_is_ambiguous()
     {
         // given
-        var registry = new MessageMetadataRegistry(
-            [
-                new MessageRegistration(typeof(ITestEvent), null, null, _Configs(new FakeProviderConfig("a")), []),
-                new MessageRegistration(typeof(IOtherEvent), null, null, _Configs(new OtherProviderConfig("b")), []),
-            ]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(ITestEvent), null, null, _Configs(new FakeProviderConfig("a")), []),
+            new MessageRegistration(typeof(IOtherEvent), null, null, _Configs(new OtherProviderConfig("b")), []),
+        ]);
 
         // when
         var act = () => registry.TryGet(typeof(TestMessage), out _);
 
         // then
-        act.Should().Throw<InvalidOperationException>().WithMessage("*multiple registered metadata types*IOtherEvent*ITestEvent*");
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*multiple registered metadata types*IOtherEvent*ITestEvent*");
     }
 
     [Fact]
@@ -79,12 +79,10 @@ public sealed class MessageMetadataRegistryTests
         // given
         var first = new FakeProviderConfig("a");
         var second = new OtherProviderConfig("b");
-        var registry = new MessageMetadataRegistry(
-            [
-                new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
-                new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
-            ]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
+            new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
+        ]);
 
         // when
         registry.TryGet(typeof(TestMessage), out var metadata);
@@ -99,12 +97,10 @@ public sealed class MessageMetadataRegistryTests
         // given
         string? First(object _) => "first";
         string? Second(object _) => "second";
-        var registry = new MessageMetadataRegistry(
-            [
-                new MessageRegistration(typeof(TestMessage), null, First, new Dictionary<Type, object>(), []),
-                new MessageRegistration(typeof(TestMessage), null, Second, new Dictionary<Type, object>(), []),
-            ]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(TestMessage), null, First, new Dictionary<Type, object>(), []),
+            new MessageRegistration(typeof(TestMessage), null, Second, new Dictionary<Type, object>(), []),
+        ]);
 
         // when
         registry.TryGet(typeof(TestMessage), out var metadata);
@@ -119,12 +115,10 @@ public sealed class MessageMetadataRegistryTests
         // given
         var first = new FakeProviderConfig("a");
         var second = new FakeProviderConfig("b");
-        var registry = new MessageMetadataRegistry(
-            [
-                new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
-                new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
-            ]
-        );
+        var registry = new MessageMetadataRegistry([
+            new MessageRegistration(typeof(TestMessage), null, null, _Configs(first), []),
+            new MessageRegistration(typeof(TestMessage), null, null, _Configs(second), []),
+        ]);
 
         // when
         registry.TryGet(typeof(TestMessage), out var metadata);

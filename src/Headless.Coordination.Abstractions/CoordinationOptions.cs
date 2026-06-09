@@ -64,5 +64,5 @@ internal sealed partial class CoordinationOptionsValidator : AbstractValidator<C
     // Cluster names flow into Redis hash-tag keys and relational lock/identifier strings; restrict them to a
     // safe identifier set so quotes and control characters can never reach those surfaces.
     [GeneratedRegex("^[A-Za-z0-9._:-]+$", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
-    private static partial Regex ClusterNameRegex { get;}
+    private static partial Regex ClusterNameRegex { get; }
 }

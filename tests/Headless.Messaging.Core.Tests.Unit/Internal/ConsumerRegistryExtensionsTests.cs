@@ -12,7 +12,9 @@ public sealed class ConsumerRegistryExtensionsTests
     {
         // given — consumer in the group has no provider config of the requested type
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", providerConfigs: new Dictionary<Type, object>()));
+        registry.Register(
+            _Metadata("orders", IntentType.Bus, "order.created", providerConfigs: new Dictionary<Type, object>())
+        );
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -27,7 +29,14 @@ public sealed class ConsumerRegistryExtensionsTests
         // given
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }));
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Bus,
+                "order.created",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
+            )
+        );
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -43,8 +52,22 @@ public sealed class ConsumerRegistryExtensionsTests
         // (record value equality → Distinct deduplicates to one)
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }));
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.shipped", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }));
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Bus,
+                "order.created",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
+            )
+        );
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Bus,
+                "order.shipped",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
+            )
+        );
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -58,8 +81,22 @@ public sealed class ConsumerRegistryExtensionsTests
     {
         // given — two message types in the same consumer group, but with different configs
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.created", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-a") }));
-        registry.Register(_Metadata("orders", IntentType.Bus, "order.shipped", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-b") }));
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Bus,
+                "order.created",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-a") }
+            )
+        );
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Bus,
+                "order.shipped",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = new FakeConsumerConfig("value-b") }
+            )
+        );
 
         // when
         var act = () => registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -74,7 +111,14 @@ public sealed class ConsumerRegistryExtensionsTests
         // given — config is in "logistics" group, not "orders"
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("logistics", IntentType.Bus, "order.created", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }));
+        registry.Register(
+            _Metadata(
+                "logistics",
+                IntentType.Bus,
+                "order.created",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
+            )
+        );
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -89,7 +133,14 @@ public sealed class ConsumerRegistryExtensionsTests
         // given — config is registered for Queue, not Bus
         var config = new FakeConsumerConfig("value-a");
         var registry = new ConsumerRegistry();
-        registry.Register(_Metadata("orders", IntentType.Queue, "order.created", new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }));
+        registry.Register(
+            _Metadata(
+                "orders",
+                IntentType.Queue,
+                "order.created",
+                new Dictionary<Type, object> { [typeof(FakeConsumerConfig)] = config }
+            )
+        );
 
         // when
         var result = registry.ResolveConsumerConfig<FakeConsumerConfig>("orders", IntentType.Bus);
@@ -104,14 +155,7 @@ public sealed class ConsumerRegistryExtensionsTests
         string messageName,
         Dictionary<Type, object> providerConfigs
     ) =>
-        new ConsumerMetadata(
-            typeof(TestMessage),
-            typeof(TestConsumer),
-            messageName,
-            group,
-            1,
-            intentType
-        )
+        new ConsumerMetadata(typeof(TestMessage), typeof(TestConsumer), messageName, group, 1, intentType)
         {
             ProviderConfigs = providerConfigs,
         };

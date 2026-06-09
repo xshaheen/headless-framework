@@ -35,9 +35,14 @@ internal sealed partial class PostgreSqlMembershipStorageInitializer(
             {
                 await using var command = connection.CreateCommand();
                 command.Transaction = transaction;
-                command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
+                command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(
+                    providerOptions.Value.CommandTimeout
+                );
                 command.CommandText = _CreateSchemaScript();
-                command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{coordinationOptions.Value.ClusterName}");
+                command.Parameters.AddWithValue(
+                    "LockResource",
+                    $"headless_coordination_init:{coordinationOptions.Value.ClusterName}"
+                );
 
                 await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);

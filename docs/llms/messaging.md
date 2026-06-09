@@ -558,7 +558,7 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### Requirements
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddHeadlessDistributedLocks(setup => setup.UseRedis())`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
 - `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
 
 **NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.

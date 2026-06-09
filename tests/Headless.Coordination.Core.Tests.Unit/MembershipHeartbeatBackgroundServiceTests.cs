@@ -24,10 +24,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         // then
         store.AllocateIncarnationCalls.Should().Be(5);
         var act = () => sut.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-        await act
-            .Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("registration unavailable");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("registration unavailable");
     }
 
     [Fact]
@@ -57,7 +54,12 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         await membership.RegisterAsync(AbortToken);
         var remote = new NodeIdentity(new NodeId("remote"), new NodeIncarnation(1));
         store.EnqueueSnapshot(
-            new NodeLivenessSnapshot(remote, NodeLivenessState.Alive, null, new Dictionary<string, string>(StringComparer.Ordinal))
+            new NodeLivenessSnapshot(
+                remote,
+                NodeLivenessState.Alive,
+                null,
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            )
         );
 
         // when
@@ -106,8 +108,11 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         store.Leaves.Should().BeEmpty();
     }
 
-    private static (MembershipHeartbeatBackgroundService Sut, FakeTimeProvider TimeProvider, MembershipService Membership)
-        _CreateSut(FakeMembershipStore store, CoordinationOptions? options = null)
+    private static (
+        MembershipHeartbeatBackgroundService Sut,
+        FakeTimeProvider TimeProvider,
+        MembershipService Membership
+    ) _CreateSut(FakeMembershipStore store, CoordinationOptions? options = null)
     {
         var coordinationOptions = options ?? new CoordinationOptions();
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);

@@ -463,20 +463,18 @@ public static class SetupMessaging
                         continue;
                     }
 
-                    var resolved = setup
-                        .Options.CreateConsumerMetadata(
-                            consumer.ConsumerType,
-                            registration.MessageType,
-                            messageName: null,
-                            consumer.Group,
-                            consumer.Concurrency,
-                            consumer.HandlerId,
-                            consumer.IntentType
-                        )
-                        with
-                        {
-                            ProviderConfigs = consumer.ProviderConfigs,
-                        };
+                    var resolved = setup.Options.CreateConsumerMetadata(
+                        consumer.ConsumerType,
+                        registration.MessageType,
+                        messageName: null,
+                        consumer.Group,
+                        consumer.Concurrency,
+                        consumer.HandlerId,
+                        consumer.IntentType
+                    ) with
+                    {
+                        ProviderConfigs = consumer.ProviderConfigs,
+                    };
 
                     var key = new ConsumerRegistrationKey(
                         resolved.MessageName,
@@ -583,8 +581,7 @@ public static class SetupMessaging
             && _circuitBreaker == other._circuitBreaker
             && _ProviderConfigsEqual(_providerConfigs, other._providerConfigs);
 
-        public override bool Equals(object? obj) =>
-            obj is ConsumerRegistrationSettings other && Equals(other);
+        public override bool Equals(object? obj) => obj is ConsumerRegistrationSettings other && Equals(other);
 
         public override int GetHashCode()
         {

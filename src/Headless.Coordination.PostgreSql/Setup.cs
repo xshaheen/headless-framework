@@ -54,7 +54,10 @@ public static class SetupCoordinationPostgreSql
     }
 
     private sealed class PostgreSqlCoordinationOptionsExtension
-        : CoordinationProviderOptionsExtensionBase<PostgreSqlCoordinationOptions, PostgreSqlCoordinationOptionsValidator>
+        : CoordinationProviderOptionsExtensionBase<
+            PostgreSqlCoordinationOptions,
+            PostgreSqlCoordinationOptionsValidator
+        >
     {
         public PostgreSqlCoordinationOptionsExtension(IConfiguration configuration)
             : base(configuration) { }

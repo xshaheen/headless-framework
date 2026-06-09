@@ -10,8 +10,10 @@ using StackExchange.Redis;
 namespace Tests;
 
 [CollectionDefinition(nameof(RedisMembershipFixture), DisableParallelization = false)]
-public sealed class RedisMembershipFixture : HeadlessRedisFixture, ICollectionFixture<RedisMembershipFixture>
-    , ICoordinationFixture
+public sealed class RedisMembershipFixture
+    : HeadlessRedisFixture,
+        ICollectionFixture<RedisMembershipFixture>,
+        ICoordinationFixture
 {
     public ConnectionMultiplexer ConnectionMultiplexer { get; private set; } = null!;
 

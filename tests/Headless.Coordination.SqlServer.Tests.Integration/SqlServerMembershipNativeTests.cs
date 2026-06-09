@@ -63,7 +63,9 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         var nodeIds = Enumerable.Range(0, 5).Select(index => $"node-{index}").ToArray();
 
         // All initializers must complete without surfacing a duplicate-creation error from the concurrent DDL.
-        var nodes = await Task.WhenAll(nodeIds.Select(nodeId => fixture.CreateNodeAsync(cluster, nodeId, AbortToken).AsTask()));
+        var nodes = await Task.WhenAll(
+            nodeIds.Select(nodeId => fixture.CreateNodeAsync(cluster, nodeId, AbortToken).AsTask())
+        );
 
         try
         {

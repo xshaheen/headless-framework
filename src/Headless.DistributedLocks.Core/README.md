@@ -15,15 +15,14 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 - `IDistributedReadWriteLockStorage` defines read/write acquire, extend, release, and validation operations.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddDistributedLock(...)` overloads wire storage, options, time provider, and ID generator.
-- `setup.UseDistributedLockReleaseWakeups()` registers the optional `DistributedLockReleased` consumer from `AddHeadlessMessaging(...)`.
-- `AddDistributedReadWriteLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
-- `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
+- `AddHeadlessDistributedLocks(...)` is the root builder entry point; provider packages contribute `Use...` methods.
+- `AddHeadlessDistributedLocks(...)` auto-registers the optional `DistributedLockReleased` consumer descriptor.
+- `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
 ## Design Notes
 
 - `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
-- When messaging is present, call `setup.UseDistributedLockReleaseWakeups()` inside `AddHeadlessMessaging(...)` so release messages wake lock waiters instead of waiting for polling.
+- When messaging is present, call `AddHeadlessDistributedLocks(...)` before `AddHeadlessMessaging(...)` so the consumer registry drains the auto-registered release wake-up consumer.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
@@ -38,18 +37,19 @@ dotnet add package Headless.DistributedLocks.Core
 ## Quick Start
 
 ```csharp
-builder.Services.AddDistributedLock(
-    sp => sp.GetRequiredService<IDistributedLockStorage>(),
-    options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureOptions(options =>
     {
         options.KeyPrefix = "distributed-lock:";
         options.MaxResourceNameLength = 512;
-    }
-);
+    });
+
+    setup.UseRedis(); // from Headless.DistributedLocks.Redis
+});
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
-    setup.UseDistributedLockReleaseWakeups();
     // setup.Use... storage and transport providers
 });
 
@@ -92,8 +92,8 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ## Side Effects
 
-- Registers `IDistributedLock` as singleton.
-- Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
+- Registers exactly one provider selected by the `AddHeadlessDistributedLocks(...)` builder.
+- Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
+- PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
-- Does not register messaging consumers by itself; call `setup.UseDistributedLockReleaseWakeups()` from `AddHeadlessMessaging(...)` when release-message wake-ups are needed.
+- Auto-registers the `DistributedLockReleased` consumer descriptor; call `AddHeadlessDistributedLocks(...)` before `AddHeadlessMessaging(...)` when release-message wake-ups are needed.

@@ -111,7 +111,9 @@ public sealed class NodeMembershipContractTests : TestBase
     public void should_default_membership_lost_behavior_to_stop_application()
     {
         // then
-        ((int)MembershipLostBehavior.StopApplication).Should().Be(0);
+        ((int)MembershipLostBehavior.StopApplication)
+            .Should()
+            .Be(0);
         ((int)MembershipLostBehavior.StopMembershipOnly).Should().Be(1);
         new CoordinationOptions().MembershipLostBehavior.Should().Be(MembershipLostBehavior.StopApplication);
     }

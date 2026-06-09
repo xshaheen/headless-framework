@@ -50,12 +50,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
             .Returns(Task.FromResult(RedisResult.Create(1)));
 
         // when
-        var result = await sut.EvaluateAsync(
-            db,
-            SampleScriptDefinition.Instance,
-            _SampleParameters,
-            AbortToken
-        );
+        var result = await sut.EvaluateAsync(db, SampleScriptDefinition.Instance, _SampleParameters, AbortToken);
 
         // then
         ((int)result)

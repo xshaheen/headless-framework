@@ -87,7 +87,7 @@ static void addRedisDistributedLock(IServiceCollection services)
     });
 
     // Resource Locks
-    services.AddRedisDistributedLock(static _ => { });
+    services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 }
 
 internal sealed class SettingsMigrationDbContext(

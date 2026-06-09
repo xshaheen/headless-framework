@@ -30,7 +30,10 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public List<NodeIdentity> Leaves { get; } = [];
 
-    public ValueTask<NodeIncarnation> AllocateIncarnationAsync(NodeId nodeId, CancellationToken cancellationToken = default)
+    public ValueTask<NodeIncarnation> AllocateIncarnationAsync(
+        NodeId nodeId,
+        CancellationToken cancellationToken = default
+    )
     {
         cancellationToken.ThrowIfCancellationRequested();
         AllocateIncarnationCalls++;
