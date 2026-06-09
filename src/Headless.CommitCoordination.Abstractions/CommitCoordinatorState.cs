@@ -14,12 +14,8 @@ public enum CommitCoordinatorState
     Active,
 
     /// <summary>
-    /// The coordinator is draining a terminal outcome.
-    /// </summary>
-    Draining,
-
-    /// <summary>
-    /// The coordinator committed and no longer accepts work.
+    /// The coordinator committed and no longer accepts work. The terminal outcome is claimed synchronously; the
+    /// asynchronous drain of registered work may still be in flight.
     /// </summary>
     Committed,
 

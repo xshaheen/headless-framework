@@ -150,6 +150,72 @@ public sealed class CommitScopeFactoryTests
         ran.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task should_not_roll_back_committed_work_when_disposed_before_the_commit_drain_completes()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var committed = false;
+        var rolledBack = false;
+
+        var scope = factory.Begin(services);
+        scope.Coordinator.OnCommit(async (_, _) =>
+        {
+            await gate.Task;
+            committed = true;
+        });
+        scope.Coordinator.OnRollback((_, _) =>
+        {
+            rolledBack = true;
+
+            return ValueTask.CompletedTask;
+        });
+
+        // Claim the commit and start the drain; it blocks on the gate, so the drain is still in flight.
+        var drain = scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+
+        // Dispose while the commit drain is pending. The terminal outcome was claimed synchronously by the signal,
+        // so disposal must observe it and NOT roll back the committed work.
+        await scope.DisposeAsync();
+
+        rolledBack.Should().BeFalse();
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+        committed.Should().BeFalse("the drain is still gated");
+
+        // Release the drain and confirm the committed work runs to completion.
+        gate.SetResult();
+        await drain;
+        committed.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_pop_ambient_once_and_not_re_signal_when_disposed_after_signaling()
+    {
+        var stack = new CommitScopeStack();
+        var factory = new CommitScopeFactory(stack);
+        var services = new EmptyServiceProvider();
+        var commits = 0;
+
+        var scope = factory.Begin(services);
+        scope.Coordinator.OnCommit((_, _) =>
+        {
+            Interlocked.Increment(ref commits);
+
+            return ValueTask.CompletedTask;
+        });
+
+        await scope.SignalAsync(CommitOutcome.Committed, CancellationToken.None);
+        stack.Current.Should().NotBeNull("the ambient frame is owned by disposal, not by the signal");
+
+        await scope.DisposeAsync();
+
+        commits.Should().Be(1, "disposal after a signal must not drain a second terminal outcome");
+        stack.Current.Should().BeNull();
+        scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+    }
+
     private sealed class EmptyServiceProvider : IServiceProvider
     {
         public object? GetService(Type serviceType) => null;

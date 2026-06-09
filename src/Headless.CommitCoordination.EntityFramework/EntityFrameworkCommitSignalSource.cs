@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
 
@@ -40,6 +41,11 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
     /// <param name="providerTransactionKey">The transaction correlation key (the intercepted <c>DbTransaction</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -49,8 +55,9 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+        // Signal and drain only — never dispose or pop the ambient frame. The enlisting caller owns the scope's
+        // lifetime (via its own using) and pops the ambient frame synchronously in its own frame on disposal.
+        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -59,6 +66,11 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
     /// <param name="providerTransactionKey">The transaction correlation key (the intercepted <c>DbTransaction</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -68,7 +80,7 @@ public sealed class EntityFrameworkCommitSignalSource(CommitScopeFactory scopeFa
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+        // Signal and drain only — never dispose or pop the ambient frame (the enlisting caller owns scope lifetime).
+        await scope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
     }
 }

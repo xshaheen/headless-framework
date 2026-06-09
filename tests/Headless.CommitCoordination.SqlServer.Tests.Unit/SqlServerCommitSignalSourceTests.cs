@@ -159,5 +159,60 @@ public sealed class SqlServerCommitSignalSourceTests
             .WithMessage("A SQL Server commit coordination scope is already attached for this provider transaction key.");
     }
 
+    [Fact]
+    public async Task should_preserve_a_successor_scope_when_a_disposed_predecessor_shared_the_same_key()
+    {
+        var source = new SqlServerCommitSignalSource(
+            new CommitScopeFactory(new CommitScopeStack()),
+            NullLogger<SqlServerCommitSignalSource>.Instance
+        );
+        using var provider = new ServiceCollection().BuildServiceProvider();
+        var key = new object();
+        var firstCommits = 0;
+        var secondCommits = 0;
+
+        // Predecessor lives in its own async flow so its ambient frame never leaks into the test flow; this mirrors a
+        // pooled connection reused across requests (same ClientConnectionId, independent ambient scopes).
+        ICommitScope first = null!;
+        await Task.Run(async () =>
+        {
+            first = source.Attach(
+                new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
+                CancellationToken.None
+            );
+            first.Coordinator.OnCommit((_, _) =>
+            {
+                Interlocked.Increment(ref firstCommits);
+
+                return ValueTask.CompletedTask;
+            });
+
+            // Commit removes the predecessor from the registry (synchronous TryRemove) but does NOT dispose it.
+            await source.SignalCommittedAsync(key, CancellationToken.None);
+        });
+
+        // Successor reuses the same key now that the registry slot is free.
+        var second = source.Attach(
+            new CommitCoordinatorBindings { Services = provider, ProviderTransactionKey = key },
+            CancellationToken.None
+        );
+        second.Coordinator.OnCommit((_, _) =>
+        {
+            Interlocked.Increment(ref secondCommits);
+
+            return ValueTask.CompletedTask;
+        });
+
+        // Disposing the predecessor must NOT evict the successor that now owns the key (remove-if-equal).
+        await first.DisposeAsync();
+
+        await source.SignalCommittedAsync(key, CancellationToken.None);
+        await second.DisposeAsync();
+
+        firstCommits.Should().Be(1);
+        secondCommits.Should().Be(1, "the successor must remain registered after the predecessor is disposed");
+        second.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
+    }
+
     private sealed record DiagnosticPayload(SqlConnection Connection, string Operation);
 }

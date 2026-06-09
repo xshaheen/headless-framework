@@ -77,7 +77,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
             scope.Coordinator.OnCommit((_, _) =>
             {
                 // A single commit can surface both WriteTransactionCommitAfter and WriteConnectionCloseBefore; the
-                // coordinator's first-wins (Active->Draining CompareExchange) collapses them to a single drain.
+                // coordinator's first-wins (Active->terminal CompareExchange) collapses them to a single drain.
                 Interlocked.Increment(ref commitCount);
                 drained.TrySetResult();
 
@@ -181,12 +181,7 @@ public sealed class SqlServerOutOfBandCommitDetectionTests(SqlServerCommitCoordi
         scope.Coordinator.State.Should().Be(CommitCoordinatorState.Committed);
     }
 
-    [Fact(Skip = "Surfaces an open out-of-band ambient-lifecycle finding: the off-thread drain disposes the scope on a "
-        + "thread-pool thread (popping the AsyncLocal ambient off the caller's frame), so a second coordinated "
-        + "transaction enlisted on the SAME async flow joins the now-committed coordinator and throws 'Commit scope "
-        + "already Committed'. Fixing it requires decoupling caller-frame ambient-pop from the async terminal signal "
-        + "(a drain that only signals would instead let the caller's using dispose race ahead and roll back committed "
-        + "work). Tracked as a design follow-up; re-enable once the out-of-band scope lifecycle is reworked.")]
+    [Fact]
     public async Task should_drain_each_transaction_independently_when_reusing_one_pooled_connection()
     {
         // Two sequential coordinated transactions on the SAME open connection share one ClientConnectionId (the

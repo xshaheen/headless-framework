@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using Headless.CommitCoordination;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
@@ -65,6 +66,11 @@ public sealed partial class SqlServerCommitSignalSource(
     /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalCommittedAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -74,8 +80,9 @@ public sealed partial class SqlServerCommitSignalSource(
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
+        // Signal and drain only — never dispose or pop the ambient frame. The enlisting caller owns the scope's
+        // lifetime (via its own using) and pops the ambient frame synchronously in its own frame on disposal.
+        await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -84,6 +91,11 @@ public sealed partial class SqlServerCommitSignalSource(
     /// <param name="providerTransactionKey">The provider transaction key (the connection's <c>ClientConnectionId</c>).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     /// <returns>The signal task.</returns>
+    [SuppressMessage(
+        "Reliability",
+        "CA2000:Dispose objects before losing scope",
+        Justification = "The enlisting caller owns the scope lifetime and disposes it; the signal source signals and drains only, never disposing or popping the ambient frame."
+    )]
     public async ValueTask SignalRolledBackAsync(object providerTransactionKey, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(providerTransactionKey);
@@ -93,8 +105,8 @@ public sealed partial class SqlServerCommitSignalSource(
             return;
         }
 
-        await using var ownedScope = scope;
-        await ownedScope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
+        // Signal and drain only — never dispose or pop the ambient frame (the enlisting caller owns scope lifetime).
+        await scope.SignalAsync(CommitOutcome.RolledBack, cancellationToken).ConfigureAwait(false);
     }
 
     [LoggerMessage(
@@ -132,16 +144,19 @@ public sealed partial class SqlServerCommitSignalSource(
             }
         }
 
-        public async ValueTask DisposeAsync()
+        public ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposed, 1) == 1)
             {
-                return;
+                return ValueTask.CompletedTask;
             }
 
+            // Not async: forward to the inner scope on this frame so its synchronous ambient pop propagates to the
+            // caller; the inner drain (if any) is returned for the caller to await. Detach (registry remove-if-equal)
+            // is ambient-free, so it can run synchronously once the pop has happened.
             try
             {
-                await inner.DisposeAsync().ConfigureAwait(false);
+                return inner.DisposeAsync();
             }
             finally
             {
