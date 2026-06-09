@@ -1042,6 +1042,76 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         await dataStorage.Received(3).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
     }
 
+    // The cross-cause counterpart: lock-acquire and storage-pickup streaks must stay independent
+    // *within* one kind. Under the pre-split shared per-kind counter, 1 storage failure + 2 lock
+    // failures reached the threshold of 3 and fired the lock-escalation EventId 82; with split
+    // counters the lock streak only reaches 2, so EventId 82 must NOT fire. The published/received
+    // test above cannot prove this — those counters were always separate.
+    [Fact]
+    public async Task should_not_count_published_storage_failure_toward_published_lock_acquire_escalation()
+    {
+        var dispatcher = Substitute.For<IDispatcher>();
+        var dataStorage = Substitute.For<IDataStorage>();
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+
+        var publishLockCall = 0;
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("publish-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns<Task<IDistributedLease?>>(_ =>
+            {
+                // Cycle 1: lock succeeds so published storage runs (and throws). Cycles 2-3: lock throws.
+                var n = Interlocked.Increment(ref publishLockCall);
+                return n == 1
+                    ? Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>())
+                    : throw new InvalidOperationException("lock store down");
+            });
+        // Received path is contested every cycle so it adds no lock/storage events of its own.
+        lockProvider
+            .TryAcquireAsync(
+                Arg.Is<string>(s => s.Contains("receive-retry", StringComparison.Ordinal)),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(null));
+
+        // Published storage throws on the one cycle it runs (cycle 1) → storage failure streak = 1.
+        dataStorage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+                ValueTask.FromException<IEnumerable<MediumMessage>>(new InvalidOperationException("storage down"))
+            );
+        dataStorage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult<IEnumerable<MediumMessage>>([]));
+
+        var options = Options.Create(new MessagingOptions { UseStorageLock = true });
+        var retryOpts = Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromMilliseconds(1) });
+        var sut = new MessageNeedToRetryProcessor(options, retryOpts, logger, dispatcher, lockProvider, new NullNodeMembership());
+
+        var context = _CreateContext(new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider());
+
+        // Cycle 1: lock ok + storage throws (storage streak 1). Cycles 2-3: lock throws (lock streak 2).
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(50, AbortToken);
+        await sut.ProcessAsync(context);
+        await Task.Delay(100, AbortToken);
+
+        // Lock streak only reached 2 and storage streak only reached 1 → neither escalation fires.
+        captured.Should().NotContain(e => e.Id == 82, "the lock-acquire streak only reached 2 (cycles 2-3)");
+        captured.Should().NotContain(e => e.Id == 74, "the storage-pickup streak only reached 1 (cycle 1)");
+        // Both causes were still observed on their own warning EventIds, proving separate accounting.
+        captured.Count(e => e.Id == 81 && e.Level == LogLevel.Warning).Should().Be(2);
+        captured.Should().Contain(e => e.Id == 3110 && e.Level == LogLevel.Warning);
+    }
+
     // -------------------------------------------------------------------------
     // #17 — UseStorageLock=false fast-path
     // -------------------------------------------------------------------------
