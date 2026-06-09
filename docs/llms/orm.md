@@ -75,7 +75,7 @@ Validated against current source tree on `04-06-2026` (UTC).
 Validation notes:
 
 - Domain frontmatter includes only existing ORM packages.
-- API guidance below maps to currently present symbols in source (for example: `HeadlessDbContext`, `HeadlessDbContextServices`, `HeadlessDbContextOptions`, `IHeadlessDbContextBuilder`, `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessOutboxDispatcher`, `ILocalEventBus`, `AddHeadlessDbContext<TDbContext>`, `AddHeadlessDbContextServices`, `AddDomainEvents`, `AddIntegrationEventOutbox`, `ExecuteTransactionAsync`, `CouchbaseBucketContext`, `DocumentSetExtensions`, `IBucketContextProvider`).
+- API guidance below maps to currently present consumer-facing symbols in source (for example: `HeadlessDbContext`, `HeadlessDbContextServices`, `HeadlessDbContextOptions`, `IHeadlessDbContextBuilder`, `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessOutboxDispatcher`, `ILocalEventBus`, `AddHeadlessDbContext<TDbContext>`, `AddHeadlessDbContextServices`, `AddDomainEvents`, `AddIntegrationEventOutbox`, `ExecuteTransactionAsync`, `CouchbaseBucketContext`, `DocumentSetExtensions`, `IBucketContextProvider`).
 
 ## Agent Instructions
 
@@ -108,7 +108,7 @@ Provides a framework-aware base `DbContext` with conventions for auditing, soft 
 
 ## Key Features
 
-- `HeadlessDbContext` base context (requires `HeadlessDbContextServices` ctor parameter and `DefaultSchema` override)
+- `HeadlessDbContext` base context (requires the hidden `HeadlessDbContextServices` constructor pass-through parameter and `DefaultSchema` override)
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)`
 - Application-generated Guid keys: every `IEntity<Guid>` mapped in a `HeadlessDbContext` is configured `ValueGenerated.Never` with an EF Core value generator that produces the key client-side as the entity transitions to `Added` (via `Add`, a direct state change, or attach-then-promote) — never database-generated. Guid keys come from provider-keyed `IGuidGenerator` strategies (`SqlServer` comb for SQL Server, `Version7` for other providers). The id is therefore known before `SaveChanges` (usable for foreign keys, outbox, and domain events in the same unit of work) and is provider-portable.
 - Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities (`DateCreated`, `DateUpdated`, `DateDeleted`, `DateSuspended` + `CreatedById` / `UpdatedById` / `DeletedById` / `SuspendedById` when the entity carries `UserId` or `AccountId` audits)
