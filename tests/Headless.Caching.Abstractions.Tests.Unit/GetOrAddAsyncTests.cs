@@ -332,27 +332,38 @@ public sealed class GetOrAddAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task should_pass_cancellation_token_to_factory()
+    public async Task should_cancel_factory_token_when_caller_token_is_cancelled()
     {
-        // given
+        // given — the coordinator hands the factory a detached token linked to caller cancellation,
+        // not the caller token itself, so it can also cancel on a hard timeout.
         using var cache = _CreateCache();
         using var cts = new CancellationTokenSource();
         var receivedToken = CancellationToken.None;
+        var factoryReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // when
-        await cache.GetOrAddAsync<string>(
-            "key",
-            ct =>
-            {
-                receivedToken = ct;
-                return ValueTask.FromResult<string?>("value");
-            },
-            _DefaultExpiration,
-            cts.Token
-        );
+        // when — cancel the caller token while the factory is in flight
+        var act = async () =>
+            await cache.GetOrAddAsync<string>(
+                "key",
+                async ct =>
+                {
+                    receivedToken = ct;
+                    factoryReached.SetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    return "value";
+                },
+                _DefaultExpiration,
+                cts.Token
+            );
 
-        // then
-        receivedToken.Should().Be(cts.Token);
+        var assertion = act.Should().ThrowAsync<OperationCanceledException>();
+        await factoryReached.Task;
+        await cts.CancelAsync();
+        await assertion;
+
+        // then — the factory observed a cancellable token that fired on caller cancellation
+        receivedToken.CanBeCanceled.Should().BeTrue();
+        receivedToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
