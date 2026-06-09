@@ -100,6 +100,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             {
                 factoryResult = await _RunFactoryWithTimeoutAsync(
                         factory,
+                        key,
                         timeoutSelection.Timeout,
                         cancelOnTimeout: timeoutSelection.Kind == FactoryTimeoutKind.Hard,
                         cancellationToken
@@ -125,13 +126,13 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             {
                 _logger.LogCacheFactoryTimedOut(key, _TimeoutKindLabel(timeoutSelection.Kind), timeoutSelection.Timeout);
 
-                if (timeoutSelection.Kind == FactoryTimeoutKind.Soft)
+                if (factoryResult.IsSoftTimeout)
                 {
                     _StartBackgroundCompletion(
                         store,
                         key,
-                        factoryResult.RunningTask!,
-                        factoryResult.InternalCancellationTokenSource!,
+                        factoryResult.RunningTask,
+                        factoryResult.InternalCancellationTokenSource,
                         staleCandidate,
                         options,
                         releaser
@@ -141,7 +142,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     return _ToCacheValue(staleCandidate, isStale: true);
                 }
 
-                _ObserveFaultedTask(factoryResult.RunningTask!, key);
+                _ObserveFaultedTask(factoryResult.RunningTask, key);
 
                 now = _GetUtcNow();
 
@@ -445,6 +446,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
     private async ValueTask<FactoryRunResult<T>> _RunFactoryWithTimeoutAsync<T>(
         Func<CancellationToken, ValueTask<T?>> factory,
+        string key,
         TimeSpan timeout,
         bool cancelOnTimeout,
         CancellationToken cancellationToken
@@ -485,6 +487,10 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             if (winner == callerCancellationTask)
             {
                 await internalCts.CancelAsync().ConfigureAwait(false);
+                // The caller abandoned the wait but a non-cooperative factory may keep running and later fault.
+                // Observe its task so the fault is logged rather than lost, mirroring the hard-timeout and
+                // background-ceiling abandonment paths.
+                _ObserveFaultedTask(factoryTask, key);
                 throw new OperationCanceledException(cancellationToken);
             }
 
@@ -627,6 +633,11 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         [MemberNotNullWhen(true, nameof(RunningTask))]
         public bool IsTimedOut => RunningTask is not null;
+
+        // A soft timeout transfers the internal CTS to the caller so the factory can complete in the background;
+        // a hard timeout cancels and discards it (null). The CTS presence is therefore the soft/hard discriminant.
+        [MemberNotNullWhen(true, nameof(RunningTask), nameof(InternalCancellationTokenSource))]
+        public bool IsSoftTimeout => InternalCancellationTokenSource is not null;
 
         public static FactoryRunResult<T> Completed(T? value) =>
             new(value, runningTask: null, internalCancellationTokenSource: null);
