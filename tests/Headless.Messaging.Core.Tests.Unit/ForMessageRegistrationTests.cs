@@ -103,7 +103,7 @@ public sealed class ForMessageRegistrationTests
         // then
         var registry = provider.GetDrainedConsumerRegistry();
         registry.GetAll().Should().BeEmpty();
-        registry.TryGetMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.placed");
     }
 
@@ -1173,7 +1173,7 @@ public sealed class ForMessageRegistrationTests
 
         // then — name is resolvable eagerly, before any drain
         var registry = provider.GetRequiredService<ConsumerRegistry>();
-        registry.TryGetMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderPlaced), out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.placed");
         registry.HasCompletedMessageRegistrationDrain.Should().BeFalse();
     }

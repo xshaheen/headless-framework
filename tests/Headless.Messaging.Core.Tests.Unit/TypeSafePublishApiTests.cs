@@ -39,7 +39,7 @@ public sealed class TypeSafePublishApiTests
         var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        registry.TryGetMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.created");
     }
 
@@ -62,9 +62,9 @@ public sealed class TypeSafePublishApiTests
         var registry = provider.GetRequiredService<IConsumerRegistry>();
 
         // then
-        registry.TryGetMessageName(typeof(OrderCreated), out var orderMessageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var orderMessageName).Should().BeTrue();
         orderMessageName.Should().Be("orders.created");
-        registry.TryGetMessageName(typeof(UserRegistered), out var userMessageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(UserRegistered), out var userMessageName).Should().BeTrue();
         userMessageName.Should().Be("users.registered");
     }
 
@@ -132,7 +132,7 @@ public sealed class TypeSafePublishApiTests
         var publisher = provider.GetRequiredService<IOutboxBus>();
 
         // then - Mapping is available for type-safe publishing
-        registry.TryGetMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(OrderCreated), out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.created");
         publisher.Should().NotBeNull();
     }

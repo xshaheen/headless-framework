@@ -105,7 +105,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
             consumerType,
             messageType,
             messageName,
-            Registry.TryGetMessageName(messageType, out var mappedMessageName) ? mappedMessageName : null,
+            Registry.TryGetRawMessageName(messageType, out var mappedMessageName) ? mappedMessageName : null,
             group,
             concurrency,
             intentType: intentType

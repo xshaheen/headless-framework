@@ -21,7 +21,7 @@ namespace Headless.Messaging;
 /// This freeze-on-first-read pattern ensures zero-allocation reads at runtime.
 /// </para>
 /// </remarks>
-public sealed class ConsumerRegistry : IConsumerRegistry
+internal sealed class ConsumerRegistry : IConsumerRegistry
 {
     private readonly Lock _lock = new();
     private readonly Dictionary<Type, string> _messageNameMappings = [];
@@ -207,7 +207,7 @@ public sealed class ConsumerRegistry : IConsumerRegistry
         return all.Where(m => m.MessageType == messageType).ToList().AsReadOnly();
     }
 
-    public bool TryGetMessageName(Type messageType, [NotNullWhen(true)] out string? messageName)
+    public bool TryGetRawMessageName(Type messageType, [NotNullWhen(true)] out string? messageName)
     {
         Argument.IsNotNull(messageType);
 

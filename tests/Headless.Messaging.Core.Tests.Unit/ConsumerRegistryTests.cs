@@ -768,7 +768,7 @@ public sealed class ConsumerRegistryTests : TestBase
         registry.RegisterMessageName(typeof(TestMessage), "orders.created");
 
         // then
-        registry.TryGetMessageName(typeof(TestMessage), out var messageName).Should().BeTrue();
+        registry.TryGetRawMessageName(typeof(TestMessage), out var messageName).Should().BeTrue();
         messageName.Should().Be("orders.created");
     }
 
@@ -809,7 +809,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var registry = new ConsumerRegistry();
 
         // when
-        var found = registry.TryGetMessageName(typeof(TestMessage), out var messageName);
+        var found = registry.TryGetRawMessageName(typeof(TestMessage), out var messageName);
 
         // then
         found.Should().BeFalse();

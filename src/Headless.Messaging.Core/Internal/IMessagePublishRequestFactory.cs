@@ -476,7 +476,7 @@ internal sealed class MessagePublishRequestFactory(
             return cachedName;
         }
 
-        if (consumerRegistry.TryGetMessageName(messageType, out var messageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, out var messageName))
         {
             messageName = _options.ApplyMessageNamePrefix(messageName);
             _messageNameCache.AddOrUpdate(messageType, messageName);

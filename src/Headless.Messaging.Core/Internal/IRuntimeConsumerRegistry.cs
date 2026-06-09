@@ -229,7 +229,7 @@ internal sealed class RuntimeConsumerRegistry(
             return _options.ApplyMessageNamePrefix(explicitMessageName!);
         }
 
-        if (consumerRegistry.TryGetMessageName(messageType, out var mappedMessageName))
+        if (consumerRegistry.TryGetRawMessageName(messageType, out var mappedMessageName))
         {
             return _options.ApplyMessageNamePrefix(mappedMessageName);
         }

@@ -417,6 +417,22 @@ public static class SetupMessaging
     /// the <c>ForMessage</c> / <c>Add…</c> call ran before or after <see cref="AddHeadlessMessaging"/>. Idempotent — the
     /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Threading invariant.</strong> The <c>HasCompletedMessageRegistrationDrain</c> guard provides
+    /// idempotency, not thread-safety: the guard read, the consumer-registration loop, and the completion mark are
+    /// not one atomic step. This is safe only because the two callers never drain concurrently. The bootstrapper
+    /// drains synchronously in <c>_CheckRequirement</c> before it starts any processor, so message dispatch — and
+    /// therefore the consumer-selector fallback — cannot run during the bootstrap drain; and concurrent
+    /// <c>BootstrapAsync</c> callers share a single in-flight task. The selector path only performs the first drain
+    /// in manual/test hosts that bypass the bootstrapper.
+    /// </para>
+    /// <para>
+    /// If a future change starts a processor (or otherwise dispatches a message) before this drain completes, two
+    /// threads can pass the guard and double-register a consumer, throwing a spurious "Duplicate consumer
+    /// registration". Keep the bootstrapper drain ahead of processor startup, or make the drain atomic.
+    /// </para>
+    /// </remarks>
     internal static void DrainPendingMessageRegistrations(IServiceProvider provider, MessagingOptions options)
     {
         var registry = provider.GetRequiredService<ConsumerRegistry>();
@@ -512,7 +528,7 @@ public static class SetupMessaging
                     consumer.ConsumerType,
                     registration.MessageType,
                     messageName: null,
-                    registry.TryGetMessageName(registration.MessageType, out var mappedMessageName)
+                    registry.TryGetRawMessageName(registration.MessageType, out var mappedMessageName)
                         ? mappedMessageName
                         : null,
                     consumer.Group,

@@ -123,6 +123,9 @@ public sealed class ConsumerServiceSelector : IConsumerServiceSelector
             return [];
         }
 
+        // Defensive fallback: in a hosted app the bootstrapper has already drained synchronously (before any
+        // processor started), so this is a no-op. It performs the first drain only in manual/test hosts that
+        // bypass the bootstrapper. See DrainPendingMessageRegistrations for the threading invariant it relies on.
         _DrainPendingMessageRegistrations();
 
         var results = new List<ConsumerExecutorDescriptor>();

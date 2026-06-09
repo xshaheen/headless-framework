@@ -49,7 +49,7 @@ public sealed class SetupTests : TestBase
         // then — the shared lock-release consumer is present in the consumer registry with the
         // expected name, intent, and concurrency, with no explicit opt-in call.
         provider.GetRequiredService<IDistributedLock>().Should().NotBeNull();
-        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var metadata = provider.GetRequiredService<IConsumerRegistry>().GetAll().Single();
         metadata.ConsumerType.Should().Be<DistributedLock.LockReleasedConsumer>();
         metadata.MessageName.Should().Be("headless.locks.released");
         metadata.IntentType.Should().Be(IntentType.Bus);
@@ -77,7 +77,7 @@ public sealed class SetupTests : TestBase
             .Count(descriptor => descriptor.ServiceType == typeof(IConsume<DistributedLockReleased>))
             .Should()
             .Be(1);
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle();
+        provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle();
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class SetupTests : TestBase
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
-        provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle(metadata =>
+        provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle(metadata =>
             metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
         );
     }
