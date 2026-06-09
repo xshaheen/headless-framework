@@ -116,7 +116,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     throw;
                 }
 
-                await _TryRestampStaleAsync(store, key, staleCandidate, options, now).ConfigureAwait(false);
+                await _TryRestampStaleAsync(store, key, staleCandidate, options, now, CancellationToken.None)
+                    .ConfigureAwait(false);
 
                 _logger.LogFailSafeActivated(key, exception.GetType().Name);
                 return _ToCacheValue(staleCandidate, isStale: true);
@@ -148,7 +149,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
                 if (_IsStaleCandidate(staleCandidate, now))
                 {
-                    await _TryRestampStaleAsync(store, key, staleCandidate, options, now).ConfigureAwait(false);
+                    await _TryRestampStaleAsync(store, key, staleCandidate, options, now, CancellationToken.None)
+                        .ConfigureAwait(false);
 
                     _logger.LogFailSafeActivated(key, nameof(CacheFactoryTimeoutException));
                     return _ToCacheValue(staleCandidate, isStale: true);
@@ -290,20 +292,26 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     {
         if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
         {
-            await _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow()).ConfigureAwait(false);
+            await _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow(), CancellationToken.None)
+                .ConfigureAwait(false);
             return;
         }
 
+        // The restamp store write is bounded by its own ceiling so a hung store cannot hold the per-key lock
+        // indefinitely; worst-case background lock-hold is therefore ~2x ceiling (factory race + restamp). The
+        // restamp shares the ceiling token so the ceiling can cancel the in-flight write.
         using var ceilingCts = new CancellationTokenSource();
-        var restampTask = _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow()).AsTask();
+        var restampTask = _TryRestampStaleAsync(store, key, staleCandidate, options, _GetUtcNow(), ceilingCts.Token)
+            .AsTask();
         var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
-        var winner = await Task.WhenAny(restampTask, ceilingTask).ConfigureAwait(false);
+        _ = await Task.WhenAny(restampTask, ceilingTask).ConfigureAwait(false);
 
-        if (winner == restampTask)
-        {
-            await ceilingCts.CancelAsync().ConfigureAwait(false);
-            await restampTask.ConfigureAwait(false);
-        }
+        // Cancel the loser and ALWAYS await the restamp before returning. When the ceiling wins, cancellation
+        // stops the in-flight store write and awaiting it keeps the per-key lock held until it unwinds, so an
+        // orphaned restamp can never land after the lock is released and clobber a concurrent caller's fresh
+        // value. _TryRestampStaleAsync swallows the resulting cancellation, so this await never throws.
+        await ceilingCts.CancelAsync().ConfigureAwait(false);
+        await restampTask.ConfigureAwait(false);
     }
 
     private async ValueTask _TryRestampStaleAsync<T>(
@@ -311,7 +319,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         string key,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        DateTime now
+        DateTime now,
+        CancellationToken cancellationToken
     )
     {
         // staleCandidate always carries a physical expiration: _IsStaleCandidate (the only gate that assigns a
@@ -321,8 +330,9 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         try
         {
-            // The restamp is a throttle optimization, not caller work, so it uses CancellationToken.None: a
-            // caller cancellation between the factory throw and this await must not abort the stale return.
+            // Caller-facing restamps pass CancellationToken.None (a caller cancellation between the factory
+            // throw and this await must not abort the stale return); the ceiling-bounded background restamp
+            // passes the ceiling token so a hung store write can be cancelled instead of orphaning it.
             await store
                 .SetEntryAsync(
                     key,
@@ -330,7 +340,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     staleCandidate.IsNull,
                     logicalExpiresAt,
                     physicalExpiresAt,
-                    CancellationToken.None
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }
@@ -452,15 +462,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CancellationToken cancellationToken
     )
     {
+        // No factory timeout configured: skip the delay timer/race machinery. A non-cancellable caller cannot
+        // interrupt the factory, so await it directly (the common default-options hot path); allocate nothing.
+        if (timeout == Timeout.InfiniteTimeSpan && !cancellationToken.CanBeCanceled)
+        {
+            var directValue = await factory(cancellationToken).ConfigureAwait(false);
+            return FactoryRunResult<T>.Completed(directValue);
+        }
+
         CancellationTokenSource? internalCts = new();
-        using var delayCts = new CancellationTokenSource();
         CancellationTokenRegistration cancellationRegistration = default;
 
         try
         {
             var factoryTask = factory(internalCts.Token).AsTask();
-            var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
-            FactoryTimeoutTimerRegistered?.Invoke();
             Task? callerCancellationTask = null;
 
             if (cancellationToken.CanBeCanceled)
@@ -472,6 +487,26 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 );
                 callerCancellationTask = cancellationTcs.Task;
             }
+
+            if (timeout == Timeout.InfiniteTimeSpan)
+            {
+                // Cancellable caller, no factory timeout: race the factory against caller cancellation only, with
+                // no delay timer. R6 (caller cancellation wins) still holds, even against a non-cooperative factory.
+                var untimedWinner = await Task.WhenAny(factoryTask, callerCancellationTask!).ConfigureAwait(false);
+
+                if (untimedWinner == callerCancellationTask)
+                {
+                    await internalCts.CancelAsync().ConfigureAwait(false);
+                    _ObserveFaultedTask(factoryTask, key);
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return FactoryRunResult<T>.Completed(await factoryTask.ConfigureAwait(false));
+            }
+
+            using var delayCts = new CancellationTokenSource();
+            var delayTask = Task.Delay(timeout, _timeProvider, delayCts.Token);
+            FactoryTimeoutTimerRegistered?.Invoke();
 
             var winner = callerCancellationTask is null
                 ? await Task.WhenAny(factoryTask, delayTask).ConfigureAwait(false)
