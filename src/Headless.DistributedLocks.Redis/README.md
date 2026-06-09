@@ -11,9 +11,7 @@ Stores lock records directly in Redis with atomic acquire, replace, release, rea
 - `RedisDistributedLockStorage` implements `IDistributedLockStorage`.
 - `RedisDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
 - `RedisDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
-- `AddRedisDistributedLock(...)` registers a Redis-backed lock provider.
-- `AddRedisDistributedReadWriteLock(...)` registers a Redis-backed reader-writer lock provider.
-- `AddRedisDistributedSemaphore(...)` registers a Redis-backed semaphore provider.
+- `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 
 ## Installation
@@ -29,20 +27,15 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(
     _ => ConnectionMultiplexer.Connect("localhost:6379")
 );
 
-builder.Services.AddRedisDistributedLock(options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
 {
-    options.KeyPrefix = "distributed-lock:";
-    options.MaxResourceNameLength = 512;
-});
+    setup.ConfigureOptions(options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+        options.MaxResourceNameLength = 512;
+    });
 
-builder.Services.AddRedisDistributedReadWriteLock(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
-});
-
-builder.Services.AddRedisDistributedSemaphore(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
+    setup.UseRedis();
 });
 ```
 
@@ -65,8 +58,5 @@ Reader-writer storage creates `{resource}:writer` (string holding the active wri
 ## Side Effects
 
 - Registers a keyed `HeadlessRedisScriptsLoader` bound to the app's `IConnectionMultiplexer`.
-- Registers hosted `IInitializer` warmup for only the Redis lock feature scripts that were registered:
-  mutex scripts for `AddRedisDistributedLock(...)`, reader-writer scripts for `AddRedisDistributedReadWriteLock(...)`, and semaphore scripts for `AddRedisDistributedSemaphore(...)`.
-- Registers `IDistributedLock` through `Headless.DistributedLocks.Core`.
-- Registers `IDistributedReadWriteLock` through `Headless.DistributedLocks.Core` when `AddRedisDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddRedisDistributedSemaphore(...)` is called.
+- Registers hosted `IInitializer` warmup for Redis mutex, reader-writer, and semaphore scripts.
+- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core`.

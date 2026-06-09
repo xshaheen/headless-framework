@@ -56,12 +56,14 @@ public static class SetupRedisCoordination
 
         public RedisCoordinationOptionsExtension(Action<RedisCoordinationOptions> configure)
         {
-            _configure = services => services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
+            _configure = services =>
+                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
         }
 
         public RedisCoordinationOptionsExtension(Action<RedisCoordinationOptions, IServiceProvider> configure)
         {
-            _configure = services => services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
+            _configure = services =>
+                services.Configure<RedisCoordinationOptions, RedisCoordinationOptionsValidator>(configure);
         }
 
         public void AddServices(IServiceCollection services)

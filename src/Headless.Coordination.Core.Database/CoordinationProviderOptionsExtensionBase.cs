@@ -10,7 +10,8 @@ namespace Headless.Coordination;
 /// Shared coordination provider options-extension shape: binds provider options (config / action /
 /// action-with-services) with FluentValidation, then defers provider service registration to derived types.
 /// </summary>
-internal abstract class CoordinationProviderOptionsExtensionBase<TOptions, TValidator> : ICoordinationProviderOptionsExtension
+internal abstract class CoordinationProviderOptionsExtensionBase<TOptions, TValidator>
+    : ICoordinationProviderOptionsExtension
     where TOptions : class
     where TValidator : class, IValidator<TOptions>
 {

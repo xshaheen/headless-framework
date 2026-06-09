@@ -8,7 +8,8 @@ namespace Headless.Coordination.SqlServer;
 
 #pragma warning disable CA2100 // SQL text is built from validated schema plus internal table constants.
 internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCoordinationOptions> providerOptions)
-    : HostedInitializer, IMembershipStorageInitializer
+    : HostedInitializer,
+        IMembershipStorageInitializer
 {
     protected override bool RunOnStartup => providerOptions.Value.InitializeOnStartup;
 
@@ -20,7 +21,10 @@ internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCo
         await using var command = connection.CreateCommand();
         command.CommandTimeout = DatabaseAdoHelpers.GetCommandTimeoutSeconds(providerOptions.Value.CommandTimeout);
         command.CommandText = _CreateScript(providerOptions.Value);
-        command.Parameters.AddWithValue("LockTimeout", _GetLockTimeoutMilliseconds(providerOptions.Value.CommandTimeout));
+        command.Parameters.AddWithValue(
+            "LockTimeout",
+            _GetLockTimeoutMilliseconds(providerOptions.Value.CommandTimeout)
+        );
         command.Parameters.AddWithValue("LockResource", $"headless_coordination_init:{providerOptions.Value.Schema}");
 
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -32,9 +36,18 @@ internal sealed class SqlServerMembershipStorageInitializer(IOptions<SqlServerCo
         var generationTable = _Qualified(schema, SqlServerMembershipSchema.Generation.Table);
         var descriptorTable = _Qualified(schema, SqlServerMembershipSchema.Descriptor.Table);
         var livenessTable = _Qualified(schema, SqlServerMembershipSchema.Liveness.Table);
-        var generationObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Generation.Table);
-        var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Descriptor.Table);
-        var livenessObject = SqlServerCoordinationIdentifier.ObjectName(schema, SqlServerMembershipSchema.Liveness.Table);
+        var generationObject = SqlServerCoordinationIdentifier.ObjectName(
+            schema,
+            SqlServerMembershipSchema.Generation.Table
+        );
+        var descriptorObject = SqlServerCoordinationIdentifier.ObjectName(
+            schema,
+            SqlServerMembershipSchema.Descriptor.Table
+        );
+        var livenessObject = SqlServerCoordinationIdentifier.ObjectName(
+            schema,
+            SqlServerMembershipSchema.Liveness.Table
+        );
 
         return $$"""
             DECLARE @lockResult int;

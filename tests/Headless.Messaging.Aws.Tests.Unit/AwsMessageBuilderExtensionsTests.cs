@@ -14,8 +14,9 @@ public sealed class AwsMessageBuilderExtensionsTests
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseAws(aws => aws.MessageGroupId(static message => message.TenantId));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(AwsMessagingHeaders.MessageGroupId);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");
@@ -26,8 +27,9 @@ public sealed class AwsMessageBuilderExtensionsTests
     {
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
         builder.UseAws(aws => aws.MessageGroupId(static _ => new string('x', 129)));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         var act = () => contribution.Selector(new TestMessage("tenant-a"));
 

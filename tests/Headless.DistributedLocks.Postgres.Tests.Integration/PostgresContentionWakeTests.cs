@@ -107,12 +107,12 @@ public sealed class PostgresContentionWakeTests(PostgresDistributedLockFixture f
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddPostgresDistributedLocks(options =>
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
         {
             options.ConnectionString = fixture.ConnectionString;
             options.KeyPrefix = keyPrefix;
             options.EnablePushWakeup = enablePushWakeup;
-        });
+        }));
 
         return services.BuildServiceProvider();
     }

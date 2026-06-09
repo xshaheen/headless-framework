@@ -67,7 +67,7 @@ Install the three settings packages:
 Minimal wiring:
 ```csharp
 builder.Services.AddCaching();
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );
@@ -193,7 +193,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Add required dependencies
 builder.Services.AddCaching();
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddStringEncryptionService(
     builder.Configuration.GetRequiredSection("Headless:StringEncryption")
 );

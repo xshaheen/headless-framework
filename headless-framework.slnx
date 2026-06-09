@@ -65,10 +65,12 @@
     </Folder>
     <Folder Name="/Caching/">
         <Project Path="src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
+        <Project Path="src\Headless.Caching.Core\Headless.Caching.Core.csproj" />
         <Project Path="src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
         <Project Path="src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
         <Project Path="src/Headless.Caching.Hybrid/Headless.Caching.Hybrid.csproj" />
         <Project Path="tests\Headless.Caching.Abstractions.Tests.Unit\Headless.Caching.Abstractions.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Caching.Core.Tests.Unit\Headless.Caching.Core.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.InMemory.Tests.Unit\Headless.Caching.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Redis.Tests.Integration\Headless.Caching.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Caching.Tests.Harness\Headless.Caching.Tests.Harness.csproj" />
@@ -171,6 +173,9 @@
         <Project Path="src/Headless.Jobs.EntityFramework/Headless.Jobs.EntityFramework.csproj" />
         <Project Path="src/Headless.Jobs.OpenTelemetry/Headless.Jobs.OpenTelemetry.csproj" />
         <Project Path="src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj" />
+        <Project Path="tests/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration/Headless.Jobs.EntityFramework.PostgreSql.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration/Headless.Jobs.EntityFramework.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests/Headless.Jobs.EntityFramework.Tests.Harness/Headless.Jobs.EntityFramework.Tests.Harness.csproj" />
         <Project Path="tests/Headless.Jobs.Tests.Unit/Headless.Jobs.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Kernel/">

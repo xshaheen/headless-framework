@@ -239,6 +239,20 @@ public interface IDataStorage
     );
 
     /// <summary>
+    /// Accelerates retry visibility for published rows leased by owners that are no longer live.
+    /// </summary>
+    /// <param name="liveOwners">
+    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
+    /// <c>0</c> — it never reclaims all leased rows.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows reclaimed.</returns>
+    ValueTask<int> ReclaimDeadPublishedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Streams delayed published messages to <paramref name="scheduleTask"/> for re-scheduling onto
     /// the publish path.
     /// </summary>
@@ -274,6 +288,20 @@ public interface IDataStorage
     /// </para>
     /// </remarks>
     ValueTask<IEnumerable<MediumMessage>> GetReceivedMessagesOfNeedRetryAsync(
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Accelerates retry visibility for received rows leased by owners that are no longer live.
+    /// </summary>
+    /// <param name="liveOwners">
+    /// Serialized live node-incarnation owners. An empty collection is treated as a no-op and returns
+    /// <c>0</c> — it never reclaims all leased rows.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>The number of rows reclaimed.</returns>
+    ValueTask<int> ReclaimDeadReceivedOwnersAsync(
+        IReadOnlyCollection<string> liveOwners,
         CancellationToken cancellationToken = default
     );
 

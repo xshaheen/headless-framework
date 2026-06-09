@@ -285,10 +285,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         result.Succeeded.Should().BeTrue();
         await snsClient
             .Received(1)
-            .PublishAsync(
-                Arg.Is<PublishRequest>(r => r.MessageGroupId == "tenant-b"),
-                Arg.Any<CancellationToken>()
-            );
+            .PublishAsync(Arg.Is<PublishRequest>(r => r.MessageGroupId == "tenant-b"), Arg.Any<CancellationToken>());
     }
 
     [Fact]

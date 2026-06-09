@@ -18,7 +18,8 @@ internal sealed class DefaultNodeIdProvider : INodeIdProvider
         IGuidGenerator guidGenerator,
         ILogger<DefaultNodeIdProvider> logger
     )
-        : this(options, guidGenerator, logger, Environment.GetEnvironmentVariable, static () => Environment.MachineName) { }
+        : this(options, guidGenerator, logger, Environment.GetEnvironmentVariable, static () => Environment.MachineName)
+    { }
 
     internal DefaultNodeIdProvider(
         CoordinationOptions options,

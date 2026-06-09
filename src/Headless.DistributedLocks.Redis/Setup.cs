@@ -3,7 +3,6 @@
 using Headless.Hosting.Initialization;
 using Headless.Messaging;
 using Headless.Redis;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -24,120 +23,26 @@ namespace Headless.DistributedLocks.Redis;
 [PublicAPI]
 public static class SetupRedisDistributedLock
 {
-    extension(IServiceCollection services)
+    extension(HeadlessDistributedLocksSetupBuilder setup)
     {
-        #region Redis Distributed Lock
-
         /// <summary>
-        /// Adds Redis-backed resource lock provider.
+        /// Adds Redis-backed distributed-lock primitives.
         /// Suitable for distributed multi-instance deployments.
         /// </summary>
         /// <remarks>
         /// Prerequisites:
         /// <list type="bullet">
         ///   <item><see cref="IConnectionMultiplexer"/> must be registered</item>
-        ///   <item>Register messaging before this method when push-based lock release wake-ups are needed</item>
+        ///   <item>Call <c>AddHeadlessDistributedLocks(...)</c> before <c>AddHeadlessMessaging(...)</c>
+        ///   when push-based lock release wake-ups are needed</item>
         /// </list>
         /// </remarks>
-        public IServiceCollection AddRedisDistributedLock(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
+        public HeadlessDistributedLocksSetupBuilder UseRedis()
         {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction),
-                _MutexScripts
-            );
+            setup.RegisterExtension(new RedisDistributedLocksOptionsExtension());
+
+            return setup;
         }
-
-        /// <summary>Adds Redis-backed resource lock provider.</summary>
-        /// <remarks>
-        /// <paramref name="optionSetupAction"/> is optional; when omitted, <see cref="DistributedLockOptions"/>
-        /// keeps its defaults.
-        /// </remarks>
-        public IServiceCollection AddRedisDistributedLock(Action<DistributedLockOptions>? optionSetupAction = null)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedLock<RedisDistributedLockStorage>(optionSetupAction ?? (static _ => { })),
-                _MutexScripts
-            );
-        }
-
-        /// <summary>Adds Redis-backed resource lock provider.</summary>
-        public IServiceCollection AddRedisDistributedLock(IConfiguration config)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedLock<RedisDistributedLockStorage>(config),
-                _MutexScripts
-            );
-        }
-
-        #endregion
-
-        #region Redis Distributed Semaphore
-
-        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
-        public IServiceCollection AddRedisDistributedSemaphore(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction),
-                _SemaphoreScripts
-            );
-        }
-
-        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
-        public IServiceCollection AddRedisDistributedSemaphore(Action<DistributedLockOptions> optionSetupAction)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(optionSetupAction),
-                _SemaphoreScripts
-            );
-        }
-
-        /// <summary>Adds Redis-backed distributed semaphore provider.</summary>
-        public IServiceCollection AddRedisDistributedSemaphore(IConfiguration config)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedSemaphore<RedisDistributedSemaphoreStorage>(config),
-                _SemaphoreScripts
-            );
-        }
-
-        #endregion
-
-        #region Redis Distributed Reader-Writer Lock
-
-        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReadWriteLock(
-            Action<DistributedLockOptions, IServiceProvider> optionSetupAction
-        )
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(optionSetupAction),
-                _ReaderWriterScripts
-            );
-        }
-
-        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReadWriteLock(Action<DistributedLockOptions> optionSetupAction)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(optionSetupAction),
-                _ReaderWriterScripts
-            );
-        }
-
-        /// <summary>Adds Redis-backed distributed reader-writer lock provider.</summary>
-        public IServiceCollection AddRedisDistributedReadWriteLock(IConfiguration config)
-        {
-            return services._AddRedisDistributedCore(
-                s => s.AddDistributedReadWriteLock<RedisDistributedReadWriteLockStorage>(config),
-                _ReaderWriterScripts
-            );
-        }
-
-        #endregion
     }
 
     private static readonly IReadOnlyList<RedisScriptDefinition> _MutexScripts =
@@ -167,7 +72,7 @@ public static class SetupRedisDistributedLock
     ];
 
     private static IServiceCollection _AddRedisDistributedCore(
-        this IServiceCollection services,
+        IServiceCollection services,
         Func<IServiceCollection, IServiceCollection> registerStorage,
         IReadOnlyList<RedisScriptDefinition> scriptDefinitions
     )
@@ -197,7 +102,7 @@ public static class SetupRedisDistributedLock
     /// Each lock family contributes a distinct instance of the shared type, so it cannot be
     /// deduplicated by <c>TryAddEnumerable</c> (which keys on implementation type). The lazy holder
     /// is recorded as a marker descriptor and reused if the same definition list is registered again,
-    /// keeping repeated <c>AddRedisDistributed*</c> calls idempotent while letting different families
+    /// keeping repeated Redis provider registration idempotent while letting different script families
     /// each register once. The lazy build defers loader resolution to first start.
     /// </remarks>
     private static void _AddScriptsInitializer(
@@ -259,6 +164,28 @@ public static class SetupRedisDistributedLock
 
                 return _instance;
             }
+        }
+    }
+
+    private sealed class RedisDistributedLocksOptionsExtension : IDistributedLocksOptionsExtension
+    {
+        public void AddServices(IServiceCollection services)
+        {
+            _AddRedisDistributedCore(
+                services,
+                static s => s.AddDistributedLockCore<RedisDistributedLockStorage>(),
+                _MutexScripts
+            );
+            _AddRedisDistributedCore(
+                services,
+                static s => s.AddDistributedReadWriteLockCore<RedisDistributedReadWriteLockStorage>(),
+                _ReaderWriterScripts
+            );
+            _AddRedisDistributedCore(
+                services,
+                static s => s.AddDistributedSemaphoreCore<RedisDistributedSemaphoreStorage>(),
+                _SemaphoreScripts
+            );
         }
     }
 }

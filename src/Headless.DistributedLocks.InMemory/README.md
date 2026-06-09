@@ -11,9 +11,7 @@ Provides a no-infrastructure backend for code that depends on `IDistributedLock`
 - `InMemoryDistributedLockStorage` implements `IDistributedLockStorage`.
 - `InMemoryDistributedReadWriteLockStorage` implements `IDistributedReadWriteLockStorage`.
 - `InMemoryDistributedSemaphoreStorage` implements `IDistributedSemaphoreStorage`.
-- `AddInMemoryDistributedLock(...)` registers an in-process mutex provider.
-- `AddInMemoryDistributedReadWriteLock(...)` registers an in-process reader-writer lock provider.
-- `AddInMemoryDistributedSemaphore(...)` registers an in-process semaphore provider.
+- `UseInMemory()` registers in-process mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses injected `TimeProvider` for deterministic TTL behavior.
 
 ## Design Notes
@@ -31,19 +29,14 @@ dotnet add package Headless.DistributedLocks.InMemory
 ## Quick Start
 
 ```csharp
-builder.Services.AddInMemoryDistributedLock(options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
 {
-    options.KeyPrefix = "distributed-lock:";
-});
+    setup.ConfigureOptions(options =>
+    {
+        options.KeyPrefix = "distributed-lock:";
+    });
 
-builder.Services.AddInMemoryDistributedReadWriteLock(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
-});
-
-builder.Services.AddInMemoryDistributedSemaphore(options =>
-{
-    options.KeyPrefix = "distributed-lock:";
+    setup.UseInMemory();
 });
 ```
 
@@ -59,7 +52,5 @@ Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tes
 
 ## Side Effects
 
-- Registers `IDistributedLock` through `Headless.DistributedLocks.Core`.
-- Registers `IDistributedReadWriteLock` through `Headless.DistributedLocks.Core` when `AddInMemoryDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core` when `AddInMemoryDistributedSemaphore(...)` is called.
-- Registers process-local singleton storage instances for the selected lock primitive.
+- Registers `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider` through `Headless.DistributedLocks.Core`.
+- Registers process-local singleton storage instances for all three primitives.

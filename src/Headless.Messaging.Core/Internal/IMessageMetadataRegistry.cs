@@ -94,7 +94,9 @@ internal sealed class MessageMetadataRegistry(IEnumerable<MessageRegistration> r
         return selector;
     }
 
-    private static IReadOnlyDictionary<Type, object> _MergeProviderConfigs(IEnumerable<MessageRegistration> registrations)
+    private static IReadOnlyDictionary<Type, object> _MergeProviderConfigs(
+        IEnumerable<MessageRegistration> registrations
+    )
     {
         var configs = new Dictionary<Type, object>();
 

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,6 +94,7 @@ internal sealed class Bootstrapper(
         {
             _CheckRequirement();
             _WarnIfNoOpProvider();
+            _WarnIfNullNodeMembership();
 
             try
             {
@@ -285,6 +287,25 @@ internal sealed class Bootstrapper(
         }
 
         logger.UseStorageLockWithNoOpProvider();
+    }
+
+    private void _WarnIfNullNodeMembership()
+    {
+        var membership = serviceProvider.GetService<INodeMembership>();
+        if (!options.Value.UseStorageLock)
+        {
+            if (membership is not null and not NullNodeMembership)
+            {
+                logger.MessagingRecoveryDisabledWithoutStorageLock();
+            }
+
+            return;
+        }
+
+        if (membership is NullNodeMembership)
+        {
+            logger.MessagingRecoveryUsingLockedUntilFloorOnly();
+        }
     }
 
     private void _CheckRequirement()

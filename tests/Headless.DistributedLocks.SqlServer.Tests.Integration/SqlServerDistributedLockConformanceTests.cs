@@ -26,12 +26,12 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSqlServerDistributedLocks(options =>
+        services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
         {
             options.ConnectionString = fixture.ConnectionString;
             options.EnableFencing = false;
             options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
-        });
+        }));
 
         _services = services.BuildServiceProvider();
         _provider = _services.GetRequiredService<IDistributedLock>();

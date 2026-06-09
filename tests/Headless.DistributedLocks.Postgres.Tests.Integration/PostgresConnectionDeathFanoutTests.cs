@@ -183,13 +183,13 @@ public sealed class PostgresConnectionDeathFanoutTests(PostgresDistributedLockFi
         var builder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { KeepAlive = 1 };
 
         services.AddLogging();
-        services.AddPostgresDistributedLocks(options =>
+        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
         {
             options.ConnectionString = builder.ConnectionString;
             options.KeyPrefix = _KeyPrefix;
             options.CommandTimeout = TimeSpan.FromSeconds(2);
             options.KeepAlive = TimeSpan.FromSeconds(1);
-        });
+        }));
 
         return services.BuildServiceProvider();
     }

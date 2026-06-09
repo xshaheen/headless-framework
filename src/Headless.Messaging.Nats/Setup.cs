@@ -71,11 +71,13 @@ public static class SetupNatsMessaging
 
             foreach (var reg in messageRegistrations)
             {
-                var isShardedMessage = reg.ProviderConfigs.Values
-                    .OfType<IProviderHeaderContributions>()
-                    .Any(static c => c.HeaderContributions.Any(static h =>
-                        string.Equals(h.HeaderName, NatsMessagingHeaders.SubjectShard, StringComparison.Ordinal)
-                    ));
+                var isShardedMessage = reg
+                    .ProviderConfigs.Values.OfType<IProviderHeaderContributions>()
+                    .Any(static c =>
+                        c.HeaderContributions.Any(static h =>
+                            string.Equals(h.HeaderName, NatsMessagingHeaders.SubjectShard, StringComparison.Ordinal)
+                        )
+                    );
 
                 if (!isShardedMessage)
                 {
@@ -84,19 +86,18 @@ public static class SetupNatsMessaging
 
                 foreach (var consumer in reg.Consumers)
                 {
-                    var hasShardedConfig = consumer.ProviderConfigs.TryGetValue(
-                        typeof(NatsConsumerConfig), out var configObj
-                    )
+                    var hasShardedConfig =
+                        consumer.ProviderConfigs.TryGetValue(typeof(NatsConsumerConfig), out var configObj)
                         && configObj is NatsConsumerConfig { IsSharded: true };
 
                     if (!hasShardedConfig)
                     {
                         throw new InvalidOperationException(
                             $"Consumer '{consumer.ConsumerType.Name}' (group '{consumer.Group}') subscribes to "
-                            + $"'{reg.MessageType.Name}' which uses SubjectShard(...) but does not declare shard "
-                            + $"coverage. Call .UseNats(c => c.Sharded()) on the consumer registration to prevent "
-                            + $"silent message loss: NATS delivers zero messages to a non-wildcard filter that does "
-                            + $"not match any shard subject."
+                                + $"'{reg.MessageType.Name}' which uses SubjectShard(...) but does not declare shard "
+                                + $"coverage. Call .UseNats(c => c.Sharded()) on the consumer registration to prevent "
+                                + $"silent message loss: NATS delivers zero messages to a non-wildcard filter that does "
+                                + $"not match any shard subject."
                         );
                     }
                 }

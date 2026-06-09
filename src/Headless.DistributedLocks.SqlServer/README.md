@@ -6,7 +6,7 @@ Coordinates work across nodes using SQL Server application locks, with native se
 
 ## Key Features
 
-- `AddSqlServerDistributedLocks(...)` registers `IDistributedLockProvider` and `IDistributedReaderWriterLockProvider`.
+- `UseSqlServer(...)` registers `IDistributedLock` and `IDistributedReadWriteLock` through `AddHeadlessDistributedLocks(...)`.
 - Session-scoped mutex locks use `sp_getapplock` with `@LockMode = 'Exclusive'` and release with `sp_releaseapplock`.
 - Reader-writer locks use SQL Server `Shared` and `Exclusive` application-lock modes.
 - Mutex handles receive durable SQL `SEQUENCE`-backed `FencingToken` values when fencing is enabled.
@@ -34,11 +34,11 @@ dotnet add package Headless.DistributedLocks.SqlServer
 ## Quick Start
 
 ```csharp
-builder.Services.AddSqlServerDistributedLocks(options =>
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
 {
     options.ConnectionString = builder.Configuration.GetConnectionString("SqlServer");
     options.KeyPrefix = "distributed-lock:";
-});
+}));
 
 await using var lease = await lockProvider.AcquireAsync(
     "orders:123",
@@ -87,7 +87,7 @@ options.EnableFencing = true;
 
 ## Side Effects
 
-- Registers `IDistributedLockProvider` as singleton.
-- Registers `IDistributedReaderWriterLockProvider` as singleton.
+- Registers `IDistributedLock` as singleton.
+- Registers `IDistributedReadWriteLock` as singleton.
 - Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with a no-op release signal (not a polling loop) because SQL Server blocks contended acquires server-side, so the provider's wait loop is unreachable.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

@@ -2,6 +2,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using Headless.Caching;
 using StackExchange.Redis;
 
 namespace Tests;
@@ -43,6 +44,27 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         var ttl = await _Database().KeyTimeToLiveAsync(key);
         ttl.Should().NotBeNull();
         ttl!.Value.Should().BeCloseTo(duration, TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task should_map_failsafe_physical_expiration_to_redis_ttl()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(5),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromSeconds(30),
+            FailSafeThrottleDuration = TimeSpan.FromSeconds(1),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        var ttl = await _Database().KeyTimeToLiveAsync(key);
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeCloseTo(options.FailSafeMaxDuration, TimeSpan.FromSeconds(5));
     }
 
     [Fact]

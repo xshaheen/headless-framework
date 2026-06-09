@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Coordination;
-using Headless.Testing.Tests;
 using System.Collections.Immutable;
 using System.Reflection;
 using System.Threading.Channels;
+using Headless.Coordination;
+using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
@@ -30,11 +30,15 @@ public sealed class EventDeliveryTests : TestBase
 
         // then: the fast subscriber still receives the new event despite the slow subscriber being full
         // (proving Publish is non-blocking and drops for the lagging subscriber only).
-        (await fast.MoveNextAsync()).Should().BeTrue();
+        (await fast.MoveNextAsync())
+            .Should()
+            .BeTrue();
         fast.Current.Should().BeOfType<NodeSuspected>().Which.Identity.Should().Be(identity);
 
         // The slow subscriber only ever observed the first event; the overflow was dropped, not blocked.
-        (await slow.MoveNextAsync()).Should().BeTrue();
+        (await slow.MoveNextAsync())
+            .Should()
+            .BeTrue();
         slow.Current.Should().BeOfType<NodeJoined>();
     }
 
@@ -51,7 +55,9 @@ public sealed class EventDeliveryTests : TestBase
         source.Publish(new NodeLeft(identity));
 
         // then
-        (await first.MoveNextAsync()).Should().BeTrue();
+        (await first.MoveNextAsync())
+            .Should()
+            .BeTrue();
         first.Current.Should().BeOfType<NodeLeft>().Which.Identity.Should().Be(identity);
         (await second.MoveNextAsync()).Should().BeTrue();
         second.Current.Should().BeOfType<NodeLeft>().Which.Identity.Should().Be(identity);
@@ -64,7 +70,10 @@ public sealed class EventDeliveryTests : TestBase
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
         var channel = Channel.CreateBounded<NodeMembershipEvent>(1);
         channel.Writer.TryComplete();
-        var field = typeof(MembershipEventSource).GetField("_subscribers", BindingFlags.Instance | BindingFlags.NonPublic);
+        var field = typeof(MembershipEventSource).GetField(
+            "_subscribers",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
         field.Should().NotBeNull();
         field!.SetValue(source, ImmutableArray.Create(channel));
         var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(1));
@@ -73,6 +82,8 @@ public sealed class EventDeliveryTests : TestBase
         source.Publish(new NodeJoined(identity));
 
         // then
-        ((ImmutableArray<Channel<NodeMembershipEvent>>)field.GetValue(source)!).Should().BeEmpty();
+        ((ImmutableArray<Channel<NodeMembershipEvent>>)field.GetValue(source)!)
+            .Should()
+            .BeEmpty();
     }
 }

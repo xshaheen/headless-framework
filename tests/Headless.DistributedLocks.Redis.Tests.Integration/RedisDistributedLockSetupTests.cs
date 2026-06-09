@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,37 +13,40 @@ namespace Tests;
 public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
 {
     [Fact]
-    public async Task AddRedisDistributedLock_should_register_and_run_mutex_script_initializer_on_host_start()
+    public async Task AddHeadlessDistributedLocks_should_register_and_run_redis_initializers_on_host_start()
     {
         // given
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddSingleton<IConnectionMultiplexer>(fixture.ConnectionMultiplexer);
-        builder.Services.AddRedisDistributedLock();
+        builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
         using var host = builder.Build();
 
         // when
         await host.StartAsync(TestContext.Current.CancellationToken);
-        var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
-        await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+        var initializers = host.Services.GetRequiredService<IEnumerable<IInitializer>>().ToList();
+
+        foreach (var initializer in initializers)
+        {
+            await initializer.WaitForInitializationAsync(TestContext.Current.CancellationToken);
+        }
 
         // then
-        initializer.IsInitialized.Should().BeTrue();
+        initializers.Should().HaveCount(3);
+        initializers.Should().AllSatisfy(initializer => initializer.IsInitialized.Should().BeTrue());
 
         await host.StopAsync(TestContext.Current.CancellationToken);
     }
 
     [Fact]
-    public void AddRedisDistributedLock_features_should_register_feature_specific_initializers()
+    public void AddHeadlessDistributedLocks_should_register_feature_specific_initializers()
     {
         // given
         var services = new ServiceCollection();
         services.AddSingleton<IConnectionMultiplexer>(fixture.ConnectionMultiplexer);
 
         // when
-        services.AddRedisDistributedLock();
-        services.AddRedisDistributedSemaphore(static _ => { });
-        services.AddRedisDistributedReadWriteLock(static _ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 
         using var provider = services.BuildServiceProvider();
 
@@ -51,14 +55,18 @@ public sealed class RedisDistributedLockSetupTests(RedisTestFixture fixture)
     }
 
     [Fact]
-    public void AddRedisDistributedLock_should_fail_validation_when_options_are_invalid()
+    public void AddHeadlessDistributedLocks_should_fail_validation_when_options_are_invalid()
     {
         // given
         var services = new ServiceCollection();
         services.AddSingleton<IConnectionMultiplexer>(fixture.ConnectionMultiplexer);
-        services.AddRedisDistributedLock(options =>
+        services.AddHeadlessDistributedLocks(setup =>
         {
-            options.MaxResourceNameLength = 0; // invalid per DistributedLockOptionsValidator
+            setup.ConfigureOptions(options =>
+            {
+                options.MaxResourceNameLength = 0; // invalid per DistributedLockOptionsValidator
+            });
+            setup.UseRedis();
         });
         using var provider = services.BuildServiceProvider();
 

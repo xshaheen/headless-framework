@@ -29,6 +29,8 @@ internal sealed class RedisMembershipHeartbeatScriptDefinition : RedisScriptDefi
             })
 
             redis.call('zadd', @liveKey, hardExpiryMs, @member)
+            -- Mirror value is a bare decimal (not JSON); read/cleanup classification depends on it not starting with '{'.
+            redis.call('hset', @knownKey, @generationField, tostring(@incarnation))
             redis.call('hset', @knownKey, @member, payload)
 
             return 1
@@ -43,6 +45,7 @@ internal readonly record struct HeartbeatParams(
     RedisKey liveKey,
     RedisKey knownKey,
     RedisKey genKey,
+    string generationField,
     string member,
     long incarnation,
     long hardMs,

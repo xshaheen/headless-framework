@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -26,6 +27,9 @@ internal sealed class SqlServerOptionsValidator : AbstractValidator<SqlServerOpt
                 "SQL Server messaging storage requires either a DbContextType or ConnectionString. "
                     + "Configure via UseSqlServer(connectionString) or UseSqlServer(options => options.ConnectionString = ...)"
             );
+
+        RuleFor(x => x.OwnerColumnMaxLength)
+            .GreaterThanOrEqualTo(DataStorageConstants.MinimumOwnerColumnMaxLength);
     }
 }
 

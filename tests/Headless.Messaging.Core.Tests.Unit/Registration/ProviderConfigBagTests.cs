@@ -215,7 +215,7 @@ public sealed class ProviderConfigBagTests
     private sealed class ClassBasedProviderConfig(Func<TestMessage, string?> selector) : IProviderHeaderContributions
     {
         public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            [new ProviderHeaderContribution("x-shard", message => selector((TestMessage)message))];
+        [new ProviderHeaderContribution("x-shard", message => selector((TestMessage)message))];
     }
 
     private sealed record OtherProviderConfig(string Value);

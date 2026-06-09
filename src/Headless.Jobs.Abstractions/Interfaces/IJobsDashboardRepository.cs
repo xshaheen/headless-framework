@@ -65,4 +65,10 @@ internal interface IJobsDashboardRepository<TTimeJob, TCronJob>
     Task<IList<(int, int)>> GetLastWeekJobStatusesAsync(CancellationToken cancellationToken = default);
     Task<IList<(JobStatus, int)>> GetOverallJobStatusesAsync(CancellationToken cancellationToken = default);
     Task<IList<(string, int)>> GetMachineJobsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Projects the coordination membership liveness snapshot into dashboard node views. Returns an empty list when
+    /// no coordination provider is registered (the in-memory / single-process path).
+    /// </summary>
+    Task<IReadOnlyList<LiveNodeView>> GetLiveNodesAsync(CancellationToken cancellationToken = default);
 }

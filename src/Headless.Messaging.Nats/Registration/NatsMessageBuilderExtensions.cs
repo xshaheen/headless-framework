@@ -114,19 +114,20 @@ public sealed class NatsMessageConfigBuilder<TMessage>
     internal NatsMessageConfig<TMessage> Build() => new(_subjectShardSelector);
 }
 
-internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subjectShardSelector) : IProviderHeaderContributions
+internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subjectShardSelector)
+    : IProviderHeaderContributions
     where TMessage : class
 {
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; } =
-            subjectShardSelector is null
-                ? []
-                :
-                [
-                    new ProviderHeaderContribution(
-                        NatsMessagingHeaders.SubjectShard,
-                        message => NatsSubjectShard.Validate(subjectShardSelector((TMessage)message))
-                    ),
-                ];
+        subjectShardSelector is null
+            ? []
+            :
+            [
+                new ProviderHeaderContribution(
+                    NatsMessagingHeaders.SubjectShard,
+                    message => NatsSubjectShard.Validate(subjectShardSelector((TMessage)message))
+                ),
+            ];
 }
 
 /// <summary>Fluent builder for NATS JetStream consumer options applied to a consumer registration.</summary>

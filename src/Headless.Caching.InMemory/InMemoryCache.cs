@@ -12,14 +12,14 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 /// <summary>In-memory cache implementation with LRU eviction, expiration, and list/set operations.</summary>
-public sealed class InMemoryCache : IInMemoryCache, IDisposable
+public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposable
 {
     private readonly ConcurrentDictionary<string, CacheEntry> _memory = new(StringComparer.Ordinal);
     private readonly PriorityQueue<string, long> _expirationQueue = new();
     private readonly Lock _expirationLock = new();
     private readonly ConcurrentQueue<string> _lruQueue = new();
     private readonly AsyncLock _lock = new();
-    private readonly KeyedAsyncLock _keyedLock = new();
+    private readonly FactoryCacheCoordinator _coordinator;
     private readonly CancellationTokenSource _disposedCts = new();
     private readonly ILogger _logger;
     private readonly TimeProvider _timeProvider;
@@ -45,6 +45,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
     public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options, ILogger<InMemoryCache>? logger = null)
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
+        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger);
         _timeProvider = timeProvider;
         _keyPrefix = options.KeyPrefix ?? "";
         _maxItems = options.MaxItems;
@@ -79,31 +80,9 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         Argument.IsNotNullOrEmpty(key);
         Argument.IsNotNull(factory);
 
-        var expiration = options.Duration;
-        Argument.IsPositive(expiration);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-
-        if (cacheValue.HasValue)
-        {
-            return cacheValue;
-        }
-
-        using (await _keyedLock.LockAsync(key, cancellationToken).ConfigureAwait(false))
-        {
-            // Double-check after acquiring lock
-            cacheValue = await GetAsync<T>(key, cancellationToken).ConfigureAwait(false);
-            if (cacheValue.HasValue)
-            {
-                return cacheValue;
-            }
-
-            var value = await factory(cancellationToken).ConfigureAwait(false);
-            await UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
-
-            return new(value, hasValue: true);
-        }
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
     #region Update
@@ -1133,6 +1112,11 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
         }
 
+        if (existingEntry.IsLogicallyExpired)
+        {
+            return new ValueTask<CacheValue<T>>(CacheValue<T>.NoValue);
+        }
+
         try
         {
             var value = existingEntry.GetValue<T>();
@@ -1197,7 +1181,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return new ValueTask<bool>(false);
         }
 
-        return new ValueTask<bool>(!existingEntry.IsExpired);
+        return new ValueTask<bool>(!existingEntry.IsExpired && !existingEntry.IsLogicallyExpired);
     }
 
     public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default)
@@ -1229,7 +1213,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
 
-        if (existingEntry.IsExpired)
+        if (existingEntry.IsExpired || existingEntry.IsLogicallyExpired)
         {
             return new ValueTask<TimeSpan?>((TimeSpan?)null);
         }
@@ -1577,9 +1561,89 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         _lruQueue.Clear();
         Interlocked.Exchange(ref _currentMemorySize, 0);
-        _keyedLock.Dispose();
+        _coordinator.Dispose();
         _disposedCts.Cancel();
         _disposedCts.Dispose();
+    }
+
+    ValueTask<CacheStoreEntry<T>> IFactoryCacheStore.TryGetEntryAsync<T>(
+        string key,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+
+        if (!_memory.TryGetValue(key, out var existingEntry))
+        {
+            return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
+        }
+
+        if (existingEntry.IsExpired)
+        {
+            _RemoveExpiredKey(key);
+            return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
+        }
+
+        T? value;
+
+        try
+        {
+            value = existingEntry.GetValue<T>();
+        }
+        catch (Exception ex) when (!_shouldThrowOnSerializationError)
+        {
+            _logger.LogDeserializationError(ex, string.GetHashCode(key, StringComparison.Ordinal));
+            return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
+        }
+
+        return new ValueTask<CacheStoreEntry<T>>(
+            new CacheStoreEntry<T>(
+                Found: true,
+                IsNull: value is null,
+                Value: value,
+                LogicalExpiresAt: existingEntry.LogicalExpiresAt,
+                PhysicalExpiresAt: existingEntry.PhysicalExpiresAt
+            )
+        );
+    }
+
+    async ValueTask IFactoryCacheStore.SetEntryAsync<T>(
+        string key,
+        T? value,
+        bool isNull,
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        CancellationToken cancellationToken
+    )
+        where T : default
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        key = _GetKey(key);
+        var entrySize = _CalculateEntrySize(value);
+
+        if (!_ValidateEntrySize(entrySize))
+        {
+            return;
+        }
+
+        var entry = new CacheEntry(
+            isNull ? default : value,
+            logicalExpiresAt,
+            physicalExpiresAt,
+            _timeProvider,
+            _shouldClone,
+            _shouldThrowOnSerializationError,
+            entrySize
+        );
+
+        await _SetInternalAsync(key, entry).ConfigureAwait(false);
     }
 
     private void _ThrowIfDisposed()
@@ -2016,7 +2080,7 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
                 size
             ) { }
 
-        private CacheEntry(
+        internal CacheEntry(
             object? value,
             DateTime? logicalExpiresAt,
             DateTime? physicalExpiresAt,
@@ -2070,8 +2134,14 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
 
         internal IReadOnlySet<string>? Tags { get; }
 
+        // Expired at the exact tick (expiresAt <= now): align with the Core (IsFresh/IsPhysicallyPresent),
+        // Redis (_IsExpired), and the eviction maintenance loop conventions so every provider and the
+        // coordinator agree on the boundary instant.
         internal bool IsExpired =>
-            PhysicalExpiresAt.HasValue && PhysicalExpiresAt < _timeProvider.GetUtcNow().UtcDateTime;
+            PhysicalExpiresAt.HasValue && PhysicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
+
+        internal bool IsLogicallyExpired =>
+            LogicalExpiresAt.HasValue && LogicalExpiresAt <= _timeProvider.GetUtcNow().UtcDateTime;
 
         internal long LastAccessTicks => Interlocked.Read(ref _lastAccessTicks);
 
@@ -2090,14 +2160,19 @@ public sealed class InMemoryCache : IInMemoryCache, IDisposable
         /// are both incorrect and wasteful.</summary>
         internal object? PeekValue() => _cacheValue;
 
+        /// <summary>Converts the raw stored value to <typeparamref name="T"/> without touching LRU or
+        /// cloning. Used for metadata reads where a clone/LRU touch would be incorrect or wasteful.</summary>
+        internal T? PeekValue<T>() => _ConvertValue<T>(_cacheValue);
+
         /// <summary>Returns a new entry that shares this entry's value but has a different
         /// expiration. Used by writers that only need to refresh the TTL.</summary>
         internal CacheEntry WithExpiration(DateTime? expiresAt) =>
             new(this, logicalExpiresAt: expiresAt, physicalExpiresAt: expiresAt);
 
-        public T? GetValue<T>()
+        public T? GetValue<T>() => _ConvertValue<T>(ReadValue());
+
+        private static T? _ConvertValue<T>(object? val)
         {
-            var val = ReadValue();
             var t = typeof(T);
 
             if (

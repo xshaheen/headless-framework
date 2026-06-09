@@ -229,12 +229,12 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddSqlServerDistributedLocks(options =>
+        services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(options =>
         {
             options.ConnectionString = fixture.ConnectionString;
             options.KeyPrefix = $"sqlserver:{Faker.Random.AlphaNumeric(6)}:";
             configure?.Invoke(options);
-        });
+        }));
 
         return services.BuildServiceProvider();
     }

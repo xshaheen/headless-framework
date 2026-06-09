@@ -286,6 +286,7 @@ How to read each column:
 - **Outbox + persisted retry storage** — the framework's combined storage contract. There is no separate `IRetryStorage` or `ISubscriptionStorage` abstraction; outbox writes and persisted-retry pickups go through the same `IDataStorage` implementation. The brainstorm proposed a "Subscriptions" column; the live code does not expose a subscription-tracking storage seam, so the column was dropped during planning rather than padded with "n/a" values.
 - **Schema initializer** — `IStorageInitializer` is the seam each storage uses to create or migrate its tables (PostgreSql/SqlServer) or initialize in-process state (InMemoryStorage). All three storages implement it.
 - **Storage row IDs** — `MediumMessage.StorageId`, monitoring APIs, dashboard routes, and bulk storage actions use `Guid`. Storage providers generate row IDs through provider-keyed `IGuidGenerator` strategies, not database defaults. PostgreSQL creates `UUID` `Id` columns and resolves the `Version7` strategy; SQL Server creates `uniqueidentifier` `Id` columns, resolves the `SqlServer` comb strategy, and creates a `uniqueidentifier` table-valued ID-list type.
+- **Retry row owners** — persisted `published` and `received` rows include nullable `Owner` (`node@incarnation`). It is stamped only when a Coordination membership identity is active and is cleared when `LockedUntil` is cleared.
 
 Internal-wiring asymmetries (for example, `Headless.Messaging.Storage.SqlServer` additionally registers `DiagnosticProcessorObserver` and a `DiagnosticRegister` background server for SQL Server-specific telemetry that PostgreSql does not need) are deliberately not surfaced as matrix columns — they are implementation details, not chooser-relevant capabilities.
 
@@ -561,6 +562,7 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### What this is and isn't (correctness vs coordination)
 
 - Per-row `LockedUntil` (set to `DispatchTimeout` before each publish/consume attempt — see the [Retry Policy](#retry-policy) section) is the **correctness primitive**. It prevents the same row from being dispatched twice and works whether or not the distributed lock is enabled.
+- Coordination membership is an **acceleration primitive**. With a real `INodeMembership`, retry pickup reconciles live `node@incarnation` owners and pulls `LockedUntil` back to now for rows still leased by dead incarnations. Without Coordination, `Owner` remains `null` and rows recover at the normal `LockedUntil` floor.
 - The distributed lock is a **coarse-grained pickup mutex**, not a correctness requirement. It gates the entire retry-pickup tick so only one replica scans the backlog at a time.
 - Disabling `UseStorageLock` does not introduce double-dispatch risk. It introduces wasted pickup work on contended backlogs. If renewal of an in-flight lock fails (EventId 79), the handle is cleared but the consume task keeps running — the per-row `LockedUntil` lease takes over as the correctness boundary.
 
@@ -579,7 +581,7 @@ Messaging keeps its lock provider under an **internal keyed-DI key** (`"headless
 ### Requirements
 
 - Call `UseDistributedLock(...)` on the returned `MessagingBuilder` to supply a real provider (e.g. from `Headless.DistributedLocks.Core` + a cache/DB backend).
-- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddDistributedLocks()`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
+- Without a real provider, only `NoOpDistributedLockProvider` is active (the keyed-DI fallback). The bootstrapper emits two mutually-exclusive Warnings depending on what it finds: **EventId 77** when no real provider is wired under any registration, and **EventId 78** when a real provider is registered un-keyed (e.g., via `AddHeadlessDistributedLocks(setup => setup.UseRedis())`) but not flowed through `MessagingBuilder.UseDistributedLock(...)`. Alert on either.
 - `UseDistributedLock(...)` is **last-wins** — calling it twice replaces the prior registration rather than stacking duplicates.
 
 **NoOp introspection contract:** when `NoOpDistributedLockProvider` is the resolved messaging-keyed provider, the introspection methods (`IsLockedAsync`, `GetLockInfoAsync`, `ListActiveLocksAsync`, `GetActiveLocksCountAsync`) silently return empty/false/null. They cannot be used to verify lock state in that mode; rely on the EventId 77 / 78 warning at startup as the operational signal.
@@ -593,7 +595,18 @@ Both names follow the literal pattern shown above. They are constructed internal
 
 `{version}` comes from `MessagingOptions.Version` and is the **cross-process isolation key**. Two services that share a single lock store (e.g., both pointed at the same Redis) MUST set distinct `Version` values — otherwise their retry processors collide on the same lock resource and starve each other. Both locks use `acquireTimeout: TimeSpan.Zero` (non-blocking try-once); when another replica holds the lock the processor skips that pickup cycle and waits for the next polling tick.
 
-**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required.
+**When `UseStorageLock = false`** (default): `IDistributedLockProvider` is never called and distributed lock wiring is not required. If a real Coordination membership provider is registered while `UseStorageLock = false`, startup emits EventId 92 because dead-incarnation owner reclaim is disabled in that configuration.
+
+### Coordination recovery decision tree
+
+Dead-incarnation retry recovery depends on both the coarse storage lock and membership:
+
+| Configuration | Behavior | Startup signal |
+| --- | --- | --- |
+| `UseStorageLock = false` and no Coordination membership | `LockedUntil` floor only; no distributed lock or owner reclaim. | None |
+| `UseStorageLock = false` with real Coordination membership | `LockedUntil` floor only; membership exists but owner reclaim is disabled. | EventId 92 Warning |
+| `UseStorageLock = true` with `NullNodeMembership` | Distributed lock reduces pickup contention; rows recover at the `LockedUntil` floor. | EventId 88 Information |
+| `UseStorageLock = true` with real Coordination membership | Distributed lock plus dead-owner reclaim. If membership query fails, reclaim skips for that tick while dispatch continues. Configure Coordination's dead threshold no lower than the largest retry `DispatchTimeout`, so reclaim cannot shorten a valid in-flight lease. | EventId 89 Debug on transient query failure; EventId 93 Error after three consecutive failures |
 
 ### EventIds
 
@@ -607,6 +620,12 @@ Both names follow the literal pattern shown above. They are constructed internal
 | 82 | `PublishedRetryLockAcquireFailureEscalated` | Error | Three consecutive published-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
 | 83 | `ReceivedRetryLockAcquireFailed` | Warning | `TryAcquireAsync` threw on the received-retry path. | Investigate lock-store health if persistent; the pickup is skipped. |
 | 84 | `ReceivedRetryLockAcquireFailureEscalated` | Error | Three consecutive received-retry acquire failures. | Investigate lock-store health. Adaptive polling is backing off. After lock-store recovery, call `IRetryProcessorMonitor.ResetBackpressureAsync` to restore normal polling immediately. |
+| 88 | `MessagingRecoveryUsingLockedUntilFloorOnly` | Information | `UseStorageLock = true` but only `NullNodeMembership` is registered. | Register a Coordination provider to accelerate dead-incarnation retry recovery, or accept `LockedUntil`-floor-only recovery. |
+| 89 | `CoordinationMembershipQueryFailed` | Debug | `GetLiveNodesAsync` threw a transient exception; reclaim skipped for this tick. | Investigate Coordination store health if frequent; dispatch continues normally. |
+| 90 | `MessagingDeadOwnerReclaimFailed` | Warning | Dead-owner reclaim call threw; dispatch continues, reclaim retries next cycle. | Investigate storage health if persistent. |
+| 91 | `MessagingDeadOwnerRowsReclaimed` | Information | Dead-owner reclaim succeeded; N orphaned rows returned to the retry queue. | Informational — no action needed. |
+| 92 | `MessagingRecoveryDisabledWithoutStorageLock` | Warning | Real Coordination membership registered while `UseStorageLock = false`. | Enable `UseStorageLock` through `MessagingBuilder.UseDistributedLock(...)`, or accept `LockedUntil`-floor-only recovery. |
+| 93 | `CoordinationMembershipQueryFailureEscalated` | Error | Three consecutive membership-query failures. | Investigate Coordination store health; retry dispatch continues and recovery falls back to `LockedUntil`. |
 
 ### Pros and cons
 

@@ -57,8 +57,9 @@ public interface IMessageBuilder<TMessage>
         where TConsumer : class, IConsume<TMessage>;
 }
 
-internal sealed class MessageBuilder<TMessage>(IServiceCollection services) : IMessageBuilder<TMessage>
-    , IMessageProviderConfigBuilder<TMessage>
+internal sealed class MessageBuilder<TMessage>(IServiceCollection services)
+    : IMessageBuilder<TMessage>,
+        IMessageProviderConfigBuilder<TMessage>
     where TMessage : class
 {
     private readonly List<MessageConsumerRegistrationBuilder> _consumers = [];
@@ -129,7 +130,8 @@ internal sealed class MessageBuilder<TMessage>(IServiceCollection services) : IM
         );
     }
 
-    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config) => _providerConfigs.Set(config);
+    void IMessageProviderConfigBuilder<TMessage>.SetMessageProviderConfig(object config) =>
+        _providerConfigs.Set(config);
 
     private MessageConsumerRegistrationBuilder _AddConsumer<TConsumer>(IntentType intentType)
         where TConsumer : class, IConsume<TMessage>

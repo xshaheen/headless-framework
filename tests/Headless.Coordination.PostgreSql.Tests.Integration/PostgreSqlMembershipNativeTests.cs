@@ -113,7 +113,10 @@ public sealed class PostgreSqlMembershipNativeTests(PostgreSqlMembershipFixture 
         var staleAccepted = await store.HeartbeatAsync(firstIdentity, AbortToken);
         var impossibleAccepted = await store.HeartbeatAsync(impossibleIdentity, AbortToken);
         var currentAccepted = await store.HeartbeatAsync(secondIdentity, AbortToken);
-        var currentIncarnation = await _ReadCurrentIncarnationAsync(connectionString: fixture.ConnectionString, cluster);
+        var currentIncarnation = await _ReadCurrentIncarnationAsync(
+            connectionString: fixture.ConnectionString,
+            cluster
+        );
 
         staleAccepted.Should().BeFalse();
         impossibleAccepted.Should().BeFalse();

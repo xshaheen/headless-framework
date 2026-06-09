@@ -12,8 +12,8 @@ internal static class DistributedLockConsumerRegistration
     /// Auto-registers the single lock-released consumer shared by the mutex and semaphore providers
     /// (both fan out from it via <see cref="ICanReceiveLockReleased"/>). Uses the service-collection
     /// <c>ForMessage</c> seam, whose registration is drained into the consumer registry by
-    /// messaging bootstrap. Idempotent across repeated <c>AddDistributedLock</c> /
-    /// <c>AddDistributedSemaphore</c> calls: once the consumer's <see cref="IConsume{TMessage}"/>
+    /// messaging bootstrap. Idempotent across repeated distributed-lock primitive
+    /// registrations: once the consumer's <see cref="IConsume{TMessage}"/>
     /// descriptor is present, subsequent calls are no-ops.
     /// </summary>
     /// <remarks>

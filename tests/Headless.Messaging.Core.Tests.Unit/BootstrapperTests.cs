@@ -1,10 +1,14 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using Headless.DistributedLocks;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -146,6 +150,29 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
+    public async Task should_warn_when_coordination_membership_is_registered_but_storage_lock_is_disabled()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = false,
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Warning && e.EventId.Id == 92);
+    }
+
+    [Fact]
     public async Task should_warn_with_eventid_78_when_unkeyed_real_provider_exists_but_use_distributed_lock_not_called()
     {
         // Misconfiguration repro: user wired up a real IDistributedLock (e.g. via
@@ -197,6 +224,44 @@ public sealed class BootstrapperTests : TestBase
                 e => e.Level == LogLevel.Warning && e.EventId.Id == 77,
                 "warning must be silent when a real IDistributedLock is registered"
             );
+    }
+
+    [Fact]
+    public async Task should_log_info_when_coordination_membership_is_null_and_storage_lock_is_enabled()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = true
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().Contain(e => e.Level == LogLevel.Information && e.EventId.Id == 88);
+    }
+
+    [Fact]
+    public async Task should_not_log_coordination_fallback_info_when_real_membership_is_registered()
+    {
+        var captured = new List<(LogLevel Level, EventId EventId)>();
+        var membership = Substitute.For<INodeMembership>();
+        membership.Identity.Returns(new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7)));
+
+        await using var provider = _CreateProvider(
+            captureLog: captured,
+            configureOptions: o => o.UseStorageLock = true,
+            extraSetup: services =>
+            {
+                services.RemoveAll<INodeMembership>();
+                services.AddSingleton(membership);
+            }
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        captured.Should().NotContain(e => e.EventId.Id == 88);
     }
 
     [Fact]

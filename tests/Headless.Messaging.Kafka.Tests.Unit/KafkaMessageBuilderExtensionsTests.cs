@@ -15,8 +15,9 @@ public sealed class KafkaMessageBuilderExtensionsTests
         var builder = new MessageBuilder<TestMessage>(new ServiceCollection());
 
         builder.UseKafka(kafka => kafka.PartitionBy(static message => message.TenantId));
-        var contribution = ((IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single())
-            .HeaderContributions.Single();
+        var contribution = (
+            (IProviderHeaderContributions)builder.Build().ProviderConfigs.Values.Single()
+        ).HeaderContributions.Single();
 
         contribution.HeaderName.Should().Be(KafkaHeaders.KafkaKey);
         contribution.Selector(new TestMessage("tenant-a")).Should().Be("tenant-a");

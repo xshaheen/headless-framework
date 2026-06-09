@@ -16,7 +16,7 @@ internal interface IJobsNotificationHubSender
     void UpdateNextOccurrence(object nextOccurrence);
     void UpdateHostStatus(object active);
     void UpdateHostException(object exceptionMessage);
-    Task UpdateNodeHeartBeatAsync(object nodeHeartBeat);
+    Task UpdateNodesAsync(object nodes);
     Task AddCronOccurrenceAsync(Guid groupId, object occurrence);
     Task UpdateCronOccurrenceAsync(Guid groupId, object occurrence);
     Task UpdateTimeJobFromInternalFunctionContext<TTimeJobEntity>(InternalFunctionContext internalFunctionContext)

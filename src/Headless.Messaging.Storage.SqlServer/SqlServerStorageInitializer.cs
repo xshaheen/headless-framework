@@ -3,6 +3,7 @@
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -107,6 +108,7 @@ public sealed class SqlServerStorageInitializer(
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
                         [LockedUntil] [datetime2](7) NULL,
+                        [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         [ExceptionInfo] [nvarchar](max) NULL,
@@ -152,6 +154,22 @@ public sealed class SqlServerStorageInitializer(
             END CATCH;
 
             BEGIN TRY
+                IF COL_LENGTH(N'{GetReceivedTableName()}', N'Owner') IS NULL
+                    ALTER TABLE {GetReceivedTableName()} ADD [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{receivedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{GetReceivedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{receivedPrefix}_Owner_NotNull] ON {GetReceivedTableName()} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
                 IF OBJECT_ID(N'{GetPublishedTableName()}',N'U') IS NULL
                 BEGIN
                     CREATE TABLE {GetPublishedTableName()}(
@@ -165,6 +183,7 @@ public sealed class SqlServerStorageInitializer(
                         [ExpiresAt] [datetime2](7) NULL,
                         [NextRetryAt] [datetime2](7) NULL,
                         [LockedUntil] [datetime2](7) NULL,
+                        [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL,
                         [StatusName] [nvarchar](50) NOT NULL,
                         [MessageId] [nvarchar](200) NOT NULL,
                         CONSTRAINT [PK_{publishedPrefix}] PRIMARY KEY CLUSTERED ([Id] ASC)
@@ -195,6 +214,22 @@ public sealed class SqlServerStorageInitializer(
             BEGIN TRY
                 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Version_NextRetryAt' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
                     CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Version_NextRetryAt] ON {GetPublishedTableName()} ([Version] ASC,[NextRetryAt] ASC) INCLUDE ([Retries],[LockedUntil]) WHERE [NextRetryAt] IS NOT NULL;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF COL_LENGTH(N'{GetPublishedTableName()}', N'Owner') IS NULL
+                    ALTER TABLE {GetPublishedTableName()} ADD [Owner] [nvarchar]({options.Value.OwnerColumnMaxLength}) NULL;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() NOT IN (1913, 2714, 2705) THROW;
+            END CATCH;
+
+            BEGIN TRY
+                IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{publishedPrefix}_Owner_NotNull' AND object_id = OBJECT_ID(N'{GetPublishedTableName()}'))
+                    CREATE NONCLUSTERED INDEX [IX_{publishedPrefix}_Owner_NotNull] ON {GetPublishedTableName()} ([Owner] ASC) WHERE [Owner] IS NOT NULL;
             END TRY
             BEGIN CATCH
                 IF ERROR_NUMBER() NOT IN (1913, 2714) THROW;

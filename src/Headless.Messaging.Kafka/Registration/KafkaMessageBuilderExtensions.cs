@@ -142,10 +142,9 @@ internal sealed class KafkaMessageConfig<TMessage> : IProviderHeaderContribution
 {
     public KafkaMessageConfig(Func<TMessage, string?>? partitionSelector)
     {
-        HeaderContributions =
-            partitionSelector is null
-                ? []
-                : [new ProviderHeaderContribution(KafkaHeaders.KafkaKey, message => partitionSelector((TMessage)message))];
+        HeaderContributions = partitionSelector is null
+            ? []
+            : [new ProviderHeaderContribution(KafkaHeaders.KafkaKey, message => partitionSelector((TMessage)message))];
     }
 
     public IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; }

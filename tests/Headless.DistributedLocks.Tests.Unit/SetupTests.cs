@@ -20,7 +20,7 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         using var provider = services.BuildServiceProvider();
 
         // then
@@ -40,8 +40,8 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
-        // when — AddDistributedLock BEFORE AddHeadlessMessaging.
-        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        // when — register the lock provider BEFORE AddHeadlessMessaging.
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
@@ -64,10 +64,9 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddSingleton(Substitute.For<IOutboxBus>());
 
-        // when — both the lock and semaphore providers register; they share one consumer via the
+        // when — the provider registers both lock and semaphore; they share one consumer via the
         // ICanReceiveLockReleased fan-out, so only a single registry entry must exist.
-        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
-        services.AddDistributedSemaphore<InMemoryDistributedSemaphoreStorage>(_ => { });
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         services.AddHeadlessMessaging(_ => { });
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
@@ -88,41 +87,68 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(_ => { });
 
-        // when
-        var act = () => services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        // when — registering AFTER AddHeadlessMessaging still works; the captured registration is
+        // drained at messaging bootstrap, so registration order does not matter.
+        var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
         act.Should().NotThrow();
         using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates();
 
         // then
-        provider.GetRequiredService<IConsumerRegistry>().GetAll().Should().ContainSingle(metadata =>
-            metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer)
-        );
+        provider
+            .GetRequiredService<IConsumerRegistry>()
+            .GetAll()
+            .Should()
+            .ContainSingle(metadata => metadata.ConsumerType == typeof(DistributedLock.LockReleasedConsumer));
     }
 
     [Fact]
-    public void should_be_idempotent_for_repeated_add_distributed_lock_calls()
+    public void should_throw_when_no_provider_is_configured()
     {
         // given
         var services = new ServiceCollection();
         services.AddLogging();
 
-        // when — call AddDistributedLock twice.
-        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
-        services.AddDistributedLock<InMemoryDistributedLockStorage>(_ => { });
+        // when
+        var act = () => services.AddHeadlessDistributedLocks(_ => { });
 
-        // then — only one descriptor per service type (TryAdd* semantics) and a single consumer.
-        services
-            .Count(d => d.ServiceType == typeof(IDistributedLock))
-            .Should()
-            .Be(1, "TryAddSingleton on IDistributedLock must be idempotent");
-        services
-            .Count(d => d.ServiceType == typeof(DistributedLock))
-            .Should()
-            .Be(1, "TryAddSingleton on the concrete DistributedLock must be idempotent");
-        services
-            .Count(d => d.ServiceType == typeof(IConsume<DistributedLockReleased>))
-            .Should()
-            .Be(1, "the shared lock-release consumer must be registered exactly once");
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*UseInMemory*UseRedis*UsePostgreSql*UseSqlServer*");
+    }
+
+    [Fact]
+    public void should_throw_when_multiple_providers_are_configured()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+
+        // when
+        var act = () =>
+            services.AddHeadlessDistributedLocks(setup =>
+            {
+                setup.UseInMemory();
+                setup.UseInMemory();
+            });
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
+    }
+
+    [Fact]
+    public void should_throw_when_add_headless_distributed_locks_is_called_twice()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+
+        // when
+        var act = () => services.AddHeadlessDistributedLocks(setup => setup.UseInMemory());
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*Multiple providers*");
     }
 }

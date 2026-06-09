@@ -163,6 +163,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 
 ### Caching
 - `Headless.Caching.Abstractions` — `ICache` interface.
+- `Headless.Caching.Core` — Shared factory-backed cache orchestration.
 - `Headless.Caching.InMemory` — In-process single-instance cache.
 - `Headless.Caching.Redis` — Redis distributed cache.
 - `Headless.Caching.Hybrid` — L1 (memory) + L2 (distributed) cache.

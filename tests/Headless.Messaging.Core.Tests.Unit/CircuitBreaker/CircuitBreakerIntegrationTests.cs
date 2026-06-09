@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
@@ -258,6 +259,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             logger,
             dispatcher,
             lockProvider,
+            new NullNodeMembership(),
             stateManager // real ICircuitBreakerMonitor
         );
 
@@ -317,6 +319,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             logger,
             dispatcher,
             lockProvider,
+            new NullNodeMembership(),
             stateManager
         );
 

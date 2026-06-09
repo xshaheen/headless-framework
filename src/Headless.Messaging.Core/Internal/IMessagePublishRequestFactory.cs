@@ -42,8 +42,11 @@ internal sealed class MessagePublishRequestFactory(
         Headers.Intent,
     };
 
-    private static readonly HashSet<string> _ProviderReservedHeaders =
-        new(_ReservedHeaders, StringComparer.Ordinal) { Headers.TenantId, Headers.TraceParent };
+    private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
+    {
+        Headers.TenantId,
+        Headers.TraceParent,
+    };
 
     private readonly ConditionalWeakTable<Type, string> _messageNameCache = [];
     private readonly MessagingOptions _options = optionsAccessor.Value;

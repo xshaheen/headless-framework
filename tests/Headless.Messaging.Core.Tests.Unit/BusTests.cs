@@ -361,9 +361,7 @@ public sealed class BusTests : TestBase
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*cannot contain control characters*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*cannot contain control characters*");
     }
 
     [Fact]
@@ -383,9 +381,7 @@ public sealed class BusTests : TestBase
         var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
 
         // then
-        await act.Should()
-            .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*x-custom*control characters*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*x-custom*control characters*");
     }
 
     [Fact]

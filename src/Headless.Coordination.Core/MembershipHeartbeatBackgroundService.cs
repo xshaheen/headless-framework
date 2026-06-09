@@ -106,7 +106,10 @@ internal sealed class MembershipHeartbeatBackgroundService(
 
         try
         {
-            if (membership.Identity is not null && !await membership.HeartbeatAsync(cancellationToken).ConfigureAwait(false))
+            if (
+                membership.Identity is not null
+                && !await membership.HeartbeatAsync(cancellationToken).ConfigureAwait(false)
+            )
             {
                 return;
             }

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
+using Headless.Coordination;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemoryStorage;
 using Headless.Messaging.Messages;
@@ -113,7 +114,8 @@ public sealed class InitialDispatchGraceTests
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
-            fakeClock
+            fakeClock,
+            new NullNodeMembership()
         );
 
         return (storage, fakeClock);

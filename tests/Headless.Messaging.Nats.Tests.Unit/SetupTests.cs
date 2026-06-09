@@ -111,13 +111,16 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        var act = () => services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseNats("nats://localhost:4222");
-            setup.ForMessage<_ShardTestMessage>(message => message
-                .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                .OnBus<_ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded())));
-        });
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message =>
+                    message
+                        .UseNats(nats => nats.SubjectShard(m => m.TenantId))
+                        .OnBus<_ShardTestConsumer>(consumer => consumer.UseNats(nats => nats.Sharded()))
+                );
+            });
 
         // then
         act.Should().NotThrow();
@@ -131,13 +134,14 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        var act = () => services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseNats("nats://localhost:4222");
-            setup.ForMessage<_ShardTestMessage>(message => message
-                .UseNats(nats => nats.SubjectShard(m => m.TenantId))
-                .OnBus<_ShardTestConsumer>());
-        });
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message =>
+                    message.UseNats(nats => nats.SubjectShard(m => m.TenantId)).OnBus<_ShardTestConsumer>()
+                );
+            });
 
         // then
         act.Should()
@@ -155,11 +159,12 @@ public sealed class SetupTests : TestBase
         services.AddLogging();
 
         // when
-        var act = () => services.AddHeadlessMessaging(setup =>
-        {
-            setup.UseNats("nats://localhost:4222");
-            setup.ForMessage<_ShardTestMessage>(message => message.OnBus<_ShardTestConsumer>());
-        });
+        var act = () =>
+            services.AddHeadlessMessaging(setup =>
+            {
+                setup.UseNats("nats://localhost:4222");
+                setup.ForMessage<_ShardTestMessage>(message => message.OnBus<_ShardTestConsumer>());
+            });
 
         // then
         act.Should().NotThrow();

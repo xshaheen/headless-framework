@@ -24,7 +24,7 @@ dotnet add package Headless.Tus.DistributedLocks
 var builder = WebApplication.CreateBuilder(args);
 
 // Add resource lock provider first
-builder.Services.AddDistributedLock();
+builder.Services.AddHeadlessDistributedLocks(setup => setup.UseRedis());
 builder.Services.AddDistributedLockRedisStorage();
 
 // Add TUS lock provider

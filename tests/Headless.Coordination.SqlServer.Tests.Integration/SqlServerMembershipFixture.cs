@@ -9,8 +9,10 @@ namespace Tests;
 
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class SqlServerMembershipFixture : HeadlessSqlServerFixture, ICollectionFixture<SqlServerMembershipFixture>
-    , ICoordinationFixture
+public sealed class SqlServerMembershipFixture
+    : HeadlessSqlServerFixture,
+        ICollectionFixture<SqlServerMembershipFixture>,
+        ICoordinationFixture
 {
     public void ConfigureProvider(IServiceCollection services, HeadlessCoordinationSetupBuilder setup)
     {

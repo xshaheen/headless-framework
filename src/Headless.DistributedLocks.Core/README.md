@@ -15,15 +15,14 @@ Implements lock/semaphore acquisition, renewal, release, inspection, timeout han
 - `IDistributedReadWriteLockStorage` defines read/write acquire, extend, release, and validation operations.
 - `IDistributedSemaphoreStorage` defines acquire, extend, validate, release, and holder-count operations.
 - `DistributedLockOptions` configures key prefix, resource name length, waiter limits, and lease-monitor cadence fractions.
-- `AddDistributedLock(...)` overloads wire storage, options, time provider, and ID generator.
-- `AddDistributedLock(...)` / `AddDistributedSemaphore(...)` auto-register one shared `DistributedLockReleased` consumer when messaging is present.
-- `AddDistributedReadWriteLock(...)` overloads wire reader-writer storage, options, time provider, and ID generator.
-- `AddDistributedSemaphore(...)` overloads wire semaphore storage, options, time provider, and ID generator.
+- `AddHeadlessDistributedLocks(...)` is the root builder entry point; provider packages contribute `Use...` methods.
+- `AddHeadlessDistributedLocks(...)` auto-registers the optional `DistributedLockReleased` consumer descriptor.
+- `IDistributedLocksOptionsExtension` is the setup-time hook used by provider packages to wire supported primitives.
 
 ## Design Notes
 
 - `IOutboxBus` is optional. Without it, release notifications fall back to polling backoff and a warning is logged once when the provider is constructed.
-- When messaging is present, the release consumer is drained at messaging startup whether `AddDistributedLock(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
+- When messaging is present, the release consumer is drained at messaging startup whether `AddHeadlessDistributedLocks(...)` runs before or after `AddHeadlessMessaging(...)`; without messaging, waiters fall back to polling.
 - `TryAcquireAsync(..., new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.Zero })` performs a single storage attempt with an internal safety deadline.
 - Lease monitors are opt-in per acquire call through `Monitoring = LockMonitoringMode.Monitor` (validate only) or `Monitoring = LockMonitoringMode.AutoExtend` (validate + renew) on `DistributedLockAcquireOptions`. Both require a finite `TimeUntilExpires`; combining with `Timeout.InfiniteTimeSpan` throws `ArgumentException`.
 - Release messages also nudge active monitors so lost-handle detection can happen before the next polling cadence. Self-release deregisters the monitor before publishing so direct `ReleaseAsync` does not produce a spurious lost signal.
@@ -38,14 +37,16 @@ dotnet add package Headless.DistributedLocks.Core
 ## Quick Start
 
 ```csharp
-builder.Services.AddDistributedLock(
-    sp => sp.GetRequiredService<IDistributedLockStorage>(),
-    options =>
+builder.Services.AddHeadlessDistributedLocks(setup =>
+{
+    setup.ConfigureOptions(options =>
     {
         options.KeyPrefix = "distributed-lock:";
         options.MaxResourceNameLength = 512;
-    }
-);
+    });
+
+    setup.UseRedis(); // from Headless.DistributedLocks.Redis
+});
 
 builder.Services.AddHeadlessMessaging(setup =>
 {
@@ -91,8 +92,8 @@ await using var lease = await lockProvider.AcquireAsync(
 
 ## Side Effects
 
-- Registers `IDistributedLock` as singleton.
-- Registers `IDistributedReadWriteLock` as singleton when `AddDistributedReadWriteLock(...)` is called.
-- Registers `IDistributedSemaphoreProvider` as singleton when `AddDistributedSemaphore(...)` is called.
+- Registers exactly one provider selected by the `AddHeadlessDistributedLocks(...)` builder.
+- Redis and InMemory providers register `IDistributedLock`, `IDistributedReadWriteLock`, and `IDistributedSemaphoreProvider`.
+- PostgreSQL and SQL Server providers register `IDistributedLock` and `IDistributedReadWriteLock`.
 - Registers `TimeProvider.System` and `IGuidGenerator` when absent.
 - Auto-registers the shared `DistributedLockReleased` messaging consumer. The descriptor is inert when messaging is absent; waiters still use polling.
