@@ -95,6 +95,10 @@ builder.Services.AddHeadlessJobs(options =>
 
 On the in-memory single-process path, the scheduler uses `SchedulerOptionsBuilder.NodeIdentifier` (defaults to the machine name) and needs no coordination. On the durable operational-store path (`Headless.Jobs.EntityFramework` + `AddHeadlessCoordination`), node identity is `node@incarnation` (store-allocated) and durable job rows are stamped with it. If the local node loses membership, the durable scheduler fail-stops (stops processing) rather than stamping a stale owner. See `Headless.Jobs.EntityFramework` for setup.
 
+### Cron-Expression Caching (durable path)
+
+Jobs does not ship a Jobs-specific Redis cache package. The durable EF path uses the host application's optional default `Headless.Caching.ICache` for cron-expression caching. Register `Headless.Caching.InMemory`, `Headless.Caching.Redis`, or `Headless.Caching.Hybrid` when caching is desired; without an `ICache`, Jobs reads cron expressions from the database and cache invalidation is skipped.
+
 ### Retry Configuration
 
 ```csharp
