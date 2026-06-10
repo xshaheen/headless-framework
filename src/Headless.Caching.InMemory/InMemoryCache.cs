@@ -85,6 +85,23 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
+    }
+
     #region Update
 
     public ValueTask<bool> UpsertAsync<T>(

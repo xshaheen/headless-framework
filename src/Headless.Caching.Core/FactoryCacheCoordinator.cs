@@ -35,16 +35,54 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     internal Action? BackgroundCompletionFinished { get; set; }
 
     /// <summary>Gets or creates a cache value by using the provider store primitive.</summary>
+    /// <remarks>
+    /// This overload adapts the simple value factory onto the conditional-factory engine
+    /// (<see cref="GetOrAddAsync{T}(IFactoryCacheStore, string, Func{CacheFactoryContext{T}, CancellationToken, ValueTask{CacheFactoryResult{T}}}, CacheEntryOptions, CancellationToken)"/>),
+    /// so both overloads share one state machine with identical timeout, fail-safe, and refresh semantics.
+    /// </remarks>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="store">The provider store.</param>
     /// <param name="key">The cache key.</param>
     /// <param name="factory">The value factory.</param>
     /// <param name="options">The cache entry options.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
-    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         IFactoryCacheStore store,
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(factory);
+
+        return GetOrAddAsync<T>(
+            store,
+            key,
+            async (context, token) => context.Modified(await factory(token).ConfigureAwait(false)),
+            options,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Gets or refreshes a cache value using a conditional factory (the HTTP-304 pattern). The factory receives a
+    /// <see cref="CacheFactoryContext{T}"/> carrying the last-known cached value and its validators and returns
+    /// <see cref="CacheFactoryContext{T}.NotModified"/> to re-stamp the existing entry as fresh, or
+    /// <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> to replace it. The factory may also
+    /// replace <see cref="CacheFactoryContext{T}.Options"/> before returning (adaptive caching); the replacement
+    /// is re-validated before the write and an invalid mutation throws after the factory has run.
+    /// </summary>
+    /// <typeparam name="T">The cached value type.</typeparam>
+    /// <param name="store">The provider store.</param>
+    /// <param name="key">The cache key.</param>
+    /// <param name="factory">The conditional value factory; receives the per-execution context and the cancellation token.</param>
+    /// <param name="options">The cache entry options; the factory may replace them via the context.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )
@@ -98,13 +136,19 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 staleCandidate = entry;
             }
 
+            // One context per factory execution, built from the current physically-present entry so the factory
+            // can see the last-known-good value and its validators (conditional refresh) and mutate the options
+            // and tags it will be written with (adaptive caching).
+            var context = _CreateFactoryContext(key, entry, options, now);
+            var boundFactory = (CancellationToken token) => factory(context, token);
+
             var timeoutSelection = _SelectFactoryTimeout(options, staleCandidate, now, key);
-            FactoryRunResult<T> factoryResult;
+            FactoryRunResult<CacheFactoryResult<T>> factoryResult;
 
             try
             {
                 factoryResult = await _RunFactoryWithTimeoutAsync(
-                        factory,
+                        boundFactory,
                         key,
                         timeoutSelection.Timeout,
                         cancelOnTimeout: timeoutSelection.Kind == FactoryTimeoutKind.Hard,
@@ -141,6 +185,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     _StartBackgroundCompletion(
                         store,
                         key,
+                        context,
                         factoryResult.RunningTask,
                         factoryResult.InternalCancellationTokenSource,
                         staleCandidate,
@@ -168,10 +213,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 throw new CacheFactoryTimeoutException(key, timeoutSelection.Timeout);
             }
 
-            await _SetFreshEntryAsync(store, key, factoryResult.Value, options, cancellationToken)
+            return await _WriteFactoryResultAsync(store, key, context, factoryResult.Value, cancellationToken)
                 .ConfigureAwait(false);
-
-            return new CacheValue<T>(factoryResult.Value, hasValue: true);
         }
         finally
         {
@@ -191,7 +234,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private void _StartBackgroundCompletion<T>(
         IFactoryCacheStore store,
         string key,
-        Task<T?> factoryTask,
+        CacheFactoryContext<T> context,
+        Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
@@ -201,6 +245,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         var backgroundTask = _CompleteFactoryInBackgroundAsync(
             store,
             key,
+            context,
             factoryTask,
             internalCts,
             staleCandidate,
@@ -214,7 +259,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _CompleteFactoryInBackgroundAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Task<T?> factoryTask,
+        CacheFactoryContext<T> context,
+        Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
@@ -227,7 +273,15 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             // No ceiling configured: let the detached factory run to completion, matching comparable caches.
             if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
             {
-                await _ObserveBackgroundFactoryAsync(store, key, factoryTask, internalCts, staleCandidate, options)
+                await _ObserveBackgroundFactoryAsync(
+                        store,
+                        key,
+                        context,
+                        factoryTask,
+                        internalCts,
+                        staleCandidate,
+                        options
+                    )
                     .ConfigureAwait(false);
 
                 return;
@@ -242,7 +296,15 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             if (winner == factoryTask)
             {
                 await ceilingCts.CancelAsync().ConfigureAwait(false);
-                await _ObserveBackgroundFactoryAsync(store, key, factoryTask, internalCts, staleCandidate, options)
+                await _ObserveBackgroundFactoryAsync(
+                        store,
+                        key,
+                        context,
+                        factoryTask,
+                        internalCts,
+                        staleCandidate,
+                        options
+                    )
                     .ConfigureAwait(false);
 
                 return;
@@ -267,7 +329,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _ObserveBackgroundFactoryAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Task<T?> factoryTask,
+        CacheFactoryContext<T> context,
+        Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options
@@ -276,11 +339,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 #pragma warning disable VSTHRD003 // This continuation deliberately observes the transferred background factory task.
         try
         {
-            var value = await factoryTask.ConfigureAwait(false);
+            var result = await factoryTask.ConfigureAwait(false);
 
             if (!internalCts.IsCancellationRequested)
             {
-                await _SetFreshEntryAsync(store, key, value, options, CancellationToken.None).ConfigureAwait(false);
+                await _WriteFactoryResultAsync(store, key, context, result, CancellationToken.None)
+                    .ConfigureAwait(false);
                 _logger.LogCacheBackgroundCompletionSucceeded(key);
             }
         }
@@ -366,16 +430,80 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         }
     }
 
-    private async ValueTask _SetFreshEntryAsync<T>(
+    // Builds the per-execution factory context from the current physically-present entry: the last-known-good
+    // value (including a cached null) plus its validators and tags. When no physical entry exists the context is
+    // cold (HasStaleValue false, NoValue, null validators).
+    private static CacheFactoryContext<T> _CreateFactoryContext<T>(
+        string key,
+        CacheStoreEntry<T> entry,
+        CacheEntryOptions options,
+        DateTime now
+    )
+    {
+        if (!entry.IsPhysicallyPresent(now))
+        {
+            return new CacheFactoryContext<T>(CacheValue<T>.NoValue) { Key = key, Options = options };
+        }
+
+        var staleValue = entry.IsNull
+            ? new CacheValue<T>(default, hasValue: true)
+            : new CacheValue<T>(entry.Value, hasValue: true);
+
+        return new CacheFactoryContext<T>(staleValue)
+        {
+            Key = key,
+            ETag = entry.ETag,
+            LastModifiedAt = entry.LastModifiedAt,
+            Options = options,
+            Tags = entry.Tags,
+        };
+    }
+
+    // Persists a factory result as a fresh entry and returns the caller-facing value. Shared by the foreground
+    // path, soft-timeout background completion, and eager refresh so conditional refresh (NotModified) and
+    // adaptive options behave identically everywhere. A store-write failure on this path must propagate rather
+    // than activate fail-safe (which would discard the fresh result).
+    private async ValueTask<CacheValue<T>> _WriteFactoryResultAsync<T>(
         IFactoryCacheStore store,
         string key,
-        T? value,
-        CacheEntryOptions options,
+        CacheFactoryContext<T> context,
+        CacheFactoryResult<T> result,
         CancellationToken cancellationToken
     )
     {
-        // The factory succeeded: persist the fresh value and return it. A store-write failure on the
-        // fresh path must propagate rather than activate fail-safe (which would discard the fresh value).
+        // Adaptive caching: the factory may have replaced the context's options. Re-validate before writing so an
+        // invalid adaptive mutation throws (after the factory ran) instead of persisting a malformed entry.
+        var options = context.Options;
+        _ValidateOptions(options);
+
+        T? value;
+        string? eTag;
+        DateTime? lastModifiedAt;
+
+        if (result.IsNotModified)
+        {
+            if (!context.HasStaleValue)
+            {
+                // Unreachable through CacheFactoryContext<T>.NotModified() (which throws first); guards a
+                // hand-constructed result so a cold miss can never silently cache a default value.
+                throw new InvalidOperationException(
+                    $"Cannot apply a NotModified result for cache key '{key}': no cached value exists to extend."
+                );
+            }
+
+            // Conditional refresh: re-stamp the existing last-known-good value as fresh, preserving its
+            // validators. A NotModified result's own validators are ignored.
+            value = context.StaleValue.Value;
+            eTag = context.ETag;
+            lastModifiedAt = context.LastModifiedAt;
+        }
+        else
+        {
+            value = result.Value;
+            eTag = result.ETag;
+            lastModifiedAt = result.LastModifiedAt;
+        }
+
         var now = _GetUtcNow();
         var logicalExpiresAt = now.Add(options.Duration);
         var physicalDuration = options.IsFailSafeEnabled
@@ -404,15 +532,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             PhysicalExpiresAt = physicalExpiresAt,
             SlidingExpiration = slidingExpiration,
             EagerRefreshAt = eagerRefreshAt,
+            ETag = eTag,
+            LastModifiedAt = lastModifiedAt,
+            Tags = context.Tags,
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+
+        return new CacheValue<T>(value, hasValue: true);
     }
 
     private void _MaybeStartEagerRefresh<T>(
         IFactoryCacheStore store,
         string key,
-        Func<CancellationToken, ValueTask<T?>> factory,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CacheStoreEntry<T> entry,
         DateTime now
@@ -446,7 +579,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _RunEagerRefreshAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Func<CancellationToken, ValueTask<T?>> factory,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         IDisposable releaser
     )
@@ -473,6 +606,10 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             {
                 return;
             }
+
+            // Build the per-execution context from the double-checked entry (before the gate write, which only
+            // clears the eager stamp) so a conditional eager factory can extend the still-fresh value in place.
+            var context = _CreateFactoryContext(key, entry, options, now);
 
             // Write gate: clear the stamp before the factory starts so other readers (including other nodes
             // reading through a shared store) stop triggering while the refresh is in flight. Best-effort:
@@ -501,7 +638,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             }
 
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, factory, options, releaser).ConfigureAwait(false);
+            await _StartEagerFactoryAsync(store, key, context, factory, options, releaser).ConfigureAwait(false);
         }
         finally
         {
@@ -516,7 +653,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _StartEagerFactoryAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheFactoryContext<T> context,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         IDisposable releaser
     )
@@ -524,8 +662,9 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 #pragma warning disable CA2000 // Ownership transfers to _CompleteEagerRefreshAsync, which disposes it in its finally.
         var internalCts = new CancellationTokenSource();
 #pragma warning restore CA2000
-        var factoryTask = _RunDetachedFactoryAsync(factory, internalCts.Token);
-        await _CompleteEagerRefreshAsync(store, key, factoryTask, internalCts, options, releaser).ConfigureAwait(false);
+        var factoryTask = _RunDetachedFactoryAsync(token => factory(context, token), internalCts.Token);
+        await _CompleteEagerRefreshAsync(store, key, context, factoryTask, internalCts, options, releaser)
+            .ConfigureAwait(false);
     }
 
     private static async Task<T?> _RunDetachedFactoryAsync<T>(
@@ -540,7 +679,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _CompleteEagerRefreshAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Task<T?> factoryTask,
+        CacheFactoryContext<T> context,
+        Task<CacheFactoryResult<T>> factoryTask,
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
         IDisposable releaser
@@ -551,7 +691,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
             {
-                await _ObserveEagerFactoryAsync(store, key, factoryTask, internalCts, options).ConfigureAwait(false);
+                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts).ConfigureAwait(false);
                 return;
             }
 
@@ -564,7 +704,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             if (winner == factoryTask)
             {
                 await ceilingCts.CancelAsync().ConfigureAwait(false);
-                await _ObserveEagerFactoryAsync(store, key, factoryTask, internalCts, options).ConfigureAwait(false);
+                await _ObserveEagerFactoryAsync(store, key, context, factoryTask, internalCts).ConfigureAwait(false);
                 return;
             }
 
@@ -587,19 +727,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private async Task _ObserveEagerFactoryAsync<T>(
         IFactoryCacheStore store,
         string key,
-        Task<T?> factoryTask,
-        CancellationTokenSource internalCts,
-        CacheEntryOptions options
+        CacheFactoryContext<T> context,
+        Task<CacheFactoryResult<T>> factoryTask,
+        CancellationTokenSource internalCts
     )
     {
 #pragma warning disable VSTHRD003 // This continuation deliberately observes the detached eager factory task.
         try
         {
-            var value = await factoryTask.ConfigureAwait(false);
+            var result = await factoryTask.ConfigureAwait(false);
 
             if (!internalCts.IsCancellationRequested)
             {
-                await _SetFreshEntryAsync(store, key, value, options, CancellationToken.None).ConfigureAwait(false);
+                await _WriteFactoryResultAsync(store, key, context, result, CancellationToken.None)
+                    .ConfigureAwait(false);
                 _logger.LogEagerRefreshSucceeded(key);
             }
         }

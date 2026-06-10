@@ -1856,6 +1856,388 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         _store.GetEntry(key)!.EagerRefreshAt.Should().Be(now.AddMinutes(1));
     }
 
+    [Fact]
+    public async Task should_pass_cold_context_to_conditional_factory_on_miss()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        CacheFactoryContext<string>? observed = null;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) =>
+                {
+                    observed = context;
+                    return ValueTask.FromResult(context.Modified("fresh"));
+                },
+                _CreateOptions(),
+                AbortToken
+            );
+
+        // then
+        result.Value.Should().Be("fresh");
+        observed.Should().NotBeNull();
+        observed!.Key.Should().Be(key);
+        observed.HasStaleValue.Should().BeFalse();
+        observed.StaleValue.HasValue.Should().BeFalse();
+        observed.ETag.Should().BeNull();
+        observed.LastModifiedAt.Should().BeNull();
+        observed.Tags.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_pass_stale_value_and_validators_to_conditional_factory()
+    {
+        // given — a logically expired but physically present entry carrying the full metadata envelope
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var lastModified = now.AddMinutes(-30);
+        var tags = new[] { "tenant:1", "products" };
+        _store.SetEntry(
+            key,
+            "stale",
+            now.AddSeconds(-1),
+            now.AddMinutes(5),
+            etag: "W/\"v1\"",
+            lastModifiedAt: lastModified,
+            tags: tags
+        );
+        CacheFactoryContext<string>? observed = null;
+
+        // when
+        await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) =>
+                {
+                    observed = context;
+                    return ValueTask.FromResult(context.Modified("fresh"));
+                },
+                _CreateOptions(),
+                AbortToken
+            );
+
+        // then
+        observed.Should().NotBeNull();
+        observed!.HasStaleValue.Should().BeTrue();
+        observed.StaleValue.HasValue.Should().BeTrue();
+        observed.StaleValue.Value.Should().Be("stale");
+        observed.ETag.Should().Be("W/\"v1\"");
+        observed.LastModifiedAt.Should().Be(lastModified);
+        observed.Tags.Should().BeEquivalentTo(tags);
+    }
+
+    [Fact]
+    public async Task should_extend_entry_when_conditional_factory_reports_not_modified()
+    {
+        // given — a stale entry whose origin value is still current
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var duration = TimeSpan.FromSeconds(5);
+        var maxDuration = TimeSpan.FromMinutes(1);
+        var lastModified = now.AddMinutes(-30);
+        _store.SetEntry(
+            key,
+            "cached",
+            now.AddSeconds(-1),
+            now.AddMinutes(5),
+            etag: "W/\"v1\"",
+            lastModifiedAt: lastModified
+        );
+        var options = _CreateOptions(
+            duration: duration,
+            isFailSafeEnabled: true,
+            maxDuration: maxDuration,
+            eagerRefreshThreshold: 0.5f
+        );
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) => ValueTask.FromResult(context.NotModified()),
+                options,
+                AbortToken
+            );
+
+        // then — the existing value is returned as fresh and the entry is re-stamped end to end
+        result.HasValue.Should().BeTrue();
+        result.Value.Should().Be("cached");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("cached");
+        entry.LogicalExpiresAt.Should().Be(now.Add(duration));
+        entry.PhysicalExpiresAt.Should().Be(now.Add(maxDuration));
+        entry.EagerRefreshAt.Should().Be(now.AddSeconds(2.5));
+        entry.ETag.Should().Be("W/\"v1\"");
+        entry.LastModifiedAt.Should().Be(lastModified);
+    }
+
+    [Fact]
+    public async Task should_throw_when_conditional_factory_reports_not_modified_on_cold_miss()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+
+        // when — there is no cached value to extend, so NotModified() is a programming error
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    key,
+                    (context, _) => ValueTask.FromResult(context.NotModified()),
+                    _CreateOptions(),
+                    AbortToken
+                );
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*no cached value*");
+        _store.GetEntry(key).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_write_value_and_validators_when_conditional_factory_reports_modified()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var lastModified = now.AddMinutes(-5);
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) => ValueTask.FromResult(context.Modified("fresh", "W/\"v2\"", lastModified)),
+                _CreateOptions(),
+                AbortToken
+            );
+
+        // then
+        result.Value.Should().Be("fresh");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("fresh");
+        entry.ETag.Should().Be("W/\"v2\"");
+        entry.LastModifiedAt.Should().Be(lastModified);
+    }
+
+    [Fact]
+    public async Task should_honor_adaptive_duration_replaced_by_conditional_factory()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10));
+
+        // when — the factory shortens the duration before returning (adaptive caching)
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (context, _) =>
+                {
+                    context.Options = context.Options with { Duration = TimeSpan.FromSeconds(30) };
+                    return ValueTask.FromResult(context.Modified("fresh"));
+                },
+                options,
+                AbortToken
+            );
+
+        // then — the stored expirations honor the adaptive duration, not the call's
+        result.Value.Should().Be("fresh");
+        var entry = _store.GetEntry(key)!;
+        entry.LogicalExpiresAt.Should().Be(now.AddSeconds(30));
+        entry.PhysicalExpiresAt.Should().Be(now.AddSeconds(30));
+    }
+
+    [Fact]
+    public async Task should_throw_after_factory_ran_when_adaptive_options_are_invalid()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var factoryRan = false;
+
+        // when — the factory sets an invalid duration; validation happens at write time, after the factory ran
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    key,
+                    (context, _) =>
+                    {
+                        factoryRan = true;
+                        context.Options = context.Options with { Duration = TimeSpan.Zero };
+                        return ValueTask.FromResult(context.Modified("fresh"));
+                    },
+                    _CreateOptions(),
+                    AbortToken
+                );
+
+        // then — the invalid adaptive mutation throws and nothing is written
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+        factoryRan.Should().BeTrue();
+        _store.GetEntry(key).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_serve_stale_when_conditional_factory_throws_with_failsafe()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+
+        // when — the conditional factory fails exactly like a simple factory would
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                (CacheFactoryContext<string> _, CancellationToken _) =>
+                    throw new InvalidOperationException("downstream unavailable"),
+                _CreateOptions(isFailSafeEnabled: true),
+                AbortToken
+            );
+
+        // then — fail-safe behavior is unchanged for the conditional overload
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_restamp_entry_in_background_when_conditional_factory_reports_not_modified_after_soft_timeout()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var duration = TimeSpan.FromSeconds(5);
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5), etag: "W/\"v1\"");
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            duration: duration,
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+
+        async ValueTask<CacheFactoryResult<string>> Factory(
+            CacheFactoryContext<string> context,
+            CancellationToken cancellationToken
+        )
+        {
+            factoryStarted.SetResult();
+            await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            return context.NotModified();
+        }
+
+        // when — the soft timeout serves stale, then the detached factory completes with NotModified
+        var resultTask = coordinator.GetOrAddAsync<string>(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await resultTask;
+        factoryGate.SetResult();
+        await backgroundFinished;
+
+        // then — the background completion re-stamped the existing value as fresh, preserving its validators
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("stale");
+        entry.ETag.Should().Be("W/\"v1\"");
+        var writeNow = now.AddSeconds(1);
+        entry.LogicalExpiresAt.Should().Be(writeNow.Add(duration));
+        entry.PhysicalExpiresAt.Should().Be(writeNow.AddMinutes(1));
+    }
+
+    [Fact]
+    public async Task should_extend_entry_when_eager_refresh_factory_reports_not_modified()
+    {
+        // given — a fresh entry whose eager point has already passed
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(
+            key,
+            "old",
+            now.AddMinutes(5),
+            now.AddMinutes(5),
+            eagerRefreshAt: now.AddSeconds(-1),
+            etag: "W/\"v7\""
+        );
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // when — the eager refresh runs a conditional factory that reports the value unchanged
+        var result = await coordinator.GetOrAddAsync<string>(
+            _store,
+            key,
+            (context, _) => ValueTask.FromResult(context.NotModified()),
+            options,
+            AbortToken
+        );
+
+        await backgroundFinished;
+
+        // then — the value is untouched while the lifetime and eager stamp are extended
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("old");
+        entry.ETag.Should().Be("W/\"v7\"");
+        entry.LogicalExpiresAt.Should().Be(now.AddMinutes(10));
+        entry.EagerRefreshAt.Should().Be(now.AddMinutes(5));
+    }
+
+    [Fact]
+    public async Task should_persist_context_tags_on_modified_and_not_modified_writes()
+    {
+        // given
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var modifiedKey = Faker.Random.AlphaNumeric(8);
+        var notModifiedKey = Faker.Random.AlphaNumeric(8);
+        _store.SetEntry(notModifiedKey, "cached", now.AddSeconds(-1), now.AddMinutes(5), tags: ["old-tag"]);
+        var coordinator = _CreateCoordinator();
+
+        // when — both factories replace the context tags before returning
+        await coordinator.GetOrAddAsync<string>(
+            _store,
+            modifiedKey,
+            (context, _) =>
+            {
+                context.Tags = ["tenant:1", "products"];
+                return ValueTask.FromResult(context.Modified("fresh"));
+            },
+            _CreateOptions(),
+            AbortToken
+        );
+
+        await coordinator.GetOrAddAsync<string>(
+            _store,
+            notModifiedKey,
+            (context, _) =>
+            {
+                context.Tags = ["tenant:2"];
+                return ValueTask.FromResult(context.NotModified());
+            },
+            _CreateOptions(isFailSafeEnabled: true),
+            AbortToken
+        );
+
+        // then
+        _store.GetEntry(modifiedKey)!.Tags.Should().BeEquivalentTo("tenant:1", "products");
+        _store.GetEntry(notModifiedKey)!.Tags.Should().BeEquivalentTo("tenant:2");
+    }
+
     private FactoryCacheCoordinator _CreateCoordinator() =>
         new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
 

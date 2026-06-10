@@ -649,6 +649,13 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => throw new InvalidOperationException("L2 write failed");
 
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+            CacheEntryOptions options,
+            CancellationToken ct = default
+        ) => throw new InvalidOperationException("L2 write failed");
+
         public ValueTask<bool> UpsertAsync<T>(
             string key,
             T? value,

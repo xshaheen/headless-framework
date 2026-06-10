@@ -598,6 +598,94 @@ public abstract class CacheConformanceTestsBase : TestBase
         expired.HasValue.Should().BeFalse();
     }
 
+    public virtual async Task should_extend_entry_when_conditional_factory_reports_not_modified()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateConditionalOptions();
+
+        var seeded = await cache.GetOrAddAsync<string>(
+            key,
+            (context, _) => ValueTask.FromResult(context.Modified("v1", "etag-v1")),
+            options,
+            AbortToken
+        );
+
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        // Capture observations and assert after the call: an assertion failure thrown inside the factory
+        // would be swallowed by fail-safe (stale present) and the test would pass vacuously.
+        var observedHasStale = false;
+        string? observedETag = null;
+
+        var extended = await cache.GetOrAddAsync<string>(
+            key,
+            (context, _) =>
+            {
+                observedHasStale = context.HasStaleValue;
+                observedETag = context.ETag;
+                return ValueTask.FromResult(context.NotModified());
+            },
+            options,
+            AbortToken
+        );
+
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        seeded.Value.Should().Be("v1");
+        observedHasStale.Should().BeTrue();
+        observedETag.Should().Be("etag-v1");
+        extended.HasValue.Should().BeTrue();
+        extended.Value.Should().Be("v1");
+        extended.IsStale.Should().BeFalse();
+        cached.HasValue.Should().BeTrue("the NotModified restamp must leave the entry fresh again");
+        cached.Value.Should().Be("v1");
+    }
+
+    public virtual async Task should_replace_entry_when_conditional_factory_reports_modified()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateConditionalOptions();
+
+        await cache.GetOrAddAsync<string>(
+            key,
+            (context, _) => ValueTask.FromResult(context.Modified("v1", "etag-v1")),
+            options,
+            AbortToken
+        );
+
+        await AdvanceAsync(options.Duration + TimeSpan.FromMilliseconds(50));
+
+        var replaced = await cache.GetOrAddAsync<string>(
+            key,
+            (context, _) => ValueTask.FromResult(context.Modified("v2", "etag-v2")),
+            options,
+            AbortToken
+        );
+
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        replaced.HasValue.Should().BeTrue();
+        replaced.Value.Should().Be("v2");
+        replaced.IsStale.Should().BeFalse();
+        cached.HasValue.Should().BeTrue();
+        cached.Value.Should().Be("v2");
+    }
+
+    // Fail-safe keeps the entry physically retained past its logical expiry, so a stale last-known-good value
+    // (and its validators) is still available to the conditional factory after AdvanceAsync(Duration).
+    private static CacheEntryOptions _CreateConditionalOptions() =>
+        new()
+        {
+            Duration = TimeSpan.FromMilliseconds(250),
+            IsFailSafeEnabled = true,
+            FailSafeMaxDuration = TimeSpan.FromSeconds(5),
+            FailSafeThrottleDuration = TimeSpan.FromMilliseconds(200),
+        };
+
     private static CacheEntryOptions _CreateFailSafeOptions(TimeSpan? throttleDuration = null) =>
         new()
         {

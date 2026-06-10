@@ -25,6 +25,29 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Gets a value from cache, or refreshes it using a conditional factory (the HTTP-304 pattern).
+    /// The factory receives a <see cref="CacheFactoryContext{T}"/> carrying the last-known cached value and its
+    /// validators and returns <see cref="CacheFactoryContext{T}.NotModified"/> to extend the existing entry as
+    /// fresh, or <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> to replace it. The factory
+    /// may also replace <see cref="CacheFactoryContext{T}.Options"/> before returning (adaptive caching).
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="factory">The conditional factory invoked on a miss or refresh. Receives the per-execution context and the cancellation token.</param>
+    /// <param name="options">Cache entry options for the cached value; the factory may replace them via the context.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The cached, extended, or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when the entry options (including an adaptive replacement set by the factory) are invalid, for
+    /// example a non-positive <see cref="CacheEntryOptions.Duration"/>.
+    /// </exception>
+    ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    );
+
     #region Update
 
     ValueTask<bool> UpsertAsync(
@@ -112,6 +135,16 @@ public class Cache<T>(ICache cache) : ICache<T>
     public ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return cache.GetOrAddAsync(key, factory, options, cancellationToken);
+    }
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
     )

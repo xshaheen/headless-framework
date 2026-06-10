@@ -7,8 +7,8 @@ using Microsoft.Extensions.Time.Testing;
 namespace Tests;
 
 /// <summary>
-/// Tests for <see cref="ICache.GetOrAddAsync{T}"/> with cache stampede protection.
-/// Uses <see cref="InMemoryCache"/> as the test implementation.
+/// Tests for <see cref="ICache.GetOrAddAsync{T}(string, Func{CancellationToken, ValueTask{T}}, CacheEntryOptions, CancellationToken)"/>
+/// with cache stampede protection. Uses <see cref="InMemoryCache"/> as the test implementation.
 /// </summary>
 public sealed class GetOrAddAsyncTests : TestBase
 {

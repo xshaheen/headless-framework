@@ -14,6 +14,13 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         CancellationToken cancellationToken = default
     ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
 
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => cache.GetOrAddAsync(key, factory, options, cancellationToken);
+
     public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
         ((IFactoryCacheStore)cache).TryGetEntryAsync<T>(key, cancellationToken);
 
@@ -219,6 +226,13 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         CancellationToken cancellationToken = default
     ) => throw new InvalidOperationException("L2 store is unavailable");
 
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => throw new InvalidOperationException("L2 store is unavailable");
+
     public ValueTask<bool> UpsertAsync<T>(
         string key,
         T? value,
@@ -400,6 +414,13 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
     public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
         string key,
         Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => new(CacheValue<T>.NoValue);
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         CancellationToken cancellationToken = default
     ) => new(CacheValue<T>.NoValue);

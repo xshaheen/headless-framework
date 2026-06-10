@@ -110,4 +110,12 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_not_stampede_eager_refresh_across_concurrent_readers() =>
         base.should_not_stampede_eager_refresh_across_concurrent_readers();
+
+    [Fact]
+    public override Task should_extend_entry_when_conditional_factory_reports_not_modified() =>
+        base.should_extend_entry_when_conditional_factory_reports_not_modified();
+
+    [Fact]
+    public override Task should_replace_entry_when_conditional_factory_reports_modified() =>
+        base.should_replace_entry_when_conditional_factory_reports_modified();
 }

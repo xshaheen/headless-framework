@@ -388,6 +388,13 @@ public sealed class CronExpressionCacheTests
             return new CacheValue<T>(value, hasValue: true);
         }
 
+        public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+            string key,
+            Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+            CacheEntryOptions options,
+            CancellationToken cancellationToken = default
+        ) => throw new NotSupportedException();
+
         public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
         {
             RemoveCalls++;

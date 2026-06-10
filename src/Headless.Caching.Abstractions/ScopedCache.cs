@@ -53,6 +53,19 @@ public sealed class ScopedCache<T> : ICache<T>
         return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
     }
 
+    /// <inheritdoc />
+    public ValueTask<CacheValue<T>> GetOrAddAsync(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+
+        return _cache.GetOrAddAsync(_ScopeKey(key), factory, options, cancellationToken);
+    }
+
     #region Update
 
     /// <inheritdoc />

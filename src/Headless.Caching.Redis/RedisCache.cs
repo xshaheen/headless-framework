@@ -80,6 +80,22 @@ public sealed class RedisCache(
         return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <inheritdoc />
+    public async ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        Argument.IsNotNull(factory);
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return await _coordinator.GetOrAddAsync(this, key, factory, options, cancellationToken).ConfigureAwait(false);
+    }
+
     #region Update
 
     public async ValueTask<bool> UpsertAsync<T>(
