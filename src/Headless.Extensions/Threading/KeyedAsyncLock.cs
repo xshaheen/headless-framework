@@ -71,6 +71,28 @@ public sealed class KeyedAsyncLock : IDisposable
     }
 
     /// <summary>
+    /// Attempts to acquire the lock for the specified key without waiting. Useful for non-blocking
+    /// deduplication: the first caller wins and others observe the lock as held.
+    /// </summary>
+    /// <param name="key">The key to lock on.</param>
+    /// <returns>An <see cref="IDisposable"/> that releases the lock when disposed, or <see langword="null"/> when the lock is already held.</returns>
+    [MustDisposeResource]
+    public IDisposable? TryLock(string key)
+    {
+        Argument.IsNotNullOrEmpty(key);
+
+        var semaphore = _GetOrCreate(key);
+
+        if (!semaphore.Wait(0))
+        {
+            _DecrementRefCount(key);
+            return null;
+        }
+
+        return new Releaser(this, key);
+    }
+
+    /// <summary>
     /// Asynchronously acquires a lock for the specified key, returning <see langword="null"/> when the timeout
     /// elapses before acquisition.
     /// </summary>

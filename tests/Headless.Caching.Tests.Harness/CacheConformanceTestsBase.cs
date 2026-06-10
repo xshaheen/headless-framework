@@ -457,6 +457,64 @@ public abstract class CacheConformanceTestsBase : TestBase
         secondFactoryCalls.Should().Be(0);
     }
 
+    public virtual async Task should_eager_refresh_before_expiration()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateEagerOptions();
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
+        // Past the eager point (50% of 400ms) but well before logical expiration.
+        await AdvanceAsync(TimeSpan.FromMilliseconds(250));
+
+        var hit = await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v2"), options, AbortToken);
+
+        hit.Value.Should().Be("v1");
+        hit.IsStale.Should().BeFalse();
+
+        await WaitUntilAsync(async () =>
+        {
+            var cached = await cache.GetAsync<string>(key, AbortToken);
+            return cached.HasValue && cached.Value == "v2";
+        });
+    }
+
+    public virtual async Task should_not_stampede_eager_refresh_across_concurrent_readers()
+    {
+        await ResetAsync();
+        var cache = CreateCache(Faker.Random.AlphaNumeric(8));
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = _CreateEagerOptions();
+        var factoryCalls = 0;
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("v1"), options, AbortToken);
+        await AdvanceAsync(TimeSpan.FromMilliseconds(250));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => cache.GetOrAddAsync(key, Factory, options, AbortToken).AsTask())
+        );
+
+        results.Should().AllSatisfy(result => result.Value.Should().Be("v1"));
+
+        factoryGate.SetResult("v2");
+
+        await WaitUntilAsync(async () =>
+        {
+            var cached = await cache.GetAsync<string>(key, AbortToken);
+            return cached.HasValue && cached.Value == "v2";
+        });
+
+        factoryCalls.Should().Be(1);
+    }
+
     public virtual async Task should_keep_sliding_entry_alive_when_read_within_idle_window()
     {
         await ResetAsync();
@@ -602,6 +660,9 @@ public abstract class CacheConformanceTestsBase : TestBase
             Duration = duration ?? TimeSpan.FromMilliseconds(700),
             SlidingExpiration = sliding ?? TimeSpan.FromMilliseconds(200),
         };
+
+    private static CacheEntryOptions _CreateEagerOptions() =>
+        new() { Duration = TimeSpan.FromMilliseconds(400), EagerRefreshThreshold = 0.5f };
 
     protected sealed record CacheConformanceObject(Guid Id, string Name);
 }

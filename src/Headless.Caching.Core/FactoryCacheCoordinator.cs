@@ -62,6 +62,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         if (entry.IsFresh(now))
         {
             await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+            _MaybeStartEagerRefresh(store, key, factory, options, entry, now);
             return _ToCacheValue(entry, isStale: false);
         }
 
@@ -388,6 +389,13 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             logicalExpiresAt = _Min(now.Add(slidingExpiration.Value), physicalExpiresAt);
         }
 
+        DateTime? eagerRefreshAt = null;
+
+        if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
+        {
+            eagerRefreshAt = now.AddTicks((long)(options.Duration.Ticks * (double)eagerRefreshThreshold));
+        }
+
         var entry = new CacheStoreEntryWrite<T>
         {
             Value = value,
@@ -395,9 +403,213 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             LogicalExpiresAt = logicalExpiresAt,
             PhysicalExpiresAt = physicalExpiresAt,
             SlidingExpiration = slidingExpiration,
+            EagerRefreshAt = eagerRefreshAt,
         };
 
         await store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void _MaybeStartEagerRefresh<T>(
+        IFactoryCacheStore store,
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CacheStoreEntry<T> entry,
+        DateTime now
+    )
+    {
+        // The trigger is the entry's own stamp, so any reader of an eager-stamped entry can refresh it with
+        // its current factory and options. Entries without both expirations cannot be gate-rewritten safely.
+        if (entry.EagerRefreshAt is not { } eagerRefreshAt || eagerRefreshAt > now)
+        {
+            return;
+        }
+
+        if (!entry.LogicalExpiresAt.HasValue || !entry.PhysicalExpiresAt.HasValue)
+        {
+            return;
+        }
+
+        // Zero-timeout dedup: the first reader past the eager point wins the per-key lock; everyone else
+        // returns the still-fresh value untouched. Lock ownership transfers to the detached refresh.
+        var releaser = _keyedLock.TryLock(key);
+
+        if (releaser is null)
+        {
+            return;
+        }
+
+        var refreshTask = _RunEagerRefreshAsync(store, key, factory, options, releaser);
+        _ObserveFaultedTask(refreshTask, key);
+    }
+
+    private async Task _RunEagerRefreshAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        IDisposable releaser
+    )
+    {
+        var ownsReleaser = true;
+
+        try
+        {
+            // Yield so the triggering caller returns its fresh value without paying for the gate write or
+            // the factory's synchronous prologue.
+            await Task.Yield();
+
+            // Double-check under the lock: a concurrent refresh may have already advanced or cleared the stamp.
+            var entry = await _TryGetEntryAsync<T>(store, key, CancellationToken.None).ConfigureAwait(false);
+            var now = _GetUtcNow();
+
+            if (
+                !entry.IsFresh(now)
+                || entry.EagerRefreshAt is not { } eagerRefreshAt
+                || eagerRefreshAt > now
+                || entry.LogicalExpiresAt is not { } logicalExpiresAt
+                || entry.PhysicalExpiresAt is not { } physicalExpiresAt
+            )
+            {
+                return;
+            }
+
+            // Write gate: clear the stamp before the factory starts so other readers (including other nodes
+            // reading through a shared store) stop triggering while the refresh is in flight. Best-effort:
+            // when the gate write fails the refresh is skipped and the entry stays fresh and re-triggerable.
+            var gateEntry = new CacheStoreEntryWrite<T>
+            {
+                Value = entry.Value,
+                IsNull = entry.IsNull,
+                LogicalExpiresAt = logicalExpiresAt,
+                PhysicalExpiresAt = physicalExpiresAt,
+                SlidingExpiration = entry.SlidingExpiration,
+                EagerRefreshAt = null,
+                ETag = entry.ETag,
+                LastModifiedAt = entry.LastModifiedAt,
+                Tags = entry.Tags,
+            };
+
+            try
+            {
+                await store.SetEntryAsync(key, in gateEntry, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogEagerRefreshSkipped(exception, key);
+                return;
+            }
+
+            ownsReleaser = false;
+            await _StartEagerFactoryAsync(store, key, factory, options, releaser).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (ownsReleaser)
+            {
+                releaser.Dispose();
+                BackgroundCompletionFinished?.Invoke();
+            }
+        }
+    }
+
+    private async Task _StartEagerFactoryAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        IDisposable releaser
+    )
+    {
+#pragma warning disable CA2000 // Ownership transfers to _CompleteEagerRefreshAsync, which disposes it in its finally.
+        var internalCts = new CancellationTokenSource();
+#pragma warning restore CA2000
+        var factoryTask = _RunDetachedFactoryAsync(factory, internalCts.Token);
+        await _CompleteEagerRefreshAsync(store, key, factoryTask, internalCts, options, releaser).ConfigureAwait(false);
+    }
+
+    private static async Task<T?> _RunDetachedFactoryAsync<T>(
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CancellationToken cancellationToken
+    )
+    {
+        await Task.Yield();
+        return await factory(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task _CompleteEagerRefreshAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Task<T?> factoryTask,
+        CancellationTokenSource internalCts,
+        CacheEntryOptions options,
+        IDisposable releaser
+    )
+    {
+#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the detached factory task.
+        try
+        {
+            if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
+            {
+                await _ObserveEagerFactoryAsync(store, key, factoryTask, internalCts, options).ConfigureAwait(false);
+                return;
+            }
+
+            using var ceilingCts = new CancellationTokenSource();
+            var ceilingTask = Task.Delay(options.BackgroundFactoryCeiling, _timeProvider, ceilingCts.Token);
+            BackgroundCompletionCeilingTimerRegistered?.Invoke();
+
+            var winner = await Task.WhenAny(factoryTask, ceilingTask).ConfigureAwait(false);
+
+            if (winner == factoryTask)
+            {
+                await ceilingCts.CancelAsync().ConfigureAwait(false);
+                await _ObserveEagerFactoryAsync(store, key, factoryTask, internalCts, options).ConfigureAwait(false);
+                return;
+            }
+
+            await internalCts.CancelAsync().ConfigureAwait(false);
+            // The ceiling fired but the factory may ignore cancellation and keep running. Observe its task so a
+            // later fault is logged rather than lost. Unlike the soft-timeout path there is no restamp: the
+            // entry is still fresh and rides to its natural expiry.
+            _ObserveFaultedTask(factoryTask, key);
+            _logger.LogCacheFactoryTimedOut(key, "eager-ceiling", options.BackgroundFactoryCeiling);
+        }
+#pragma warning restore VSTHRD003
+        finally
+        {
+            internalCts.Dispose();
+            releaser.Dispose();
+            BackgroundCompletionFinished?.Invoke();
+        }
+    }
+
+    private async Task _ObserveEagerFactoryAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        Task<T?> factoryTask,
+        CancellationTokenSource internalCts,
+        CacheEntryOptions options
+    )
+    {
+#pragma warning disable VSTHRD003 // This continuation deliberately observes the detached eager factory task.
+        try
+        {
+            var value = await factoryTask.ConfigureAwait(false);
+
+            if (!internalCts.IsCancellationRequested)
+            {
+                await _SetFreshEntryAsync(store, key, value, options, CancellationToken.None).ConfigureAwait(false);
+                _logger.LogEagerRefreshSucceeded(key);
+            }
+        }
+        catch (Exception exception)
+        {
+            // The entry is still fresh; failure only means the proactive refresh is lost. Natural expiry and
+            // fail-safe (when enabled) take over from here, so log and move on without touching the entry.
+            _logger.LogEagerRefreshFailed(exception, key, exception.GetType().Name);
+        }
+#pragma warning restore VSTHRD003
     }
 
     private async ValueTask _TryRearmSlidingEntryAsync<T>(
@@ -717,6 +929,17 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                 options.IsFailSafeEnabled,
                 "Sliding expiration and fail-safe are not supported together in this version."
             );
+
+            Ensure.False(
+                options.EagerRefreshThreshold.HasValue,
+                "Sliding expiration and eager refresh are not supported together: both re-arm the logical lifetime."
+            );
+        }
+
+        if (options.EagerRefreshThreshold is { } eagerRefreshThreshold)
+        {
+            Argument.IsGreaterThan(eagerRefreshThreshold, 0f, paramName: nameof(options.EagerRefreshThreshold));
+            Argument.IsLessThan(eagerRefreshThreshold, 1f, paramName: nameof(options.EagerRefreshThreshold));
         }
 
         if (options.IsFailSafeEnabled)
@@ -878,4 +1101,33 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache sliding-expiration re-arm failed for key {Key}; the cached value will still be returned."
     )]
     public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 9,
+        EventName = "CacheEagerRefreshSucceeded",
+        Level = LogLevel.Debug,
+        Message = "Cache eager refresh succeeded for key {Key}."
+    )]
+    public static partial void LogEagerRefreshSucceeded(this ILogger logger, string key);
+
+    [LoggerMessage(
+        EventId = 10,
+        EventName = "CacheEagerRefreshFailed",
+        Level = LogLevel.Warning,
+        Message = "Cache eager refresh failed for key {Key}; exception={ExceptionType}. The entry stays fresh until natural expiry."
+    )]
+    public static partial void LogEagerRefreshFailed(
+        this ILogger logger,
+        Exception exception,
+        string key,
+        string exceptionType
+    );
+
+    [LoggerMessage(
+        EventId = 11,
+        EventName = "CacheEagerRefreshSkipped",
+        Level = LogLevel.Debug,
+        Message = "Cache eager refresh skipped for key {Key}: the gate write failed; the entry stays fresh and re-triggerable."
+    )]
+    public static partial void LogEagerRefreshSkipped(this ILogger logger, Exception exception, string key);
 }

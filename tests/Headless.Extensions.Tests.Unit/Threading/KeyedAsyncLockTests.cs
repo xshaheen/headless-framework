@@ -22,6 +22,65 @@ public sealed class KeyedAsyncLockTests : TestBase
     }
 
     [Fact]
+    public void try_lock_should_acquire_free_lock_and_observe_held_lock()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+
+        // when — first try wins, second observes the lock as held
+        using var first = keyedLock.TryLock("key1");
+        using var second = keyedLock.TryLock("key1");
+
+        // then
+        first.Should().NotBeNull();
+        second.Should().BeNull();
+    }
+
+    [Fact]
+    public void try_lock_should_reacquire_after_release()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        var first = keyedLock.TryLock("key1");
+        first.Should().NotBeNull();
+
+        // when
+        first!.Dispose();
+        using var second = keyedLock.TryLock("key1");
+
+        // then
+        second.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task try_lock_should_observe_lock_held_by_async_acquisition()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var asyncHeld = await keyedLock.LockAsync("key1", AbortToken);
+
+        // when
+        using var attempt = keyedLock.TryLock("key1");
+
+        // then
+        attempt.Should().BeNull();
+    }
+
+    [Fact]
+    public void try_lock_should_not_interfere_across_keys()
+    {
+        // given
+        using var keyedLock = new KeyedAsyncLock();
+        using var first = keyedLock.TryLock("key1");
+
+        // when
+        using var other = keyedLock.TryLock("key2");
+
+        // then
+        other.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task should_block_concurrent_access_to_same_key()
     {
         // given

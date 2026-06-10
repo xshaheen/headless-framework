@@ -1624,6 +1624,238 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage(storeWriteException.Message);
     }
 
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(1f)]
+    [InlineData(-0.5f)]
+    [InlineData(1.5f)]
+    public async Task should_reject_out_of_range_eager_refresh_threshold(float threshold)
+    {
+        var key = Faker.Random.AlphaNumeric(8);
+        var options = _CreateOptions(eagerRefreshThreshold: threshold);
+
+        var act = async () =>
+            await _CreateCoordinator().GetOrAddAsync(_store, key, _FactoryReturns("value"), options, AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task should_reject_eager_refresh_combined_with_sliding_expiration()
+    {
+        var key = Faker.Random.AlphaNumeric(8);
+        var options = _CreateOptions(slidingExpiration: TimeSpan.FromSeconds(1), eagerRefreshThreshold: 0.5f);
+
+        var act = async () =>
+            await _CreateCoordinator().GetOrAddAsync(_store, key, _FactoryReturns("value"), options, AbortToken);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*eager refresh*");
+    }
+
+    [Fact]
+    public async Task should_stamp_eager_refresh_at_on_fresh_write()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = _CreateOptions(duration: TimeSpan.FromSeconds(10), eagerRefreshThreshold: 0.5f);
+
+        // when
+        await _CreateCoordinator().GetOrAddAsync(_store, key, _FactoryReturns("value"), options, AbortToken);
+
+        // then
+        var entry = _store.GetEntry(key)!;
+        entry.EagerRefreshAt.Should().Be(now.AddSeconds(5));
+        entry.LogicalExpiresAt.Should().Be(now.AddSeconds(10));
+    }
+
+    [Fact]
+    public async Task should_eager_refresh_in_background_when_fresh_hit_passes_threshold()
+    {
+        // given — a fresh entry whose eager point has already passed
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("fresh"), options, AbortToken);
+        await backgroundFinished;
+
+        // then — the caller got the still-fresh value; the background refresh replaced it and re-stamped
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("fresh");
+        entry.EagerRefreshAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_clear_eager_stamp_before_factory_starts()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await factoryStarted.Task;
+
+        // then — the gate write cleared the stamp while the old value is still served
+        result.Value.Should().Be("old");
+        var gated = _store.GetEntry(key)!;
+        gated.Value.Should().Be("old");
+        gated.EagerRefreshAt.Should().BeNull();
+
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_not_stampede_eager_refresh_under_concurrency()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var factoryCalls = 0;
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — many concurrent fresh hits past the eager point
+        var results = await Task.WhenAll(
+            Enumerable
+                .Range(0, 10)
+                .Select(_ => coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask())
+        );
+
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then — everyone was served the fresh-enough value and exactly one refresh ran
+        results.Should().AllSatisfy(result => result.Value.Should().Be("old"));
+        factoryCalls.Should().Be(1);
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_keep_entry_untouched_when_eager_factory_fails()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var logicalExpiresAt = now.AddMinutes(5);
+        _store.SetEntry(key, "old", logicalExpiresAt, logicalExpiresAt, eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        static ValueTask<string?> Factory(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("refresh failed");
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await backgroundFinished;
+
+        // then — the value and expirations are untouched; only the eager stamp was consumed by the gate
+        result.Value.Should().Be("old");
+        result.IsStale.Should().BeFalse();
+        var entry = _store.GetEntry(key)!;
+        entry.Value.Should().Be("old");
+        entry.LogicalExpiresAt.Should().Be(logicalExpiresAt);
+        entry.EagerRefreshAt.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_abandon_eager_refresh_when_background_ceiling_fires()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddSeconds(-1));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            duration: TimeSpan.FromMinutes(10),
+            eagerRefreshThreshold: 0.5f,
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(2)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Ignores cancellation: simulates a non-cooperative factory.
+            return await factoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+        await factoryStarted.Task;
+        await ceilingRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await backgroundFinished;
+
+        // then — the refresh was abandoned without touching the entry; a late success is dropped
+        result.Value.Should().Be("old");
+        _store.GetEntry(key)!.Value.Should().Be("old");
+
+        factoryGate.SetResult("late");
+        await Task.Yield();
+        _store.GetEntry(key)!.Value.Should().Be("old");
+    }
+
+    [Fact]
+    public async Task should_not_trigger_eager_refresh_before_threshold()
+    {
+        // given — a fresh entry whose eager point is still in the future
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "old", now.AddMinutes(5), now.AddMinutes(5), eagerRefreshAt: now.AddMinutes(1));
+        var coordinator = _CreateCoordinator();
+        var factoryCalls = 0;
+        var options = _CreateOptions(duration: TimeSpan.FromMinutes(10), eagerRefreshThreshold: 0.5f);
+
+        ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            return ValueTask.FromResult<string?>("fresh");
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+
+        // then
+        result.Value.Should().Be("old");
+        factoryCalls.Should().Be(0);
+        _store.GetEntry(key)!.EagerRefreshAt.Should().Be(now.AddMinutes(1));
+    }
+
     private FactoryCacheCoordinator _CreateCoordinator() =>
         new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
 
@@ -1657,12 +1889,14 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? factoryHardTimeout = null,
         TimeSpan? backgroundFactoryCeiling = null,
         TimeSpan? lockTimeout = null,
-        TimeSpan? slidingExpiration = null
+        TimeSpan? slidingExpiration = null,
+        float? eagerRefreshThreshold = null
     ) =>
         new()
         {
             Duration = duration ?? TimeSpan.FromSeconds(5),
             SlidingExpiration = slidingExpiration,
+            EagerRefreshThreshold = eagerRefreshThreshold,
             IsFailSafeEnabled = isFailSafeEnabled,
             FailSafeMaxDuration = maxDuration ?? TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(10),

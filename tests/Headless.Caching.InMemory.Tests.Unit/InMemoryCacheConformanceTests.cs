@@ -95,6 +95,13 @@ public sealed class InMemoryCacheConformanceTests : CacheConformanceTestsBase
         base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
 
     [Fact]
+    public override Task should_eager_refresh_before_expiration() => base.should_eager_refresh_before_expiration();
+
+    [Fact]
+    public override Task should_not_stampede_eager_refresh_across_concurrent_readers() =>
+        base.should_not_stampede_eager_refresh_across_concurrent_readers();
+
+    [Fact]
     public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
         base.should_keep_sliding_entry_alive_when_read_within_idle_window();
 

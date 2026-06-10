@@ -48,6 +48,14 @@ public readonly record struct CacheEntryOptions
     public TimeSpan? SlidingExpiration { get; init; }
 
     /// <summary>
+    /// Gets the optional eager-refresh point as a fraction of <see cref="Duration"/>, exclusive between 0 and 1.
+    /// When set, a fresh `GetOrAddAsync` hit past <c>createdAt + Duration × threshold</c> returns the cached value
+    /// immediately and starts a non-blocking background refresh, deduplicated per key. Eager refresh and sliding
+    /// expiration are not supported together and are rejected by the factory coordinator.
+    /// </summary>
+    public float? EagerRefreshThreshold { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether factory-backed cache operations can serve the physically-retained
     /// stale value when the factory fails.
     /// </summary>

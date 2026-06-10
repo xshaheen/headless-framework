@@ -103,4 +103,11 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
     [Fact]
     public override Task should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock() =>
         base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
+
+    [Fact]
+    public override Task should_eager_refresh_before_expiration() => base.should_eager_refresh_before_expiration();
+
+    [Fact]
+    public override Task should_not_stampede_eager_refresh_across_concurrent_readers() =>
+        base.should_not_stampede_eager_refresh_across_concurrent_readers();
 }
