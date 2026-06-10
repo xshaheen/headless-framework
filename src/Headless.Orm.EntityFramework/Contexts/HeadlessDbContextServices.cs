@@ -20,6 +20,7 @@ namespace Headless.EntityFramework;
 /// </remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class HeadlessDbContextServices(
+    IServiceProvider serviceProvider,
     ICurrentTenant currentTenant,
     IClock clock,
     IHeadlessSaveChangesPipeline saveChangesPipeline,
@@ -33,4 +34,9 @@ public sealed class HeadlessDbContextServices(
     internal IHeadlessSaveChangesPipeline SaveChangesPipeline { get; } = saveChangesPipeline;
 
     internal bool IsTenantWriteGuardEnabled => tenantWriteGuardOptions.Value.IsEnabled;
+
+    // The scoped (request) service provider that resolved this bag — the SAME scope the save pipeline captures.
+    // Surfaced so coordinated-transaction helpers can enlist with the correct scope for the post-commit drain
+    // (EF's CoreOptionsExtension.ApplicationServiceProvider is the ROOT provider and must not be used here).
+    internal IServiceProvider ServiceProvider { get; } = serviceProvider;
 }

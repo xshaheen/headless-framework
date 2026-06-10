@@ -83,6 +83,8 @@ public abstract class HeadlessIdentityDbContext<
 
     string? IHeadlessDbContext.TenantId => TenantId;
 
+    IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
+
     IServiceScope? IHeadlessDbContext.OwnedScope
     {
         get => _ownedScope;

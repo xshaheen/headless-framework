@@ -39,6 +39,8 @@ public class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices se
 
     public string? TenantId => services.TenantId;
 
+    internal IServiceProvider ServiceProvider => services.ServiceProvider;
+
     public void Initialize()
     {
         if (_initialized)
