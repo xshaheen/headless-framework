@@ -1,40 +1,39 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Redis;
-using Headless.Serializer;
-using Microsoft.Extensions.Logging;
+using Headless.Messaging;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-[Collection(nameof(RedisCacheFixture))]
-public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : CacheConformanceTestsBase
+public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
 {
+    private readonly FakeTimeProvider _timeProvider = new();
+
     protected override ICache CreateCache(string keyPrefix)
     {
-        var options = new RedisCacheOptions
-        {
-            ConnectionMultiplexer = fixture.ConnectionMultiplexer,
-            KeyPrefix = $"{keyPrefix}:",
-        };
+        var l1Options = new InMemoryCacheOptions { CloneValues = true };
+        var l1 = new InMemoryCache(_timeProvider, l1Options);
+        var l2Options = new InMemoryCacheOptions { CloneValues = true };
+        var l2 = new InMemoryRemoteCacheAdapter(new InMemoryCache(_timeProvider, l2Options));
+        var publisher = Substitute.For<IBus>();
+        publisher
+            .PublishAsync(Arg.Any<CacheInvalidationMessage>(), Arg.Any<PublishOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.CompletedTask);
 
-        var logger = LoggerFactory.CreateLogger<RedisCache>();
-        return new RedisCache(new SystemJsonSerializer(), TimeProvider.System, options, fixture.ScriptsLoader, logger);
+        return new HybridCache(l1, l2, publisher, new HybridCacheOptions(), timeProvider: _timeProvider);
     }
 
-    protected override async ValueTask ResetAsync()
+    protected override ValueTask AdvancePastExpirationAsync(TimeSpan expiration)
     {
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        _timeProvider.Advance(expiration + TimeSpan.FromMilliseconds(50));
+        return ValueTask.CompletedTask;
     }
 
-    protected override async ValueTask AdvancePastExpirationAsync(TimeSpan expiration)
+    protected override ValueTask AdvanceAsync(TimeSpan duration)
     {
-        await TimeProvider.System.Delay(expiration + TimeSpan.FromMilliseconds(250), AbortToken);
-    }
-
-    protected override async ValueTask AdvanceAsync(TimeSpan duration)
-    {
-        await TimeProvider.System.Delay(duration, AbortToken);
+        _timeProvider.Advance(duration);
+        return ValueTask.CompletedTask;
     }
 
     [Fact]

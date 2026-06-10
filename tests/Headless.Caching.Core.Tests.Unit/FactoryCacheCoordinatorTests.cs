@@ -24,6 +24,153 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public void should_default_factory_timeouts_and_background_ceiling_to_infinite()
+    {
+        // when
+        var options = new CacheEntryOptions();
+
+        // then
+        options.FactorySoftTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+        options.FactoryHardTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+        options.BackgroundFactoryCeiling.Should().Be(Timeout.InfiniteTimeSpan);
+        options.LockTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+    }
+
+    [Fact]
+    public void should_dispose_keyed_lock_without_throwing()
+    {
+        // given
+        var coordinator = _CreateCoordinator();
+
+        // when / then
+        var act = coordinator.Dispose;
+        act.Should().NotThrow();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_factory_soft_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(factorySoftTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "soft-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_factory_hard_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(factoryHardTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "hard-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_background_factory_ceiling_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(backgroundFactoryCeiling: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    "background-ceiling-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task should_throw_when_factory_hard_timeout_is_not_greater_than_soft_timeout()
+    {
+        // given
+        var options = _CreateOptions(
+            factorySoftTimeout: TimeSpan.FromSeconds(2),
+            factoryHardTimeout: TimeSpan.FromSeconds(2)
+        );
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "timeout-order-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_allow_one_factory_timeout_to_be_infinite(bool hardIsInfinite)
+    {
+        // given
+        var options = hardIsInfinite
+            ? _CreateOptions(factorySoftTimeout: TimeSpan.FromSeconds(1), factoryHardTimeout: Timeout.InfiniteTimeSpan)
+            : _CreateOptions(factorySoftTimeout: Timeout.InfiniteTimeSpan, factoryHardTimeout: TimeSpan.FromSeconds(1));
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        result.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_allow_soft_timeout_without_failsafe()
+    {
+        // given
+        var options = _CreateOptions(isFailSafeEnabled: false, factorySoftTimeout: TimeSpan.FromSeconds(1));
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(_store, Faker.Random.AlphaNumeric(8), _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        result.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public void should_create_cache_factory_timeout_exception_as_timeout_exception()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+
+        // when
+        var exception = new CacheFactoryTimeoutException(key, TimeSpan.FromSeconds(2));
+
+        // then
+        exception.Should().BeAssignableTo<TimeoutException>();
+        exception.Key.Should().Be(key);
+        exception.Limit.Should().Be(TimeSpan.FromSeconds(2));
+        exception.Message.Should().Contain(key);
+    }
+
+    [Fact]
     public async Task should_return_fresh_hit_without_invoking_factory()
     {
         // given
@@ -414,6 +561,717 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         factoryCalls.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_return_stale_on_soft_timeout_and_complete_factory_in_background()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered.Task;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await resultTask;
+        factoryGate.SetResult("fresh");
+        await backgroundFinished.Task;
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_not_start_duplicate_factory_during_soft_timeout_background_completion()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryCalls = 0;
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered.Task;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await first).IsStale.Should().BeTrue();
+
+        var second = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        factoryGate.SetResult("fresh");
+        await backgroundFinished.Task;
+        var secondResult = await second;
+
+        // then
+        secondResult.Value.Should().Be("fresh");
+        secondResult.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_restamp_throttle_when_background_factory_fails_after_soft_timeout()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryCalls = 0;
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            throttleDuration: TimeSpan.FromSeconds(20),
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref factoryCalls);
+            factoryStarted.SetResult();
+            await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("background failed");
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered.Task;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await first).IsStale.Should().BeTrue();
+        factoryGate.SetResult();
+        await backgroundFinished.Task;
+
+        var throttled = await coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken);
+
+        // then
+        throttled.Value.Should().Be("stale");
+        throttled.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_throw_cache_factory_timeout_exception_when_hard_timeout_fires_without_fallback()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(factoryHardTimeout: TimeSpan.FromSeconds(1));
+        var coordinator = _CreateCoordinator();
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var act = async () => await resultTask;
+
+        // then: the thrown exception carries the key and the configured hard-timeout limit
+        var thrown = await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+        thrown.Which.Key.Should().Be(key);
+        thrown.Which.Limit.Should().Be(options.FactoryHardTimeout);
+    }
+
+    [Fact]
+    public async Task should_serve_stale_when_hard_timeout_fires_with_fallback()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(isFailSafeEnabled: true, factoryHardTimeout: TimeSpan.FromSeconds(1));
+        var coordinator = _CreateCoordinator();
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var result = await resultTask;
+
+        // then
+        result.Value.Should().Be("stale");
+        result.IsStale.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_ignore_soft_timeout_when_failsafe_is_disabled()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(factorySoftTimeout: TimeSpan.FromSeconds(1));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = _CreateCoordinator().GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // then
+        resultTask.IsCompleted.Should().BeFalse();
+
+        factoryGate.SetResult("fresh");
+        (await resultTask).Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_propagate_caller_cancellation_without_activating_background_completion()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundStarted = false;
+        coordinator.BackgroundCompletionCeilingTimerRegistered = () => backgroundStarted = true;
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+        using var cts = new CancellationTokenSource();
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, _timeProvider, cancellationToken).ConfigureAwait(false);
+            return "fresh";
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token).AsTask();
+        await factoryStarted.Task;
+        await cts.CancelAsync();
+        var act = async () => await resultTask;
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        backgroundStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_keep_background_factory_detached_after_soft_timeout_return()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => backgroundFinished.TrySetResult();
+        var timeoutRegistered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => timeoutRegistered.TrySetResult();
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+        using var cts = new CancellationTokenSource();
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, cts.Token).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered.Task;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await resultTask).IsStale.Should().BeTrue();
+        await cts.CancelAsync();
+        factoryGate.SetResult("fresh");
+        await backgroundFinished.Task;
+
+        // then
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_release_lock_at_background_ceiling_and_suppress_late_abandoned_write()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            duration: TimeSpan.FromSeconds(5),
+            isFailSafeEnabled: true,
+            throttleDuration: TimeSpan.FromSeconds(2),
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
+        );
+
+        async ValueTask<string?> FactoryA(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await abandonedFactoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, FactoryA, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await first).IsStale.Should().BeTrue();
+        await ceilingRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        await backgroundFinished;
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(3));
+        var second = await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("B"), options, AbortToken);
+        abandonedFactoryGate.SetResult("A");
+        await Task.Yield();
+
+        // then
+        second.Value.Should().Be("B");
+        _store.GetEntry(key)!.Value.Should().Be("B");
+    }
+
+    [Fact]
+    public async Task should_run_background_factory_to_completion_without_ceiling_when_ceiling_is_infinite()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddHours(1));
+        var coordinator = _CreateCoordinator();
+        var ceilingTimerRegistered = false;
+        coordinator.BackgroundCompletionCeilingTimerRegistered = () => ceilingTimerRegistered = true;
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: Timeout.InfiniteTimeSpan
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when — soft timeout returns stale, factory keeps running detached
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        (await resultTask).IsStale.Should().BeTrue();
+
+        // advance well past any plausible ceiling to prove the detached factory is never cancelled
+        _timeProvider.Advance(TimeSpan.FromMinutes(10));
+        factoryGate.SetResult("fresh");
+        await backgroundFinished;
+
+        // then
+        ceilingTimerRegistered.Should().BeFalse("no ceiling timer is armed when the ceiling is infinite");
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_write_fresh_when_background_factory_completes_before_ceiling()
+    {
+        // given: a finite ceiling is armed, but the background factory finishes before it fires
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var factoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            return await factoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
+        (await first).IsStale.Should().BeTrue();
+        await ceilingRegistered;
+        factoryGate.SetResult("fresh"); // factory wins the race against the 3s ceiling (only 1s elapsed)
+        await backgroundFinished;
+
+        // then: the fresh value is written and the ceiling never had to cancel the factory
+        _store.GetEntry(key)!.Value.Should().Be("fresh");
+    }
+
+    [Fact]
+    public async Task should_log_failure_when_abandoned_factory_faults_after_background_ceiling()
+    {
+        // given: the ceiling abandons a token-ignoring factory that later faults
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var ceilingRegistered = _WaitForBackgroundCeilingRegistered(coordinator);
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(20),
+            backgroundFactoryCeiling: TimeSpan.FromSeconds(3)
+        );
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Ignore cancellation: the factory keeps running past the ceiling, then faults.
+            return await abandonedFactoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // soft timeout -> stale + detached background factory
+        (await first).IsStale.Should().BeTrue();
+        await ceilingRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(3)); // ceiling fires -> factory abandoned
+        await backgroundFinished;
+        abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
+
+        // then: the abandoned task's fault is observed and logged, not lost (the #4 fix).
+        var observed = false;
+        for (var attempt = 0; attempt < 200 && !observed; attempt++)
+        {
+            observed = logger
+                .ReceivedCalls()
+                .Any(call =>
+                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
+                );
+
+            if (!observed)
+            {
+                await Task.Delay(25, AbortToken);
+            }
+        }
+
+        observed.Should().BeTrue("the fault observer attached to the abandoned factory must log its failure");
+    }
+
+    [Fact]
+    public async Task should_log_failure_when_abandoned_factory_faults_after_hard_timeout()
+    {
+        // given: cold cache, hard timeout, a token-ignoring factory that keeps running and later faults
+        var key = Faker.Random.AlphaNumeric(8);
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var options = _CreateOptions(isFailSafeEnabled: false, factoryHardTimeout: TimeSpan.FromSeconds(1));
+
+        async ValueTask<string?> Factory(CancellationToken cancellationToken)
+        {
+            factoryStarted.SetResult();
+            // Ignore cancellation: the factory keeps running past the hard timeout, then faults.
+            return await abandonedFactoryGate.Task.ConfigureAwait(false);
+        }
+
+        // when
+        var resultTask = coordinator.GetOrAddAsync(_store, key, Factory, options, AbortToken).AsTask();
+        await factoryStarted.Task;
+        await timeoutRegistered;
+        _timeProvider.Advance(TimeSpan.FromSeconds(1)); // hard timeout -> factory abandoned, throws (cold cache)
+        var act = async () => await resultTask;
+        await act.Should().ThrowAsync<CacheFactoryTimeoutException>();
+        abandonedFactoryGate.SetException(new InvalidOperationException("late factory failure"));
+
+        // then: the abandoned task's fault is observed and logged, not lost.
+        var observed = false;
+        for (var attempt = 0; attempt < 200 && !observed; attempt++)
+        {
+            observed = logger
+                .ReceivedCalls()
+                .Any(call =>
+                    call.GetMethodInfo().Name == nameof(ILogger.Log)
+                    && call.GetArguments()[1] is EventId { Id: 6, Name: "CacheBackgroundCompletionFailed" }
+                );
+
+            if (!observed)
+            {
+                await Task.Delay(25, AbortToken);
+            }
+        }
+
+        observed.Should().BeTrue("the fault observer attached to the abandoned hard-timeout factory must log its failure");
+    }
+
+    [Fact]
+    public async Task should_warn_once_per_key_when_soft_timeout_is_inert()
+    {
+        // given: a finite soft timeout with fail-safe disabled makes the soft timeout inert (EventId 7)
+        var key = Faker.Random.AlphaNumeric(8);
+        var logger = Substitute.For<ILogger<FactoryCacheCoordinator>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
+        var options = _CreateOptions(
+            duration: TimeSpan.FromSeconds(1),
+            isFailSafeEnabled: false,
+            factorySoftTimeout: TimeSpan.FromSeconds(1)
+        );
+
+        // when: two factory misses on the same key (expire the entry between them so both reach the timeout
+        // selection, which is where the inert warning is emitted and deduplicated)
+        await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("first"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await coordinator.GetOrAddAsync(_store, key, _FactoryReturns("second"), options, AbortToken);
+
+        // then: the inert warning is emitted exactly once for the key (deduplicated)
+        var inertWarnings = logger
+            .ReceivedCalls()
+            .Count(call =>
+                call.GetMethodInfo().Name == nameof(ILogger.Log)
+                && call.GetArguments()[1] is EventId { Id: 7, Name: "CacheSoftTimeoutInert" }
+            );
+
+        inertWarnings.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public async Task should_throw_when_lock_timeout_is_non_positive_finite(int milliseconds)
+    {
+        // given
+        var options = _CreateOptions(lockTimeout: TimeSpan.FromMilliseconds(milliseconds));
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(_store, "lock-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public async Task should_return_stale_when_waiter_times_out_acquiring_lock()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var backgroundFinished = _WaitForBackgroundFinished(coordinator);
+        var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
+        var firstFactoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFactoryCalls = 0;
+        var options = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+
+        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        {
+            firstFactoryStarted.SetResult();
+            return await firstFactoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        ValueTask<string?> SecondFactory(CancellationToken _)
+        {
+            secondFactoryCalls++;
+            return ValueTask.FromResult<string?>("second");
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, FirstFactory, options, AbortToken).AsTask();
+        await firstFactoryStarted.Task;
+        await timeoutRegistered;
+        var second = coordinator.GetOrAddAsync(_store, key, SecondFactory, options, AbortToken).AsTask();
+        _timeProvider.Advance(TimeSpan.FromSeconds(1));
+        var secondResult = await second;
+        firstFactoryGate.SetResult("first");
+        await first;
+        await backgroundFinished;
+
+        // then
+        secondResult.Value.Should().Be("stale");
+        secondResult.IsStale.Should().BeTrue();
+        secondFactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_return_miss_when_waiter_times_out_acquiring_lock_without_stale()
+    {
+        // given: no stale reserve exists and a hanging factory holds the per-key lock; a finite LockTimeout bounds
+        // the waiter so it degrades to a miss instead of blocking on the in-flight factory.
+        var key = Faker.Random.AlphaNumeric(8);
+        var coordinator = _CreateCoordinator();
+        var firstFactoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondFactoryCalls = 0;
+        var options = _CreateOptions(lockTimeout: TimeSpan.FromSeconds(2));
+
+        async ValueTask<string?> FirstFactory(CancellationToken cancellationToken)
+        {
+            firstFactoryStarted.SetResult();
+            return await firstFactoryGate.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        ValueTask<string?> SecondFactory(CancellationToken _)
+        {
+            secondFactoryCalls++;
+            return ValueTask.FromResult<string?>("second");
+        }
+
+        // when
+        var first = coordinator.GetOrAddAsync(_store, key, FirstFactory, options, AbortToken).AsTask();
+        await firstFactoryStarted.Task;
+        var second = coordinator.GetOrAddAsync(_store, key, SecondFactory, options, AbortToken).AsTask();
+        _timeProvider.Advance(TimeSpan.FromSeconds(2));
+        var secondResult = await second;
+        firstFactoryGate.SetResult("first");
+        await first;
+
+        // then
+        secondResult.HasValue.Should().BeFalse();
+        secondFactoryCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_escape_same_key_reentrancy_with_stale_value_when_lock_timeout_applies()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
+        var coordinator = _CreateCoordinator();
+        var innerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var innerOptions = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(1),
+            factoryHardTimeout: TimeSpan.FromSeconds(10)
+        );
+        var outerOptions = _CreateOptions(
+            isFailSafeEnabled: true,
+            factorySoftTimeout: TimeSpan.FromSeconds(10),
+            factoryHardTimeout: TimeSpan.FromSeconds(20)
+        );
+
+        async ValueTask<string?> OuterFactory(CancellationToken cancellationToken)
+        {
+            var inner = coordinator.GetOrAddAsync(_store, key, _FactoryReturns("inner"), innerOptions, cancellationToken).AsTask();
+            innerStarted.SetResult();
+            _timeProvider.Advance(TimeSpan.FromSeconds(1));
+            return (await inner).Value;
+        }
+
+        // when
+        var result = await coordinator.GetOrAddAsync(_store, key, OuterFactory, outerOptions, AbortToken);
+
+        // then
+        await innerStarted.Task;
+        result.Value.Should().Be("stale");
+        _store.GetEntry(key)!.Value.Should().Be("stale");
+    }
+
     // #1 regression guard — token-less OCE from factory with None caller token must activate fail-safe, not propagate.
     // This pins the bug: CancellationToken.None.CanBeCanceled == false, so the identity check is skipped and
     // the token-less OCE is correctly treated as a non-caller exception, enabling fail-safe activation.
@@ -503,11 +1361,36 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     private FactoryCacheCoordinator _CreateCoordinator() =>
         new(_timeProvider, NullLogger<FactoryCacheCoordinator>.Instance);
 
+    private static Task _WaitForBackgroundFinished(FactoryCacheCoordinator coordinator)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionFinished = () => tcs.TrySetResult();
+        return tcs.Task;
+    }
+
+    private static Task _WaitForBackgroundCeilingRegistered(FactoryCacheCoordinator coordinator)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.BackgroundCompletionCeilingTimerRegistered = () => tcs.TrySetResult();
+        return tcs.Task;
+    }
+
+    private static Task _WaitForFactoryTimeoutRegistered(FactoryCacheCoordinator coordinator)
+    {
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        coordinator.FactoryTimeoutTimerRegistered = () => tcs.TrySetResult();
+        return tcs.Task;
+    }
+
     private static CacheEntryOptions _CreateOptions(
         TimeSpan? duration = null,
         bool isFailSafeEnabled = false,
         TimeSpan? maxDuration = null,
-        TimeSpan? throttleDuration = null
+        TimeSpan? throttleDuration = null,
+        TimeSpan? factorySoftTimeout = null,
+        TimeSpan? factoryHardTimeout = null,
+        TimeSpan? backgroundFactoryCeiling = null,
+        TimeSpan? lockTimeout = null
     ) =>
         new()
         {
@@ -515,5 +1398,12 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             IsFailSafeEnabled = isFailSafeEnabled,
             FailSafeMaxDuration = maxDuration ?? TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(10),
+            FactorySoftTimeout = factorySoftTimeout ?? Timeout.InfiniteTimeSpan,
+            FactoryHardTimeout = factoryHardTimeout ?? Timeout.InfiniteTimeSpan,
+            BackgroundFactoryCeiling = backgroundFactoryCeiling ?? Timeout.InfiniteTimeSpan,
+            LockTimeout = lockTimeout ?? Timeout.InfiniteTimeSpan,
         };
+
+    private static Func<CancellationToken, ValueTask<string?>> _FactoryReturns(string value) =>
+        _ => ValueTask.FromResult<string?>(value);
 }

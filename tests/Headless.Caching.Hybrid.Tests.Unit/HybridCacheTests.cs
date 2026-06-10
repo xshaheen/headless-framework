@@ -845,29 +845,41 @@ public sealed class HybridCacheTests : TestBase
     #region Cancellation Token Propagation
 
     [Fact]
-    public async Task should_propagate_cancellation_token_to_factory()
+    public async Task should_cancel_factory_token_when_caller_token_is_cancelled()
     {
-        // given
+        // given — the coordinator hands the factory a detached token linked to caller cancellation,
+        // not the caller token itself, so it can also cancel on a hard timeout.
         var (cache, _, _, _) = _CreateCache();
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
+        using var cts = new CancellationTokenSource();
         var receivedToken = CancellationToken.None;
+        var factoryReached = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // when
-        await cache.GetOrAddAsync(
-            key,
-            ct =>
-            {
-                receivedToken = ct;
-                return new ValueTask<int?>(42);
-            },
-            TimeSpan.FromMinutes(5),
-            AbortToken
-        );
+        // when — cancel the caller token while the factory is in flight
+        var act = async () =>
+            await cache.GetOrAddAsync<int>(
+                key,
+                async ct =>
+                {
+                    receivedToken = ct;
+                    factoryReached.SetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                    return 42;
+                },
+                TimeSpan.FromMinutes(5),
+                cts.Token
+            );
 
-        // then
-        receivedToken.Should().Be(AbortToken);
+        var assertion = act.Should().ThrowAsync<OperationCanceledException>();
+        await factoryReached.Task;
+        await cts.CancelAsync();
+        await assertion;
+
+        // then — the factory observed a cancellable token that fired on caller cancellation
+        receivedToken.CanBeCanceled.Should().BeTrue();
+        receivedToken.IsCancellationRequested.Should().BeTrue();
     }
 
     [Fact]
