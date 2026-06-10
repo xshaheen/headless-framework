@@ -12,11 +12,11 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
-using Tests.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using Tests.Helpers;
 
 namespace Tests;
 

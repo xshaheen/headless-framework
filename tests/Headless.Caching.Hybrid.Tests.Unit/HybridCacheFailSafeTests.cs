@@ -61,14 +61,15 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
         // Plant a logically-expired (stale) but physically-present entry directly into L1.
-        var logicallyExpiredAt = now.AddMinutes(-1);   // already stale
-        var physicallyExpiredAt = now.AddHours(1);     // still physically held
+        var logicallyExpiredAt = now.AddMinutes(-1); // already stale
+        var physicallyExpiredAt = now.AddHours(1); // still physically held
         await ((IFactoryCacheStore)l1).SetEntryAsync(
             key,
             staleValue,
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -112,6 +113,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -166,6 +168,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -206,15 +209,15 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var staleValue = Faker.Random.Int(1, 100);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        await ((IFactoryCacheStore)l1Cache)
-            .SetEntryAsync(
-                key,
-                staleValue,
-                isNull: false,
-                logicalExpiresAt: now.AddMinutes(-1),
-                physicalExpiresAt: now.AddHours(1),
-                AbortToken
-            );
+        await ((IFactoryCacheStore)l1Cache).SetEntryAsync(
+            key,
+            staleValue,
+            isNull: false,
+            logicalExpiresAt: now.AddMinutes(-1),
+            physicalExpiresAt: now.AddHours(1),
+            slidingExpiration: null,
+            AbortToken
+        );
 
         // when
         var result = await cache.GetOrAddAsync<int>(
@@ -310,26 +313,16 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // given
         var localCap = TimeSpan.FromMinutes(2);
         var duration = TimeSpan.FromMinutes(10);
-        var (cache, l1, l2, publisher) = _CreateCache(
-            new HybridCacheOptions { DefaultLocalExpiration = localCap }
-        );
+        var (cache, l1, l2, publisher) = _CreateCache(new HybridCacheOptions { DefaultLocalExpiration = localCap });
         await using var _ = cache;
 
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int(1, 1000);
 
-        var opts = _FailSafeOptions(
-            duration: duration,
-            failSafeMaxDuration: TimeSpan.FromHours(2)
-        );
+        var opts = _FailSafeOptions(duration: duration, failSafeMaxDuration: TimeSpan.FromHours(2));
 
         // when — factory succeeds
-        var result = await cache.GetOrAddAsync(
-            key,
-            _ => new ValueTask<int?>(value),
-            opts,
-            AbortToken
-        );
+        var result = await cache.GetOrAddAsync(key, _ => new ValueTask<int?>(value), opts, AbortToken);
 
         // then — value returned fresh (not stale)
         result.HasValue.Should().BeTrue();
@@ -342,15 +335,19 @@ public sealed class HybridCacheFailSafeTests : TestBase
         l2Entry.Found.Should().BeTrue("coordinator must have written the entry to L2");
         l2Entry.PhysicalExpiresAt.Should().NotBeNull("fail-safe writes must include physical expiry");
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        (l2Entry.PhysicalExpiresAt!.Value - now).Should()
+        (l2Entry.PhysicalExpiresAt!.Value - now)
+            .Should()
             .BeGreaterThan(duration, "L2 must hold the fail-safe physical reserve beyond logical TTL");
 
         // L1 expiration must be bounded by DefaultLocalExpiration
         var l1Exp = await l1.GetExpirationAsync(key, AbortToken);
         l1Exp.Should().HaveValue();
-        l1Exp!.Value.Should()
-            .BeLessThanOrEqualTo(localCap.Add(TimeSpan.FromSeconds(1)),
-                "L1 expiration must be capped by DefaultLocalExpiration");
+        l1Exp!
+            .Value.Should()
+            .BeLessThanOrEqualTo(
+                localCap.Add(TimeSpan.FromSeconds(1)),
+                "L1 expiration must be capped by DefaultLocalExpiration"
+            );
 
         // No backplane publish on factory-success path (GetOrAddAsync does not publish)
         await publisher
@@ -388,7 +385,9 @@ public sealed class HybridCacheFailSafeTests : TestBase
         values[key].Value.Should().Be(value);
         l1Expiration.Should().NotBeNull();
         l1Expiration.Should().BeLessThanOrEqualTo(duration, "batch promotion must not outlive L2 logical freshness");
-        afterLogicalExpiry.HasValue.Should().BeFalse("normal Hybrid reads must not serve fail-safe reserves after logical expiry");
+        afterLogicalExpiry
+            .HasValue.Should()
+            .BeFalse("normal Hybrid reads must not serve fail-safe reserves after logical expiry");
     }
 
     #endregion
@@ -414,6 +413,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -426,7 +426,8 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         // and — the read path must NOT have promoted the logically-expired reserve into L1
         var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
-        l1Entry.Found.Should()
+        l1Entry
+            .Found.Should()
             .BeFalse(
                 "the read-path guard must not promote a logically-expired L2 reserve into L1 (#9): "
                     + "promoting on every fail-safe read amplifies L1 writes and can overwrite a newer L1 reserve"
@@ -445,15 +446,15 @@ public sealed class HybridCacheFailSafeTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var value = Faker.Random.Int(1, 100);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        await ((IFactoryCacheStore)l2)
-            .SetEntryAsync(
-                key,
-                value,
-                isNull: false,
-                logicalExpiresAt: now.Add(logicalTtl),
-                physicalExpiresAt: now.AddHours(1),
-                AbortToken
-            );
+        await ((IFactoryCacheStore)l2).SetEntryAsync(
+            key,
+            value,
+            isNull: false,
+            logicalExpiresAt: now.Add(logicalTtl),
+            physicalExpiresAt: now.AddHours(1),
+            slidingExpiration: null,
+            AbortToken
+        );
 
         // when
         var result = await cache.GetAsync<int>(key, AbortToken);
@@ -495,6 +496,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
             isNull: false,
             logicallyExpiredAt,
             physicallyExpiredAt,
+            slidingExpiration: null,
             AbortToken
         );
 
@@ -524,17 +526,18 @@ public sealed class HybridCacheFailSafeTests : TestBase
         // This assertion fails if the L1 restamp write is removed.
         var l1Entry = await ((IFactoryCacheStore)l1).TryGetEntryAsync<int>(key, AbortToken);
         l1Entry.Found.Should().BeTrue("fail-safe must write a throttle entry into L1 after activation");
-        l1Entry.LogicalExpiresAt.Should()
+        l1Entry
+            .LogicalExpiresAt.Should()
             .NotBeNull("throttle entry must carry a logical expiration so future reads see it as fresh");
-        l1Entry.LogicalExpiresAt!.Value.Should()
+        l1Entry
+            .LogicalExpiresAt!.Value.Should()
             .BeAfter(now, "throttle logical expiry must be in the future (now + FailSafeThrottleDuration)");
-        l1Entry.PhysicalExpiresAt.Should()
+        l1Entry
+            .PhysicalExpiresAt.Should()
             .NotBeNull("throttle entry must carry a physical expiration so it can eventually be evicted");
-        l1Entry.PhysicalExpiresAt!.Value.Should()
-            .BeOnOrAfter(
-                l1Entry.LogicalExpiresAt.Value,
-                "physical expiry must be at or after logical expiry"
-            );
+        l1Entry
+            .PhysicalExpiresAt!.Value.Should()
+            .BeOnOrAfter(l1Entry.LogicalExpiresAt.Value, "physical expiry must be at or after logical expiry");
 
         // and — fail-safe refreshed L1 with a logically-fresh throttle entry (FusionCache parity, KTD-4):
         // a subsequent read within the throttle window is a normal L1 hit — fresh, factory not invoked
@@ -552,8 +555,7 @@ public sealed class HybridCacheFailSafeTests : TestBase
         second.HasValue.Should().BeTrue();
         second.Value.Should().Be(staleValue);
         second.IsStale.Should().BeFalse("the throttle entry is logically fresh, so the read is a normal L1 hit");
-        factoryCallCount.Should()
-            .Be(1, "the throttle window must absorb the read without re-invoking the factory");
+        factoryCallCount.Should().Be(1, "the throttle window must absorb the read without re-invoking the factory");
     }
 
     #endregion
@@ -598,19 +600,23 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         // and — L1 must have been populated with the entry bounded by now + DefaultLocalExpiration
         var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
-        l1Entry.Found.Should().BeTrue("null-timestamp L2 entry must be promoted into L1 when DefaultLocalExpiration is configured");
+        l1Entry
+            .Found.Should()
+            .BeTrue("null-timestamp L2 entry must be promoted into L1 when DefaultLocalExpiration is configured");
 
         var ceiling = now.Add(localExp);
-        l1Entry.LogicalExpiresAt.Should()
+        l1Entry
+            .LogicalExpiresAt.Should()
             .NotBeNull("promoted entry must have a logical expiry set to the local ceiling");
-        l1Entry.LogicalExpiresAt!.Value.Should()
-            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1),
-                "logical expiry must be ≈ now + DefaultLocalExpiration");
-        l1Entry.PhysicalExpiresAt.Should()
+        l1Entry
+            .LogicalExpiresAt!.Value.Should()
+            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1), "logical expiry must be ≈ now + DefaultLocalExpiration");
+        l1Entry
+            .PhysicalExpiresAt.Should()
             .NotBeNull("promoted entry must have a physical expiry set to the local ceiling");
-        l1Entry.PhysicalExpiresAt!.Value.Should()
-            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1),
-                "physical expiry must be ≈ now + DefaultLocalExpiration");
+        l1Entry
+            .PhysicalExpiresAt!.Value.Should()
+            .BeCloseTo(ceiling, TimeSpan.FromSeconds(1), "physical expiry must be ≈ now + DefaultLocalExpiration");
     }
 
     [Fact]
@@ -650,7 +656,8 @@ public sealed class HybridCacheFailSafeTests : TestBase
 
         // but — L1 must NOT have been populated (no finite bound exists)
         var l1Entry = await ((IFactoryCacheStore)l1Cache).TryGetEntryAsync<int>(key, AbortToken);
-        l1Entry.Found.Should()
+        l1Entry
+            .Found.Should()
             .BeFalse(
                 "without DefaultLocalExpiration there is no finite bound, "
                     + "so null-timestamp L2 entries must not be promoted into L1"

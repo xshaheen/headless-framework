@@ -16,18 +16,18 @@ public sealed class MembershipDashboardBridgeTests
     private static NodeIdentity Identity(string node, long incarnation) =>
         new(new NodeId(node), new NodeIncarnation(incarnation));
 
-    private static NodeLivenessSnapshot Snapshot(string node, long incarnation, NodeLivenessState state, string? role) =>
-        new(Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
+    private static NodeLivenessSnapshot Snapshot(
+        string node,
+        long incarnation,
+        NodeLivenessState state,
+        string? role
+    ) => new(Identity(node, incarnation), state, role, new Dictionary<string, string>(StringComparer.Ordinal));
 
     private static (MembershipDashboardBridge Bridge, IJobsNotificationHubSender Sender) Create()
     {
         var membership = new FakeMembership();
         var sender = Substitute.For<IJobsNotificationHubSender>();
-        var bridge = new MembershipDashboardBridge(
-            membership,
-            sender,
-            NullLogger<MembershipDashboardBridge>.Instance
-        );
+        var bridge = new MembershipDashboardBridge(membership, sender, NullLogger<MembershipDashboardBridge>.Instance);
 
         return (bridge, sender);
     }
@@ -49,7 +49,9 @@ public sealed class MembershipDashboardBridgeTests
 
         await sender
             .Received(1)
-            .UpdateNodesAsync(Arg.Is<object>(p => ReadString(p, "identity") == "node-a@5" && ReadString(p, "state") == "Alive"));
+            .UpdateNodesAsync(
+                Arg.Is<object>(p => ReadString(p, "identity") == "node-a@5" && ReadString(p, "state") == "Alive")
+            );
     }
 
     [Fact]
@@ -61,7 +63,9 @@ public sealed class MembershipDashboardBridgeTests
 
         await sender
             .Received(1)
-            .UpdateNodesAsync(Arg.Is<object>(p => ReadString(p, "identity") == "node-b@9" && ReadString(p, "state") == "Dead"));
+            .UpdateNodesAsync(
+                Arg.Is<object>(p => ReadString(p, "identity") == "node-b@9" && ReadString(p, "state") == "Dead")
+            );
     }
 
     [Fact]
@@ -73,7 +77,9 @@ public sealed class MembershipDashboardBridgeTests
 
         await sender
             .Received(1)
-            .UpdateNodesAsync(Arg.Is<object>(p => ReadString(p, "identity") == "node-c@3" && ReadString(p, "state") == "Suspected"));
+            .UpdateNodesAsync(
+                Arg.Is<object>(p => ReadString(p, "identity") == "node-c@3" && ReadString(p, "state") == "Suspected")
+            );
     }
 
     [Fact]
@@ -121,7 +127,10 @@ public sealed class MembershipDashboardBridgeTests
                 Identity("node-a", 1),
                 NodeLivenessState.Alive,
                 Role: null,
-                Metadata: new Dictionary<string, string>(StringComparer.Ordinal) { ["last_beat"] = "2026-06-07T10:00:00Z" }
+                Metadata: new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["last_beat"] = "2026-06-07T10:00:00Z",
+                }
             ),
         ];
 
@@ -147,8 +156,9 @@ public sealed class MembershipDashboardBridgeTests
         public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(false);
 
-        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default) =>
-            ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
+        public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(
+            CancellationToken cancellationToken = default
+        ) => ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
 
         public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
             CancellationToken cancellationToken = default

@@ -930,8 +930,7 @@ public sealed class SqlServerDataStorage(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         List<SqlParameter> sqlParams = [new("@Now", SqlDbType.DateTime2) { Value = now }];
         var liveOwnerParams = _AddLiveOwnerParameters(liveOwners, sqlParams);
-        var sql =
-            $"""
+        var sql = $"""
             UPDATE target
             SET LockedUntil = @Now
             FROM {tableName} AS target
@@ -964,10 +963,12 @@ public sealed class SqlServerDataStorage(
         {
             var parameterName = $"@LiveOwner{index++}";
             parameterNames.Add(parameterName);
-            sqlParams.Add(new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
-            {
-                Value = owner,
-            });
+            sqlParams.Add(
+                new SqlParameter(parameterName, SqlDbType.NVarChar, options.Value.OwnerColumnMaxLength)
+                {
+                    Value = owner,
+                }
+            );
         }
 
         return string.Join(", ", parameterNames);

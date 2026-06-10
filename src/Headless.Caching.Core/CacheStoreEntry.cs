@@ -10,23 +10,27 @@ namespace Headless.Caching;
 /// <param name="Value">The cached value.</param>
 /// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale.</param>
 /// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained.</param>
+/// <param name="SlidingExpiration">The optional idle window used to re-arm logical expiration on value reads.</param>
 [PublicAPI]
 public readonly record struct CacheStoreEntry<T>(
     bool Found,
     bool IsNull,
     T? Value,
     DateTime? LogicalExpiresAt,
-    DateTime? PhysicalExpiresAt
+    DateTime? PhysicalExpiresAt,
+    TimeSpan? SlidingExpiration
 )
 {
     /// <summary>Gets an entry representing a store miss.</summary>
-    public static CacheStoreEntry<T> NotFound { get; } = new(
-        Found: false,
-        IsNull: false,
-        Value: default,
-        LogicalExpiresAt: null,
-        PhysicalExpiresAt: null
-    );
+    public static CacheStoreEntry<T> NotFound { get; } =
+        new(
+            Found: false,
+            IsNull: false,
+            Value: default,
+            LogicalExpiresAt: null,
+            PhysicalExpiresAt: null,
+            SlidingExpiration: null
+        );
 }
 
 /// <summary>Shared expiration predicates over <see cref="CacheStoreEntry{T}"/> used by Core and providers.</summary>

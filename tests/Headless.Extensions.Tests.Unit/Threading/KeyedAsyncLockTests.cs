@@ -1,7 +1,7 @@
+using System.Reflection;
 using Headless.Testing.Tests;
 using Headless.Threading;
 using Microsoft.Extensions.Time.Testing;
-using System.Reflection;
 
 namespace Tests.Threading;
 
@@ -432,12 +432,7 @@ public sealed class KeyedAsyncLockTests : TestBase
         using var keyedLock = new KeyedAsyncLock();
         var timeProvider = new FakeTimeProvider();
         var holder = await keyedLock.LockAsync("infinite-timeout-key", AbortToken);
-        var waiter = keyedLock.LockAsync(
-            "infinite-timeout-key",
-            Timeout.InfiniteTimeSpan,
-            timeProvider,
-            AbortToken
-        );
+        var waiter = keyedLock.LockAsync("infinite-timeout-key", Timeout.InfiniteTimeSpan, timeProvider, AbortToken);
 
         // when
         timeProvider.Advance(TimeSpan.FromHours(1));

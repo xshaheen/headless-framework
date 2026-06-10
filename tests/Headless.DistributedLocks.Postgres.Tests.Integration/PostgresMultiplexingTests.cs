@@ -192,11 +192,13 @@ public sealed class PostgresMultiplexingTests(PostgresDistributedLockFixture fix
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = keyPrefix;
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.KeyPrefix = keyPrefix;
+            })
+        );
 
         return services.BuildServiceProvider();
     }

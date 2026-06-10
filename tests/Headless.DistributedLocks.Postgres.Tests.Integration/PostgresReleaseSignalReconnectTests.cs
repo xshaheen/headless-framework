@@ -190,13 +190,15 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgresDistributedLockF
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = fixture.ConnectionString;
-            options.KeyPrefix = keyPrefix;
-            options.EnablePushWakeup = true;
-            options.PollingFallback = pollingFallback;
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = fixture.ConnectionString;
+                options.KeyPrefix = keyPrefix;
+                options.EnablePushWakeup = true;
+                options.PollingFallback = pollingFallback;
+            })
+        );
 
         return services.BuildServiceProvider();
     }

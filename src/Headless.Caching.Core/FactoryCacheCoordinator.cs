@@ -1,21 +1,20 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
-using Headless.Threading;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using Headless.Checks;
+using Headless.Threading;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>
 [PublicAPI]
-public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null)
-    : IDisposable
+public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null) : IDisposable
 {
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
@@ -62,12 +61,15 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
         if (entry.IsFresh(now))
         {
+            await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
             return _ToCacheValue(entry, isStale: false);
         }
 
         var staleCandidate = _IsStaleCandidate(entry, now) ? entry : CacheStoreEntry<T>.NotFound;
         var lockTimeout = _SelectLockTimeout(options, staleCandidate, now);
-        var releaser = await _keyedLock.LockAsync(key, lockTimeout, _timeProvider, cancellationToken).ConfigureAwait(false);
+        var releaser = await _keyedLock
+            .LockAsync(key, lockTimeout, _timeProvider, cancellationToken)
+            .ConfigureAwait(false);
 
         if (releaser is null)
         {
@@ -86,6 +88,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (entry.IsFresh(now))
             {
+                await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
                 return _ToCacheValue(entry, isStale: false);
             }
 
@@ -126,7 +129,11 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
             if (factoryResult.IsTimedOut)
             {
-                _logger.LogCacheFactoryTimedOut(key, _TimeoutKindLabel(timeoutSelection.Kind), timeoutSelection.Timeout);
+                _logger.LogCacheFactoryTimedOut(
+                    key,
+                    _TimeoutKindLabel(timeoutSelection.Kind),
+                    timeoutSelection.Timeout
+                );
 
                 if (factoryResult.IsSoftTimeout)
                 {
@@ -341,6 +348,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                     staleCandidate.IsNull,
                     logicalExpiresAt,
                     physicalExpiresAt,
+                    slidingExpiration: null,
                     cancellationToken
                 )
                 .ConfigureAwait(false);
@@ -368,10 +376,63 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             ? _Max(options.Duration, options.FailSafeMaxDuration)
             : options.Duration;
         var physicalExpiresAt = now.Add(physicalDuration);
+        var slidingExpiration = options.SlidingExpiration;
+
+        if (slidingExpiration.HasValue)
+        {
+            logicalExpiresAt = _Min(now.Add(slidingExpiration.Value), physicalExpiresAt);
+        }
 
         await store
-            .SetEntryAsync(key, value, isNull: value is null, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+            .SetEntryAsync(
+                key,
+                value,
+                isNull: value is null,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                slidingExpiration,
+                cancellationToken
+            )
             .ConfigureAwait(false);
+    }
+
+    private async ValueTask _TryRearmSlidingEntryAsync<T>(
+        IFactoryCacheStore store,
+        string key,
+        CacheStoreEntry<T> entry,
+        DateTime now
+    )
+    {
+        if (
+            entry.SlidingExpiration is not { } slidingExpiration
+            || entry.PhysicalExpiresAt is not { } physicalExpiresAt
+        )
+        {
+            return;
+        }
+
+        // Nothing left to extend once the physical cap has passed.
+        if (physicalExpiresAt <= now)
+        {
+            return;
+        }
+
+        try
+        {
+            // Delegate to the provider's metadata-only, throttled primitive instead of rewriting the whole value.
+            // The throttle and the "only extend" / physical-cap rules live in the store, which is the only layer
+            // that cheaply knows the entry's true remaining lifetime (Redis key TTL / in-memory logical deadline);
+            // after a metadata-only re-arm the coordinator's embedded logical is no longer authoritative, so the
+            // decision cannot be made here. CancellationToken.None: a caller cancellation must not abort the
+            // best-effort re-arm of a value read that already succeeded.
+            await store
+                .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogSlidingExpirationRearmFailed(exception, key);
+        }
     }
 
     private async ValueTask<CacheStoreEntry<T>> _TryGetEntryAsync<T>(
@@ -413,7 +474,11 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     // waiter is bounded by LockTimeout (default Timeout.InfiniteTimeSpan), and on elapse with no stale reserve
     // the waiter degrades to a miss. This mirrors FusionCache's GetAppropriateMemoryLockTimeout: a stale + fail-safe
     // + finite-soft caller waits FactorySoftTimeout, every other caller waits the base LockTimeout.
-    private static TimeSpan _SelectLockTimeout<T>(CacheEntryOptions options, CacheStoreEntry<T> staleCandidate, DateTime now) =>
+    private static TimeSpan _SelectLockTimeout<T>(
+        CacheEntryOptions options,
+        CacheStoreEntry<T> staleCandidate,
+        DateTime now
+    ) =>
         options.IsFailSafeEnabled
         && _IsStaleCandidate(staleCandidate, now)
         && options.FactorySoftTimeout != Timeout.InfiniteTimeSpan
@@ -609,7 +674,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private void _ObserveFaultedTask(Task task, string key)
     {
         _ = task.ContinueWith(
-            faulted => _logger.LogCacheBackgroundCompletionFailed(faulted.Exception!, key, faulted.Exception!.GetType().Name),
+            faulted =>
+                _logger.LogCacheBackgroundCompletionFailed(faulted.Exception!, key, faulted.Exception!.GetType().Name),
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted,
             TaskScheduler.Default
@@ -633,6 +699,21 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     private static void _ValidateOptions(CacheEntryOptions options)
     {
         Argument.IsPositive(options.Duration);
+
+        if (options.SlidingExpiration is { } configuredSlidingExpiration)
+        {
+            Argument.IsPositive(configuredSlidingExpiration);
+
+            // Redis encodes the idle window as whole milliseconds; a sub-millisecond span floors to 0 and the
+            // frame then decodes as unframed (silent value loss), while in-memory would keep it natively. Reject
+            // it at the single sliding write choke point so every provider behaves identically.
+            Argument.IsGreaterThanOrEqualTo(configuredSlidingExpiration, TimeSpan.FromMilliseconds(1));
+
+            Ensure.False(
+                options.IsFailSafeEnabled,
+                "Sliding expiration and fail-safe are not supported together in this version."
+            );
+        }
 
         if (options.IsFailSafeEnabled)
         {
@@ -682,7 +763,11 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     [StructLayout(LayoutKind.Auto)]
     private readonly struct FactoryRunResult<T>
     {
-        private FactoryRunResult(T? value, Task<T?>? runningTask, CancellationTokenSource? internalCancellationTokenSource)
+        private FactoryRunResult(
+            T? value,
+            Task<T?>? runningTask,
+            CancellationTokenSource? internalCancellationTokenSource
+        )
         {
             Value = value;
             RunningTask = runningTask;
@@ -746,7 +831,12 @@ internal static partial class FactoryCacheCoordinatorLog
         Level = LogLevel.Warning,
         Message = "Cache factory timeout fired for key {Key}; kind={TimeoutKind}, limit={Timeout}."
     )]
-    public static partial void LogCacheFactoryTimedOut(this ILogger logger, string key, string timeoutKind, TimeSpan timeout);
+    public static partial void LogCacheFactoryTimedOut(
+        this ILogger logger,
+        string key,
+        string timeoutKind,
+        TimeSpan timeout
+    );
 
     [LoggerMessage(
         EventId = 5,
@@ -773,8 +863,15 @@ internal static partial class FactoryCacheCoordinatorLog
         EventId = 7,
         EventName = "CacheSoftTimeoutInert",
         Level = LogLevel.Warning,
-        Message =
-            "Cache factory soft timeout {Timeout} is configured for key {Key}, but fail-safe is disabled; the soft timeout is inert."
+        Message = "Cache factory soft timeout {Timeout} is configured for key {Key}, but fail-safe is disabled; the soft timeout is inert."
     )]
     public static partial void LogCacheSoftTimeoutInert(this ILogger logger, string key, TimeSpan timeout);
+
+    [LoggerMessage(
+        EventId = 8,
+        EventName = "CacheSlidingExpirationRearmFailed",
+        Level = LogLevel.Debug,
+        Message = "Cache sliding-expiration re-arm failed for key {Key}; the cached value will still be returned."
+    )]
+    public static partial void LogSlidingExpirationRearmFailed(this ILogger logger, Exception exception, string key);
 }

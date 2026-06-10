@@ -14,16 +14,25 @@ internal static class RedisCacheEntryFrame
     internal const byte NullFlag = 1 << 0;
     internal const byte HasLogicalExpiresAtFlag = 1 << 1;
     internal const byte HasPhysicalExpiresAtFlag = 1 << 2;
+    internal const byte HasSlidingExpirationFlag = 1 << 3;
 
     // Valid range accepted by DateTimeOffset.FromUnixTimeMilliseconds; out-of-range values mean the
     // header bytes were never written by this codec, so the frame must read as a miss rather than throw.
     internal const long MinUnixEpochMilliseconds = -62_135_596_800_000L; // 0001-01-01T00:00:00.000Z
     internal const long MaxUnixEpochMilliseconds = 253_402_300_799_999L; // 9999-12-31T23:59:59.999Z
 
-    public static byte[] Encode(RedisValue value, bool isNull, DateTime? logicalExpiresAt, DateTime? physicalExpiresAt)
+    public static byte[] Encode(
+        RedisValue value,
+        bool isNull,
+        DateTime? logicalExpiresAt,
+        DateTime? physicalExpiresAt,
+        TimeSpan? slidingExpiration
+    )
     {
         var valueBytes = isNull ? [] : _ToBytes(value);
-        var buffer = new byte[HeaderLength + valueBytes.Length];
+        var hasSlidingExpiration = slidingExpiration.HasValue;
+        var payloadOffset = hasSlidingExpiration ? HeaderLength + sizeof(long) : HeaderLength;
+        var buffer = new byte[payloadOffset + valueBytes.Length];
         buffer[0] = Magic;
         buffer[1] = Version;
 
@@ -47,8 +56,18 @@ internal static class RedisCacheEntryFrame
             );
         }
 
+        if (hasSlidingExpiration)
+        {
+            flags |= HasSlidingExpirationFlag;
+            var slidingExpirationValue = slidingExpiration.GetValueOrDefault();
+            BinaryPrimitives.WriteInt64LittleEndian(
+                buffer.AsSpan(HeaderLength, sizeof(long)),
+                (long)slidingExpirationValue.TotalMilliseconds
+            );
+        }
+
         buffer[2] = flags;
-        valueBytes.CopyTo(buffer.AsSpan(HeaderLength));
+        valueBytes.CopyTo(buffer.AsSpan(payloadOffset));
 
         return buffer;
     }
@@ -78,23 +97,40 @@ internal static class RedisCacheEntryFrame
 
         var hasLogical = (flags & HasLogicalExpiresAtFlag) is not 0;
         var hasPhysical = (flags & HasPhysicalExpiresAtFlag) is not 0;
+        var hasSliding = (flags & HasSlidingExpirationFlag) is not 0;
+        var payloadOffset = hasSliding ? HeaderLength + sizeof(long) : HeaderLength;
+
+        if (bytes.Length < payloadOffset)
+        {
+            return DecodedFrame.Unframed;
+        }
+
         var logicalMs = hasLogical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(3, sizeof(long))) : 0L;
         var physicalMs = hasPhysical ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(11, sizeof(long))) : 0L;
+        var slidingMs = hasSliding
+            ? BinaryPrimitives.ReadInt64LittleEndian(bytes.AsSpan(HeaderLength, sizeof(long)))
+            : 0L;
 
-        if ((hasLogical && _IsOutOfRange(logicalMs)) || (hasPhysical && _IsOutOfRange(physicalMs)))
+        if (
+            (hasLogical && _IsOutOfRange(logicalMs))
+            || (hasPhysical && _IsOutOfRange(physicalMs))
+            || (hasSliding && slidingMs <= 0)
+        )
         {
             return DecodedFrame.Unframed;
         }
 
         var logicalExpiresAt = hasLogical ? _FromUnixTimeMilliseconds(logicalMs) : (DateTime?)null;
         var physicalExpiresAt = hasPhysical ? _FromUnixTimeMilliseconds(physicalMs) : (DateTime?)null;
+        var slidingExpiration = hasSliding ? TimeSpan.FromMilliseconds(slidingMs) : (TimeSpan?)null;
 
         return new DecodedFrame(
             IsFramed: true,
             IsNull: (flags & NullFlag) is not 0,
             LogicalExpiresAt: logicalExpiresAt,
             PhysicalExpiresAt: physicalExpiresAt,
-            ValueSegment: bytes.AsMemory(HeaderLength)
+            SlidingExpiration: slidingExpiration,
+            ValueSegment: bytes.AsMemory(payloadOffset)
         );
     }
 
@@ -130,6 +166,7 @@ internal static class RedisCacheEntryFrame
         bool IsNull,
         DateTime? LogicalExpiresAt,
         DateTime? PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration,
         ReadOnlyMemory<byte> ValueSegment
     )
     {
@@ -139,6 +176,7 @@ internal static class RedisCacheEntryFrame
                 IsNull: false,
                 LogicalExpiresAt: null,
                 PhysicalExpiresAt: null,
+                SlidingExpiration: null,
                 ValueSegment: ReadOnlyMemory<byte>.Empty
             );
     }

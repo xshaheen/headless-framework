@@ -27,6 +27,7 @@ public interface IFactoryCacheStore
     /// <param name="isNull">Whether the stored value is the cache null sentinel.</param>
     /// <param name="logicalExpiresAt">The logical expiration timestamp.</param>
     /// <param name="physicalExpiresAt">The physical expiration timestamp.</param>
+    /// <param name="slidingExpiration">The optional idle window used to re-arm logical expiration.</param>
     /// <param name="cancellationToken">The cancellation token.</param>
     ValueTask SetEntryAsync<T>(
         string key,
@@ -34,6 +35,36 @@ public interface IFactoryCacheStore
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Re-arms a sliding entry's logical expiration on a fresh read, extending it by the idle window without
+    /// rewriting the stored value.
+    /// </summary>
+    /// <remarks>
+    /// This is a metadata-only TTL bump, not a value write: implementations must extend the existing entry in
+    /// place (Redis <c>KeyExpire</c>, in-memory logical-expiration swap) rather than re-encode and re-store the
+    /// payload. Implementations must (a) only ever extend, never shorten, the entry's lifetime, (b) cap the new
+    /// logical deadline at <paramref name="physicalExpiresAt"/>, (c) throttle so a hot key is not re-armed on
+    /// every read (re-arm only once roughly half the idle window has elapsed), and (d) treat the call as
+    /// best-effort — a re-arm failure must not surface to the caller, because the value read already succeeded.
+    /// It is a no-op when the entry is missing or already past its physical cap.
+    /// </remarks>
+    /// <param name="key">The cache key.</param>
+    /// <param name="slidingExpiration">The idle window to extend logical expiration by.</param>
+    /// <param name="physicalExpiresAt">The physical (retention) cap the re-armed logical deadline must not exceed.</param>
+    /// <param name="now">
+    /// The reference UTC time for the re-arm, supplied by the caller so it matches the freshness check that
+    /// preceded it. Implementations use it to compute the new logical deadline and the throttle decision.
+    /// </param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
         CancellationToken cancellationToken
     );
 }

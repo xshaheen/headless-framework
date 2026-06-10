@@ -13,9 +13,15 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
 
     public int SetEntryCalls { get; private set; }
 
+    public int RearmCalls { get; private set; }
+
     public Func<Exception>? TryGetEntryFault { get; set; }
 
     public Func<Exception>? SetEntryFault { get; set; }
+
+    public Func<Exception>? RearmFault { get; set; }
+
+    public Func<string, int, Entry?>? TryGetEntryOverride { get; set; }
 
     public Entry? GetEntry(string key)
     {
@@ -25,7 +31,13 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         }
     }
 
-    public void SetEntry<T>(string key, T? value, DateTime logicalExpiresAt, DateTime physicalExpiresAt)
+    public void SetEntry<T>(
+        string key,
+        T? value,
+        DateTime logicalExpiresAt,
+        DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration = null
+    )
     {
         lock (_lock)
         {
@@ -33,7 +45,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 Value: value,
                 IsNull: value is null,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
         }
     }
@@ -48,8 +61,15 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
             throw TryGetEntryFault();
         }
 
+        var overrideEntry = TryGetEntryOverride?.Invoke(key, TryGetEntryCalls);
+
         lock (_lock)
         {
+            if (overrideEntry is not null)
+            {
+                _entries[key] = overrideEntry;
+            }
+
             if (!_entries.TryGetValue(key, out var entry))
             {
                 return new ValueTask<CacheStoreEntry<T>>(CacheStoreEntry<T>.NotFound);
@@ -61,7 +81,8 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                     IsNull: entry.IsNull,
                     Value: (T?)entry.Value,
                     LogicalExpiresAt: entry.LogicalExpiresAt,
-                    PhysicalExpiresAt: entry.PhysicalExpiresAt
+                    PhysicalExpiresAt: entry.PhysicalExpiresAt,
+                    SlidingExpiration: entry.SlidingExpiration
                 )
             );
         }
@@ -73,6 +94,7 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
     {
@@ -90,12 +112,74 @@ internal sealed class FakeFactoryCacheStore : IFactoryCacheStore
                 Value: value,
                 IsNull: isNull,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
         }
 
         return ValueTask.CompletedTask;
     }
 
-    internal sealed record Entry(object? Value, bool IsNull, DateTime LogicalExpiresAt, DateTime PhysicalExpiresAt);
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        RearmCalls++;
+
+        if (RearmFault is not null)
+        {
+            throw RearmFault();
+        }
+
+        lock (_lock)
+        {
+            // Models a metadata-only re-arm: extend the stored entry's logical deadline in place, keeping the
+            // value, physical cap, and sliding window. Mirrors the throttle the real stores apply (re-arm only
+            // once at least half the idle window has elapsed) so coordinator throttle behavior is observable.
+            if (
+                !_entries.TryGetValue(key, out var entry)
+                || entry.SlidingExpiration is null
+                || physicalExpiresAt <= now
+            )
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var remaining = entry.LogicalExpiresAt - now;
+
+            if (remaining > TimeSpan.FromTicks(slidingExpiration.Ticks / 2))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            var rearmed = now.Add(slidingExpiration);
+
+            if (rearmed > physicalExpiresAt)
+            {
+                rearmed = physicalExpiresAt;
+            }
+
+            if (rearmed <= entry.LogicalExpiresAt)
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            _entries[key] = entry with { LogicalExpiresAt = rearmed };
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    internal sealed record Entry(
+        object? Value,
+        bool IsNull,
+        DateTime LogicalExpiresAt,
+        DateTime PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration
+    );
 }

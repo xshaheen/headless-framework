@@ -863,7 +863,10 @@ public abstract class DataStorageTestsBase : TestBase
         var liveOwner = NodeMembership.SetIdentity("restart-node", incarnation: 8);
         var livePublished = await _StoreFailedPublishedMessageAsync("live-incarnation-published");
         (await storage.LeasePublishAsync(livePublished, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
-        var liveReceived = await _StoreFailedReceivedMessageAsync("live-incarnation-received", "live-incarnation-group");
+        var liveReceived = await _StoreFailedReceivedMessageAsync(
+            "live-incarnation-received",
+            "live-incarnation-group"
+        );
         (await storage.LeaseReceiveAsync(liveReceived, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
 
         var liveOwners = new[] { liveOwner.ToString() };
@@ -893,7 +896,9 @@ public abstract class DataStorageTestsBase : TestBase
                 lockedUntil: _FutureLeaseUntil(),
                 cancellationToken: AbortToken
             )
-        ).Should().BeTrue();
+        )
+            .Should()
+            .BeTrue();
 
         var received = await _StoreFailedReceivedMessageAsync("terminal-received", "terminal-group");
         (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
@@ -905,7 +910,9 @@ public abstract class DataStorageTestsBase : TestBase
                 lockedUntil: _FutureLeaseUntil(),
                 cancellationToken: AbortToken
             )
-        ).Should().BeTrue();
+        )
+            .Should()
+            .BeTrue();
 
         var liveOwner = NodeMembership.SetIdentity("terminal-live-owner");
         var liveOwners = new[] { liveOwner.ToString() };
@@ -950,7 +957,9 @@ public abstract class DataStorageTestsBase : TestBase
         (await storage.LeaseReceiveAsync(received, _FutureLeaseUntil(), AbortToken)).Should().BeTrue();
 
         // Non-empty list bypasses early-exit guard; WHERE Owner IS NOT NULL must filter null-Owner rows
-        (await storage.ReclaimDeadPublishedOwnersAsync(["dead-owner-x"], AbortToken)).Should().Be(0);
+        (await storage.ReclaimDeadPublishedOwnersAsync(["dead-owner-x"], AbortToken))
+            .Should()
+            .Be(0);
         (await storage.GetPublishedMessagesOfNeedRetryAsync(AbortToken))
             .Should()
             .NotContain(m => m.StorageId == published.StorageId);

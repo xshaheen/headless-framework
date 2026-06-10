@@ -58,7 +58,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, "soft-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+                .GetOrAddAsync<string>(
+                    _store,
+                    "soft-timeout-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -75,7 +81,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, "hard-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+                .GetOrAddAsync<string>(
+                    _store,
+                    "hard-timeout-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -116,7 +128,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, "timeout-order-validation", _FactoryReturns("fresh"), options, AbortToken);
+                .GetOrAddAsync<string>(
+                    _store,
+                    "timeout-order-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -200,6 +218,45 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
     }
 
     [Fact]
+    public async Task should_rearm_fresh_sliding_hit_without_invoking_factory()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var slidingExpiration = TimeSpan.FromSeconds(1);
+        var physicalExpiresAt = now.AddSeconds(5);
+        _store.SetEntry(key, "cached", now.AddMilliseconds(100), physicalExpiresAt, slidingExpiration);
+        var factoryCalls = 0;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ =>
+                {
+                    factoryCalls++;
+                    return ValueTask.FromResult<string?>("new");
+                },
+                _CreateOptions(slidingExpiration: slidingExpiration),
+                AbortToken
+            );
+
+        // then
+        var entry = _store.GetEntry(key);
+        result.Value.Should().Be("cached");
+        result.IsStale.Should().BeFalse();
+        factoryCalls.Should().Be(0);
+        // Re-arm is now a metadata-only TTL bump via TryRearmSlidingAsync, not a full SetEntry rewrite.
+        _store.RearmCalls.Should().Be(1);
+        _store.SetEntryCalls.Should().Be(0);
+        entry.Should().NotBeNull();
+        entry!.LogicalExpiresAt.Should().Be(now.Add(slidingExpiration));
+        entry.PhysicalExpiresAt.Should().Be(physicalExpiresAt);
+        entry.SlidingExpiration.Should().Be(slidingExpiration);
+    }
+
+    [Fact]
     public async Task should_serve_stale_when_factory_throws_within_physical_window()
     {
         // given
@@ -233,14 +290,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
 
         // when
-        await new FactoryCacheCoordinator(_timeProvider, logger)
-            .GetOrAddAsync<string>(
-                _store,
-                key,
-                _ => throw new InvalidOperationException("downstream unavailable"),
-                _CreateOptions(isFailSafeEnabled: true),
-                AbortToken
-            );
+        await new FactoryCacheCoordinator(_timeProvider, logger).GetOrAddAsync<string>(
+            _store,
+            key,
+            _ => throw new InvalidOperationException("downstream unavailable"),
+            _CreateOptions(isFailSafeEnabled: true),
+            AbortToken
+        );
 
         // then
         var logged = logger
@@ -438,6 +494,133 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         entry.Should().NotBeNull();
         entry!.LogicalExpiresAt.Should().Be(now.Add(duration));
         entry.PhysicalExpiresAt.Should().Be(now.Add(failSafeMaxDuration));
+        entry.SlidingExpiration.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_set_sliding_logical_expiration_on_factory_success()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var duration = TimeSpan.FromSeconds(5);
+        var slidingExpiration = TimeSpan.FromSeconds(1);
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>("fresh"),
+                _CreateOptions(duration: duration, slidingExpiration: slidingExpiration),
+                AbortToken
+            );
+
+        // then
+        var entry = _store.GetEntry(key);
+        result.Value.Should().Be("fresh");
+        result.IsStale.Should().BeFalse();
+        entry.Should().NotBeNull();
+        entry!.LogicalExpiresAt.Should().Be(now.Add(slidingExpiration));
+        entry.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        entry.SlidingExpiration.Should().Be(slidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_clamp_sliding_logical_expiration_to_physical_cap_on_factory_success()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var duration = TimeSpan.FromSeconds(2);
+        var slidingExpiration = TimeSpan.FromSeconds(5);
+
+        // when
+        await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>("fresh"),
+                _CreateOptions(duration: duration, slidingExpiration: slidingExpiration),
+                AbortToken
+            );
+
+        // then
+        var entry = _store.GetEntry(key);
+        entry.Should().NotBeNull();
+        entry!.LogicalExpiresAt.Should().Be(now.Add(duration));
+        entry.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        entry.SlidingExpiration.Should().Be(slidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_rearm_under_lock_sliding_fresh_hit()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var slidingExpiration = TimeSpan.FromSeconds(1);
+        var physicalExpiresAt = now.AddSeconds(5);
+        var factoryCalls = 0;
+        _store.TryGetEntryOverride = (_, calls) =>
+            calls == 2
+                ? new FakeFactoryCacheStore.Entry(
+                    Value: "concurrent",
+                    IsNull: false,
+                    LogicalExpiresAt: now.AddMilliseconds(100),
+                    PhysicalExpiresAt: physicalExpiresAt,
+                    SlidingExpiration: slidingExpiration
+                )
+                : null;
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ =>
+                {
+                    factoryCalls++;
+                    return ValueTask.FromResult<string?>("new");
+                },
+                _CreateOptions(slidingExpiration: slidingExpiration),
+                AbortToken
+            );
+
+        // then
+        var entry = _store.GetEntry(key);
+        result.Value.Should().Be("concurrent");
+        factoryCalls.Should().Be(0);
+        _store.RearmCalls.Should().Be(1);
+        _store.SetEntryCalls.Should().Be(0);
+        entry.Should().NotBeNull();
+        entry!.LogicalExpiresAt.Should().Be(now.Add(slidingExpiration));
+        entry.PhysicalExpiresAt.Should().Be(physicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_return_fresh_sliding_hit_when_rearm_write_fails()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var slidingExpiration = TimeSpan.FromSeconds(1);
+        _store.SetEntry(key, "cached", now.AddMilliseconds(100), now.AddSeconds(5), slidingExpiration);
+        _store.RearmFault = () => new InvalidOperationException("store re-arm failed");
+
+        // when
+        var result = await _CreateCoordinator()
+            .GetOrAddAsync<string>(
+                _store,
+                key,
+                _ => ValueTask.FromResult<string?>("new"),
+                _CreateOptions(slidingExpiration: slidingExpiration),
+                AbortToken
+            );
+
+        // then
+        result.Value.Should().Be("cached");
+        result.IsStale.Should().BeFalse();
     }
 
     [Fact]
@@ -448,13 +631,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // when
         var result = await _CreateCoordinator()
-            .GetOrAddAsync<string>(
-                _store,
-                key,
-                _ => ValueTask.FromResult<string?>(null),
-                _CreateOptions(),
-                AbortToken
-            );
+            .GetOrAddAsync<string>(_store, key, _ => ValueTask.FromResult<string?>(null), _CreateOptions(), AbortToken);
 
         // then
         result.HasValue.Should().BeTrue();
@@ -508,6 +685,36 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         // then
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("factory failed");
+    }
+
+    [Fact]
+    public async Task should_reject_sliding_expiration_with_failsafe_enabled()
+    {
+        // given
+        var key = Faker.Random.AlphaNumeric(8);
+        var factoryCalls = 0;
+
+        // when
+        var act = async () =>
+            await _CreateCoordinator()
+                .GetOrAddAsync<string>(
+                    _store,
+                    key,
+                    _ =>
+                    {
+                        factoryCalls++;
+                        return ValueTask.FromResult<string?>("fresh");
+                    },
+                    _CreateOptions(isFailSafeEnabled: true, slidingExpiration: TimeSpan.FromSeconds(1)),
+                    AbortToken
+                );
+
+        // then
+        // Sliding + fail-safe is an unsupported combination, guarded via Headless.Checks' Ensure.False
+        // (InvalidOperationException) rather than a hand-rolled ArgumentException.
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        factoryCalls.Should().Be(0);
+        _store.SetEntryCalls.Should().Be(0);
     }
 
     [Fact]
@@ -872,7 +1079,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         var options = _CreateOptions(
             duration: TimeSpan.FromSeconds(5),
             isFailSafeEnabled: true,
@@ -1006,7 +1215,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var backgroundFinished = _WaitForBackgroundFinished(coordinator);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         var options = _CreateOptions(
             isFailSafeEnabled: true,
             factorySoftTimeout: TimeSpan.FromSeconds(1),
@@ -1062,7 +1273,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var coordinator = new FactoryCacheCoordinator(_timeProvider, logger);
         var timeoutRegistered = _WaitForFactoryTimeoutRegistered(coordinator);
         var factoryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var abandonedFactoryGate = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var abandonedFactoryGate = new TaskCompletionSource<string?>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         var options = _CreateOptions(isFailSafeEnabled: false, factoryHardTimeout: TimeSpan.FromSeconds(1));
 
         async ValueTask<string?> Factory(CancellationToken cancellationToken)
@@ -1098,7 +1311,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
             }
         }
 
-        observed.Should().BeTrue("the fault observer attached to the abandoned hard-timeout factory must log its failure");
+        observed
+            .Should()
+            .BeTrue("the fault observer attached to the abandoned hard-timeout factory must log its failure");
     }
 
     [Fact]
@@ -1143,7 +1358,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         // when
         var act = async () =>
             await _CreateCoordinator()
-                .GetOrAddAsync<string>(_store, "lock-timeout-validation", _FactoryReturns("fresh"), options, AbortToken);
+                .GetOrAddAsync<string>(
+                    _store,
+                    "lock-timeout-validation",
+                    _FactoryReturns("fresh"),
+                    options,
+                    AbortToken
+                );
 
         // then
         await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
@@ -1257,7 +1478,9 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
 
         async ValueTask<string?> OuterFactory(CancellationToken cancellationToken)
         {
-            var inner = coordinator.GetOrAddAsync(_store, key, _FactoryReturns("inner"), innerOptions, cancellationToken).AsTask();
+            var inner = coordinator
+                .GetOrAddAsync(_store, key, _FactoryReturns("inner"), innerOptions, cancellationToken)
+                .AsTask();
             innerStarted.SetResult();
             _timeProvider.Advance(TimeSpan.FromSeconds(1));
             return (await inner).Value;
@@ -1307,7 +1530,7 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         var now = _timeProvider.GetUtcNow().UtcDateTime;
         _store.SetEntry(key, "stale", now.AddSeconds(-1), now.AddMinutes(5));
 
-        using var callerCts = new CancellationTokenSource();   // not cancelled
+        using var callerCts = new CancellationTokenSource(); // not cancelled
         using var internalCts = new CancellationTokenSource(); // simulates a downstream / internal timeout
 
         // when — factory throws an OCE bound to an *internal* token, not the caller's
@@ -1390,11 +1613,13 @@ public sealed class FactoryCacheCoordinatorTests : TestBase
         TimeSpan? factorySoftTimeout = null,
         TimeSpan? factoryHardTimeout = null,
         TimeSpan? backgroundFactoryCeiling = null,
-        TimeSpan? lockTimeout = null
+        TimeSpan? lockTimeout = null,
+        TimeSpan? slidingExpiration = null
     ) =>
         new()
         {
             Duration = duration ?? TimeSpan.FromSeconds(5),
+            SlidingExpiration = slidingExpiration,
             IsFailSafeEnabled = isFailSafeEnabled,
             FailSafeMaxDuration = maxDuration ?? TimeSpan.FromMinutes(1),
             FailSafeThrottleDuration = throttleDuration ?? TimeSpan.FromSeconds(10),

@@ -16,11 +16,13 @@ public sealed class PostgresDistributedLockSetupTests : TestBase
         var services = new ServiceCollection();
 
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = "Host=localhost;Database=headless";
-            options.EnablePushWakeup = false;
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = "Host=localhost;Database=headless";
+                options.EnablePushWakeup = false;
+            })
+        );
 
         await using var provider = services.BuildServiceProvider();
 
@@ -45,14 +47,16 @@ public sealed class PostgresDistributedLockSetupTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(options =>
-        {
-            options.ConnectionString = connectionString;
-            options.KeyPrefix = keyPrefix;
-            options.PollingFallback = TimeSpan.FromMilliseconds(pollingFallbackMs);
-            options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
-            options.KeepAlive = TimeSpan.FromSeconds(keepAliveSeconds);
-        }));
+        services.AddHeadlessDistributedLocks(setup =>
+            setup.UsePostgreSql(options =>
+            {
+                options.ConnectionString = connectionString;
+                options.KeyPrefix = keyPrefix;
+                options.PollingFallback = TimeSpan.FromMilliseconds(pollingFallbackMs);
+                options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
+                options.KeepAlive = TimeSpan.FromSeconds(keepAliveSeconds);
+            })
+        );
 
         using var provider = services.BuildServiceProvider();
 

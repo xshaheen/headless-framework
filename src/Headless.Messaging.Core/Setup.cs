@@ -455,9 +455,7 @@ public static class SetupMessaging
 
                 if (descriptorCount > resolvedCount)
                 {
-                    var logger = provider
-                        .GetService<ILoggerFactory>()
-                        ?.CreateLogger(typeof(SetupMessaging).FullName!);
+                    var logger = provider.GetService<ILoggerFactory>()?.CreateLogger(typeof(SetupMessaging).FullName!);
 
                     if (logger is not null)
                     {
@@ -519,8 +517,7 @@ public static class SetupMessaging
             foreach (var consumer in registration.Consumers)
             {
                 if (
-                    consumer.IsAssemblyScan
-                    && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
+                    consumer.IsAssemblyScan && explicitPairs.Contains((registration.MessageType, consumer.ConsumerType))
                 )
                 {
                     continue;
@@ -537,8 +534,7 @@ public static class SetupMessaging
                     consumer.Concurrency,
                     consumer.HandlerId,
                     consumer.IntentType
-                )
-                with
+                ) with
                 {
                     ProviderConfigs = consumer.ProviderConfigs,
                 };
@@ -729,7 +725,6 @@ public static class SetupMessaging
                 );
         }
     }
-
 }
 
 internal static partial class SetupMessagingLog

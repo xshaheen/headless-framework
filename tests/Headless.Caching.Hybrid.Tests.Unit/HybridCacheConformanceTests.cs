@@ -78,8 +78,7 @@ public sealed class HybridCacheConformanceTests : CacheConformanceTestsBase
         base.should_propagate_factory_exception_when_failsafe_cache_is_cold();
 
     [Fact]
-    public override Task should_throttle_failsafe_factory_retries() =>
-        base.should_throttle_failsafe_factory_retries();
+    public override Task should_throttle_failsafe_factory_retries() => base.should_throttle_failsafe_factory_retries();
 
     [Fact]
     public override Task should_not_serve_stale_when_failsafe_disabled_by_default() =>

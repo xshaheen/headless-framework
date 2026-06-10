@@ -14,6 +14,7 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
     private const byte _Version = 0x01;
     private const byte _NullFlag = 1 << 0;
     private const byte _HasPhysicalExpiresAtFlag = 1 << 2;
+    private const byte _HasSlidingExpirationFlag = 1 << 3;
 
     [Fact]
     public async Task should_store_scalar_value_as_framed_payload_with_magic_prefix()
@@ -65,6 +66,28 @@ public sealed class RedisEnvelopeFormatTests(RedisCacheFixture fixture) : RedisC
         var ttl = await _Database().KeyTimeToLiveAsync(key);
         ttl.Should().NotBeNull();
         ttl!.Value.Should().BeCloseTo(options.FailSafeMaxDuration, TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_store_sliding_expiration_flag_and_map_redis_ttl_to_logical_deadline()
+    {
+        await FlushAsync();
+        using var cache = CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(30),
+            SlidingExpiration = TimeSpan.FromSeconds(5),
+        };
+
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        var stored = await _GetRawBytesAsync(key);
+        var ttl = await _Database().KeyTimeToLiveAsync(key);
+        (stored[2] & _HasSlidingExpirationFlag).Should().Be(_HasSlidingExpirationFlag);
+        stored.AsSpan(27).ToArray().Should().Equal(Encoding.UTF8.GetBytes("value"));
+        ttl.Should().NotBeNull();
+        ttl!.Value.Should().BeCloseTo(options.SlidingExpiration.Value, TimeSpan.FromSeconds(2));
     }
 
     [Fact]

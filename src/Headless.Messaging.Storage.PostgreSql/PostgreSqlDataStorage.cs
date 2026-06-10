@@ -165,7 +165,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _nodeMembership.GetOwnerParameterValue(lockedUntil) },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
+            {
+                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+            },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
@@ -649,7 +652,10 @@ public sealed class PostgreSqlDataStorage(
             new NpgsqlParameter("@ExpiresAt", message.ExpiresAt.HasValue ? message.ExpiresAt.Value : DBNull.Value),
             new NpgsqlParameter("@NextRetryAt", nextRetryAt.ToUtcParameterValue()),
             new NpgsqlParameter("@LockedUntil", lockedUntil.ToUtcParameterValue()),
-            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar) { Value = _nodeMembership.GetOwnerParameterValue(lockedUntil) },
+            new NpgsqlParameter("@Owner", NpgsqlDbType.Varchar)
+            {
+                Value = _nodeMembership.GetOwnerParameterValue(lockedUntil),
+            },
             new NpgsqlParameter("@OriginalRetries", NpgsqlDbType.Integer)
             {
                 Value = originalRetries ?? (object)DBNull.Value,
@@ -920,8 +926,7 @@ public sealed class PostgreSqlDataStorage(
         // Intentionally version-agnostic: reclaim only shortens leases on rows owned by dead
         // node incarnations, then the normal version-filtered pickup path decides what this
         // service version is allowed to dispatch.
-        var sql =
-            $"""
+        var sql = $"""
             UPDATE {tableName}
             SET "LockedUntil" = @Now
             WHERE "Owner" IS NOT NULL
@@ -947,5 +952,4 @@ public sealed class PostgreSqlDataStorage(
             )
             .ConfigureAwait(false);
     }
-
 }

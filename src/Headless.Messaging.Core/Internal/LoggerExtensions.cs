@@ -670,7 +670,12 @@ internal static partial class LoggerExtensions
         Level = LogLevel.Warning,
         Message = "{RetryKind} retry lock lease {LeaseId} for resource {Resource} was observed lost. No new retry pickup starts under this lease; in-flight dispatch remains guarded by per-row LockedUntil."
     )]
-    public static partial void RetryLockLeaseLost(this ILogger logger, string retryKind, string resource, string leaseId);
+    public static partial void RetryLockLeaseLost(
+        this ILogger logger,
+        string retryKind,
+        string resource,
+        string leaseId
+    );
 
     [LoggerMessage(
         EventId = 81,

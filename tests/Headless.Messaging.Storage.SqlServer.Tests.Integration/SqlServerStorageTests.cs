@@ -21,7 +21,6 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataStorageTestsBase
 {
-
     private IStorageInitializer? _initializer;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
@@ -282,7 +281,8 @@ public sealed class SqlServerStorageTests(SqlServerTestFixture fixture) : DataSt
     public override Task should_not_reclaim_terminal_rows() => base.should_not_reclaim_terminal_rows();
 
     [Fact]
-    public override Task should_be_inert_when_no_dead_owners_passed() => base.should_be_inert_when_no_dead_owners_passed();
+    public override Task should_be_inert_when_no_dead_owners_passed() =>
+        base.should_be_inert_when_no_dead_owners_passed();
 
     [Fact]
     public override Task should_not_reclaim_rows_with_null_owner() => base.should_not_reclaim_rows_with_null_owner();

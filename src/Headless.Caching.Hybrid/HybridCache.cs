@@ -1024,6 +1024,7 @@ public sealed class HybridCache(
 
         var now = _GetUtcNow();
         CacheStoreEntry<T>? l1StaleCandidate = null;
+        var l1SlidingHit = false;
 
         if (LocalCache is IFactoryCacheStore l1Store)
         {
@@ -1033,10 +1034,18 @@ public sealed class HybridCache(
             {
                 _logger.LogLocalCacheHit(key);
                 Interlocked.Increment(ref _localCacheHits);
-                return l1Entry;
-            }
 
-            if (l1Entry.IsPhysicallyPresent(now))
+                if (!l1Entry.SlidingExpiration.HasValue)
+                {
+                    return l1Entry;
+                }
+
+                // Sliding entries need the L2 physical cap for safe re-arm. A local entry may be physically
+                // capped by DefaultLocalExpiration, so use it only as a no-rearm fallback if L2 is unavailable.
+                l1SlidingHit = true;
+                l1StaleCandidate = l1Entry with { SlidingExpiration = null };
+            }
+            else if (l1Entry.IsPhysicallyPresent(now))
             {
                 l1StaleCandidate = l1Entry;
             }
@@ -1054,12 +1063,16 @@ public sealed class HybridCache(
                     IsNull: l1Value.IsNull,
                     Value: l1Value.Value,
                     LogicalExpiresAt: null,
-                    PhysicalExpiresAt: null
+                    PhysicalExpiresAt: null,
+                    SlidingExpiration: null
                 );
             }
         }
 
-        _logger.LogLocalCacheMiss(key);
+        if (!l1SlidingHit)
+        {
+            _logger.LogLocalCacheMiss(key);
+        }
 
         if (l2Cache is not IFactoryCacheStore l2Store)
         {
@@ -1096,6 +1109,7 @@ public sealed class HybridCache(
         bool isNull,
         DateTime logicalExpiresAt,
         DateTime physicalExpiresAt,
+        TimeSpan? slidingExpiration,
         CancellationToken cancellationToken
     )
         where T : default
@@ -1109,17 +1123,26 @@ public sealed class HybridCache(
             try
             {
                 await l2Store
-                    .SetEntryAsync(key, value, isNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+                    .SetEntryAsync(
+                        key,
+                        value,
+                        isNull,
+                        logicalExpiresAt,
+                        physicalExpiresAt,
+                        slidingExpiration,
+                        cancellationToken
+                    )
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
         }
         else
         {
-            var expiresIn = physicalExpiresAt.Subtract(_GetUtcNow());
+            var expiresIn = (slidingExpiration is null ? physicalExpiresAt : logicalExpiresAt).Subtract(_GetUtcNow());
 
             try
             {
@@ -1127,7 +1150,8 @@ public sealed class HybridCache(
                     .UpsertAsync(key, isNull ? default : value, expiresIn, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (Exception exception) when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
             {
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
@@ -1140,7 +1164,8 @@ public sealed class HybridCache(
                 IsNull: isNull,
                 Value: isNull ? default : value,
                 LogicalExpiresAt: logicalExpiresAt,
-                PhysicalExpiresAt: physicalExpiresAt
+                PhysicalExpiresAt: physicalExpiresAt,
+                SlidingExpiration: slidingExpiration
             );
 
             await _SetLocalEntryAsync(l1Store, key, entry, cancellationToken).ConfigureAwait(false);
@@ -1158,6 +1183,44 @@ public sealed class HybridCache(
         }
     }
 
+    async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Re-arm both tiers (KTD-8). L2 carries the authoritative physical cap; L1's own re-arm bounds the new
+        // logical deadline by its locally-capped entry metadata, so passing the L2 cap is safe. L2 is best-effort
+        // (a remote hiccup must not fail the read); L1 is in-process and effectively infallible.
+        if (l2Cache is IFactoryCacheStore l2Store)
+        {
+            try
+            {
+                await l2Store
+                    .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception exception)
+                when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
+            {
+                _logger.LogFailedToWriteToL2Cache(exception, key);
+            }
+        }
+
+        if (LocalCache is IFactoryCacheStore l1Store)
+        {
+            await l1Store
+                .TryRearmSlidingAsync(key, slidingExpiration, physicalExpiresAt, now, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
     private async ValueTask _SetLocalEntryAsync<T>(
         IFactoryCacheStore l1Store,
         string key,
@@ -1171,7 +1234,9 @@ public sealed class HybridCache(
         }
 
         var now = _GetUtcNow();
-        var localCeiling = options.DefaultLocalExpiration.HasValue ? now.Add(options.DefaultLocalExpiration.Value) : (DateTime?)null;
+        var localCeiling = options.DefaultLocalExpiration.HasValue
+            ? now.Add(options.DefaultLocalExpiration.Value)
+            : (DateTime?)null;
 
         // Legacy/unframed L2 entries carry no expiration metadata. Promote them into L1 bounded by the local
         // ceiling so they cannot pin process memory indefinitely; without a configured ceiling there is no finite
@@ -1184,17 +1249,37 @@ public sealed class HybridCache(
             }
 
             await l1Store
-                .SetEntryAsync(key, entry.Value, entry.IsNull, localCeiling.Value, localCeiling.Value, cancellationToken)
+                .SetEntryAsync(
+                    key,
+                    entry.Value,
+                    entry.IsNull,
+                    localCeiling.Value,
+                    localCeiling.Value,
+                    slidingExpiration: null,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             return;
         }
 
-        var logicalExpiresAt = localCeiling.HasValue ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value) : entry.LogicalExpiresAt.Value;
-        var physicalExpiresAt = localCeiling.HasValue ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value) : entry.PhysicalExpiresAt.Value;
+        var logicalExpiresAt = localCeiling.HasValue
+            ? _Min(entry.LogicalExpiresAt.Value, localCeiling.Value)
+            : entry.LogicalExpiresAt.Value;
+        var physicalExpiresAt = localCeiling.HasValue
+            ? _Min(entry.PhysicalExpiresAt.Value, localCeiling.Value)
+            : entry.PhysicalExpiresAt.Value;
 
         await l1Store
-            .SetEntryAsync(key, entry.Value, entry.IsNull, logicalExpiresAt, physicalExpiresAt, cancellationToken)
+            .SetEntryAsync(
+                key,
+                entry.Value,
+                entry.IsNull,
+                logicalExpiresAt,
+                physicalExpiresAt,
+                entry.SlidingExpiration,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 

@@ -125,12 +125,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
         var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
 
-        var cookie = await strategy.TryAcquireAsync(
-            databaseConnection,
-            resourceName,
-            TimeSpan.Zero,
-            AbortToken
-        );
+        var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
         cookie.Should().NotBeNull();
         (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be(expectedLockTimeout);
@@ -155,12 +150,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         var expectedLockTimeout = await _CurrentSettingAsync(connection, "lock_timeout", AbortToken);
 
         var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
-        var cookie = await strategy.TryAcquireAsync(
-            databaseConnection,
-            resourceName,
-            TimeSpan.Zero,
-            AbortToken
-        );
+        var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
         try
         {
@@ -191,12 +181,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         );
 
         var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
-        var cookie = await strategy.TryAcquireAsync(
-            databaseConnection,
-            resourceName,
-            TimeSpan.Zero,
-            AbortToken
-        );
+        var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
         try
         {
@@ -217,22 +202,19 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         var resourceName = _CreateResourceName();
         var key = PostgresAdvisoryLockKey.FromString(resourceName, allowHashing: true);
 
-        await using (var databaseConnection = new PostgresDatabaseConnection(
-            fixture.ConnectionString,
-            TimeProvider.System,
-            _MonitoringCommandTimeoutSeconds
-        ))
+        await using (
+            var databaseConnection = new PostgresDatabaseConnection(
+                fixture.ConnectionString,
+                TimeProvider.System,
+                _MonitoringCommandTimeoutSeconds
+            )
+        )
         {
             await databaseConnection.OpenAsync(AbortToken);
             await databaseConnection.BeginTransactionAsync(AbortToken);
 
             var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
-            var cookie = await strategy.TryAcquireAsync(
-                databaseConnection,
-                resourceName,
-                TimeSpan.Zero,
-                AbortToken
-            );
+            var cookie = await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
             cookie.Should().NotBeNull();
             (await _CountAdvisoryLocksAsync(key)).Should().BeGreaterThan(0);
@@ -260,8 +242,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         var act = async () =>
             await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
-        await act
-            .Should()
+        await act.Should()
             .ThrowAsync<PostgresException>()
             .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
 
@@ -275,15 +256,9 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
 
         var strategy = new PostgresAdvisoryLock(isShared: false, TimeProvider.System);
         var act = async () =>
-            await strategy.TryAcquireAsync(
-                databaseConnection,
-                _CreateResourceName(),
-                TimeSpan.Zero,
-                AbortToken
-            );
+            await strategy.TryAcquireAsync(databaseConnection, _CreateResourceName(), TimeSpan.Zero, AbortToken);
 
-        await act
-            .Should()
+        await act.Should()
             .ThrowAsync<PostgresException>()
             .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
     }
@@ -306,8 +281,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         var act = async () =>
             await strategy.TryAcquireAsync(databaseConnection, resourceName, TimeSpan.Zero, AbortToken);
 
-        await act
-            .Should()
+        await act.Should()
             .ThrowAsync<PostgresException>()
             .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
     }
@@ -493,12 +467,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
             throw new NotSupportedException();
 
         private static PostgresException _CreateSavePointException() =>
-            new(
-                "current transaction is aborted",
-                "ERROR",
-                "ERROR",
-                PostgresErrorCodes.InFailedSqlTransaction
-            );
+            new("current transaction is aborted", "ERROR", "ERROR", PostgresErrorCodes.InFailedSqlTransaction);
     }
 
     private sealed class FakeDbParameter : DbParameter
@@ -554,8 +523,7 @@ public sealed class PostgresTransactionLockTests(PostgresDistributedLockFixture 
         public override bool Contains(string value) =>
             _parameters.Exists(parameter => parameter.ParameterName == value);
 
-        public override void CopyTo(Array array, int index) =>
-            ((ICollection)_parameters).CopyTo(array, index);
+        public override void CopyTo(Array array, int index) => ((ICollection)_parameters).CopyTo(array, index);
 
         public override IEnumerator GetEnumerator() => _parameters.GetEnumerator();
 

@@ -116,7 +116,15 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(PublishedMessages, message, lockedUntil, timeProvider, nodeMembership.GetOwnerTag(), cancellationToken);
+    ) =>
+        _LeaseAsync(
+            PublishedMessages,
+            message,
+            lockedUntil,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
 
     public ValueTask<bool> ChangeReceiveStateAsync(
         MediumMessage message,
@@ -171,7 +179,15 @@ internal sealed class InMemoryDataStorage(
         MediumMessage message,
         DateTime lockedUntil,
         CancellationToken cancellationToken = default
-    ) => _LeaseAsync(ReceivedMessages, message, lockedUntil, timeProvider, nodeMembership.GetOwnerTag(), cancellationToken);
+    ) =>
+        _LeaseAsync(
+            ReceivedMessages,
+            message,
+            lockedUntil,
+            timeProvider,
+            nodeMembership.GetOwnerTag(),
+            cancellationToken
+        );
 
     public ValueTask<MediumMessage> StoreMessageAsync(
         string name,

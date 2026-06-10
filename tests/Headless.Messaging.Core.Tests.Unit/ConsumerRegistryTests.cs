@@ -783,9 +783,7 @@ public sealed class ConsumerRegistryTests : TestBase
         var act = () => registry.RegisterMessageName(typeof(TestMessage), "orders.renamed");
 
         // then
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*orders.created*orders.renamed*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*orders.created*orders.renamed*");
     }
 
     [Fact]

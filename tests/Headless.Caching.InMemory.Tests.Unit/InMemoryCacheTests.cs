@@ -34,6 +34,7 @@ public sealed class InMemoryCacheTests : TestBase
                 return new CacheEntryEnvelope(
                     _GetEntryProperty<DateTime?>(entry, "LogicalExpiresAt"),
                     _GetEntryProperty<DateTime?>(entry, "PhysicalExpiresAt"),
+                    _GetEntryProperty<TimeSpan?>(entry, "SlidingExpiration"),
                     _GetEntryProperty<object?>(entry, "LastFactoryError"),
                     _GetEntryProperty<IReadOnlySet<string>?>(entry, "Tags")
                 );
@@ -68,6 +69,7 @@ public sealed class InMemoryCacheTests : TestBase
                 typeof(object),
                 typeof(DateTime?),
                 typeof(DateTime?),
+                typeof(TimeSpan?),
                 typeof(TimeProvider),
                 typeof(bool),
                 typeof(bool),
@@ -85,6 +87,7 @@ public sealed class InMemoryCacheTests : TestBase
             value,
             logicalExpiresAt,
             physicalExpiresAt,
+            null,
             typeof(InMemoryCache)
                 .GetField("_timeProvider", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .GetValue(cache),
@@ -105,6 +108,19 @@ public sealed class InMemoryCacheTests : TestBase
         return field!.GetValue(cache)!;
     }
 
+    private static async Task _StartMaintenanceAsync(InMemoryCache cache)
+    {
+        var method = typeof(InMemoryCache).GetMethod(
+            "_StartMaintenanceAsync",
+            BindingFlags.Instance | BindingFlags.NonPublic
+        );
+        method.Should().NotBeNull();
+
+        var task = (Task)method!.Invoke(cache, [true])!;
+        await task;
+        await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
+    }
+
     private static T? _GetEntryProperty<T>(object entry, string propertyName)
     {
         var property = entry
@@ -120,6 +136,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(expectedExpiration);
         envelope.PhysicalExpiresAt.Should().Be(expectedExpiration);
+        envelope.SlidingExpiration.Should().BeNull();
         envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
     }
@@ -127,6 +144,7 @@ public sealed class InMemoryCacheTests : TestBase
     private sealed record CacheEntryEnvelope(
         DateTime? LogicalExpiresAt,
         DateTime? PhysicalExpiresAt,
+        TimeSpan? SlidingExpiration,
         object? LastFactoryError,
         IReadOnlySet<string>? Tags
     );
@@ -238,8 +256,130 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.SlidingExpiration.Should().BeNull();
         envelope.LastFactoryError.Should().BeNull();
         envelope.Tags.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_store_sliding_expiration_for_factory_entry()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var now = _timeProvider.GetUtcNow().UtcDateTime;
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(10),
+            SlidingExpiration = TimeSpan.FromMinutes(2),
+        };
+
+        // when
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+
+        // then
+        var envelope = _GetEntryEnvelope(cache, key);
+        envelope.LogicalExpiresAt.Should().Be(now.Add(options.SlidingExpiration.Value));
+        envelope.PhysicalExpiresAt.Should().Be(now.Add(options.Duration));
+        envelope.SlidingExpiration.Should().Be(options.SlidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_rearm_sliding_entry_on_value_read_without_moving_physical_cap()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1300));
+
+        // when
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        cached.Value.Should().Be("value");
+        after.LogicalExpiresAt.Should().Be(_timeProvider.GetUtcNow().UtcDateTime.Add(options.SlidingExpiration.Value));
+        after.PhysicalExpiresAt.Should().Be(before.PhysicalExpiresAt);
+        after.SlidingExpiration.Should().Be(options.SlidingExpiration);
+    }
+
+    [Fact]
+    public async Task should_not_rearm_sliding_entry_before_rearm_threshold()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(250));
+
+        // when
+        var cached = await cache.GetAsync<string>(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        cached.Value.Should().Be("value");
+        after.LogicalExpiresAt.Should().Be(before.LogicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_not_rearm_sliding_entry_on_metadata_read()
+    {
+        // given
+        using var cache = _CreateCache();
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromSeconds(10),
+            SlidingExpiration = TimeSpan.FromSeconds(2),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        var before = _GetEntryEnvelope(cache, key);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(1300));
+
+        // when
+        var exists = await cache.ExistsAsync(key, AbortToken);
+        var expiration = await cache.GetExpirationAsync(key, AbortToken);
+
+        // then
+        var after = _GetEntryEnvelope(cache, key);
+        exists.Should().BeTrue();
+        expiration.Should().BeCloseTo(TimeSpan.FromMilliseconds(700), TimeSpan.FromMilliseconds(1));
+        after.LogicalExpiresAt.Should().Be(before.LogicalExpiresAt);
+    }
+
+    [Fact]
+    public async Task should_remove_idle_sliding_entry_during_maintenance_before_physical_cap()
+    {
+        // given
+        using var cache = _CreateCache(new InMemoryCacheOptions { MaintenanceInterval = TimeSpan.FromMilliseconds(1) });
+        var key = Faker.Random.AlphaNumeric(10);
+        var options = new CacheEntryOptions
+        {
+            Duration = TimeSpan.FromMinutes(5),
+            SlidingExpiration = TimeSpan.FromMilliseconds(100),
+        };
+        await cache.GetOrAddAsync(key, _ => ValueTask.FromResult<string?>("value"), options, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMilliseconds(150));
+
+        // when
+        await _StartMaintenanceAsync(cache);
+
+        // then
+        var count = await cache.GetCountAsync(cancellationToken: AbortToken);
+        count.Should().Be(0);
     }
 
     [Fact]
@@ -258,6 +398,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().Be(now.Add(duration));
         envelope.PhysicalExpiresAt.Should().Be(now.Add(duration));
+        envelope.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]
@@ -290,6 +431,7 @@ public sealed class InMemoryCacheTests : TestBase
         var envelope = _GetEntryEnvelope(cache, key);
         envelope.LogicalExpiresAt.Should().BeNull();
         envelope.PhysicalExpiresAt.Should().BeNull();
+        envelope.SlidingExpiration.Should().BeNull();
     }
 
     [Fact]
@@ -1890,15 +2032,15 @@ public sealed class InMemoryCacheTests : TestBase
         var key = Faker.Random.AlphaNumeric(10);
         var now = _timeProvider.GetUtcNow().UtcDateTime;
 
-        await ((IFactoryCacheStore)cache)
-            .SetEntryAsync(
-                key,
-                new TestClass { Value = 1 },
-                isNull: false,
-                logicalExpiresAt: now.AddMinutes(-1),
-                physicalExpiresAt: now.AddMinutes(5),
-                AbortToken
-            );
+        await ((IFactoryCacheStore)cache).SetEntryAsync(
+            key,
+            new TestClass { Value = 1 },
+            isNull: false,
+            logicalExpiresAt: now.AddMinutes(-1),
+            physicalExpiresAt: now.AddMinutes(5),
+            slidingExpiration: null,
+            AbortToken
+        );
 
         var failSafeOptions = new CacheEntryOptions
         {

@@ -10,7 +10,8 @@ namespace Headless.Caching;
 /// This type is the extension point for factory-backed cache behaviors. <see cref="Duration"/>
 /// controls logical freshness. When fail-safe is enabled, the factory coordinator keeps the entry
 /// physically resident for <c>max(Duration, FailSafeMaxDuration)</c> so <c>GetOrAddAsync</c> can serve
-/// the last-known-good value after a factory failure or timeout.
+/// the last-known-good value after a factory failure or timeout. When <see cref="SlidingExpiration"/> is set,
+/// <see cref="Duration"/> remains the absolute ceiling while successful value reads re-arm the idle deadline.
 /// </remarks>
 [PublicAPI]
 public readonly record struct CacheEntryOptions
@@ -37,6 +38,14 @@ public readonly record struct CacheEntryOptions
     /// rejected with an <see cref="ArgumentOutOfRangeException"/> when the entry is created.
     /// </summary>
     public TimeSpan Duration { get; init; }
+
+    /// <summary>
+    /// Gets the optional idle window for sliding expiration. When set, value-returning reads push the logical
+    /// expiration to <c>min(now + SlidingExpiration, createdAt + Duration)</c>; values greater than or equal to
+    /// <see cref="Duration"/> therefore behave like a fixed duration. Sliding expiration and fail-safe are not
+    /// supported together in this version and are rejected by the factory coordinator.
+    /// </summary>
+    public TimeSpan? SlidingExpiration { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether factory-backed cache operations can serve the physically-retained

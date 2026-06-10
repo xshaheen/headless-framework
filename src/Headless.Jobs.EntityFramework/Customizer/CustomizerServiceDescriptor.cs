@@ -108,8 +108,8 @@ public static class ServiceBuilder
     {
         // ICache is resolved with GetService (optional): cron-expression caching is enabled only when the host
         // application registers a default Headless.Caching provider; otherwise Jobs reads cron expressions from the DB.
-        services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(provider =>
-            new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
+        services.AddSingleton<IJobPersistenceProvider<TTimeJob, TCronJob>>(
+            provider => new JobsEfCorePersistenceProvider<TContext, TTimeJob, TCronJob>(
                 provider.GetRequiredService<IDbContextFactory<TContext>>(),
                 provider.GetRequiredService<TimeProvider>(),
                 provider.GetRequiredService<IJobsOwnerIdentity>(),

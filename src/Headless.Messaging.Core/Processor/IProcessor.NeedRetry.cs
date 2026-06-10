@@ -438,8 +438,13 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         return lease.LostToken.Register(
             static state =>
             {
-                var (logger, retryKind, resource, leaseId) =
-                    ((ILogger<MessageNeedToRetryProcessor>, string, string, string))state!;
+                var (logger, retryKind, resource, leaseId) = ((
+                    ILogger<MessageNeedToRetryProcessor>,
+                    string,
+                    string,
+                    string
+                ))
+                    state!;
                 logger.RetryLockLeaseLost(retryKind, resource, leaseId);
             },
             (_logger, kind.ToString(), lease.Resource, lease.LeaseId)
@@ -791,7 +796,6 @@ public sealed class MessageNeedToRetryProcessor : IProcessor, IRetryProcessorMon
         cache[circuitBreakerGroup] = isOpen;
         return isOpen;
     }
-
 }
 
 internal static partial class RetryProcessorLog

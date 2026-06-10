@@ -79,8 +79,7 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
         base.should_propagate_factory_exception_when_failsafe_cache_is_cold();
 
     [Fact]
-    public override Task should_throttle_failsafe_factory_retries() =>
-        base.should_throttle_failsafe_factory_retries();
+    public override Task should_throttle_failsafe_factory_retries() => base.should_throttle_failsafe_factory_retries();
 
     [Fact]
     public override Task should_not_serve_stale_when_failsafe_disabled_by_default() =>
@@ -105,4 +104,19 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock() =>
         base.should_return_stale_to_waiter_when_soft_timeout_elapses_acquiring_lock();
+
+    [Fact]
+    public override Task should_keep_sliding_entry_alive_when_read_within_idle_window() =>
+        base.should_keep_sliding_entry_alive_when_read_within_idle_window();
+
+    [Fact]
+    public override Task should_expire_sliding_entry_at_absolute_duration_cap() =>
+        base.should_expire_sliding_entry_at_absolute_duration_cap();
+
+    [Fact]
+    public override Task should_not_rearm_sliding_entry_when_metadata_is_read() =>
+        base.should_not_rearm_sliding_entry_when_metadata_is_read();
+
+    [Fact]
+    public override Task should_not_rearm_non_sliding_entry() => base.should_not_rearm_non_sliding_entry();
 }
