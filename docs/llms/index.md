@@ -300,8 +300,7 @@ Catalog of all Headless packages, grouped by domain. Use this to identify which 
 - `Headless.Jobs.SourceGenerator` — Compile-time codegen for `[Jobs]`-marked methods.
 - `Headless.Jobs.Dashboard` — Auth and web UI for job monitoring.
 - `Headless.Jobs.OpenTelemetry` — Tracing and metrics.
-- `Headless.Jobs.EntityFramework` — EF Core job state persistence.
-- `Headless.Jobs.Caching.Redis` — Redis node registry and heartbeats.
+- `Headless.Jobs.EntityFramework` — EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching.
 
 ### TUS (Resumable Uploads)
 - `Headless.Tus` — Core TUS protocol utilities.

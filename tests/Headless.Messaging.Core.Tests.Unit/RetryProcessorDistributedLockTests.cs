@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Abstractions;
 using Headless.DistributedLocks;
 using Headless.Coordination;
@@ -123,24 +124,19 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         "uses TrackingLockProvider because the real DisposableDistributedLock handle does not expose"
             + " RenewalCount, which this test must assert on; orthogonal to acquireTimeout semantics"
     )]
-    public async Task should_renew_received_retry_lock_when_consume_task_spans_polling_ticks()
+    public async Task should_not_manually_renew_received_retry_lock_when_consume_task_spans_polling_ticks()
     {
         // Arrange — use TrackingLockProvider so we can inspect RenewalCount on the returned handle.
-        // DisposableDistributedLock (the real handle type) does not expose RenewalCount, making
-        // in-process tracking infeasible with the real provider for this specific assertion.
-        //
-        // The TCS is signalled from the storage call (which runs AFTER _receivedRetryHandle is
-        // assigned by the processor), guaranteeing the renewal branch on tick 2 sees the handle.
-        // Earlier, signaling from inside TryAcquireAsync fired before the processor's assignment,
-        // which required a Task.Delay timing patch to mask the race.
+        // The processor should now rely on LockMonitoringMode.AutoExtend instead of cross-tick
+        // RenewAsync calls against a cached received-retry handle.
         var lockAcquiredTcs = new TaskCompletionSource<TrackingLock>(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         var trackingProvider = new TrackingLockProvider("receive-retry");
 
         // Block the received storage query so the background consume task never completes.
-        // The storage call also fires lockAcquiredTcs — this happens strictly after the processor
-        // has stashed the lock into _receivedRetryHandle, so no timing patch is needed.
+        // The storage call also fires lockAcquiredTcs, proving the received task owns an acquired
+        // lease while the second tick runs.
         var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var storage = Substitute.For<IDataStorage>();
         storage
@@ -162,20 +158,17 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // Act — tick 1: starts background consume task that acquires the lock and then blocks
         await processor.ProcessAsync(context);
 
-        // Wait until the storage call fires — at that point the processor has already executed
-        // `_receivedRetryHandle = acquiredHandle;` between TryAcquireAsync and the storage call.
+        // Wait until the storage call fires — at that point the processor owns the received-retry
+        // lease while the storage pickup remains in flight.
         var capturedLock = await lockAcquiredTcs.Task.WaitAsync(AbortToken);
 
-        // Act — tick 2: renewal branch fires because _receivedRetryConsumeTask is still running
+        // Act — tick 2: the in-progress guard waits without manually renewing the handle.
         await processor.ProcessAsync(context);
 
         // Assert
         capturedLock
             .RenewalCount.Should()
-            .BeGreaterThanOrEqualTo(
-                1,
-                "the received-retry lock must be renewed when its consume task spans a polling tick"
-            );
+            .Be(0, "auto-extension belongs to the distributed-lock lease monitor, not ProcessAsync ticks");
 
         // Cleanup
         storageBlocker.TrySetResult();
@@ -183,11 +176,166 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     }
 
     [Fact]
+    public async Task should_request_auto_extend_when_acquiring_retry_locks()
+    {
+        var captured = new ConcurrentBag<(string Resource, DistributedLockAcquireOptions Options)>();
+        var fakeLock = Substitute.For<IDistributedLease>();
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .When(provider =>
+            {
+                _ = provider.TryAcquireAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<DistributedLockAcquireOptions?>(),
+                    Arg.Any<CancellationToken>()
+                );
+            })
+            .Do(call =>
+            {
+                var options = call.ArgAt<DistributedLockAcquireOptions?>(1);
+                if (options is not null)
+                {
+                    captured.Add((call.ArgAt<string>(0), options));
+                }
+            });
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IDistributedLease?>(fakeLock));
+
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+
+        var processor = _CreateProcessor("v1", storage, useStorageLock: true, lockProvider: lockProvider);
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+
+        await _EventuallyAsync(() =>
+        {
+            captured.Should().HaveCount(2);
+            captured.Select(call => call.Resource).Should()
+                .BeEquivalentTo(
+                    MessagingKeys.PublishRetryResource("v1"),
+                    MessagingKeys.ReceiveRetryResource("v1")
+                );
+            captured.Should()
+                .OnlyContain(call =>
+                    call.Options.Monitoring == LockMonitoringMode.AutoExtend
+                    && call.Options.AcquireTimeout == TimeSpan.Zero
+                    && call.Options.TimeUntilExpires == processor.CurrentPollingInterval
+                );
+            return Task.CompletedTask;
+        });
+    }
+
+    [Fact]
+    public async Task should_skip_retry_pickup_when_acquired_lease_is_already_lost()
+    {
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
+            .Returns(_ => Task.FromResult<IDistributedLease?>(new TrackingLock(canObserveLoss: true, initiallyLost: true)));
+
+        var storage = Substitute.For<IDataStorage>();
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: lockProvider,
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+
+        await _EventuallyAsync(async () =>
+        {
+            await lockProvider
+                .Received(2)
+                .TryAcquireAsync(
+                    Arg.Any<string>(),
+                    Arg.Any<DistributedLockAcquireOptions?>(),
+                    Arg.Any<CancellationToken>()
+                );
+            captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
+        });
+        await storage.DidNotReceive().GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        await storage.DidNotReceive().GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_log_lease_loss_without_cancelling_in_flight_retry_pickup()
+    {
+        var captured = new List<(LogLevel Level, int Id)>();
+        var logger = _CreateCapturingLogger(captured);
+        var publishedLease = new TrackingLock();
+        var receivedLease = new TrackingLock(canObserveLoss: true);
+        var lockProvider = Substitute.For<IDistributedLock>();
+        lockProvider
+            .TryAcquireAsync(
+                MessagingKeys.PublishRetryResource("v1"),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(publishedLease));
+        lockProvider
+            .TryAcquireAsync(
+                MessagingKeys.ReceiveRetryResource("v1"),
+                Arg.Any<DistributedLockAcquireOptions?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(Task.FromResult<IDistributedLease?>(receivedLease));
+
+        var receivedCallStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storageBlocker = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var storage = Substitute.For<IDataStorage>();
+        storage
+            .GetPublishedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IEnumerable<MediumMessage>>([]));
+        storage
+            .GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                receivedCallStarted.TrySetResult();
+                return new ValueTask<IEnumerable<MediumMessage>>(
+                    storageBlocker.Task.ContinueWith(_ => (IEnumerable<MediumMessage>)[], TaskScheduler.Default)
+                );
+            });
+
+        var processor = _CreateProcessor(
+            "v1",
+            storage,
+            useStorageLock: true,
+            lockProvider: lockProvider,
+            logger: logger
+        );
+        using var context = _CreateContext(storage);
+
+        await processor.ProcessAsync(context);
+        await receivedCallStarted.Task.WaitAsync(AbortToken);
+
+        receivedLease.MarkLost();
+        storageBlocker.TrySetResult();
+
+        await _EventuallyAsync(async () =>
+        {
+            captured.Should().Contain(e => e.Level == LogLevel.Warning && e.Id == 79);
+            await storage.Received(1).GetReceivedMessagesOfNeedRetryAsync(Arg.Any<CancellationToken>());
+        });
+    }
+
+    [Fact]
     public async Task should_call_storage_when_lock_always_granted()
     {
         // Arrange — substitute that always hands back a non-null lock
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -217,7 +365,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_reclaim_dead_owners_when_retry_locks_are_acquired_and_membership_is_active()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -303,7 +450,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_skip_reclaim_but_continue_dispatch_when_membership_query_fails()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -355,7 +501,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_escalate_membership_query_failures_after_three_consecutive_cycles()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -420,7 +565,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_continue_dispatch_when_dead_owner_reclaim_fails()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -464,7 +608,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
     public async Task should_log_reclaim_count_when_dead_owner_rows_are_recovered()
     {
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -619,7 +762,6 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         // before the second tick. The in-progress guard at IProcessor.NeedRetry.cs:172 must skip
         // spawning a new task while the previous one is still running under UseStorageLock.
         var fakeLock = Substitute.For<IDistributedLease>();
-        fakeLock.RenewAsync(Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>()).Returns(Task.FromResult(true));
         var alwaysGranted = Substitute.For<IDistributedLock>();
         alwaysGranted
             .TryAcquireAsync(Arg.Any<string>(), Arg.Any<DistributedLockAcquireOptions?>(), Arg.Any<CancellationToken>())
@@ -844,7 +986,20 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
     private sealed class TrackingLock : IDistributedLease
     {
+        private readonly CancellationTokenSource? _lostTokenSource;
         private int _renewalCount;
+
+        public TrackingLock(bool canObserveLoss = false, bool initiallyLost = false)
+        {
+            if (canObserveLoss)
+            {
+                _lostTokenSource = new CancellationTokenSource();
+                if (initiallyLost)
+                {
+                    _lostTokenSource.Cancel();
+                }
+            }
+        }
 
         public string LeaseId => "tracking-lock-id";
         public long? FencingToken => null;
@@ -853,9 +1008,11 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
         public DateTimeOffset DateAcquired => DateTimeOffset.UtcNow;
         public TimeSpan TimeWaitedForLock => TimeSpan.Zero;
 
-        public CancellationToken LostToken => CancellationToken.None;
+        public CancellationToken LostToken => _lostTokenSource?.Token ?? CancellationToken.None;
 
-        public bool CanObserveLoss => false;
+        public bool CanObserveLoss => _lostTokenSource is not null;
+
+        public void MarkLost() => _lostTokenSource?.Cancel();
 
         public Task ReleaseAsync() => Task.CompletedTask;
 
@@ -865,6 +1022,10 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             return Task.FromResult(true);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            _lostTokenSource?.Dispose();
+            return ValueTask.CompletedTask;
+        }
     }
 }
