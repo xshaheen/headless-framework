@@ -52,10 +52,15 @@ public static class CoordinatedTransactionExtensions
                     .ConfigureAwait(false);
 
                 // Enlist SYNCHRONOUSLY, in this frame, so the ambient coordinator flows to the operation's publishes.
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
+                await using var scope = connection.EnlistCommitCoordination(transaction, services);
 
                 await operation(connection, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                // PostgreSQL is an inline (caller-driven) provider: the commit signal is not raised by any
+                // diagnostic/interceptor, so the caller must drive it. Without this, the un-signalled dispose
+                // drains as rollback and discards the enlisted work on every successful commit.
+                await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -96,10 +101,11 @@ public static class CoordinatedTransactionExtensions
                     .BeginTransactionAsync(isolation, cancellationToken)
                     .ConfigureAwait(false);
 
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
+                await using var scope = connection.EnlistCommitCoordination(transaction, services);
 
                 await operation(arg, connection, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
@@ -139,10 +145,11 @@ public static class CoordinatedTransactionExtensions
                     .BeginTransactionAsync(isolation, cancellationToken)
                     .ConfigureAwait(false);
 
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
+                await using var scope = connection.EnlistCommitCoordination(transaction, services);
 
                 var result = await operation(connection, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
 
                 return result;
             }
@@ -187,10 +194,11 @@ public static class CoordinatedTransactionExtensions
                     .BeginTransactionAsync(isolation, cancellationToken)
                     .ConfigureAwait(false);
 
-                await using var _ = connection.EnlistCommitCoordination(transaction, services);
+                await using var scope = connection.EnlistCommitCoordination(transaction, services);
 
                 var result = await operation(arg, connection, cancellationToken).ConfigureAwait(false);
                 await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await scope.SignalAsync(CommitOutcome.Committed, cancellationToken).ConfigureAwait(false);
 
                 return result;
             }

@@ -269,7 +269,7 @@ Known gaps:
 - Public setup API found: `AddHeadlessDbContext<TDbContext>(...)`, `AddHeadlessDbContextServices(...)` (returns `IHeadlessDbContextBuilder`), `AddDomainEvents()`
 - Base context found: `HeadlessDbContext` with abstract `DefaultSchema`
 - Extension points: `IHeadlessSaveEntryProcessor`, `IHeadlessSaveChangesPipeline`, `IHeadlessOutboxDispatcher`, `ILocalEventBus`, `HeadlessDbContextOptions.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)`
-- Transaction extensions found: `ExecuteTransactionAsync(...)`
+- Transaction extensions found: `ExecuteTransactionAsync(...)`, `ExecuteCoordinatedTransactionAsync(...)` (from `HeadlessCoordinatedTransactionExtensions`)
 - Filter API found: `HeadlessQueryFilters.MultiTenancyFilter`, `NotDeletedFilter`, `NotSuspendedFilter` with matching `Ignore*Filter()` extensions
 
 ---
