@@ -23,6 +23,9 @@ public sealed record CacheInvalidationMessage
     /// <summary>Prefix for prefix-based invalidation. Mutually exclusive with <see cref="Key"/> and <see cref="FlushAll"/>.</summary>
     public string? Prefix { get; init; }
 
+    /// <summary>Tag for tag-based invalidation (<see cref="ICache.RemoveByTagAsync"/>). Mutually exclusive with <see cref="Key"/>, <see cref="Keys"/>, <see cref="Prefix"/>, and <see cref="FlushAll"/>.</summary>
+    public string? Tag { get; init; }
+
     /// <summary>When true, flush all cache entries. Mutually exclusive with <see cref="Key"/> and <see cref="Prefix"/>.</summary>
     public bool FlushAll { get; init; }
 }

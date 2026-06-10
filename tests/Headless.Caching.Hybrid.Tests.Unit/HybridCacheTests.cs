@@ -663,6 +663,13 @@ public sealed class HybridCacheTests : TestBase
             CancellationToken ct = default
         ) => throw new InvalidOperationException("L2 write failed");
 
+        public ValueTask<bool> UpsertEntryAsync<T>(
+            string key,
+            T? value,
+            CacheEntryOptions options,
+            CancellationToken ct = default
+        ) => throw new InvalidOperationException("L2 write failed");
+
         public ValueTask<int> UpsertAllAsync<T>(
             IDictionary<string, T> value,
             TimeSpan? expiration,
@@ -784,6 +791,9 @@ public sealed class HybridCacheTests : TestBase
 
         public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken ct = default) =>
             _cache.RemoveByPrefixAsync(prefix, ct);
+
+        public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken ct = default) =>
+            _cache.RemoveByTagAsync(tag, ct);
 
         public ValueTask<long> SetRemoveAsync<T>(
             string key,

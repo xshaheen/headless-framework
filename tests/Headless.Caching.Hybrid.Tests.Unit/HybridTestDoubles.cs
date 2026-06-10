@@ -52,6 +52,13 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
         CancellationToken cancellationToken = default
     ) => cache.UpsertAsync(key, value, expiration, cancellationToken);
 
+    public ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => cache.UpsertEntryAsync(key, value, options, cancellationToken);
+
     public ValueTask<int> UpsertAllAsync<T>(
         IDictionary<string, T> value,
         TimeSpan? expiration,
@@ -180,6 +187,9 @@ internal sealed class InMemoryRemoteCacheAdapter(InMemoryCache cache) : IRemoteC
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
         cache.RemoveByPrefixAsync(prefix, cancellationToken);
 
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        cache.RemoveByTagAsync(tag, cancellationToken);
+
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -237,6 +247,13 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
         string key,
         T? value,
         TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => new(false);
+
+    public ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     ) => new(false);
 
@@ -362,6 +379,8 @@ internal sealed class ThrowingReadRemoteCache(TimeProvider timeProvider) : IRemo
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => new(0);
 
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) => new(0);
+
     public ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -429,6 +448,13 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         string key,
         T? val,
         TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => new(true);
+
+    public ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? val,
+        CacheEntryOptions options,
         CancellationToken cancellationToken = default
     ) => new(true);
 
@@ -553,6 +579,8 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
         new(0);
 
     public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) => new(0);
+
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) => new(0);
 
     public ValueTask<long> SetRemoveAsync<T>(
         string key,

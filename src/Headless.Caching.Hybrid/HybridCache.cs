@@ -87,6 +87,12 @@ public sealed class HybridCache(
             return;
         }
 
+        if (!string.IsNullOrEmpty(message.Tag))
+        {
+            await LocalCache.RemoveByTagAsync(message.Tag, ct).ConfigureAwait(false);
+            return;
+        }
+
         if (message.Keys is { Length: > 0 })
         {
             await LocalCache.RemoveAllAsync(message.Keys, ct).ConfigureAwait(false);
@@ -392,6 +398,32 @@ public sealed class HybridCache(
             .ConfigureAwait(false);
 
         return updated;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The hybrid store write fans out to L2 then L1 with the full per-entry metadata (tags included).
+        await ((IFactoryCacheStore)this)
+            .UpsertEntryAsync(key, value, options, _timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     /// <inheritdoc />
@@ -942,6 +974,27 @@ public sealed class HybridCache(
                 )
                 .ConfigureAwait(false);
         }
+
+        return removed;
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        _ThrowIfDisposed();
+        Argument.IsNotNullOrEmpty(tag);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Publish FIRST (matching the write-path ordering rationale: minimize the window in which another
+        // instance re-populates its L1 from a not-yet-invalidated L2), then invalidate L2, then our own L1.
+        await _PublishInvalidationAsync(
+                new CacheInvalidationMessage { InstanceId = _instanceId, Tag = tag },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        var removed = await l2Cache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
+        await LocalCache.RemoveByTagAsync(tag, cancellationToken).ConfigureAwait(false);
 
         return removed;
     }
