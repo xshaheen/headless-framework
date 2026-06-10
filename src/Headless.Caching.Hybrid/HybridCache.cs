@@ -32,13 +32,18 @@ public sealed class HybridCache(
     IBus publisher,
     HybridCacheOptions options,
     ILogger<HybridCache>? logger = null,
-    TimeProvider? timeProvider = null
+    TimeProvider? timeProvider = null,
+    ICacheFactoryLockProvider? factoryLockProvider = null
 ) : ICache, IFactoryCacheStore, IAsyncDisposable
 {
     private readonly ILogger _logger = logger ?? NullLogger<HybridCache>.Instance;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly string _instanceId = options.InstanceId ?? Guid.NewGuid().ToString("N");
-    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider ?? TimeProvider.System, logger);
+    private readonly FactoryCacheCoordinator _coordinator = new(
+        timeProvider ?? TimeProvider.System,
+        logger,
+        factoryLockProvider
+    );
 
     private long _localCacheHits;
     private long _invalidateCacheCalls;

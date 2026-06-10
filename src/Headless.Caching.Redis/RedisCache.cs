@@ -31,7 +31,8 @@ public sealed class RedisCache(
     TimeProvider timeProvider,
     RedisCacheOptions options,
     [FromKeyedServices(RedisCacheServiceKeys.ScriptsLoader)] HeadlessRedisScriptsLoader scriptsLoader,
-    ILogger<RedisCache>? logger = null
+    ILogger<RedisCache>? logger = null,
+    ICacheFactoryLockProvider? factoryLockProvider = null
 ) : IRemoteCache, IFactoryCacheStore, IDisposable
 {
     /// <summary>Legacy null sentinel retained only for raw pre-envelope payloads and collection entries.</summary>
@@ -47,7 +48,7 @@ public sealed class RedisCache(
 
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
-    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger);
+    private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger, factoryLockProvider);
 
     private volatile bool _supportsMsetEx;
     private volatile bool _supportsMsetExChecked;

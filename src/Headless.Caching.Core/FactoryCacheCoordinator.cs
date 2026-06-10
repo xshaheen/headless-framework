@@ -14,11 +14,16 @@ namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>
 [PublicAPI]
-public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? logger = null) : IDisposable
+public sealed class FactoryCacheCoordinator(
+    TimeProvider timeProvider,
+    ILogger? logger = null,
+    ICacheFactoryLockProvider? factoryLockProvider = null
+) : IDisposable
 {
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly KeyedAsyncLock _keyedLock = new();
     private readonly ILogger _logger = logger ?? NullLogger<FactoryCacheCoordinator>.Instance;
+    private readonly ICacheFactoryLockProvider? _factoryLockProvider = factoryLockProvider;
     private const int _MaxInertWarningKeys = 1024;
     private readonly ConcurrentDictionary<string, byte> _softTimeoutInertWarnings = new(StringComparer.Ordinal);
 
@@ -92,6 +97,16 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Argument.IsNotNull(factory);
         _ValidateOptions(options);
 
+        if (options.UseDistributedFactoryLock && _factoryLockProvider is null)
+        {
+            throw new InvalidOperationException(
+                $"{nameof(CacheEntryOptions)}.{nameof(CacheEntryOptions.UseDistributedFactoryLock)} is enabled for "
+                    + $"cache key '{key}' but no {nameof(ICacheFactoryLockProvider)} is registered. Reference the "
+                    + "Headless.Caching.DistributedLocks adapter package and call "
+                    + "services.AddCachingDistributedFactoryLock(), or disable the option."
+            );
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
 
         var entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
@@ -119,6 +134,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         }
 
         var ownsReleaser = true;
+        IAsyncDisposable? distributedLease = null;
 
         try
         {
@@ -134,6 +150,44 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             if (_IsStaleCandidate(entry, now))
             {
                 staleCandidate = entry;
+            }
+
+            if (options.UseDistributedFactoryLock)
+            {
+                // Cross-node single-flight: acquire the distributed lock with the same wait budget the local lock
+                // used (soft timeout when a fail-safe stale reserve can absorb the elapse, LockTimeout otherwise),
+                // so the degradation semantics on elapse mirror the local lock-timeout path exactly.
+                var distributedLockTimeout = _SelectLockTimeout(options, staleCandidate, now);
+                distributedLease = await _factoryLockProvider!
+                    .TryAcquireAsync(key, distributedLockTimeout, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (distributedLease is null)
+                {
+                    _logger.LogCacheFactoryTimedOut(
+                        key,
+                        staleCandidate.Found ? "distributed-lock-soft" : "distributed-lock-timeout",
+                        distributedLockTimeout
+                    );
+
+                    return _ToCacheValue(staleCandidate, isStale: true);
+                }
+
+                // The previous lock owner on another node may have just written a fresh value to the shared store;
+                // re-check before running the factory so the loser of the cross-node race serves the winner's value.
+                entry = await _TryGetEntryAsync<T>(store, key, cancellationToken).ConfigureAwait(false);
+                now = _GetUtcNow();
+
+                if (entry.IsFresh(now))
+                {
+                    await _TryRearmSlidingEntryAsync(store, key, entry, now).ConfigureAwait(false);
+                    return _ToCacheValue(entry, isStale: false);
+                }
+
+                if (_IsStaleCandidate(entry, now))
+                {
+                    staleCandidate = entry;
+                }
             }
 
             // One context per factory execution, built from the current physically-present entry so the factory
@@ -182,6 +236,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
 
                 if (factoryResult.IsSoftTimeout)
                 {
+                    // The distributed lease (when present) transfers into the background completion together with
+                    // the local lock releaser, so the cross-node guard stays held until the detached factory lands.
                     _StartBackgroundCompletion(
                         store,
                         key,
@@ -190,7 +246,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
                         factoryResult.InternalCancellationTokenSource,
                         staleCandidate,
                         options,
-                        releaser
+                        releaser,
+                        distributedLease
                     );
 
                     ownsReleaser = false;
@@ -227,6 +284,14 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         {
             if (ownsReleaser)
             {
+                // Release in reverse acquisition order: free the distributed lease (so other nodes can proceed)
+                // before the local per-key lock. Covers every foreground completion path — fresh write, fail-safe
+                // return, hard timeout, and exceptions; the soft-timeout path transfers ownership instead.
+                if (distributedLease is not null)
+                {
+                    await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
+                }
+
                 releaser.Dispose();
             }
         }
@@ -246,7 +311,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        IDisposable releaser
+        IDisposable releaser,
+        IAsyncDisposable? distributedLease
     )
     {
         var backgroundTask = _CompleteFactoryInBackgroundAsync(
@@ -257,7 +323,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             internalCts,
             staleCandidate,
             options,
-            releaser
+            releaser,
+            distributedLease
         );
 
         _ObserveFaultedTask(backgroundTask, key);
@@ -271,7 +338,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CancellationTokenSource internalCts,
         CacheStoreEntry<T> staleCandidate,
         CacheEntryOptions options,
-        IDisposable releaser
+        IDisposable releaser,
+        IAsyncDisposable? distributedLease
     )
     {
 #pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
@@ -328,6 +396,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         finally
         {
             internalCts.Dispose();
+
+            if (distributedLease is not null)
+            {
+                await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
+            }
+
             releaser.Dispose();
             BackgroundCompletionFinished?.Invoke();
         }
@@ -592,6 +666,7 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
     )
     {
         var ownsReleaser = true;
+        IAsyncDisposable? distributedLease = null;
 
         try
         {
@@ -612,6 +687,21 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             )
             {
                 return;
+            }
+
+            if (options.UseDistributedFactoryLock)
+            {
+                // Cross-node dedup mirrors the local zero-timeout TryLock: a single non-blocking attempt. When the
+                // lock is held elsewhere another node is already refreshing, so skip silently and leave the entry
+                // (including its eager stamp) untouched; that node's gate write clears the stamp for everyone.
+                distributedLease = await _factoryLockProvider!
+                    .TryAcquireAsync(key, TimeSpan.Zero, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                if (distributedLease is null)
+                {
+                    return;
+                }
             }
 
             // Build the per-execution context from the double-checked entry (before the gate write, which only
@@ -645,13 +735,18 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
             }
 
             ownsReleaser = false;
-            await _StartEagerFactoryAsync(store, key, context, factory, options, entry.Tags, releaser)
+            await _StartEagerFactoryAsync(store, key, context, factory, options, entry.Tags, releaser, distributedLease)
                 .ConfigureAwait(false);
         }
         finally
         {
             if (ownsReleaser)
             {
+                if (distributedLease is not null)
+                {
+                    await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
+                }
+
                 releaser.Dispose();
                 BackgroundCompletionFinished?.Invoke();
             }
@@ -665,14 +760,25 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
         CacheEntryOptions options,
         IReadOnlyCollection<string>? previousTags,
-        IDisposable releaser
+        IDisposable releaser,
+        IAsyncDisposable? distributedLease
     )
     {
 #pragma warning disable CA2000 // Ownership transfers to _CompleteEagerRefreshAsync, which disposes it in its finally.
         var internalCts = new CancellationTokenSource();
 #pragma warning restore CA2000
         var factoryTask = _RunDetachedFactoryAsync(token => factory(context, token), internalCts.Token);
-        await _CompleteEagerRefreshAsync(store, key, context, factoryTask, internalCts, options, previousTags, releaser)
+        await _CompleteEagerRefreshAsync(
+                store,
+                key,
+                context,
+                factoryTask,
+                internalCts,
+                options,
+                previousTags,
+                releaser,
+                distributedLease
+            )
             .ConfigureAwait(false);
     }
 
@@ -693,7 +799,8 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         CancellationTokenSource internalCts,
         CacheEntryOptions options,
         IReadOnlyCollection<string>? previousTags,
-        IDisposable releaser
+        IDisposable releaser,
+        IAsyncDisposable? distributedLease
     )
     {
 #pragma warning disable VSTHRD003 // This continuation intentionally races/observes the detached factory task.
@@ -731,6 +838,12 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         finally
         {
             internalCts.Dispose();
+
+            if (distributedLease is not null)
+            {
+                await _ReleaseFactoryLockAsync(distributedLease, key).ConfigureAwait(false);
+            }
+
             releaser.Dispose();
             BackgroundCompletionFinished?.Invoke();
         }
@@ -802,6 +915,20 @@ public sealed class FactoryCacheCoordinator(TimeProvider timeProvider, ILogger? 
         catch (Exception exception)
         {
             _logger.LogSlidingExpirationRearmFailed(exception, key);
+        }
+    }
+
+    // Best-effort release of the distributed factory lock: a failed release must never mask the operation's
+    // outcome (the lease's own TTL is the backstop), so swallow and log. Mirrors the other best-effort cleanups.
+    private async ValueTask _ReleaseFactoryLockAsync(IAsyncDisposable distributedLease, string key)
+    {
+        try
+        {
+            await distributedLease.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCacheFactoryLockReleaseFailed(exception, key);
         }
     }
 
@@ -1221,4 +1348,13 @@ internal static partial class FactoryCacheCoordinatorLog
         Message = "Cache eager refresh skipped for key {Key}: the gate write failed; the entry stays fresh and re-triggerable."
     )]
     public static partial void LogEagerRefreshSkipped(this ILogger logger, Exception exception, string key);
+
+    [LoggerMessage(
+        EventId = 12,
+        EventName = "CacheFactoryLockReleaseFailed",
+        Level = LogLevel.Warning,
+        Message = "Cache distributed factory-lock release failed for key {Key}; the lease TTL is the backstop and "
+            + "other nodes may be delayed until it expires."
+    )]
+    public static partial void LogCacheFactoryLockReleaseFailed(this ILogger logger, Exception exception, string key);
 }

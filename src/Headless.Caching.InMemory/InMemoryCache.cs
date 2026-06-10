@@ -52,10 +52,15 @@ public sealed class InMemoryCache : IInMemoryCache, IFactoryCacheStore, IDisposa
     /// <summary>Gets the current memory size in bytes used by the cache.</summary>
     public long CurrentMemorySize => Interlocked.Read(ref _currentMemorySize);
 
-    public InMemoryCache(TimeProvider timeProvider, InMemoryCacheOptions options, ILogger<InMemoryCache>? logger = null)
+    public InMemoryCache(
+        TimeProvider timeProvider,
+        InMemoryCacheOptions options,
+        ILogger<InMemoryCache>? logger = null,
+        ICacheFactoryLockProvider? factoryLockProvider = null
+    )
     {
         _logger = logger ?? NullLogger<InMemoryCache>.Instance;
-        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger);
+        _coordinator = new FactoryCacheCoordinator(timeProvider, _logger, factoryLockProvider);
         _timeProvider = timeProvider;
         _keyPrefix = options.KeyPrefix ?? "";
         _maxItems = options.MaxItems;

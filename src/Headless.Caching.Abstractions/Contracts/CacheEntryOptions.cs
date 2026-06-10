@@ -110,6 +110,17 @@ public readonly record struct CacheEntryOptions
     public TimeSpan LockTimeout { get; init; } = Timeout.InfiniteTimeSpan;
 
     /// <summary>
+    /// Gets a value indicating whether the factory for this entry is additionally guarded by a distributed lock so
+    /// that, across nodes sharing the same store, only one node runs the factory for the key while the others
+    /// coordinate through the lock and re-check the shared store (multi-node stampede protection). Off by default
+    /// and adds zero cost when disabled. Opt-in per entry; requires a registered
+    /// <c>ICacheFactoryLockProvider</c> — enabling it without one fails the factory-backed read with an
+    /// <see cref="InvalidOperationException"/> naming the adapter package (<c>Headless.Caching.DistributedLocks</c>)
+    /// rather than silently degrading to single-node behavior.
+    /// </summary>
+    public bool UseDistributedFactoryLock { get; init; }
+
+    /// <summary>
     /// Gets the optional invalidation tags persisted with the entry. Tagged entries can later be removed in one
     /// call with <see cref="ICache.RemoveByTagAsync"/>. When set on a factory-backed read, call-provided tags win
     /// over the tags carried by an existing entry; when <see langword="null"/>, an existing entry's tags are
