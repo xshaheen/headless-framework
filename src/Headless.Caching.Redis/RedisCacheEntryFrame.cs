@@ -43,7 +43,7 @@ internal static class RedisCacheEntryFrame
         var etagBytes = etag is null ? null : Encoding.UTF8.GetBytes(etag);
         // An empty tag collection encodes as absent: there is no observable difference between "no tags"
         // and "zero tags", and omitting the section keeps the frame minimal.
-        var tagBytes = tags is { Count: > 0 } ? _EncodeTags(tags) : null;
+        var tagBytes = tags is { Count: > 0 } ? EncodeTags(tags) : null;
 
         if (etagBytes is not null)
         {
@@ -254,7 +254,12 @@ internal static class RedisCacheEntryFrame
         );
     }
 
-    private static byte[] _EncodeTags(IReadOnlyCollection<string> tags)
+    /// <summary>
+    /// Encodes a tag collection as the frame's tag section bytes: u16le count, then per tag a u16le UTF-8 byte
+    /// length followed by the UTF-8 bytes. The tagged-write Lua script parses the same layout to fan the tags
+    /// out into the reverse tag index, so this is the single tag wire encoding.
+    /// </summary>
+    internal static byte[] EncodeTags(IReadOnlyCollection<string> tags)
     {
         Argument.IsLessThanOrEqualTo(tags.Count, ushort.MaxValue, paramName: nameof(tags));
 
@@ -366,6 +371,9 @@ internal static class RedisCacheEntryFrame
 
         return (byte[])value!;
     }
+
+    /// <summary>Converts a (UTC) timestamp to the Unix-millisecond representation stored in the frame header.</summary>
+    internal static long ToUnixTimeMilliseconds(DateTime value) => _ToUnixTimeMilliseconds(value);
 
     private static long _ToUnixTimeMilliseconds(DateTime value)
     {

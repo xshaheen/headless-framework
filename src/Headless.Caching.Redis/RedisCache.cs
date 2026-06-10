@@ -38,6 +38,13 @@ public sealed class RedisCache(
     private static readonly RedisValue _NullValue = "@@NULL";
     private const int _BatchSize = 250;
 
+    /// <summary>
+    /// Reserved namespace segment for the reverse tag index: tag hashes live at
+    /// <c>{KeyPrefix}__cache_tag__:{tag}</c>. Cache entries must not be stored under keys starting with this
+    /// segment. See <see cref="CacheTaggedSetScriptDefinition"/> for the index contract.
+    /// </summary>
+    private const string _TagNamespace = "__cache_tag__:";
+
     private readonly ILogger _logger = logger ?? NullLogger<RedisCache>.Instance;
     private readonly string _keyPrefix = options.KeyPrefix ?? "";
     private readonly FactoryCacheCoordinator _coordinator = new(timeProvider, logger);
@@ -110,6 +117,24 @@ public sealed class RedisCache(
         cancellationToken.ThrowIfCancellationRequested();
 
         return await _SetInternalAsync(_GetKey(key), value, expiration).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(key);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        await ((IFactoryCacheStore)this)
+            .UpsertEntryAsync(key, value, options, timeProvider, cancellationToken)
+            .ConfigureAwait(false);
+
+        return true;
     }
 
     public async ValueTask<int> UpsertAllAsync<T>(
@@ -948,6 +973,25 @@ public sealed class RedisCache(
         return (int)deleted;
     }
 
+    /// <inheritdoc />
+    /// <remarks>Not supported on Redis Cluster: the tag hash and the tagged keys span hash slots.</remarks>
+    public async ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNullOrEmpty(tag);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var redisResult = await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                CacheRemoveByTagScriptDefinition.Instance,
+                new { tagHash = (RedisKey)_GetTagHashKey(tag), headerLen = RedisCacheEntryFrame.HeaderLength },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return (int)redisResult;
+    }
+
     public async ValueTask<long> SetRemoveAsync<T>(
         string key,
         IEnumerable<T> value,
@@ -1220,7 +1264,50 @@ public sealed class RedisCache(
             entry.Tags
         );
 
-        await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+        var hasTags = entry.Tags is { Count: > 0 };
+        var hasRemovedTags = entry.RemovedTags is { Count: > 0 };
+
+        // Untagged writes with no prior tags keep the plain SET path: zero hot-path regression.
+        if (!hasTags && !hasRemovedTags)
+        {
+            await _database.StringSetAsync(redisKey, redisValue, expiresIn).ConfigureAwait(false);
+            return;
+        }
+
+        // Tagged write: one atomic script does the SET plus the reverse-tag-index reconciliation (HSET the
+        // current tags with the physical-expiry version, GT-extend the tag hash TTLs, HDEL dropped tags).
+        var keyTtlMs = _ToPositiveMilliseconds(expiresIn);
+        var tagTtlMs = Math.Max(_ToPositiveMilliseconds(entry.PhysicalExpiresAt.Subtract(now)), keyTtlMs);
+        var physicalMs = RedisCacheEntryFrame.ToUnixTimeMilliseconds(entry.PhysicalExpiresAt);
+
+        await scriptsLoader
+            .EvaluateAsync(
+                _database,
+                CacheTaggedSetScriptDefinition.Instance,
+                new
+                {
+                    key = (RedisKey)redisKey,
+                    value = (RedisValue)redisValue,
+                    keyTtlMs,
+                    tagTtlMs,
+                    physicalMs = (RedisValue)physicalMs.ToString(CultureInfo.InvariantCulture),
+                    tags = hasTags ? (RedisValue)RedisCacheEntryFrame.EncodeTags(entry.Tags!) : RedisValue.EmptyString,
+                    removedTags = hasRemovedTags
+                        ? (RedisValue)RedisCacheEntryFrame.EncodeTags(entry.RemovedTags!)
+                        : RedisValue.EmptyString,
+                    tagPrefix = (RedisValue)string.Concat(_keyPrefix, _TagNamespace),
+                },
+                CancellationToken.None
+            )
+            .ConfigureAwait(false);
+    }
+
+    private string _GetTagHashKey(string tag) => string.Concat(_keyPrefix, _TagNamespace, tag);
+
+    private static long _ToPositiveMilliseconds(TimeSpan duration)
+    {
+        var milliseconds = (long)Math.Ceiling(duration.TotalMilliseconds);
+        return milliseconds < 1 ? 1 : milliseconds;
     }
 
     async ValueTask IFactoryCacheStore.TryRearmSlidingAsync(

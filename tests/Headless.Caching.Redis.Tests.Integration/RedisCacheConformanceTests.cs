@@ -134,4 +134,22 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
     [Fact]
     public override Task should_replace_entry_when_conditional_factory_reports_modified() =>
         base.should_replace_entry_when_conditional_factory_reports_modified();
+
+    [Fact]
+    public override Task should_remove_entries_by_tag() => base.should_remove_entries_by_tag();
+
+    [Fact]
+    public override Task should_remove_entry_via_any_of_its_tags() => base.should_remove_entry_via_any_of_its_tags();
+
+    [Fact]
+    public override Task should_not_remove_recreated_entry_without_tag() =>
+        base.should_not_remove_recreated_entry_without_tag();
+
+    [Fact]
+    public override Task should_tag_entries_via_conditional_context_and_tagged_upsert() =>
+        base.should_tag_entries_via_conditional_context_and_tagged_upsert();
+
+    [Fact]
+    public override Task should_honor_failsafe_options_in_tagged_upsert() =>
+        base.should_honor_failsafe_options_in_tagged_upsert();
 }
