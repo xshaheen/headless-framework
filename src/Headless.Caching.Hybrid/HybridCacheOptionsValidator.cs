@@ -22,5 +22,13 @@ public sealed class HybridCacheOptionsValidator : AbstractValidator<HybridCacheO
         RuleFor(x => x.RemoteCacheName)
             .Must(x => x is null || !string.IsNullOrWhiteSpace(x))
             .WithMessage("RemoteCacheName must be non-empty if set");
+
+        RuleFor(x => x.AutoRecoveryMaxItems).GreaterThan(0).WithMessage("AutoRecoveryMaxItems must be > 0");
+
+        RuleFor(x => x.AutoRecoveryMaxRetries).GreaterThan(0).WithMessage("AutoRecoveryMaxRetries must be > 0");
+
+        RuleFor(x => x.AutoRecoveryDelay)
+            .Must(x => x > TimeSpan.Zero)
+            .WithMessage("AutoRecoveryDelay must be positive");
     }
 }

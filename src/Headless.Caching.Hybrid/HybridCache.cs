@@ -61,6 +61,20 @@ public sealed class HybridCache(
     /// <summary>Provides direct access to the L1 (in-memory) cache for advanced scenarios.</summary>
     public IInMemoryCache LocalCache { get; } = l1Cache;
 
+    /// <summary>The auto-recovery queue, when <see cref="HybridCacheOptions.EnableAutoRecovery"/> is set.</summary>
+    /// <remarks>
+    /// The queue owns its own TimeProvider timer so it works for any HybridCache lifetime (default DI
+    /// singleton, named keyed instances, or direct construction) and is torn down in DisposeAsync.
+    /// </remarks>
+    internal HybridCacheRecoveryQueue? RecoveryQueue { get; } =
+        options.EnableAutoRecovery
+            ? new HybridCacheRecoveryQueue(
+                options,
+                timeProvider ?? TimeProvider.System,
+                logger ?? NullLogger<HybridCache>.Instance
+            )
+            : null;
+
     /// <summary>
     /// Handles incoming cache invalidation message from other instances.
     /// Called by <see cref="HybridCacheInvalidationConsumer"/>.
@@ -72,6 +86,10 @@ public sealed class HybridCache(
         {
             return;
         }
+
+        // Conflict check before applying the invalidation: queued recovery items older than this message lost
+        // the race to another node; replaying them would resurrect stale data.
+        RecoveryQueue?.OnIncomingInvalidation(message);
 
         _logger.LogInvalidatingLocalCacheFromRemote(
             message.InstanceId,
@@ -386,7 +404,23 @@ public sealed class HybridCache(
 
         _logger.LogSettingKey(key, expiration);
 
-        var updated = await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
+        bool updated;
+
+        try
+        {
+            updated = await l2Cache.UpsertAsync(key, value, expiration, cancellationToken).ConfigureAwait(false);
+            RecoveryQueue?.OnSuccessfulL2Operation(key);
+        }
+        catch (Exception exception)
+            when (RecoveryQueue is not null
+                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+            )
+        {
+            // Degraded mode: the caller succeeds against L1 and the L2 write is queued for replay.
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            _QueueScalarUpsertRecovery(key, value, expiration);
+            updated = true;
+        }
 
         if (updated)
         {
@@ -401,7 +435,8 @@ public sealed class HybridCache(
 
         await _PublishInvalidationAsync(
                 new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                cancellationToken
+                cancellationToken,
+                queueOnFailure: true
             )
             .ConfigureAwait(false);
 
@@ -427,7 +462,8 @@ public sealed class HybridCache(
 
         await _PublishInvalidationAsync(
                 new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                cancellationToken
+                cancellationToken,
+                queueOnFailure: true
             )
             .ConfigureAwait(false);
 
@@ -885,7 +921,25 @@ public sealed class HybridCache(
         Argument.IsNotNullOrEmpty(key);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var removed = await l2Cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+        bool removed;
+
+        try
+        {
+            removed = await l2Cache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            RecoveryQueue?.OnSuccessfulL2Operation(key);
+        }
+        catch (Exception exception)
+            when (RecoveryQueue is not null
+                && !FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken)
+            )
+        {
+            // Degraded mode: L1 is removed below, the L2 removal is queued for replay, and we conservatively
+            // report (and publish) the removal because the L2 state is unknown.
+            _logger.LogFailedToWriteToL2Cache(exception, key);
+            _QueueRemoveRecovery(key);
+            removed = true;
+        }
+
         await LocalCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
 
         // Only notify other nodes if the key actually existed and was removed
@@ -893,7 +947,8 @@ public sealed class HybridCache(
         {
             await _PublishInvalidationAsync(
                     new CacheInvalidationMessage { InstanceId = _instanceId, Key = key },
-                    cancellationToken
+                    cancellationToken,
+                    queueOnFailure: true
                 )
                 .ConfigureAwait(false);
         }
@@ -1067,8 +1122,18 @@ public sealed class HybridCache(
 
     #region Private Helpers
 
-    private async ValueTask _PublishInvalidationAsync(CacheInvalidationMessage message, CancellationToken ct)
+    private async ValueTask _PublishInvalidationAsync(
+        CacheInvalidationMessage message,
+        CancellationToken ct,
+        bool queueOnFailure = false
+    )
     {
+        // Stamp the publish time so receivers can run the auto-recovery conflict check against it.
+        message = message with
+        {
+            Timestamp = _timeProvider.GetUtcNow(),
+        };
+
         try
         {
             await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
@@ -1083,7 +1148,143 @@ public sealed class HybridCache(
                 message.Prefix is not null,
                 message.FlushAll
             );
+
+            // Only single-key invalidations from the auto-recovery capture paths are queued for re-publish;
+            // every other path keeps today's fire-and-forget behavior.
+            if (queueOnFailure && RecoveryQueue is not null && message.Key is not null)
+            {
+                _QueuePublishRecovery(message);
+            }
         }
+    }
+
+    private void _QueueScalarUpsertRecovery<T>(string key, T? value, TimeSpan? expiration)
+    {
+        var queue = RecoveryQueue!;
+        var now = _timeProvider.GetUtcNow();
+
+        // Values without a TTL have no natural item expiry; bound them by the generous fixed window.
+        var deadline = expiration.HasValue ? now + expiration.Value : now + queue.DefaultRetention;
+
+        queue.Enqueue(
+            key,
+            HybridCacheRecoveryKind.SetEntry,
+            deadline,
+            async ct =>
+            {
+                // L1 is the source of truth: if the entry is gone, the queued write is obsolete. A surviving
+                // queued item implies no newer single-key write went through this instance (newer ops replace
+                // or clear it), and foreign writes drop it via the invalidation conflict check.
+                var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
+
+                if (!current.HasValue)
+                {
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
+                }
+
+                TimeSpan? remaining = expiration.HasValue ? deadline - _timeProvider.GetUtcNow() : null;
+
+                if (remaining is { Ticks: <= 0 })
+                {
+                    return HybridCacheRecoveryReplayOutcome.Obsolete;
+                }
+
+                await l2Cache.UpsertAsync(key, value, remaining, ct).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
+    }
+
+    private void _QueueSetEntryRecovery<T>(string key, CacheStoreEntryWrite<T> entry, DateTime? l1PhysicalStamp)
+    {
+        var queue = RecoveryQueue!;
+
+        queue.Enqueue(
+            key,
+            HybridCacheRecoveryKind.SetEntry,
+            new DateTimeOffset(DateTime.SpecifyKind(entry.PhysicalExpiresAt, DateTimeKind.Utc)),
+            async ct =>
+            {
+                // L1 is the source of truth: only replay if the L1 entry still exists and carries the exact
+                // physical stamp this write produced — a different stamp means the entry changed and the
+                // queued write is obsolete.
+                if (LocalCache is IFactoryCacheStore l1Store && l1PhysicalStamp.HasValue)
+                {
+                    var current = await l1Store.TryGetEntryAsync<T>(key, ct).ConfigureAwait(false);
+
+                    if (!current.Found || current.PhysicalExpiresAt != l1PhysicalStamp)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+                else
+                {
+                    var current = await LocalCache.GetAsync<T>(key, ct).ConfigureAwait(false);
+
+                    if (!current.HasValue)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+                }
+
+                if (l2Cache is IFactoryCacheStore l2Store)
+                {
+                    // The descriptor carries absolute UTC stamps, so it replays unchanged.
+                    await l2Store.SetEntryAsync(key, entry, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    var expiresIn = (
+                        entry.SlidingExpiration is null ? entry.PhysicalExpiresAt : entry.LogicalExpiresAt
+                    ).Subtract(_GetUtcNow());
+
+                    if (expiresIn <= TimeSpan.Zero)
+                    {
+                        return HybridCacheRecoveryReplayOutcome.Obsolete;
+                    }
+
+                    await l2Cache
+                        .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, ct)
+                        .ConfigureAwait(false);
+                }
+
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
+    }
+
+    private void _QueueRemoveRecovery(string key)
+    {
+        var queue = RecoveryQueue!;
+
+        queue.Enqueue(
+            key,
+            HybridCacheRecoveryKind.Remove,
+            _timeProvider.GetUtcNow() + queue.DefaultRetention,
+            async ct =>
+            {
+                await l2Cache.RemoveAsync(key, ct).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
+    }
+
+    private void _QueuePublishRecovery(CacheInvalidationMessage message)
+    {
+        var queue = RecoveryQueue!;
+
+        queue.Enqueue(
+            message.Key!,
+            HybridCacheRecoveryKind.PublishInvalidation,
+            _timeProvider.GetUtcNow() + queue.DefaultRetention,
+            async ct =>
+            {
+                // Re-publish the captured message unchanged (original timestamp) so receivers can still order
+                // it correctly against operations that happened after the original publish attempt.
+                await publisher.PublishAsync(message, cancellationToken: ct).ConfigureAwait(false);
+                return HybridCacheRecoveryReplayOutcome.Replayed;
+            }
+        );
     }
 
     private void _ThrowIfDisposed()
@@ -1202,12 +1403,15 @@ public sealed class HybridCache(
         CancellationToken cancellationToken
     )
     {
+        var l2WriteSucceeded = false;
+
         if (l2Cache is IFactoryCacheStore l2Store)
         {
             try
             {
                 // Pass the descriptor through unchanged so per-entry metadata round-trips the L2 tier.
                 await l2Store.SetEntryAsync(key, in entry, cancellationToken).ConfigureAwait(false);
+                l2WriteSucceeded = true;
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -1226,6 +1430,7 @@ public sealed class HybridCache(
                 await l2Cache
                     .UpsertAsync(key, entry.IsNull ? default : entry.Value, expiresIn, cancellationToken)
                     .ConfigureAwait(false);
+                l2WriteSucceeded = true;
             }
             catch (Exception exception)
                 when (!FactoryCacheCoordinator.IsCallerCancellation(exception, cancellationToken))
@@ -1233,6 +1438,8 @@ public sealed class HybridCache(
                 _logger.LogFailedToWriteToL2Cache(exception, key);
             }
         }
+
+        DateTime? l1PhysicalStamp = null;
 
         if (LocalCache is IFactoryCacheStore l1Store)
         {
@@ -1251,7 +1458,7 @@ public sealed class HybridCache(
                 Tags = entry.Tags,
             };
 
-            await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
+            l1PhysicalStamp = await _SetLocalEntryAsync(l1Store, key, l1Entry, cancellationToken).ConfigureAwait(false);
         }
         else
         {
@@ -1263,6 +1470,21 @@ public sealed class HybridCache(
                     cancellationToken
                 )
                 .ConfigureAwait(false);
+        }
+
+        if (RecoveryQueue is null)
+        {
+            return;
+        }
+
+        if (l2WriteSucceeded)
+        {
+            RecoveryQueue.OnSuccessfulL2Operation(key);
+        }
+        else
+        {
+            // Degraded mode: the caller already succeeded against L1; queue the L2 write for replay.
+            _QueueSetEntryRecovery(key, entry, l1PhysicalStamp);
         }
     }
 
@@ -1304,7 +1526,12 @@ public sealed class HybridCache(
         }
     }
 
-    private async ValueTask _SetLocalEntryAsync<T>(
+    /// <summary>
+    /// Writes an entry into L1 bounded by the local ceiling. Returns the physical expiration stamp actually
+    /// written (auto-recovery uses it to detect that the L1 entry was replaced), or <see langword="null"/>
+    /// when the write was skipped.
+    /// </summary>
+    private async ValueTask<DateTime?> _SetLocalEntryAsync<T>(
         IFactoryCacheStore l1Store,
         string key,
         CacheStoreEntry<T> entry,
@@ -1313,7 +1540,7 @@ public sealed class HybridCache(
     {
         if (!entry.Found)
         {
-            return;
+            return null;
         }
 
         var now = _GetUtcNow();
@@ -1328,7 +1555,7 @@ public sealed class HybridCache(
         {
             if (!localCeiling.HasValue)
             {
-                return;
+                return null;
             }
 
             var ceilingWrite = new CacheStoreEntryWrite<T>
@@ -1346,7 +1573,7 @@ public sealed class HybridCache(
 
             await l1Store.SetEntryAsync(key, in ceilingWrite, cancellationToken).ConfigureAwait(false);
 
-            return;
+            return ceilingWrite.PhysicalExpiresAt;
         }
 
         var logicalExpiresAt = localCeiling.HasValue
@@ -1370,6 +1597,8 @@ public sealed class HybridCache(
         };
 
         await l1Store.SetEntryAsync(key, in localWrite, cancellationToken).ConfigureAwait(false);
+
+        return localWrite.PhysicalExpiresAt;
     }
 
     private DateTime _GetUtcNow() => _timeProvider.GetUtcNow().UtcDateTime;
@@ -1401,6 +1630,7 @@ public sealed class HybridCache(
         }
 
         _coordinator.Dispose();
+        RecoveryQueue?.Dispose();
         return ValueTask.CompletedTask;
     }
 

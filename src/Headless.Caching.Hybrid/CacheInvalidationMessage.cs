@@ -28,4 +28,12 @@ public sealed record CacheInvalidationMessage
 
     /// <summary>When true, flush all cache entries. Mutually exclusive with <see cref="Key"/> and <see cref="Prefix"/>.</summary>
     public bool FlushAll { get; init; }
+
+    /// <summary>
+    /// UTC timestamp at which the originating instance published this invalidation. Stamped automatically by
+    /// <see cref="HybridCache"/> on publish. Receivers use it to resolve conflicts with auto-recovery items
+    /// queued locally: a queued write older than an incoming invalidation is dropped so replaying it cannot
+    /// resurrect stale data.
+    /// </summary>
+    public DateTimeOffset? Timestamp { get; init; }
 }

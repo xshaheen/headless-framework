@@ -84,6 +84,12 @@ public sealed class ProductService(ICache cache, IProductRepository repository)
 | `KeyPrefix` | `""` | Prefix for all cache keys. |
 | `DefaultLocalExpiration` | `5 minutes` | Default L1 TTL; when null, L1 uses the L2 expiration. |
 | `InstanceId` | Auto-generated | Unique ID for filtering self-originated invalidation messages. |
+| `EnableAutoRecovery` | `false` | Opt-in self-healing for transient L2/backplane outages: failed single-key L2 writes/removes and failed invalidation publishes are queued and replayed on recovery instead of surfacing. |
+| `AutoRecoveryMaxItems` | `128` | Max pending recovery items (one per key); on overflow the earliest-expiring item is evicted. |
+| `AutoRecoveryMaxRetries` | `8` | Failed replay attempts before a pending item is dropped with a warning. |
+| `AutoRecoveryDelay` | `5 seconds` | Recovery loop cadence and the back-off barrier armed after a failed replay. |
+
+Auto-recovery (design reference: FusionCache's auto-recovery, adapted) keeps one pending operation per key — newer operations replace older ones, and any successful L2 write for a key clears its pending item. A queued set is only replayed while the L1 entry still carries the exact stamp the write produced (L1 is the source of truth; otherwise the item is dropped as obsolete), and incoming invalidations from other instances drop older queued items so a replay cannot resurrect stale data. With auto-recovery enabled, a failing single-key L2 write no longer propagates to the caller: the call succeeds against L1 in degraded mode (logged as a warning). Bulk, atomic (increment/set-if), and set operations are never captured.
 
 For factory-backed sliding entries, `DefaultLocalExpiration` caps the L1 copy only. Hybrid revalidates sliding L1 hits against L2 before re-arm so L2 keeps the original `Duration` as the absolute cap. If L2 is unavailable, a fresh L1 sliding value can still be returned, but the read is not re-armed.
 

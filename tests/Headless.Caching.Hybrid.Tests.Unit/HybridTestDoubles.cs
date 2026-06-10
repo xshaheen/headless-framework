@@ -599,3 +599,234 @@ internal sealed class NullTimestampL2Adapter<TValue>(TValue value) : IRemoteCach
 
     public void Dispose() { }
 }
+
+/// <summary>
+/// An L2 remote cache whose write operations (entry sets, scalar upserts, removes) can be toggled to fail,
+/// simulating a transient outage for auto-recovery tests. Reads always work. Counts write attempts so tests
+/// can assert barrier/retry behavior.
+/// </summary>
+internal sealed class TogglableRemoteCache(TimeProvider timeProvider) : IRemoteCache, IFactoryCacheStore, IDisposable
+{
+    private readonly InMemoryCache _cache = new(timeProvider, new InMemoryCacheOptions { CloneValues = true });
+
+    public CacheEntryOptions? DefaultEntryOptions => null;
+
+    /// <summary>When true, entry sets, scalar upserts, and removes throw.</summary>
+    public bool FailWrites { get; set; }
+
+    public int SetEntryAttempts { get; private set; }
+
+    public int UpsertAttempts { get; private set; }
+
+    public int RemoveAttempts { get; private set; }
+
+    public ValueTask<CacheStoreEntry<T>> TryGetEntryAsync<T>(string key, CancellationToken cancellationToken) =>
+        ((IFactoryCacheStore)_cache).TryGetEntryAsync<T>(key, cancellationToken);
+
+    public ValueTask SetEntryAsync<T>(string key, in CacheStoreEntryWrite<T> entry, CancellationToken cancellationToken)
+    {
+        SetEntryAttempts++;
+
+        return FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : ((IFactoryCacheStore)_cache).SetEntryAsync(key, in entry, cancellationToken);
+    }
+
+    public ValueTask TryRearmSlidingAsync(
+        string key,
+        TimeSpan slidingExpiration,
+        DateTime physicalExpiresAt,
+        DateTime now,
+        CancellationToken cancellationToken
+    ) =>
+        ((IFactoryCacheStore)_cache).TryRearmSlidingAsync(
+            key,
+            slidingExpiration,
+            physicalExpiresAt,
+            now,
+            cancellationToken
+        );
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CancellationToken, ValueTask<T?>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+
+    public ValueTask<CacheValue<T>> GetOrAddAsync<T>(
+        string key,
+        Func<CacheFactoryContext<T>, CancellationToken, ValueTask<CacheFactoryResult<T>>> factory,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetOrAddAsync(key, factory, options, cancellationToken);
+
+    public ValueTask<bool> UpsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    )
+    {
+        UpsertAttempts++;
+
+        return FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.UpsertAsync(key, value, expiration, cancellationToken);
+    }
+
+    public ValueTask<bool> UpsertEntryAsync<T>(
+        string key,
+        T? value,
+        CacheEntryOptions options,
+        CancellationToken cancellationToken = default
+    ) => _cache.UpsertEntryAsync(key, value, options, cancellationToken);
+
+    public ValueTask<int> UpsertAllAsync<T>(
+        IDictionary<string, T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.UpsertAllAsync(value, expiration, cancellationToken);
+
+    public ValueTask<bool> TryInsertAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.TryInsertAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<bool> TryReplaceAsync<T>(
+        string key,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.TryReplaceAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<bool> TryReplaceIfEqualAsync<T>(
+        string key,
+        T? expected,
+        T? value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.TryReplaceIfEqualAsync(key, expected, value, expiration, cancellationToken);
+
+    public ValueTask<double> IncrementAsync(
+        string key,
+        double amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+
+    public ValueTask<long> IncrementAsync(
+        string key,
+        long amount,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.IncrementAsync(key, amount, expiration, cancellationToken);
+
+    public ValueTask<double> SetIfHigherAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<long> SetIfHigherAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetIfHigherAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<double> SetIfLowerAsync(
+        string key,
+        double value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<long> SetIfLowerAsync(
+        string key,
+        long value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetIfLowerAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<long> SetAddAsync<T>(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetAddAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync<T>(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetAllAsync<T>(cacheKeys, cancellationToken);
+
+    public ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync<T>(
+        string prefix,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetByPrefixAsync<T>(prefix, cancellationToken);
+
+    public ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
+        string prefix,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetAllKeysByPrefixAsync(prefix, cancellationToken);
+
+    public ValueTask<CacheValue<T>> GetAsync<T>(string key, CancellationToken cancellationToken = default) =>
+        _cache.GetAsync<T>(key, cancellationToken);
+
+    public ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default) =>
+        _cache.GetCountAsync(prefix, cancellationToken);
+
+    public ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default) =>
+        _cache.ExistsAsync(key, cancellationToken);
+
+    public ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default) =>
+        _cache.GetExpirationAsync(key, cancellationToken);
+
+    public ValueTask<CacheValue<ICollection<T>>> GetSetAsync<T>(
+        string key,
+        int? pageIndex = null,
+        int pageSize = 100,
+        CancellationToken cancellationToken = default
+    ) => _cache.GetSetAsync<T>(key, pageIndex, pageSize, cancellationToken);
+
+    public ValueTask<bool> RemoveAsync(string key, CancellationToken cancellationToken = default)
+    {
+        RemoveAttempts++;
+
+        return FailWrites
+            ? throw new InvalidOperationException("L2 write failed")
+            : _cache.RemoveAsync(key, cancellationToken);
+    }
+
+    public ValueTask<bool> RemoveIfEqualAsync<T>(
+        string key,
+        T? expected,
+        CancellationToken cancellationToken = default
+    ) => _cache.RemoveIfEqualAsync(key, expected, cancellationToken);
+
+    public ValueTask<int> RemoveAllAsync(
+        IEnumerable<string> cacheKeys,
+        CancellationToken cancellationToken = default
+    ) => _cache.RemoveAllAsync(cacheKeys, cancellationToken);
+
+    public ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default) =>
+        _cache.RemoveByPrefixAsync(prefix, cancellationToken);
+
+    public ValueTask<int> RemoveByTagAsync(string tag, CancellationToken cancellationToken = default) =>
+        _cache.RemoveByTagAsync(tag, cancellationToken);
+
+    public ValueTask<long> SetRemoveAsync<T>(
+        string key,
+        IEnumerable<T> value,
+        TimeSpan? expiration,
+        CancellationToken cancellationToken = default
+    ) => _cache.SetRemoveAsync(key, value, expiration, cancellationToken);
+
+    public ValueTask FlushAsync(CancellationToken cancellationToken = default) => _cache.FlushAsync(cancellationToken);
+
+    public void Dispose() => _cache.Dispose();
+}

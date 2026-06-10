@@ -36,4 +36,31 @@ public sealed class HybridCacheOptions : CacheOptions
     /// (the default) the hybrid cache uses the default <see cref="IRemoteCache"/> registration.
     /// </summary>
     public string? RemoteCacheName { get; set; }
+
+    /// <summary>
+    /// Enables opt-in auto-recovery: when the distributed (L2) tier or the invalidation backplane has a
+    /// transient outage, failed single-key L2 writes/removes and failed invalidation publishes are queued and
+    /// replayed once the dependency recovers instead of surfacing every failure to callers. Default is
+    /// <see langword="false"/> (today's behavior: scalar L2 failures propagate; factory-path L2 failures are
+    /// logged and dropped).
+    /// </summary>
+    public bool EnableAutoRecovery { get; set; }
+
+    /// <summary>
+    /// Maximum number of pending recovery items (one per cache key). On overflow the item with the earliest
+    /// expiry is evicted to admit the new one. Only used when <see cref="EnableAutoRecovery"/> is enabled.
+    /// </summary>
+    public int AutoRecoveryMaxItems { get; set; } = 128;
+
+    /// <summary>
+    /// Maximum number of failed replay attempts before a pending recovery item is dropped with a warning.
+    /// Only used when <see cref="EnableAutoRecovery"/> is enabled.
+    /// </summary>
+    public int AutoRecoveryMaxRetries { get; set; } = 8;
+
+    /// <summary>
+    /// Cadence of the recovery processing loop and the back-off barrier applied after a failed replay.
+    /// Only used when <see cref="EnableAutoRecovery"/> is enabled.
+    /// </summary>
+    public TimeSpan AutoRecoveryDelay { get; set; } = TimeSpan.FromSeconds(5);
 }
