@@ -1,0 +1,15 @@
+#!/bin/sh
+# Verify formatting and do a clean (non-incremental) build before push.
+#
+# Analyzers and warnings-as-errors only run when a project actually recompiles, so an
+# incremental build can silently mask a CI failure (e.g. MA0008). `make rebuild` reproduces
+# the CI build step (--no-incremental) locally; `make format-check` mirrors the CI format gate.
+#
+# Complements .husky/pre-commit (which auto-formats staged files on commit): commit-time
+# formats, push-time verifies + builds — no overlap. `make hooks` / `make bootstrap` points
+# core.hooksPath here, so this runs in every clone and worktree. Bypass with `git push --no-verify`.
+set -eu
+
+printf '\033[36m[pre-push]\033[0m format-check + clean build (~1-2 min; skip with --no-verify)...\n'
+make format-check
+make rebuild
