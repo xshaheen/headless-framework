@@ -123,6 +123,43 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         currentIncarnation.Should().Be(secondIdentity.Incarnation.Value);
     }
 
+    [Fact]
+    public async Task should_tolerate_concurrent_registration_and_heartbeat_stampede()
+    {
+        var cluster = _Cluster();
+        var nodes = await Task.WhenAll(
+            Enumerable
+                .Range(0, 24)
+                .Select(index => fixture.CreateNodeAsync(cluster, $"node-{index % 4}", AbortToken).AsTask())
+        );
+
+        try
+        {
+            var identities = await Task.WhenAll(
+                nodes.Select(node => node.Membership.RegisterAsync(AbortToken).AsTask())
+            );
+            var currentPairs = nodes
+                .Zip(identities)
+                .GroupBy(static pair => pair.Second.NodeId)
+                .Select(static group => group.MaxBy(static pair => pair.Second.Incarnation.Value))
+                .ToArray();
+            var accepted = await Task.WhenAll(
+                currentPairs.Select(pair => pair.First.Membership.HeartbeatAsync(AbortToken).AsTask())
+            );
+            var live = await nodes[0].Membership.GetLiveNodesAsync(AbortToken);
+
+            accepted.Should().OnlyContain(x => x);
+            live.Should().BeEquivalentTo(currentPairs.Select(static pair => pair.Second));
+        }
+        finally
+        {
+            foreach (var node in nodes)
+            {
+                await node.DisposeAsync();
+            }
+        }
+    }
+
     private static string _Cluster()
     {
         return "native-" + Guid.NewGuid().ToString("N");
